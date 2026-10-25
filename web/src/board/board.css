@@ -1,0 +1,60 @@
+/* The board in eos colours: the squares are tints of the surface and the primary, so the board follows the theme in
+   light and dark. Pieces are cburnett (chessground's default set). */
+.board {
+  --board-light: color-mix(in oklab, var(--e-surface) 80%, var(--e-primary));
+  --board-dark: color-mix(in oklab, var(--e-surface) 45%, var(--e-primary));
+  --board-mark: color-mix(in oklab, var(--e-primary) 70%, transparent);
+
+  width: 100%;
+  max-width: 40rem;
+  aspect-ratio: 1;
+  border-radius: var(--e-radius-md, 0.5rem);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--e-border, transparent);
+}
+
+.board-cg {
+  width: 100%;
+  height: 100%;
+}
+
+.board cg-board {
+  background: repeating-conic-gradient(var(--board-dark) 0 25%, var(--board-light) 0 50%) 0 0 / 25% 25%;
+}
+
+.board cg-board square.last-move {
+  background-color: color-mix(in oklab, var(--e-primary) 30%, transparent);
+}
+
+.board cg-board square.selected {
+  background-color: color-mix(in oklab, var(--e-primary) 45%, transparent);
+}
+
+.board cg-board square.move-dest {
+  background: radial-gradient(var(--board-mark) 20%, transparent 0);
+}
+
+.board cg-board square.oc.move-dest {
+  background: radial-gradient(transparent 0%, transparent 78%, var(--board-mark) 78%);
+}
+
+.board cg-board square.move-dest:hover {
+  background: color-mix(in oklab, var(--e-primary) 35%, transparent);
+}
+
+.board cg-board square.check {
+  background: radial-gradient(
+    ellipse at center,
+    rgb(255 0 0 / 100%) 0%,
+    rgb(231 0 0 / 100%) 25%,
+    rgb(169 0 0 / 0%) 89%,
+    rgb(158 0 0 / 0%) 100%
+  );
+}
+
+/* Coordinates in the ink colour on both square colours. */
+.board coords {
+  color: var(--e-ink);
+  opacity: 0.6;
+  font-size: 0.7rem;
+}

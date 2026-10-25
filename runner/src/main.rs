@@ -1,10 +1,15 @@
 //! `chess`: the runner and its command line. `chess serve` runs the API, the live event stream and the embedded UI;
 //! every other command is a client of a running runner and prints JSON with `--json`.
 
+mod analysis;
 mod api;
+mod cli;
 mod client;
 mod config;
+mod engine;
 mod events;
+mod jobs;
+mod proc;
 mod store;
 
 use std::path::PathBuf;
@@ -49,8 +54,8 @@ enum Command {
         #[arg(long, env = "RECKLESS_DIR", default_value = "../reckless")]
         reckless: PathBuf,
     },
-    /// Show the runner's status.
-    Status,
+    #[command(flatten)]
+    Client(cli::ClientCommand),
     /// Print the token the hosted UI needs to reach this machine's runner.
     Token,
     /// Print the OpenAPI document.
@@ -79,19 +84,6 @@ async fn main() -> Result<()> {
             println!("{}", api::openapi().to_pretty_json()?);
             Ok(())
         }
-        Command::Status => {
-            let client = client::Client::new(&cli.url, cli.token, &data);
-            let status: serde_json::Value = client.get("/api/status").await?;
-            client::print(&status, cli.json, |s| {
-                format!(
-                    "runner {} on {} ({} threads), reckless at {}",
-                    s["version"].as_str().unwrap_or("?"),
-                    s["cpu"]["name"].as_str().unwrap_or("?"),
-                    s["cpu"]["threads"],
-                    s["reckless_dir"].as_str().unwrap_or("?"),
-                )
-            });
-            Ok(())
-        }
+        Command::Client(command) => cli::run(client::Client::new(&cli.url, cli.token, &data), command, cli.json).await,
     }
 }

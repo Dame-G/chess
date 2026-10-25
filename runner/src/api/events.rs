@@ -24,6 +24,7 @@ pub struct EventsQuery {
 #[utoipa::path(
     get,
     path = "/api/events",
+    operation_id = "follow_events",
     tag = "runner",
     params(EventsQuery),
     responses((status = 200, description = "A text/event-stream of `Event`s", content_type = "text/event-stream", body = Event))

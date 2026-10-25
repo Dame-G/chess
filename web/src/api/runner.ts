@@ -43,6 +43,7 @@ export const isRemote = computed(() => connection.url !== "");
 export function connect(url: string, token: string) {
   connection.url = url.replace(/\/+$/, "");
   connection.token = token.trim();
+  api = client();
   try {
     localStorage.setItem(STORAGE, JSON.stringify(connection));
   } catch {}
@@ -56,11 +57,9 @@ export function runnerFetch(input: RequestInfo | URL, init?: RequestInit): Promi
   return fetch(input, { ...init, headers, ...(local ? { targetAddressSpace: "local" } : {}) });
 }
 
-/** The typed API client. Paths are resolved against the current connection on every call, so reconnecting needs no new client. */
-export const api = createClient<paths>({
-  baseUrl: "",
-  fetch: (request: Request) => {
-    const { pathname, search } = new URL(request.url);
-    return runnerFetch(new Request(connection.url + pathname + search, request));
-  },
-});
+function client() {
+  return createClient<paths>({ baseUrl: connection.url, fetch: runnerFetch });
+}
+
+/** The typed API client. An exported `let` is a live binding, so every importer sees the new client after `connect`. */
+export let api = client();

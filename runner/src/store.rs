@@ -12,6 +12,31 @@ use rusqlite::Connection;
 const MIGRATIONS: &[&str] = &[
     // 1: a key-value table for runner-wide settings.
     "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+    // 2: builds and the job queue.
+    "CREATE TABLE builds (
+        id INTEGER PRIMARY KEY,
+        key TEXT NOT NULL UNIQUE,
+        ref TEXT NOT NULL,
+        commit_sha TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        features TEXT NOT NULL,
+        network TEXT,
+        bench INTEGER NOT NULL,
+        bench_expected INTEGER,
+        nps INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+    CREATE TABLE jobs (
+        id INTEGER PRIMARY KEY,
+        spec TEXT NOT NULL,
+        status TEXT NOT NULL,
+        result TEXT,
+        error TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        started_at TEXT,
+        finished_at TEXT
+    );
+    CREATE INDEX jobs_status ON jobs (status, id);",
 ];
 
 #[derive(Clone)]

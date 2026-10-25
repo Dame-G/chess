@@ -10,6 +10,12 @@ pub struct ApiError {
     pub message: String,
 }
 
+impl ApiError {
+    pub fn not_found(message: &str) -> Self {
+        Self { status: StatusCode::NOT_FOUND, message: message.to_owned() }
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         (self.status, Json(serde_json::json!({ "error": self.message }))).into_response()

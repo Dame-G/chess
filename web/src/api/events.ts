@@ -1,3 +1,4 @@
+import { onScopeDispose } from "vue";
 import { connection, runnerFetch } from "./runner";
 
 export interface RunnerEvent {
@@ -63,4 +64,20 @@ export function followEvents(onEvent: (event: RunnerEvent) => void): () => void 
   })();
 
   return () => abort.abort();
+}
+
+type Handler = (data: unknown, event: RunnerEvent) => void;
+const handlers = new Map<string, Set<Handler>>();
+
+/** Hands an event to everything listening for its kind. The app follows the stream once and dispatches here. */
+export function dispatch(event: RunnerEvent) {
+  for (const handler of handlers.get(event.kind) ?? []) handler(event.data, event);
+}
+
+/** Listens for one kind of event while the calling component is mounted. */
+export function useRunnerEvent(kind: string, handler: Handler) {
+  const set = handlers.get(kind) ?? new Set();
+  handlers.set(kind, set);
+  set.add(handler);
+  onScopeDispose(() => set.delete(handler));
 }

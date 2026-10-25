@@ -10,13 +10,166 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/analyse": {
+      "post": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "Searches a position to a limit (depth 20 when none is given) and answers with the best move and lines.",
+        "operationId": "analyse",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analysis": {
+      "post": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "Starts a live search, replacing any other. Reports arrive as `analysis.info` events until it is stopped.",
+        "operationId": "start_analysis",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveSession"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "Stops the live search.",
+        "operationId": "stop_analysis",
+        "responses": {
+          "204": {}
+        }
+      }
+    },
+    "/api/builds": {
+      "get": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "Every build, newest first.",
+        "operationId": "list_builds",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Build"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "Queues a build. A commit that is already built finishes at once with the existing build.",
+        "operationId": "create_build",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/builds/{id}": {
+      "get": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "One build.",
+        "operationId": "get_build",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Build"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
     "/api/events": {
       "get": {
         "tags": [
           "runner"
         ],
         "summary": "Live events as server-sent events: every event has an id, and reconnecting with the last id seen replays what was\nmissed.",
-        "operationId": "events",
+        "operationId": "follow_events",
         "parameters": [
           {
             "name": "since",
@@ -47,13 +200,145 @@
         }
       }
     },
+    "/api/jobs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Recent jobs, newest first.",
+        "operationId": "list_jobs",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many jobs, newest first. Default 50.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Job"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{id}": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "One job.",
+        "operationId": "get_job",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      },
+      "delete": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Cancels a queued job or stops a running one.",
+        "operationId": "cancel_job",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/jobs/{id}/log": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "A job's output so far, as plain text.",
+        "operationId": "get_job_log",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
     "/api/status": {
       "get": {
         "tags": [
           "runner"
         ],
         "summary": "The runner's version, machine and engine checkout.",
-        "operationId": "status",
+        "operationId": "get_status",
         "responses": {
           "200": {
             "content": {
@@ -70,6 +355,155 @@
   },
   "components": {
     "schemas": {
+      "AnalysisRequest": {
+        "type": "object",
+        "properties": {
+          "build": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The build to analyse with. Defaults to the newest build."
+          },
+          "fen": {
+            "type": "string",
+            "description": "The position as FEN, or `startpos` (the default)."
+          },
+          "hash": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Hash table size in MiB.",
+            "minimum": 0
+          },
+          "limits": {
+            "$ref": "#/components/schemas/Limits",
+            "description": "Where a one-shot search stops. Left empty, a one-shot search stops at depth 20; a live one runs until stopped."
+          },
+          "moves": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Moves from that position, in UCI notation."
+          },
+          "multipv": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many best lines to report.",
+            "minimum": 0
+          },
+          "threads": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "AnalysisResult": {
+        "type": "object",
+        "required": [
+          "build",
+          "engine",
+          "bestmove",
+          "lines"
+        ],
+        "properties": {
+          "bestmove": {
+            "type": "string"
+          },
+          "build": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Info"
+            },
+            "description": "The last report of each line, best first."
+          }
+        }
+      },
+      "Build": {
+        "type": "object",
+        "required": [
+          "id",
+          "ref",
+          "commit",
+          "subject",
+          "features",
+          "bench",
+          "nps",
+          "created_at"
+        ],
+        "properties": {
+          "bench": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Nodes searched by `bench`: the functional fingerprint.",
+            "minimum": 0
+          },
+          "bench_expected": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The `Bench:` line of the commit message, when it has one. A build whose bench differs from it is suspect.",
+            "minimum": 0
+          },
+          "commit": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "features": {
+            "type": "string",
+            "description": "`syzygy` with tablebase support (needs clang), else `no-syzygy`."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "network": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The network file the build embeds."
+          },
+          "nps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Nodes per second during `bench` on this machine.",
+            "minimum": 0
+          },
+          "ref": {
+            "type": "string",
+            "description": "The ref that was asked for, such as a branch name."
+          },
+          "subject": {
+            "type": "string"
+          }
+        }
+      },
+      "BuildRequest": {
+        "type": "object",
+        "required": [
+          "ref"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "A branch, tag or commit of the Reckless checkout, such as `main` or `upstream/main`."
+          }
+        }
+      },
       "Event": {
         "type": "object",
         "required": [
@@ -87,6 +521,192 @@
           "kind": {
             "type": "string",
             "description": "What happened, such as `job.progress` or `analysis.info`."
+          }
+        }
+      },
+      "Info": {
+        "type": "object",
+        "description": "One `info` line with a principal variation.",
+        "required": [
+          "depth",
+          "seldepth",
+          "multipv",
+          "score",
+          "nodes",
+          "nps",
+          "time",
+          "pv"
+        ],
+        "properties": {
+          "depth": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "multipv": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "nodes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "nps": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "pv": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The principal variation in UCI notation (`e2e4`)."
+          },
+          "score": {
+            "$ref": "#/components/schemas/Score"
+          },
+          "seldepth": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Milliseconds since the search started.",
+            "minimum": 0
+          }
+        }
+      },
+      "Job": {
+        "type": "object",
+        "required": [
+          "id",
+          "spec",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "result": {
+            "description": "What the job produced, such as `{ \"build\": 3 }`."
+          },
+          "spec": {
+            "$ref": "#/components/schemas/JobSpec"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          }
+        }
+      },
+      "JobSpec": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Build a commit of the Reckless checkout and bench it.",
+            "required": [
+              "ref",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "build"
+                ]
+              },
+              "ref": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "What a job does."
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "done",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "Limits": {
+        "type": "object",
+        "description": "How long to search.",
+        "properties": {
+          "depth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "movetime": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Milliseconds.",
+            "minimum": 0
+          },
+          "nodes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "LiveSession": {
+        "type": "object",
+        "required": [
+          "session",
+          "build"
+        ],
+        "properties": {
+          "build": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "session": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Events of this search carry this id.",
+            "minimum": 0
           }
         }
       },
@@ -119,13 +739,47 @@
           }
         }
       },
+      "Score": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Centipawns.",
+            "required": [
+              "cp"
+            ],
+            "properties": {
+              "cp": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Centipawns."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Mate in this many moves; negative when the side to move is mated.",
+            "required": [
+              "mate"
+            ],
+            "properties": {
+              "mate": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Mate in this many moves; negative when the side to move is mated."
+              }
+            }
+          }
+        ],
+        "description": "A search score from the side to move's point of view."
+      },
       "Status": {
         "type": "object",
         "required": [
           "version",
           "cpu",
           "reckless_dir",
-          "reckless_found"
+          "reckless_found",
+          "schema"
         ],
         "properties": {
           "cpu": {
@@ -138,6 +792,11 @@
           "reckless_found": {
             "type": "boolean",
             "description": "Whether that checkout exists."
+          },
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The database schema version (migrations applied)."
           },
           "version": {
             "type": "string",

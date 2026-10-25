@@ -3,6 +3,8 @@ export default {
   ignoreFiles: ["**/dist/**", "**/node_modules/**"],
   rules: {
     "selector-class-pattern": null,
+    // The board is chessground's custom elements.
+    "selector-type-no-unknown": [true, { ignoreTypes: ["/^cg-/", "square", "coords", "piece"] }],
     "custom-property-pattern": null,
     "keyframes-name-pattern": null,
     "declaration-no-important": true,

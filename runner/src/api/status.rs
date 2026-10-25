@@ -48,7 +48,7 @@ pub struct Status {
 }
 
 /// The runner's version, machine and engine checkout.
-#[utoipa::path(get, path = "/api/status", tag = "runner", responses((status = 200, body = Status)))]
+#[utoipa::path(get, path = "/api/status", operation_id = "get_status", tag = "runner", responses((status = 200, body = Status)))]
 pub async fn status(State(state): State<Arc<AppState>>) -> Result<Json<Status>, ApiError> {
     let reckless = &state.config.reckless;
     let schema = state.store.call(|c| Ok(c.pragma_query_value(None, "user_version", |r| r.get(0))?)).await?;

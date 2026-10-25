@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
-use serde::de::DeserializeOwned;
+use serde_json::Value;
 
 pub struct Client {
     base: String,
@@ -20,15 +20,27 @@ impl Client {
         Self { base: url.trim_end_matches('/').to_owned(), token, http: reqwest::Client::new() }
     }
 
-    pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        self.send(self.http.get(self.url(path))).await
+    pub async fn get(&self, path: &str) -> Result<Value> {
+        Ok(self.send(self.http.get(self.url(path))).await?.json().await?)
+    }
+
+    pub async fn post(&self, path: &str, body: Value) -> Result<Value> {
+        Ok(self.send(self.http.post(self.url(path)).json(&body)).await?.json().await?)
+    }
+
+    pub async fn delete(&self, path: &str) -> Result<Value> {
+        Ok(self.send(self.http.delete(self.url(path))).await?.json().await?)
+    }
+
+    pub async fn text(&self, path: &str) -> Result<String> {
+        Ok(self.send(self.http.get(self.url(path))).await?.text().await?)
     }
 
     fn url(&self, path: &str) -> String {
         format!("{}{}", self.base, path)
     }
 
-    async fn send<T: DeserializeOwned>(&self, mut req: reqwest::RequestBuilder) -> Result<T> {
+    async fn send(&self, mut req: reqwest::RequestBuilder) -> Result<reqwest::Response> {
         if let Some(token) = &self.token {
             req = req.bearer_auth(token);
         }
@@ -36,9 +48,15 @@ impl Client {
             req.send().await.with_context(|| format!("no runner at {} (start one with `chess serve`)", self.base))?;
         let status = res.status();
         if !status.is_success() {
-            bail!("{status}: {}", res.text().await.unwrap_or_default());
+            // The runner answers errors as { "error": "..." }; show just the message.
+            let text = res.text().await.unwrap_or_default();
+            let message = serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| v["error"].as_str().map(str::to_owned))
+                .unwrap_or(text);
+            bail!("{status}: {message}");
         }
-        Ok(res.json().await?)
+        Ok(res)
     }
 }
 
