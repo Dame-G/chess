@@ -1,33 +1,80 @@
 <script setup lang="ts">
-import { onUnmounted, ref } from "vue";
-import { RouterLink, RouterView, useRoute } from "vue-router";
+import { computed, onUnmounted, ref } from "vue";
+import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import { useQueryCache } from "@pinia/colada";
-import { PhChartLine, PhCpu, PhFlask, PhHouse, PhPlugsConnected, PhWrench } from "@phosphor-icons/vue";
+import {
+  PhCpu,
+  PhFlask,
+  PhGraph,
+  PhHammer,
+  PhMagnifyingGlass,
+  PhPlugsConnected,
+  PhPlus,
+  PhClipboardText,
+  PhWrench,
+} from "@phosphor-icons/vue";
 import { EAppFooter } from "@eos-ui/vue/components/EAppFooter";
 import { EAppHeader } from "@eos-ui/vue/components/EAppHeader";
 import { EAppShell } from "@eos-ui/vue/components/EAppShell";
 import { EButton } from "@eos-ui/vue/components/EButton";
+import { ECommandPalette, type CommandItem } from "@eos-ui/vue/components/ECommandPalette";
+import { EKbd } from "@eos-ui/vue/components/EKbd";
 import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENavList } from "@eos-ui/vue/components/ENavList";
 import { dispatch, followEvents } from "./api/events";
+import { useBuilds, useExperiments } from "./api/queries";
 import { useActivity } from "./activity";
+import { verdict } from "./format";
 import Logo from "./components/Logo.vue";
 import RunnerDrawer from "./components/RunnerDrawer.vue";
 
 const route = useRoute();
+const router = useRouter();
 const items = [
-  { label: "Overview", to: "/", icon: PhHouse },
-  { label: "Analysis", to: "/analysis", icon: PhChartLine },
-  { label: "Experiments", to: "/experiments", icon: PhFlask },
+  { label: "Board", to: "/board", icon: PhGraph },
+  { label: "Lab", to: "/lab", icon: PhFlask },
   { label: "Engines", to: "/engines", icon: PhWrench },
 ];
 const isCurrent = (item: { to?: unknown }) =>
-  item.to === "/" ? route.path === "/" : route.path.startsWith(String(item.to)) || isGame(item.to);
-// A game belongs to the experiment it was played in.
-const isGame = (to: unknown) => to === "/experiments" && route.path.startsWith("/tests/");
+  route.path.startsWith(String(item.to)) || (item.to === "/board" && route.path.startsWith("/games/"));
+
+/** Workspaces fill the window and scroll inside their panes; the cover page scrolls like a page. */
+const workspace = computed(() => route.meta.workspace === true);
 
 const { summary, status } = useActivity();
 const runnerOpen = ref(false);
+
+// One palette for the whole app: every place, every action, every experiment and engine.
+const { state: experiments } = useExperiments();
+const { state: builds } = useBuilds();
+const commands = computed<CommandItem[]>(() => [
+  { id: "go:/board", label: "Open the board", group: "Go to", icon: PhGraph, keywords: ["analysis", "analyse"] },
+  { id: "go:/lab", label: "Open the lab", group: "Go to", icon: PhFlask, keywords: ["experiments", "tests"] },
+  { id: "go:/engines", label: "Open engines", group: "Go to", icon: PhWrench, keywords: ["builds"] },
+  { id: "go:/lab?new=1", label: "Test an idea", group: "Do", icon: PhPlus, keywords: ["new experiment"] },
+  { id: "go:/board?paste=1", label: "Paste a game or FEN", group: "Do", icon: PhClipboardText, keywords: ["pgn"] },
+  { id: "go:/engines?build=1", label: "Build an engine", group: "Do", icon: PhHammer, keywords: ["branch", "commit"] },
+  { id: "runner", label: "Show the runner", group: "Do", icon: PhCpu, keywords: ["jobs", "queue", "log"] },
+  ...(experiments.value.data ?? []).slice(0, 30).map((e) => ({
+    id: `go:/lab/${e.id}`,
+    label: e.name,
+    description: `${verdict(e).label} · ${e.dev} vs ${e.base}`,
+    group: "Experiments",
+    keywords: [e.dev, e.base],
+  })),
+  ...(builds.value.data ?? []).slice(0, 20).map((b) => ({
+    id: `go:/board?build=${b.id}`,
+    label: `Analyse with ${b.ref} #${b.id}`,
+    description: b.commit.slice(0, 10),
+    group: "Engines",
+    keywords: [b.commit],
+  })),
+]);
+function run(item: CommandItem) {
+  if (item.id === "runner") runnerOpen.value = true;
+  else if (item.id.startsWith("go:")) router.push(item.id.slice(3));
+}
+const palette = ref(false);
 
 // One live stream for the whole app. A restarted runner may have a new build or schema, so everything refetches.
 const cache = useQueryCache();
@@ -53,21 +100,14 @@ onUnmounted(stop);
 </script>
 
 <template>
-  <EAppShell>
+  <EAppShell :class="['shell', { 'shell--workspace': workspace }]">
     <template #header>
-      <EAppHeader sticky brand-to="/" brand-label="Reckless Lab, home" :link-component="RouterLink">
+      <EAppHeader brand-to="/" brand-label="Reckless Lab, home" :link-component="RouterLink">
         <template #brand><Logo /></template>
         <template #actions>
-          <EButton
-            variant="outline"
-            size="sm"
-            :icon="summary.state === 'offline' ? PhPlugsConnected : PhCpu"
-            :class="['runner-button', `runner-button--${summary.state}`]"
-            :aria-label="`Runner: ${summary.label}`"
-            @click="runnerOpen = true"
-          >
-            <span class="runner-dot" aria-hidden="true"></span>
-            <span class="runner-label">{{ summary.label }}</span>
+          <EButton variant="quiet" size="sm" :icon="PhMagnifyingGlass" class="search" @click="palette = true">
+            <span class="search-label">Search</span>
+            <EKbd class="search-kbd">Ctrl K</EKbd>
           </EButton>
         </template>
         <ENavList
@@ -83,35 +123,88 @@ onUnmounted(stop);
     <RouterView />
 
     <template #footer>
-      <EAppFooter>
-        <p class="footer-note">
-          Reckless Lab · a workbench for the
-          <ELink href="https://github.com/codedeliveryservice/Reckless" external>Reckless</ELink> chess engine
-          <template v-if="status.data"> · runner {{ status.data.version }}</template>
-        </p>
-        <nav aria-label="Links">
-          <ELink href="https://github.com/Dame-G/chess" external>Source</ELink>
-          <ELink href="https://github.com/Dame-G/reckless" external>Engine fork</ELink>
-          <ELink href="https://eos.dame.gg" external>Built with eos</ELink>
-        </nav>
+      <EAppFooter class="status">
+        <EButton
+          variant="quiet"
+          size="sm"
+          :icon="summary.state === 'offline' ? PhPlugsConnected : PhCpu"
+          :class="['status-runner', `status-runner--${summary.state}`]"
+          :aria-label="`Runner: ${summary.label}. Show the runner.`"
+          @click="runnerOpen = true"
+        >
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-label">{{ summary.label }}</span>
+        </EButton>
+        <span v-if="status.data" class="status-meta">runner {{ status.data.version }}</span>
+        <ELink href="https://github.com/Dame-G/chess" external>Source</ELink>
+        <ELink href="https://github.com/Dame-G/reckless" external>Engine</ELink>
       </EAppFooter>
     </template>
   </EAppShell>
+  <ECommandPalette
+    v-model:open="palette"
+    :items="commands"
+    label="Search Reckless Lab"
+    placeholder="Jump to an experiment, an engine or an action"
+    shortcut="mod+k"
+    @select="run"
+  />
   <RunnerDrawer v-model:open="runnerOpen" />
 </template>
 
 <style scoped>
-.runner-button {
-  max-width: 18rem;
+/* A workspace is the whole window: header, panes, status bar. Nothing outside the panes scrolls. */
+.shell--workspace {
+  --e-shell-width: 100%;
+
+  height: 100dvh;
+  min-height: 0;
 }
 
-.runner-label {
+.shell--workspace :deep(.e-shell-body) {
+  min-height: 0;
+  padding: 0;
+}
+
+.shell--workspace :deep(.e-shell-main) {
+  min-height: 0;
+}
+
+@media (width < 64rem) {
+  .shell--workspace {
+    height: auto;
+    min-height: 100dvh;
+  }
+}
+
+.search-label {
+  color: var(--e-muted);
+}
+
+@media (width < 40rem) {
+  .search-label,
+  .search-kbd {
+    display: none;
+  }
+}
+
+/* The footer is a status bar: the runner on the left, small print on the right. */
+.status {
+  font: var(--e-type-small);
+}
+
+.status-runner {
+  max-width: min(36rem, 70vw);
+  font-family: var(--e-font-mono);
+}
+
+.status-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.runner-dot {
+.status-dot {
   flex: none;
   width: 0.5rem;
   height: 0.5rem;
@@ -119,17 +212,22 @@ onUnmounted(stop);
   background: var(--e-muted);
 }
 
-.runner-button--idle .runner-dot {
+.status-runner--idle .status-dot {
   background: var(--e-success);
 }
 
-.runner-button--busy .runner-dot {
+.status-runner--busy .status-dot {
   background: var(--e-primary);
   animation: pulse 1.6s ease-in-out infinite;
 }
 
-.runner-button--offline .runner-dot {
+.status-runner--offline .status-dot {
   background: var(--e-danger);
+}
+
+.status-meta {
+  color: var(--e-muted);
+  font-family: var(--e-font-mono);
 }
 
 @keyframes pulse {
@@ -139,27 +237,8 @@ onUnmounted(stop);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .runner-button--busy .runner-dot {
+  .status-runner--busy .status-dot {
     animation: none;
   }
-}
-
-@media (width < 40rem) {
-  .runner-label {
-    display: none;
-  }
-}
-
-.footer-note {
-  margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
-}
-
-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--e-gap-base);
-  font: var(--e-type-small);
 }
 </style>

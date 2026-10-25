@@ -1,40 +1,32 @@
 import { createRouter, createWebHistory } from "vue-router";
 
+const board = () => import("./views/BoardView.vue");
+const lab = () => import("./views/LabView.vue");
+const engines = () => import("./views/EnginesView.vue");
+
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: "/", name: "home", component: () => import("./views/HomeView.vue"), meta: { title: "Overview" } },
+    { path: "/", name: "home", component: () => import("./views/HomeView.vue") },
+
+    // The board: free analysis, or a played game with its test's games as the playlist.
+    { path: "/board", name: "board", component: board, meta: { title: "Board", workspace: true } },
+    { path: "/games/:test/:index", name: "game", component: board, meta: { title: "Game", workspace: true } },
+
+    // The lab: experiments in the library, the chosen one on the stage.
+    { path: "/lab", name: "lab", component: lab, meta: { title: "Lab", workspace: true } },
+    { path: "/lab/:id", name: "experiment", component: lab, meta: { title: "Lab", workspace: true } },
+
+    { path: "/engines", name: "engines", component: engines, meta: { title: "Engines", workspace: true } },
+    { path: "/engines/:id", name: "engine", component: engines, meta: { title: "Engines", workspace: true } },
+
+    // Old addresses.
+    { path: "/analysis", redirect: (to) => ({ path: "/board", query: to.query }) },
+    { path: "/experiments", redirect: "/lab" },
+    { path: "/experiments/:id", redirect: (to) => `/lab/${String(to.params.id)}` },
+    { path: "/tests/:id/games/:index", redirect: (to) => `/games/${String(to.params.id)}/${String(to.params.index)}` },
     { path: "/runner", redirect: "/" },
-    {
-      path: "/engines",
-      name: "engines",
-      component: () => import("./views/EnginesView.vue"),
-      meta: { title: "Engines" },
-    },
-    {
-      path: "/experiments",
-      name: "experiments",
-      component: () => import("./views/ExperimentsView.vue"),
-      meta: { title: "Experiments" },
-    },
-    {
-      path: "/experiments/:id",
-      name: "experiment",
-      component: () => import("./views/ExperimentView.vue"),
-      meta: { title: "Experiment" },
-    },
-    {
-      path: "/tests/:id/games/:index",
-      name: "game",
-      component: () => import("./views/GameView.vue"),
-      meta: { title: "Game" },
-    },
-    {
-      path: "/analysis",
-      name: "analysis",
-      component: () => import("./views/AnalysisView.vue"),
-      meta: { title: "Analysis" },
-    },
+    { path: "/:rest(.*)*", redirect: "/" },
   ],
 });
 
@@ -45,5 +37,7 @@ router.afterEach((to) => {
 declare module "vue-router" {
   interface RouteMeta {
     title?: string;
+    /** Fills the window with panes that scroll on their own, instead of scrolling as a page. */
+    workspace?: boolean;
   }
 }

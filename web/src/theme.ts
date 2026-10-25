@@ -1,13 +1,9 @@
 import type { ThemeInput } from "@eos-ui/tokens";
 
-/** Headings are set in Fraunces, a soft serif; everything else stays in the sans. */
-const serif = "'Fraunces Variable', Georgia, 'Times New Roman', serif";
-const heading = (size: string, leading: string) =>
-  `var(--e-weight-medium) var(--e-text-${size}) / var(--e-leading-${leading}) ${serif}`;
-
 /**
- * "Saddle": cognac leather and brass on linen by day, on espresso and walnut by night. eos derives every other colour
- * (the deep primary, soft tints, borders, muted text) from these, holding its contrast minimums.
+ * "Saddle": cognac leather and brass on linen by day, on espresso and walnut by night. Sharp corners, a thin slab and
+ * snappy motion: a dense workbench, not a brochure. eos derives every other colour (the deep primary, soft tints,
+ * borders, muted text) from these, holding its contrast minimums.
  */
 export const saddle: ThemeInput = {
   name: "saddle",
@@ -23,7 +19,9 @@ export const saddle: ThemeInput = {
     sans: "'Hanken Grotesk Variable', 'Avenir Next', system-ui, sans-serif",
     mono: "'JetBrains Mono Variable', ui-monospace, Consolas, monospace",
   },
-  radius: 8,
+  radius: 3,
+  depth: 1,
+  motion: "snappy",
   scheme: "auto",
   density: "compact",
   dark: {
@@ -31,11 +29,5 @@ export const saddle: ThemeInput = {
     surface: "#1e1814",
     foreground: "#efe4d4",
     brand: "#d4884a",
-  },
-  tokens: {
-    "type-h1": heading("4xl", "tight"),
-    "type-h2": heading("2xl", "snug"),
-    "type-h3": heading("xl", "snug"),
-    "type-h4": heading("lg", "snug"),
   },
 };
