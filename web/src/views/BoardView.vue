@@ -6,6 +6,7 @@ import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import {
   PhArrowsDownUp,
+  PhBroadcast,
   PhCaretLeft,
   PhCaretRight,
   PhChartLine,
@@ -15,6 +16,7 @@ import {
   PhFlask,
   PhPause,
   PhPlay,
+  PhSword,
   PhSkipBack,
   PhSkipForward,
   PhSpeakerHigh,
@@ -39,18 +41,34 @@ import { ETextarea } from "@eos-ui/vue/components/ETextarea";
 import ChessBoard from "../board/ChessBoard.vue";
 import EngineLines from "../board/EngineLines.vue";
 import EvalBar from "../board/EvalBar.vue";
+import MatchEngines, { type EngineRow } from "../board/MatchEngines.vue";
+import MatchList from "../board/MatchList.vue";
+import MatchStatus from "../board/MatchStatus.vue";
 import MoveList from "../board/MoveList.vue";
 import Playlist from "../board/Playlist.vue";
+import PlayerStrip from "../board/PlayerStrip.vue";
 import Timeline from "../board/Timeline.vue";
+import MatchDialog from "../components/MatchDialog.vue";
 import Term from "../components/Term.vue";
 import Workspace from "../components/Workspace.vue";
 import { readGame, type Game } from "../board/game";
+import { clockAt, sideScore, type Side } from "../board/matchText";
+import { useMatch } from "../board/useMatch";
 import { outcome, type Outcome } from "../board/playlist";
-import { inspectPosition, play, sanLine, sanMoves, toPgn } from "../board/position";
+import { inspectPosition, play, sanLine, sanMoves, toPgn, whitePawns, whiteScore } from "../board/position";
 import { playMoveSound, soundOf } from "../board/sound";
 import { useAnalysis, type Seen } from "../board/useAnalysis";
 import { api } from "../api/runner";
-import { defaultBuild, unwrap, useBuilds, useExperiment, useExperiments, useGames, useTest } from "../api/queries";
+import {
+  defaultBuild,
+  unwrap,
+  useBuilds,
+  useExperiment,
+  useExperiments,
+  useGames,
+  useMatches,
+  useTest,
+} from "../api/queries";
 import { ending, signed, speed, winChance } from "../format";
 import { stored } from "../stored";
 
@@ -64,6 +82,11 @@ const router = useRouter();
 const isGame = computed(() => route.name === "game");
 const testId = computed(() => (isGame.value ? Number(route.params.test) : 0));
 const index = computed(() => (isGame.value ? Number(route.params.index) : -1));
+/** A match between two builds, live or finished: the board replays it like a game. */
+const isMatch = computed(() => route.name === "match");
+const matchId = computed(() => (isMatch.value ? Number(route.params.id) : 0));
+/** Whether the line on the board is a recorded one (a game or a match) rather than free analysis. */
+const inGame = computed(() => isGame.value || isMatch.value);
 
 // The line on the board: where it starts, every move entered (including ones stepped back past), and how many are
 // played. Stepping back keeps the moves after; a different move replaces them. A game fills the same three.
@@ -86,8 +109,15 @@ watch(sans, (s) => {
 /** The library's drawer, for when it is not beside the board. Declared early: `reset` closes it during setup. */
 const drawerOpen = ref(false);
 
+/**
+ * Whether the board follows a live match. Stepping back detaches it, like a live video, and new moves keep arriving
+ * without moving the board; stepping to the end (or "Live") attaches it again.
+ */
+const attached = ref(true);
+
 function go(to: number) {
   cursor.value = Math.max(0, Math.min(moves.value.length, to));
+  if (isMatch.value) attached.value = cursor.value >= moves.value.length;
 }
 function reset(fen = "startpos", line: string[] = []) {
   drawerOpen.value = false;
@@ -102,8 +132,8 @@ function readQuery() {
   const line = typeof route.query.moves === "string" && route.query.moves ? route.query.moves.split(",") : [];
   reset(fen, line);
 }
-if (!isGame.value) readQuery();
-watch(isGame, (g) => {
+if (!inGame.value) readQuery();
+watch(inGame, (g) => {
   playing.value = false;
   if (!g) readQuery();
 });
@@ -135,17 +165,48 @@ watch(
 watch(isGame, (g) => {
   if (!g) held.value = undefined;
 });
-const game = computed(() => (isGame.value ? (fresh.value ?? held.value) : undefined));
-const gameFailed = computed(() => isGame.value && gameState.value.status === "error");
-const loading = computed(() => isGame.value && !fresh.value && gameState.value.status !== "error");
+
+// A match from the runner, kept current by its events. Moving to another match keeps the last on show until the new one
+// arrives, as games do.
+const { match: matchRaw, failed: matchFailed, clock, thinking } = useMatch(matchId);
+const matchData = computed(() => (matchRaw.value?.id === matchId.value ? matchRaw.value : undefined));
+const matchLive = computed(() => matchData.value?.status === "running");
+/** The match as a game, so the move list, the timeline and the evaluation bar read it like any other. */
+const matchGame = computed<Game | undefined>(() => {
+  const m = matchData.value;
+  if (!m) return undefined;
+  return {
+    headers: { White: m.white.name, Black: m.black.name, Result: m.result, Termination: m.reason ?? "" },
+    startFen: m.start_fen,
+    plies: m.moves.map((mv) => ({
+      san: mv.san,
+      uci: mv.uci,
+      fen: mv.fen_after,
+      eval: mv.eval ? whitePawns(mv.eval, mv.side) : null,
+      depth: mv.depth ?? null,
+      nodes: mv.nodes ?? null,
+      time: mv.time_ms / 1000,
+    })),
+  };
+});
+
+const game = computed(() => (isGame.value ? (fresh.value ?? held.value) : isMatch.value ? matchGame.value : undefined));
+const gameFailed = computed(
+  () => (isGame.value && gameState.value.status === "error") || (isMatch.value && matchFailed.value),
+);
+const loading = computed(
+  () =>
+    (isGame.value && !fresh.value && gameState.value.status !== "error") ||
+    (isMatch.value && !matchData.value && !matchFailed.value),
+);
 
 const devWhite = computed(() => game.value?.headers.White === "dev");
 // Flipping is for this visit only: the board opens with White at the bottom, so a stale flip never surprises.
 const freeOrientation = ref<"white" | "black">("white");
 const gameOrientation = ref<"white" | "black">("white");
 const orientation = computed({
-  get: () => (isGame.value ? gameOrientation.value : freeOrientation.value),
-  set: (v) => (isGame.value ? (gameOrientation.value = v) : (freeOrientation.value = v)),
+  get: () => (inGame.value ? gameOrientation.value : freeOrientation.value),
+  set: (v) => (inGame.value ? (gameOrientation.value = v) : (freeOrientation.value = v)),
 });
 const flip = () => (orientation.value = orientation.value === "white" ? "black" : "white");
 
@@ -164,13 +225,37 @@ watch(
   { immediate: true },
 );
 
+// A match comes in at its end when it is live (and follows it), else at its start or the move the address names. Moves
+// that arrive later are added to the line; the board follows them only while attached.
+let syncedMatch = 0;
+watch(
+  matchData,
+  (m) => {
+    if (!m) return;
+    if (syncedMatch !== m.id) {
+      syncedMatch = m.id;
+      start.value = m.start_fen;
+      moves.value = m.moves.map((mv) => mv.uci);
+      attached.value = m.status === "running";
+      cursor.value =
+        m.status === "running" ? moves.value.length : Math.max(0, Math.min(moves.value.length, wantedPly ?? 0));
+      wantedPly = null;
+      gameOrientation.value = "white";
+    } else if (m.moves.length > moves.value.length) {
+      moves.value = [...moves.value, ...m.moves.slice(moves.value.length).map((mv) => mv.uci)];
+      if (attached.value) cursor.value = moves.value.length;
+    }
+  },
+  { immediate: true },
+);
+
 // The address follows the board, so a position can be bookmarked or shared.
 let addressing: ReturnType<typeof setTimeout> | undefined;
 function writeAddress() {
   if (loading.value) return;
   const query: Record<string, string> = {};
-  if (isGame.value) {
-    if (cursor.value) query.ply = String(cursor.value);
+  if (inGame.value) {
+    if (cursor.value && !(matchLive.value && attached.value)) query.ply = String(cursor.value);
   } else {
     if (start.value !== "startpos") query.fen = start.value;
     if (cursor.value) query.moves = moves.value.slice(0, cursor.value).join(",");
@@ -179,7 +264,7 @@ function writeAddress() {
   void router.replace({ query });
 }
 // Stepping or playing changes the move many times a second; the address only needs the place it settles on.
-watch([start, moves, cursor, isGame], () => {
+watch([start, moves, cursor, inGame], () => {
   clearTimeout(addressing);
   addressing = setTimeout(writeAddress, 300);
 });
@@ -215,9 +300,14 @@ const noBuilds = computed(() => builds.value.status === "success" && builds.valu
 // Free analysis keeps the engine on; a game opens with it off, so stepping through costs nothing until it is wanted.
 const freeEngine = stored("board.engine", true);
 const gameEngine = stored("board.engine.game", false);
+// The analysis engine rests while a match is live: the two engines playing it have the machine.
 const engineOn = computed({
-  get: () => (isGame.value ? gameEngine.value : freeEngine.value),
-  set: (v) => (isGame.value ? (gameEngine.value = v) : (freeEngine.value = v)),
+  get: () => !matchLive.value && (inGame.value ? gameEngine.value : freeEngine.value),
+  set: (v) => {
+    if (matchLive.value) return;
+    if (inGame.value) gameEngine.value = v;
+    else freeEngine.value = v;
+  },
 });
 const multipv = stored("board.lines", "3");
 
@@ -227,7 +317,7 @@ const searching = computed(() => engineOn.value && !playing.value && !loading.va
 const { lines, error, evals } = useAnalysis({ start, position, build, multipv, active: searching });
 const best = computed(() => lines.value[0]);
 
-const wanted = computed<DrawShape[]>(() =>
+const analysisArrows = computed<DrawShape[]>(() =>
   lines.value
     .filter(Boolean)
     .map((l, i) => ({
@@ -238,6 +328,40 @@ const wanted = computed<DrawShape[]>(() =>
     }))
     .reverse(),
 );
+
+// A match draws each engine in its own colour (the inspector uses the same two). Live, the engine on the move shows its
+// best move and the move it expects back, in the other engine's colour. Replaying, the move played next shows.
+const matchArrowsOn = stored("board.match.arrows", true);
+const matchArrows = computed<DrawShape[]>(() => {
+  const m = matchData.value;
+  if (!m) return [];
+  const brush = (side: Side) => (side === "white" ? "engineWhite" : "engineBlack");
+  const arrow = (uci: string | undefined, side: Side, width: number): DrawShape[] =>
+    uci && uci.length >= 4
+      ? [
+          {
+            orig: uci.slice(0, 2) as Key,
+            dest: uci.slice(2, 4) as Key,
+            brush: brush(side),
+            modifiers: { lineWidth: width },
+          },
+        ]
+      : [];
+  if (matchLive.value && attached.value) {
+    const t = thinking.value[m.turn];
+    if (!t || t.ply !== moves.value.length + 1) return [];
+    const other = m.turn === "white" ? "black" : "white";
+    return [...arrow(t.pv[1], other, 7), ...arrow(t.pv[0], m.turn, 12)];
+  }
+  const next = m.moves[cursor.value];
+  return next ? arrow(next.uci, next.side, 12) : [];
+});
+/** Whether the board shows the match's arrows rather than the analysis engine's. */
+const matchShapes = computed(() => isMatch.value && (matchLive.value || !searching.value));
+const wanted = computed<DrawShape[]>(() =>
+  matchShapes.value ? (matchArrowsOn.value ? matchArrows.value : []) : analysisArrows.value,
+);
+const arrowsVisible = computed(() => matchShapes.value || searching.value);
 // The arrows hold still unless the moves they point along change, and a change settles for a moment first, so an engine
 // that flips between two candidates while it searches does not make the board flicker. The first arrows show at once.
 const shapes = shallowRef<DrawShape[]>([]);
@@ -284,12 +408,22 @@ const recorded = computed<Seen | undefined>(() => {
   return undefined;
 });
 const live = computed(() => evals.get(position.value.fen));
-const shown = computed(() => (engineOn.value && live.value ? live.value : (recorded.value ?? live.value)));
+/** What the engine on the move in a live match thinks of the position now, while the board is at the latest move. */
+const matchEval = computed<Seen | undefined>(() => {
+  const m = matchData.value;
+  if (!m || !matchLive.value || !attached.value) return undefined;
+  const t = thinking.value[m.turn];
+  if (!t || t.ply !== moves.value.length + 1) return undefined;
+  return { pawns: whitePawns(t.score, m.turn), text: whiteScore(t.score, m.turn), depth: t.depth };
+});
+const shown = computed(
+  () => matchEval.value ?? (engineOn.value && live.value ? live.value : (recorded.value ?? live.value)),
+);
 const fromEngine = computed(() => !!shown.value && shown.value === live.value && (engineOn.value || !recorded.value));
 
 /** Mover's name for the move on the board, in a game. */
 const mover = computed(() => {
-  if (!played.value) return "";
+  if (!played.value || isMatch.value) return "";
   const white = (cursor.value - 1) % 2 === 0;
   return white === devWhite.value ? "New version" : "Current version";
 });
@@ -348,7 +482,7 @@ function fork(extra: string[]) {
 }
 
 function playMoves(uci: string[]) {
-  if (isGame.value) {
+  if (inGame.value) {
     if (uci.length === 1 && moves.value[cursor.value] === uci[0]) go(cursor.value + 1);
     else fork(uci);
     return;
@@ -388,6 +522,141 @@ function openGame(i: number | undefined, replace = false) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// Matches: the players, the thinking engines, the list, and what to do next
+// ---------------------------------------------------------------------------------------------------------------------
+
+const { state: matchesState } = useMatches();
+const matchList = computed(() => matchesState.value.data ?? []);
+const matchAt = computed(() => matchList.value.findIndex((m) => m.id === matchId.value));
+const nextMatch = computed(() => matchList.value[matchAt.value + 1]?.id);
+const previousMatch = computed(() => (matchAt.value > 0 ? matchList.value[matchAt.value - 1]?.id : undefined));
+function openMatch(id: number | undefined) {
+  if (id !== undefined && id !== matchId.value) void router.push(`/matches/${id}`);
+}
+
+const matchOpen = ref(false);
+// The command palette sends `match=1`; the dialog opens and the parameter goes.
+watch(
+  () => route.query.match,
+  (p) => {
+    if (!p) return;
+    matchOpen.value = true;
+    void router.replace({ query: { ...route.query, match: undefined } });
+  },
+  { immediate: true },
+);
+
+const topSide = computed<Side>(() => (orientation.value === "white" ? "black" : "white"));
+const bottomSide = computed<Side>(() => orientation.value);
+
+/** One player's strip: who, the clock (counting down while it is thinking and the board is live), and the score. */
+function strip(side: Side) {
+  const m = matchData.value!;
+  const player = m[side];
+  const hasClock = m.time.type === "clock";
+  const liveView = matchLive.value && attached.value;
+  const c = clock.value;
+  let ms: number | null = null;
+  let at = 0;
+  let ticking = false;
+  if (hasClock) {
+    if (liveView && c) {
+      ms = c[side];
+      at = c.at;
+      ticking = c.ticking && c.turn === side;
+    } else ms = clockAt(m, cursor.value, side);
+  }
+  const lastOwn = m.moves.slice(0, cursor.value).findLast((mv) => mv.side === side);
+  return {
+    side,
+    name: player.name,
+    commit: player.commit,
+    ms,
+    at,
+    ticking,
+    idle: lastOwn ? `${(lastOwn.time_ms / 1000).toFixed(2)} s` : "",
+    active: liveView && position.value.turn === side,
+    lowMs: hasClock ? Math.min(10_000, m.time.type === "clock" ? m.time.seconds * 150 : 0) : 0,
+    score: matchLive.value || m.result === "*" ? undefined : sideScore(m.result, side),
+  };
+}
+
+/** Both engines: what the one on the move is thinking, and for the other what it last played. */
+const engineRows = computed<EngineRow[]>(() => {
+  const m = matchData.value;
+  if (!m) return [];
+  const liveView = matchLive.value && attached.value;
+  return (["white", "black"] as const).map((side) => {
+    const t = thinking.value[side];
+    if (liveView && t && m.turn === side && t.ply === moves.value.length + 1) {
+      return {
+        side,
+        name: m[side].name,
+        eval: whiteScore(t.score, side),
+        depth: `Depth ${t.depth}/${t.seldepth}`,
+        speed: speed(t.nps),
+        line: sanLine(t.fen, t.pv.slice(0, 12)),
+        thinking: true,
+      };
+    }
+    const own = m.moves.slice(0, cursor.value).findLast((mv) => mv.side === side);
+    return {
+      side,
+      name: m[side].name,
+      eval: own?.eval ? whiteScore(own.eval, side) : null,
+      depth: own?.depth != null ? `Depth ${own.depth}` : "",
+      speed: own ? `${(own.time_ms / 1000).toFixed(2)} s` : "",
+      line: own ? `Played ${own.san}` : "Has not moved yet",
+      thinking: false,
+    };
+  });
+});
+
+const matchBusy = ref(false);
+const matchError = ref("");
+async function stopMatch() {
+  matchBusy.value = true;
+  matchError.value = "";
+  try {
+    await unwrap(api.DELETE("/api/matches/{id}", { params: { path: { id: matchId.value } } }));
+  } catch (e) {
+    matchError.value = (e as Error).message;
+  } finally {
+    matchBusy.value = false;
+  }
+}
+/** The same match again from the same position, with the colours kept or swapped. */
+async function again(swap: boolean) {
+  const m = matchData.value;
+  if (!m) return;
+  matchBusy.value = true;
+  matchError.value = "";
+  try {
+    const next = await unwrap(
+      api.POST("/api/matches", {
+        body: {
+          white: swap ? m.black.build : m.white.build,
+          black: swap ? m.white.build : m.black.build,
+          time: m.time,
+          opening: m.start_fen === "startpos" ? { type: "start" } : { type: "position", fen: m.start_fen, moves: [] },
+          hash: m.hash,
+          threads: m.threads,
+          adjudicate: m.adjudicate,
+        },
+      }),
+    );
+    void router.push(`/matches/${next.id}`);
+  } catch (e) {
+    matchError.value = (e as Error).message;
+  } finally {
+    matchBusy.value = false;
+  }
+}
+watch(matchId, () => (matchError.value = ""));
+
+const libraryName = computed(() => (isMatch.value ? "Matches" : isGame.value ? "Games" : "Positions"));
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Playing the moves
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -411,6 +680,7 @@ function step() {
   schedule();
 }
 function toggle() {
+  if (matchLive.value) return;
   if (playing.value) {
     playing.value = false;
     return;
@@ -469,7 +739,7 @@ function load() {
   importOpen.value = false;
   importText.value = "";
   importRead.value = "";
-  if (isGame.value) {
+  if (inGame.value) {
     const query: Record<string, string> = {};
     if (line.fen !== "startpos") query.fen = line.fen;
     if (line.moves.length) query.moves = line.moves.join(",");
@@ -497,7 +767,7 @@ interface Recent {
 }
 const recent = stored<Recent[]>("board.recent", []);
 function remember() {
-  if (isGame.value || (start.value === "startpos" && !moves.value.length)) return;
+  if (inGame.value || (start.value === "startpos" && !moves.value.length)) return;
   const entry = { fen: start.value, moves: moves.value.slice(0, cursor.value) };
   const key = (r: Recent) => `${r.fen}|${r.moves.join(",")}`;
   recent.value = [entry, ...recent.value.filter((r) => key(r) !== key(entry))].slice(0, 10);
@@ -528,7 +798,7 @@ const latestTest = computed(() => newestDetail.value.data?.tests.findLast((t) =>
 const pgn = () =>
   isGame.value && gameState.value.data
     ? gameState.value.data
-    : toPgn({ fen: start.value, moves: moves.value.slice(0, cursor.value) });
+    : toPgn({ fen: start.value, moves: moves.value.slice(0, isMatch.value ? undefined : cursor.value) });
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The result, from the new version's side
@@ -590,7 +860,7 @@ onMounted(() => {
     stacked.value = w < 64 * r;
     // The side the height allows, and the width the whole row needs for it (see the sizes in the styles below).
     const pad = 0.75 * r;
-    const side = el.clientHeight - 5.45 * r - 2 * pad;
+    const side = el.clientHeight - 5.45 * r - 2 * pad - (isMatch.value ? 6 * r : 0);
     const needed = 16 * r + 22 * r + 2 * r + 0.375 * r + 2 * pad + side;
     // A margin on the way back keeps it from flickering at the edge.
     if (roomy.value && w < needed) roomy.value = false;
@@ -638,11 +908,13 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 useShortcuts({
   home: () => go(0),
   end: () => go(Infinity),
+  l: () => go(Infinity),
   space: toggle,
   f: flip,
   e: () => (engineOn.value = !engineOn.value),
-  n: () => openGame(nextGame.value?.index),
-  p: () => openGame(previousGame.value?.index),
+  m: () => (matchOpen.value = true),
+  n: () => (isMatch.value ? openMatch(nextMatch.value) : openGame(nextGame.value?.index)),
+  p: () => (isMatch.value ? openMatch(previousMatch.value) : openGame(previousGame.value?.index)),
 });
 
 const speeds = [
@@ -661,7 +933,19 @@ const filters = [
 
 <template>
   <DefineLibrary>
-    <div v-if="isGame" class="games">
+    <div v-if="isMatch" class="games">
+      <div class="games-bar">
+        <EButton variant="outline" size="sm" :icon="PhSword" @click="matchOpen = true">Watch a match</EButton>
+        <span class="count num">{{ matchList.length }}</span>
+      </div>
+      <ESkeleton v-if="matchesState.status === 'pending'" :lines="6" label="Loading matches" class="pad" />
+      <EEmptyState v-else-if="!matchList.length" title="No matches yet" icon="info" size="sm" bare class="pad">
+        Start one and it is kept here to replay.
+      </EEmptyState>
+      <div v-else class="match-rows"><MatchList :matches="matchList" :current="matchId" @open="openMatch" /></div>
+    </div>
+
+    <div v-else-if="isGame" class="games">
       <div class="games-bar">
         <ESegmented v-model="filter" label="Show games" hide-label size="sm" :options="filters" />
         <span class="count num">{{ listed.length.toLocaleString() }}</span>
@@ -680,6 +964,13 @@ const filters = [
       <EButton variant="quiet" size="sm" block :icon="PhClipboardText" class="start" @click="importOpen = true">
         Paste a game or FEN
       </EButton>
+      <EButton variant="quiet" size="sm" block :icon="PhSword" class="start" @click="matchOpen = true">
+        Watch a match
+      </EButton>
+      <template v-if="matchList.length">
+        <h3 class="section">Matches</h3>
+        <MatchList :matches="matchList.slice(0, 5)" @open="openMatch" />
+      </template>
       <template v-if="latestTest">
         <h3 class="section">Latest test</h3>
         <EButton
@@ -714,8 +1005,8 @@ const filters = [
   <Workspace
     ref="frame"
     fit
-    :class="['board-ws', { 'board-ws--solo': !libraryInline }]"
-    library-label="Games and positions"
+    :class="['board-ws', { 'board-ws--solo': !libraryInline, 'board-ws--match': isMatch }]"
+    library-label="Games, matches and positions"
     inspector-label="Engine and moves"
   >
     <!-- Library: a game's playlist, or the places a free board can start from. -->
@@ -729,7 +1020,7 @@ const filters = [
           { label: 'Games' },
         ]"
       />
-      <h2 v-else class="head-title">Positions</h2>
+      <h2 v-else class="head-title">{{ libraryName }}</h2>
     </template>
 
     <template v-if="libraryInline" #library>
@@ -738,15 +1029,18 @@ const filters = [
 
     <!-- Stage: the eval bar beside the board, as large as the pane allows. -->
     <div class="stage" :class="{ loading }">
-      <div class="rig">
-        <EvalBar :pawns="shown?.pawns" :text="shown?.text" :orientation="orientation" />
+      <div :class="['rig', { 'rig--match': isMatch && matchData }]">
+        <PlayerStrip v-if="isMatch && matchData" v-bind="strip(topSide)" class="strip-top" />
+        <EvalBar :pawns="shown?.pawns" :text="shown?.text" :orientation="orientation" class="rig-eval" />
         <ChessBoard
           :position="position"
           :orientation="orientation"
-          movable
-          :shapes="searching ? shapes : []"
+          :movable="!matchLive"
+          :shapes="arrowsVisible ? shapes : []"
+          class="rig-board"
           @move="playMoves([$event])"
         />
+        <PlayerStrip v-if="isMatch && matchData" v-bind="strip(bottomSide)" class="strip-bottom" />
       </div>
     </div>
 
@@ -775,7 +1069,7 @@ const filters = [
           tooltip
           variant="primary"
           size="sm"
-          :disabled="!moves.length && !(isGame && nextGame)"
+          :disabled="matchLive || (!moves.length && !(isGame && nextGame))"
           @click="toggle"
         />
         <EIconButton
@@ -794,6 +1088,17 @@ const filters = [
           :disabled="atEnd"
           @click="go(Infinity)"
         />
+        <EButton
+          v-if="matchLive"
+          size="sm"
+          :variant="attached ? 'secondary' : 'primary'"
+          :icon="PhBroadcast"
+          :aria-pressed="attached"
+          class="live"
+          @click="go(Infinity)"
+        >
+          Live
+        </EButton>
       </div>
       <Timeline
         class="scrub"
@@ -816,9 +1121,9 @@ const filters = [
         :aria-pressed="libraryInline"
         @click="toggleLibrary"
       >
-        {{ isGame ? "Games" : "Positions" }}
+        {{ libraryName }}
       </EButton>
-      <ESegmented v-model="rate" label="Speed" hide-label size="sm" :options="speeds" class="rate" />
+      <ESegmented v-if="!isMatch" v-model="rate" label="Speed" hide-label size="sm" :options="speeds" class="rate" />
       <EIconButton
         :icon="PhArrowsDownUp"
         :label="orientation === 'black' ? 'Flip board (F), Black at the bottom' : 'Flip board (F)'"
@@ -831,9 +1136,10 @@ const filters = [
 
     <!-- Inspector: the engine, then the moves, as on Lichess. -->
     <template #inspector-head>
-      <ESwitch v-model="engineOn" label="Engine" />
+      <ESwitch v-if="isMatch" v-model="matchArrowsOn" label="Arrows" />
+      <ESwitch v-if="!matchLive" v-model="engineOn" label="Engine" />
       <ESelect
-        v-if="buildOptions.length"
+        v-if="buildOptions.length && !matchLive"
         v-model="build"
         label="Engine version"
         hide-label
@@ -845,11 +1151,20 @@ const filters = [
 
     <template #inspector>
       <div class="insp">
-        <header v-if="loading && !game" class="match" aria-hidden="true">
+        <MatchStatus
+          v-if="isMatch && matchData"
+          :match="matchData"
+          :attached="attached"
+          :busy="matchBusy"
+          @stop="stopMatch"
+          @rematch="again(false)"
+          @swap="again(true)"
+        />
+        <header v-else-if="loading && !game" class="match" aria-hidden="true">
           <ESkeleton :height="20" width="70%" />
           <ESkeleton :height="20" width="55%" />
         </header>
-        <header v-else-if="game" class="match">
+        <header v-else-if="isGame && game" class="match">
           <p class="who">
             <span :class="['chip', devWhite ? 'chip--white' : 'chip--black']" aria-hidden="true"></span>
             New version
@@ -863,11 +1178,23 @@ const filters = [
           </p>
         </header>
 
-        <ENotice v-if="gameFailed" tone="danger" title="That game did not load" class="problem">
+        <ENotice v-if="matchError" tone="danger" title="That did not work" class="problem">
+          {{ matchError }}
+        </ENotice>
+        <ENotice
+          v-if="gameFailed"
+          tone="danger"
+          :title="`That ${isMatch ? 'match' : 'game'} did not load`"
+          class="problem"
+        >
           It may have been removed, or the runner is not reachable.
         </ENotice>
 
-        <section class="engine" aria-label="Engine">
+        <section v-if="isMatch && matchData" class="engine engine--match" aria-label="Engines in the match">
+          <MatchEngines :rows="engineRows" />
+        </section>
+
+        <section v-if="!isMatch || engineOn" class="engine" aria-label="Engine">
           <EEmptyState v-if="noBuilds" title="No engine built yet" icon="info" size="sm" bare>
             Build Reckless once and it analyses here.
             <template #action>
@@ -927,7 +1254,7 @@ const filters = [
         <footer class="tools">
           <ECopyButton :text="() => position.fen" label="Copy FEN" size="sm" />
           <ECopyButton :text="pgn" label="Copy PGN" size="sm" />
-          <EButton v-if="isGame" variant="quiet" size="sm" :icon="PhChartLine" @click="fork([])">
+          <EButton v-if="inGame" variant="quiet" size="sm" :icon="PhChartLine" @click="fork([])">
             Analyse from here
           </EButton>
           <EIconButton
@@ -945,7 +1272,9 @@ const filters = [
     </template>
   </Workspace>
 
-  <EDrawer v-model:open="drawerOpen" side="start" size="sm" :title="isGame ? 'Games' : 'Positions'">
+  <MatchDialog v-model:open="matchOpen" :fen="start" :moves="moves.slice(0, cursor)" />
+
+  <EDrawer v-model:open="drawerOpen" side="start" size="sm" :title="libraryName">
     <div class="drawer-body"><UseLibrary v-if="!libraryInline" /></div>
   </EDrawer>
 
@@ -1012,6 +1341,12 @@ const filters = [
   padding: var(--e-pad-control-sm);
 }
 
+.match-rows {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .starts {
   display: grid;
   align-content: start;
@@ -1055,14 +1390,21 @@ const filters = [
   --gap: var(--e-gap-snug);
   --pad: var(--ws-pad, var(--e-pad-control));
   --foot: 5.45rem;
+  --strip: 2.5rem;
+  --extra: 0px;
   --side: min(
-    100cqh - var(--foot) - 2 * var(--pad),
+    100cqh - var(--foot) - var(--extra) - 2 * var(--pad),
     100cqw - var(--lib) - var(--ws-inspector, 24rem) - var(--col) - var(--gap) - 2 * var(--pad)
   );
 }
 
 .board-ws--solo {
   --lib: 0px;
+}
+
+/* A match puts a player's strip above and below the board. */
+.board-ws--match {
+  --extra: calc(2 * (var(--strip) + var(--gap)));
 }
 
 .drawer-body {
@@ -1089,6 +1431,27 @@ const filters = [
   width: calc(var(--col) + var(--gap) + var(--side));
   height: var(--side);
   transition: opacity 0.2s;
+}
+
+.rig--match {
+  grid-template-rows: var(--strip) minmax(0, 1fr) var(--strip);
+  height: calc(var(--side) + var(--extra));
+}
+
+.rig--match .strip-top {
+  grid-area: 1 / 2;
+}
+
+.rig--match .rig-eval {
+  grid-area: 2 / 1;
+}
+
+.rig--match .rig-board {
+  grid-area: 2 / 2;
+}
+
+.rig--match .strip-bottom {
+  grid-area: 3 / 2;
 }
 
 /* A game that loads at once never flashes: the dimming only starts if it takes a moment. */
@@ -1124,6 +1487,10 @@ const filters = [
 }
 
 .rate {
+  margin-inline-start: var(--e-gap-snug);
+}
+
+.live {
   margin-inline-start: var(--e-gap-snug);
 }
 
@@ -1309,7 +1676,7 @@ const filters = [
 
 @media (width < 64rem) {
   .board-ws {
-    --side: min(100cqw - var(--col) - var(--gap) - 2 * var(--pad), 100dvh - 15rem);
+    --side: min(100cqw - var(--col) - var(--gap) - 2 * var(--pad), 100dvh - 15rem - var(--extra));
   }
 
   .scrub {

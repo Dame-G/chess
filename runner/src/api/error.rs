@@ -14,6 +14,14 @@ impl ApiError {
     pub fn not_found(message: &str) -> Self {
         Self { status: StatusCode::NOT_FOUND, message: message.to_owned() }
     }
+
+    pub fn bad_request(message: &str) -> Self {
+        Self { status: StatusCode::BAD_REQUEST, message: message.to_owned() }
+    }
+
+    pub fn conflict(message: &str) -> Self {
+        Self { status: StatusCode::CONFLICT, message: message.to_owned() }
+    }
 }
 
 impl IntoResponse for ApiError {

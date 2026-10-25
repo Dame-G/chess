@@ -92,6 +92,18 @@ onMounted(() => {
     highlight: { lastMove: true, check: true },
     draggable: { distance: 3, autoDistance: true, showGhost: true },
     selectable: { enabled: true },
+    // The two engines of a match, in hues apart from the green of analysis and from the wood.
+    drawable: {
+      ...c.drawable,
+      brushes: {
+        green: { key: "g", color: "#15781b", opacity: 1, lineWidth: 10 },
+        red: { key: "r", color: "#882020", opacity: 1, lineWidth: 10 },
+        blue: { key: "b", color: "#003088", opacity: 1, lineWidth: 10 },
+        yellow: { key: "y", color: "#e68f00", opacity: 1, lineWidth: 10 },
+        engineWhite: { key: "ew", color: "#3d7fd6", opacity: 0.85, lineWidth: 10 },
+        engineBlack: { key: "eb", color: "#d9822b", opacity: 0.85, lineWidth: 10 },
+      },
+    },
     premovable: { enabled: false },
     movable: {
       ...c.movable,

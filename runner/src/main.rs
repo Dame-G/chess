@@ -11,6 +11,7 @@ mod events;
 mod experiments;
 mod funnel;
 mod jobs;
+mod matches;
 mod proc;
 mod stats;
 mod store;

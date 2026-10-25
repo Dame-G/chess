@@ -527,6 +527,170 @@
         }
       }
     },
+    "/api/matches": {
+      "get": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "Recent matches, newest first, without their moves.",
+        "operationId": "list_matches",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many matches, newest first. Default 50.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MatchSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "Starts a match between two builds and returns it. The moves arrive as `match.move` events, the thinking engine's\nprogress as `match.info`, and the end as `match.ended`. One match runs at a time: 409 while another is running.",
+        "operationId": "create_match",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Match"
+                }
+              }
+            }
+          },
+          "400": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/matches/{id}": {
+      "get": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "A match with its headers, every move (evaluation, depth, nodes, time and the clocks after it), the clocks now, the\nside to move, its status and, once over, the result and reason.",
+        "operationId": "get_match",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Match"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      },
+      "delete": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "Stops the running match, which is recorded as aborted, and returns it. 409 if it is not running.",
+        "operationId": "stop_match",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Match"
+                }
+              }
+            }
+          },
+          "404": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/matches/{id}/pgn": {
+      "get": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "The match as PGN, with a comment on every move (score/depth, time, nodes, clock) like the test PGNs.",
+        "operationId": "get_match_pgn",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/x-chess-pgn": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
     "/api/status": {
       "get": {
         "tags": [
@@ -1035,6 +1199,16 @@
           "cancelled"
         ]
       },
+      "GameResult": {
+        "type": "string",
+        "description": "How a game came out, as PGN writes it.",
+        "enum": [
+          "1-0",
+          "0-1",
+          "1/2-1/2",
+          "*"
+        ]
+      },
       "GameSummary": {
         "type": "object",
         "required": [
@@ -1314,6 +1488,257 @@
           }
         }
       },
+      "Match": {
+        "type": "object",
+        "required": [
+          "id",
+          "white",
+          "black",
+          "time",
+          "start_fen",
+          "book",
+          "hash",
+          "threads",
+          "adjudicate",
+          "status",
+          "result",
+          "turn",
+          "moves",
+          "created_at"
+        ],
+        "properties": {
+          "adjudicate": {
+            "type": "boolean"
+          },
+          "black": {
+            "$ref": "#/components/schemas/Player"
+          },
+          "book": {
+            "type": "boolean",
+            "description": "Whether the opening came from the book."
+          },
+          "clock_black_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "clock_white_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "What each clock holds now, the thinking side's counting down. Absent when the match has no clock.",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hash": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "minimal": {
+            "type": "boolean",
+            "description": "Whether the engines ran with `Minimal` on, and so reported nothing while thinking."
+          },
+          "moves": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MatchMove"
+            }
+          },
+          "reason": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Reason",
+                "description": "Why the game ended, once it has."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "$ref": "#/components/schemas/GameResult"
+          },
+          "start_fen": {
+            "type": "string",
+            "description": "The position the game started from: `startpos` or a FEN. Any opening moves are already played in it."
+          },
+          "status": {
+            "$ref": "#/components/schemas/MatchStatus"
+          },
+          "threads": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "time": {
+            "$ref": "#/components/schemas/MatchTime"
+          },
+          "turn": {
+            "$ref": "#/components/schemas/Side",
+            "description": "The side to move."
+          },
+          "white": {
+            "$ref": "#/components/schemas/Player"
+          }
+        }
+      },
+      "MatchMove": {
+        "type": "object",
+        "description": "One move of a game, with what the engine that played it reported.",
+        "required": [
+          "ply",
+          "side",
+          "uci",
+          "san",
+          "fen_after",
+          "time_ms"
+        ],
+        "properties": {
+          "clock_black_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "clock_white_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "What each clock holds after the move, increment included. Absent when the match has no clock.",
+            "minimum": 0
+          },
+          "depth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "eval": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Score",
+                "description": "The mover's last score, from the mover's side."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fen_after": {
+            "type": "string"
+          },
+          "nodes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "ply": {
+            "type": "integer",
+            "format": "int32",
+            "description": "1 for the first move of the game.",
+            "minimum": 0
+          },
+          "san": {
+            "type": "string"
+          },
+          "side": {
+            "$ref": "#/components/schemas/Side"
+          },
+          "time_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Measured think time.",
+            "minimum": 0
+          },
+          "uci": {
+            "type": "string"
+          }
+        }
+      },
+      "MatchRequest": {
+        "type": "object",
+        "required": [
+          "white",
+          "black",
+          "time"
+        ],
+        "properties": {
+          "adjudicate": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "black": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The build that plays Black, by id."
+          },
+          "hash": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Hash table size in MiB for each engine. Default 16, as in the tests.",
+            "minimum": 0
+          },
+          "minimal": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "End decided games early, as the tests do: a side that has scored -4 or worse for three moves loses, and a\nlevel game drawn from move 30. Off by default, so the game is played out.\nReckless's `Minimal` option, which the tests set: the engine then reports only its final line, so there is nothing\nto watch while it thinks. Off by default, so `match.info` events flow; it does not change how the engine plays."
+          },
+          "opening": {
+            "$ref": "#/components/schemas/Opening"
+          },
+          "threads": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Search threads for each engine. Default 1, so a match uses two threads and can run beside a test.",
+            "minimum": 0
+          },
+          "time": {
+            "$ref": "#/components/schemas/MatchTime"
+          },
+          "white": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The build that plays White, by id."
+          }
+        }
+      },
       "MatchSpec": {
         "type": "object",
         "description": "One match between the dev and base builds.",
@@ -1357,6 +1782,143 @@
             "minimum": 0
           }
         }
+      },
+      "MatchStatus": {
+        "type": "string",
+        "enum": [
+          "running",
+          "finished",
+          "aborted"
+        ]
+      },
+      "MatchSummary": {
+        "type": "object",
+        "description": "A match without its moves, for lists.",
+        "required": [
+          "id",
+          "white",
+          "black",
+          "time",
+          "start_fen",
+          "status",
+          "result",
+          "plies",
+          "created_at"
+        ],
+        "properties": {
+          "black": {
+            "$ref": "#/components/schemas/Player"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "plies": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "reason": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Reason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "$ref": "#/components/schemas/GameResult"
+          },
+          "start_fen": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MatchStatus"
+          },
+          "time": {
+            "$ref": "#/components/schemas/MatchTime"
+          },
+          "white": {
+            "$ref": "#/components/schemas/Player"
+          }
+        }
+      },
+      "MatchTime": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A clock for each side: `seconds` for the game plus `increment` seconds after every move.",
+            "required": [
+              "seconds",
+              "increment",
+              "type"
+            ],
+            "properties": {
+              "increment": {
+                "type": "number",
+                "format": "double"
+              },
+              "seconds": {
+                "type": "number",
+                "format": "double"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "clock"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A fixed number of nodes per move. There is no clock.",
+            "required": [
+              "nodes",
+              "type"
+            ],
+            "properties": {
+              "nodes": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "nodes"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A fixed time per move, in milliseconds. There is no clock.",
+            "required": [
+              "ms",
+              "type"
+            ],
+            "properties": {
+              "ms": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "movetime"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "How a match is timed."
       },
       "NewBatch": {
         "type": "object",
@@ -1452,6 +2014,66 @@
           }
         }
       },
+      "Opening": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The standard start position.",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "start"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A FEN (or `startpos`) with moves played from it, in UCI notation.",
+            "required": [
+              "fen",
+              "type"
+            ],
+            "properties": {
+              "fen": {
+                "type": "string"
+              },
+              "moves": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "position"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A random line of the opening book the tests use.",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "book"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Where the game starts."
+      },
       "Pentanomial": {
         "type": "array",
         "items": {
@@ -1460,6 +2082,28 @@
           "minimum": 0
         },
         "description": "Game-pair outcomes from the dev engine's side: `[LL, LD, WL+DD, WD, WW]`, i.e. pairs scoring 0, ½, 1, 1½ and 2."
+      },
+      "Player": {
+        "type": "object",
+        "required": [
+          "build",
+          "name",
+          "commit"
+        ],
+        "properties": {
+          "build": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "commit": {
+            "type": "string",
+            "description": "The first seven characters of its commit."
+          },
+          "name": {
+            "type": "string",
+            "description": "The ref the build was made from, such as `main`."
+          }
+        }
       },
       "Point": {
         "type": "object",
@@ -1500,6 +2144,23 @@
           "ltc-hash",
           "smp",
           "nodes"
+        ]
+      },
+      "Reason": {
+        "type": "string",
+        "description": "Why a game ended.",
+        "enum": [
+          "checkmate",
+          "stalemate",
+          "repetition",
+          "fifty_moves",
+          "insufficient_material",
+          "time",
+          "crash",
+          "illegal_move",
+          "resignation",
+          "draw_adjudication",
+          "aborted"
         ]
       },
       "RunnerStatus": {
@@ -1566,6 +2227,13 @@
           }
         ],
         "description": "A search score from the side to move's point of view."
+      },
+      "Side": {
+        "type": "string",
+        "enum": [
+          "white",
+          "black"
+        ]
       },
       "Sprt": {
         "type": "object",

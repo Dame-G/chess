@@ -5,6 +5,7 @@ import { useQueryCache } from "@pinia/colada";
 import {
   PhCaretUp,
   PhClipboardText,
+  PhSword,
   PhClockCounterClockwise,
   PhCpu,
   PhFlask,
@@ -48,7 +49,8 @@ const items = [
   { label: "Engines", to: "/engines", icon: PhWrench },
 ];
 const isCurrent = (item: { to?: unknown }) =>
-  route.path.startsWith(String(item.to)) || (item.to === "/board" && route.path.startsWith("/games/"));
+  route.path.startsWith(String(item.to)) ||
+  (item.to === "/board" && (route.path.startsWith("/games/") || route.path.startsWith("/matches/")));
 
 /** Workspaces fill the window and scroll inside their panes; the cover page scrolls like a page. */
 const workspace = computed(() => route.meta.workspace === true);
@@ -147,6 +149,13 @@ const commands = computed<CommandItem[]>(() => {
     { id: "go:/lab?new=1", label: "Test an idea", group: "Do", icon: PhPlus, keywords: ["new experiment"] },
     { id: "go:/board?paste=1", label: "Paste a game or FEN", group: "Do", icon: PhClipboardText, keywords: ["pgn"] },
     {
+      id: "go:/board?match=1",
+      label: "Watch a match",
+      group: "Do",
+      icon: PhSword,
+      keywords: ["engine", "play", "versus", "live"],
+    },
+    {
       id: "go:/engines?build=1",
       label: "Build an engine",
       group: "Do",
@@ -211,6 +220,7 @@ const stop = followEvents((event) => {
     cache.invalidateQueries({ key: ["experiments"] });
     cache.invalidateQueries({ key: ["experiment", id] });
   }
+  if (event.kind === "match.started" || event.kind === "match.ended") cache.invalidateQueries({ key: ["matches"] });
   if (event.kind === "test.progress") {
     const { id } = event.data as { id: number };
     cache.invalidateQueries({ key: ["test", id] });

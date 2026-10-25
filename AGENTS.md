@@ -52,6 +52,38 @@ Live progress is a server-sent event stream: `curl -N http://127.0.0.1:7878/api/
 
 The engine is the Reckless fork in `RECKLESS_DIR` (default `../reckless`). Experiments are branches there. Every engine commit message ends with `Bench: <nodes>`, the node count of `reckless bench`: it is the engine's functional fingerprint, and CI checks it.
 
+## Matches you can watch
+
+Two builds play each other live, move by move; the board shows it at `/matches/<id>`, and finished games replay like any other. A match runs outside the job queue (so a long experiment never holds it up), one at a time, on two search threads (one per engine). It is stored in the database and survives a restart; one that was running when the runner stopped is kept as it stood, aborted.
+
+```bash
+chess match --white <build id|ref> --black <build id|ref> --tc 10+0.1 | --nodes N | --movetime MS \
+  [--fen "<fen>" --moves e2e4 e7e5 | --book] [--hash 16] [--threads 1] [--adjudicate] [--minimal] [--follow]
+chess matches [--limit 20]   # recent first
+chess match show <id>        # headers, every move with eval, depth, time and clocks, the result
+chess match stop <id>        # recorded as aborted
+```
+
+A ref means the newest build of it. `--follow` prints each move as it is played and then the result in words ("Black won on time"); with `--json` the moves go to stderr and stdout is the final match. `--book` starts from a random line of the opening book the tests use.
+
+The routes: `POST /api/matches` (409 while another match runs), `GET /api/matches`, `GET /api/matches/{id}`, `DELETE /api/matches/{id}` (stops it) and `GET /api/matches/{id}/pgn` (a comment on every move like the test PGNs: `{+0.31/9 0.063s, n=9351, clk=9.85s}`). Request: `{ white, black, time: {type: "clock", seconds, increment} | {type: "nodes", nodes} | {type: "movetime", ms}, opening?: {type: "start"} | {type: "position", fen, moves} | {type: "book"}, hash?, threads?, adjudicate?, minimal? }`.
+
+Events on `/api/events`:
+
+- `match.started`: `{ id, match }`.
+- `match.move`: `{ id, ply, side, uci, san, fen_after, clock_white_ms, clock_black_ms, eval, depth, nodes, time_ms }`. `eval` is the mover's own score.
+- `match.info`: the thinking engine's progress, at most five a second: `{ id, ply, side, depth, seldepth, score, nodes, nps, pv }`. `ply` is the move being chosen, so a client replaying old events can ignore stale ones. Scores are from the thinking side.
+- `match.ended`: `{ id, result, reason, status }`.
+
+How games are run and ended:
+
+- Clocks are charged with the measured think time on a monotonic timer, and the increment is added after each move. A move that takes longer than the clock holds plus 250 ms (as the tests allow, `timemargin=250`) loses on time.
+- Engines get `Hash 16`, `Threads 1` and `MoveOverhead 0` as in the tests. `Minimal` is off by default, because with it on Reckless reports nothing while it thinks and there is nothing to watch; pass `minimal` to match the tests exactly. It does not change how the engine plays.
+- Games end by checkmate, stalemate, threefold repetition, the fifty-move rule, insufficient material, time forfeit, an engine crash or an illegal move. With `adjudicate`, the tests' adjudication also applies: a side whose last three moves each scored -4 or worse loses, and a game within 0.10 for six moves each from move 30 is drawn.
+- A match is stopped with `DELETE`; its result is `*` with reason `aborted`.
+
+The game record (`runner/src/matches/mod.rs`) is a plain `Match` filled in by a player task. A later human-versus-build game can fill the same record by taking one side's moves from the board instead of an engine.
+
 ## Working on the harness itself
 
 - `runner/` is Rust (axum, rusqlite, utoipa). After changing a route or a type it returns, run `corepack pnpm api` and commit the regenerated `runner/openapi.json` and `web/src/api/schema.d.ts`.

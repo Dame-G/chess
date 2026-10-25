@@ -42,6 +42,8 @@ function runner(input: RequestInfo | URL): Promise<Response> {
     [/^\/api\/tests\/2\/games$/, () => json("games-2.json")],
     [/^\/api\/tests\/2\/games\/\d+$/, () => text("game-2-0.pgn")],
     [/^\/api\/analysis$/, () => Response.json({ session: 1 })],
+    [/^\/api\/matches$/, () => json("matches.json")],
+    [/^\/api\/matches\/1$/, () => json("match-1.json")],
   ];
   const hit = routes.find(([pattern]) => pattern.test(path));
   if (!hit) missing.push(`${path}`);
@@ -54,6 +56,7 @@ const routes: [string, string][] = [
   ["/board", "Start position"],
   [`/board?fen=${fen}&moves=e2e4`, "1. e4"],
   ["/games/2/0", "Nd7"],
+  ["/matches/1", "Black won on time"],
   ["/lab", "test/no-nmp vs main"],
   ["/lab/3", "test/no-nmp vs main"],
   ["/lab/3?stage=bench", "test/no-nmp vs main"],

@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "white": {
+      "build": 2,
+      "name": "main",
+      "commit": "69aea90"
+    },
+    "black": {
+      "build": 4,
+      "name": "test/no-nmp",
+      "commit": "85865a3"
+    },
+    "time": {
+      "type": "clock",
+      "seconds": 1,
+      "increment": 0.01
+    },
+    "start_fen": "startpos",
+    "status": "finished",
+    "result": "0-1",
+    "reason": "time",
+    "plies": 6,
+    "created_at": "2026-10-25T22:08:11.226Z"
+  }
+]

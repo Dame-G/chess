@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use anyhow::{Result, bail};
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 use serde_json::{Value, json};
 
 use crate::client::{Client, print};
@@ -61,6 +61,13 @@ pub enum ClientCommand {
         #[arg(long, default_value_t = 1)]
         threads: u32,
     },
+    /// Engine-vs-engine matches you can watch: start one, or `match show <id>` / `match stop <id>`.
+    Match(MatchCommand),
+    /// List recent matches, newest first.
+    Matches {
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+    },
     /// Experiments: a dev ref against a base ref through a funnel of stages.
     #[command(subcommand)]
     Experiment(ExperimentCommand),
@@ -85,6 +92,67 @@ pub enum ClientCommand {
         #[arg(long)]
         wait: bool,
     },
+}
+
+#[derive(Args)]
+#[command(args_conflicts_with_subcommands = true)]
+pub struct MatchCommand {
+    #[command(subcommand)]
+    action: Option<MatchAction>,
+    #[command(flatten)]
+    new: NewMatch,
+}
+
+#[derive(Subcommand)]
+pub enum MatchAction {
+    /// Show a match: its headers, moves and result.
+    Show { id: i64 },
+    /// Stop a running match; it is recorded as aborted.
+    Stop { id: i64 },
+}
+
+/// Starts a match. One match runs at a time.
+#[derive(Args)]
+pub struct NewMatch {
+    /// White's build: an id, or a ref (the newest build of it).
+    #[arg(long)]
+    white: Option<String>,
+    /// Black's build: an id, or a ref.
+    #[arg(long)]
+    black: Option<String>,
+    /// Clocks as `base+increment` seconds, such as 10+0.1.
+    #[arg(long, conflicts_with_all = ["nodes", "movetime"])]
+    tc: Option<String>,
+    /// A fixed number of nodes per move instead of a clock.
+    #[arg(long, conflicts_with = "movetime")]
+    nodes: Option<u64>,
+    /// A fixed time per move in milliseconds instead of a clock.
+    #[arg(long)]
+    movetime: Option<u64>,
+    /// Start from this position (a FEN) instead of the start position.
+    #[arg(long, conflicts_with = "book")]
+    fen: Option<String>,
+    /// Moves from that position, in UCI notation.
+    #[arg(long, num_args = 1.., value_delimiter = ' ', requires = "fen")]
+    moves: Vec<String>,
+    /// Start from a random line of the opening book the tests use.
+    #[arg(long)]
+    book: bool,
+    /// Hash size in MiB for each engine. Default 16.
+    #[arg(long)]
+    hash: Option<u32>,
+    /// Threads for each engine. Default 1.
+    #[arg(long)]
+    threads: Option<u32>,
+    /// End decided games early, as the tests do.
+    #[arg(long)]
+    adjudicate: bool,
+    /// Run the engines with Minimal on, as the tests do: they then report nothing while thinking.
+    #[arg(long)]
+    minimal: bool,
+    /// Print each move as it is played, then the result.
+    #[arg(long)]
+    follow: bool,
 }
 
 #[derive(Subcommand)]
@@ -145,6 +213,12 @@ pub async fn run(client: Client, command: ClientCommand, json: bool) -> Result<(
     match command {
         ClientCommand::Experiment(cmd) => return experiment(&client, cmd, json).await,
         ClientCommand::Batch(cmd) => return batch(&client, cmd, json).await,
+        ClientCommand::Match(cmd) => return matches(&client, cmd, json).await,
+        ClientCommand::Matches { limit } => {
+            let list = client.get(&format!("/api/matches?limit={limit}")).await?;
+            print(&list, json, |l| lines(l, match_line));
+            return Ok(());
+        }
         ClientCommand::Test { dev, base, preset, bounds, pairs, wait } => {
             let body = json!({ "dev": dev, "base": base, "preset": preset, "bounds": bounds, "pairs": pairs });
             let e = client.post("/api/experiments", body).await?;
@@ -408,4 +482,232 @@ fn experiment_text(d: &Value) -> String {
         out += &format!("\n  running {:<5} {} games {llr}", t["stage"].as_str().unwrap_or("?"), t["games"]);
     }
     out
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Matches
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// A build id, or the newest build of a ref (or of a commit prefix).
+async fn resolve_build(client: &Client, spec: &str) -> Result<i64> {
+    if let Ok(id) = spec.parse::<i64>() {
+        return Ok(id);
+    }
+    let builds = client.get("/api/builds").await?;
+    builds
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|b| b["ref"].as_str() == Some(spec) || b["commit"].as_str().is_some_and(|c| c.starts_with(spec)))
+        .and_then(|b| b["id"].as_i64())
+        .ok_or_else(|| anyhow::anyhow!("no build of {spec}: build it first with `chess build {spec}`"))
+}
+
+fn parse_tc(tc: &str) -> Result<Value> {
+    let (base, inc) = tc.split_once('+').unwrap_or((tc, "0"));
+    let (Ok(seconds), Ok(increment)) = (base.parse::<f64>(), inc.parse::<f64>()) else {
+        bail!("a time control looks like 10+0.1 (seconds plus increment), not {tc}");
+    };
+    Ok(json!({ "type": "clock", "seconds": seconds, "increment": increment }))
+}
+
+/// The result in plain words: who won and why.
+fn match_outcome(m: &Value) -> String {
+    let who = |side: &str| {
+        let p = &m[side];
+        format!("{} ({})", if side == "white" { "White" } else { "Black" }, p["name"].as_str().unwrap_or("?"))
+    };
+    let winner = match m["result"].as_str() {
+        Some("1-0") => Some(who("white")),
+        Some("0-1") => Some(who("black")),
+        _ => None,
+    };
+    let reason = m["reason"].as_str().unwrap_or("");
+    match (winner, reason) {
+        (_, "aborted") => "Stopped before the end".into(),
+        (Some(w), "checkmate") => format!("{w} won by checkmate"),
+        (Some(w), "time") => format!("{w} won on time"),
+        (Some(w), "resignation") => format!("{w} won by adjudication"),
+        (Some(w), "crash") => format!("{w} won: the other engine crashed"),
+        (Some(w), "illegal_move") => format!("{w} won: the other engine played an illegal move"),
+        (Some(w), _) => format!("{w} won"),
+        (None, "stalemate") => "Draw by stalemate".into(),
+        (None, "repetition") => "Draw by threefold repetition".into(),
+        (None, "fifty_moves") => "Draw by the fifty-move rule".into(),
+        (None, "insufficient_material") => "Draw by insufficient material".into(),
+        (None, "draw_adjudication") => "Draw by adjudication".into(),
+        (None, _) if m["status"].as_str() == Some("running") => "Running".into(),
+        (None, _) => "Draw".into(),
+    }
+}
+
+fn time_text(t: &Value) -> String {
+    match t["type"].as_str() {
+        Some("clock") => format!("{}+{}", t["seconds"], t["increment"]),
+        Some("nodes") => format!("{} nodes", t["nodes"]),
+        Some("movetime") => format!("{} ms/move", t["ms"]),
+        _ => "?".into(),
+    }
+}
+
+fn match_line(m: &Value) -> String {
+    let plies = m["plies"].as_u64().or_else(|| m["moves"].as_array().map(|a| a.len() as u64)).unwrap_or(0);
+    format!(
+        "match {} {} vs {}  {}  {}  {} plies  {}",
+        m["id"],
+        m["white"]["name"].as_str().unwrap_or("?"),
+        m["black"]["name"].as_str().unwrap_or("?"),
+        time_text(&m["time"]),
+        m["status"].as_str().unwrap_or("?"),
+        plies,
+        if m["status"].as_str() == Some("running") { String::new() } else { match_outcome(m) },
+    )
+}
+
+fn score_text(s: &Value) -> String {
+    match (&s["cp"], &s["mate"]) {
+        (Value::Number(cp), _) => format!("{:+.2}", cp.as_f64().unwrap_or(0.0) / 100.0),
+        (_, Value::Number(m)) => format!("#{m}"),
+        _ => "-".into(),
+    }
+}
+
+fn clock_text(ms: &Value) -> String {
+    ms.as_u64().map(|ms| format!("{:.1}s", ms as f64 / 1000.0)).unwrap_or_else(|| "-".into())
+}
+
+/// `1. e4` or `1... e5`, from the ply and the position the game started from.
+fn move_line(mv: &Value, start_fen: &str) -> String {
+    let ply = mv["ply"].as_u64().unwrap_or(1) as usize;
+    let mut fields = start_fen.split_whitespace().skip(1);
+    let black_first = start_fen != "startpos" && fields.next() == Some("b");
+    let first: usize =
+        if start_fen == "startpos" { 1 } else { fields.nth(3).and_then(|n| n.parse().ok()).unwrap_or(1) };
+    let index = ply - 1 + usize::from(black_first);
+    let label = format!("{}{}", first + index / 2, if index.is_multiple_of(2) { "." } else { "..." });
+    format!(
+        "{label:<6} {:<8} {:>7} d{:<3} {:>6.2}s   W {:>7}  B {:>7}",
+        mv["san"].as_str().unwrap_or("?"),
+        score_text(&mv["eval"]),
+        mv["depth"].as_u64().unwrap_or(0),
+        mv["time_ms"].as_f64().unwrap_or(0.0) / 1000.0,
+        clock_text(&mv["clock_white_ms"]),
+        clock_text(&mv["clock_black_ms"]),
+    )
+}
+
+fn match_text(m: &Value) -> String {
+    let start = m["start_fen"].as_str().unwrap_or("startpos");
+    let mut out = match_line(m);
+    if start != "startpos" {
+        out += &format!("\n  from {start}");
+    }
+    for mv in m["moves"].as_array().into_iter().flatten() {
+        out += &format!("\n  {}", move_line(mv, start));
+    }
+    out
+}
+
+async fn matches(client: &Client, cmd: MatchCommand, json: bool) -> Result<()> {
+    match cmd.action {
+        Some(MatchAction::Show { id }) => {
+            let m = client.get(&format!("/api/matches/{id}")).await?;
+            print(&m, json, match_text);
+        }
+        Some(MatchAction::Stop { id }) => {
+            let m = client.delete(&format!("/api/matches/{id}")).await?;
+            print(&m, json, match_line);
+        }
+        None => {
+            let n = cmd.new;
+            let time = match (&n.tc, n.nodes, n.movetime) {
+                (Some(tc), _, _) => parse_tc(tc)?,
+                (_, Some(nodes), _) => json!({ "type": "nodes", "nodes": nodes }),
+                (_, _, Some(ms)) => json!({ "type": "movetime", "ms": ms }),
+                _ => bail!("give a time control: --tc 10+0.1, --nodes N or --movetime MS"),
+            };
+            let opening = match (&n.fen, n.book) {
+                (Some(fen), _) => json!({ "type": "position", "fen": fen, "moves": n.moves }),
+                (_, true) => json!({ "type": "book" }),
+                _ => json!({ "type": "start" }),
+            };
+            let body = json!({
+                "white": resolve_build(client, n.white.as_deref().ok_or_else(|| anyhow::anyhow!("--white is required"))?).await?,
+                "black": resolve_build(client, n.black.as_deref().ok_or_else(|| anyhow::anyhow!("--black is required"))?).await?,
+                "time": time,
+                "opening": opening,
+                "hash": n.hash,
+                "threads": n.threads,
+                "adjudicate": n.adjudicate,
+                "minimal": n.minimal,
+            });
+            let m = client.post("/api/matches", body).await?;
+            if !n.follow {
+                print(&m, json, match_line);
+                return Ok(());
+            }
+            let id = m["id"].as_i64().unwrap_or_default();
+            let start = m["start_fen"].as_str().unwrap_or("startpos").to_owned();
+            // Progress goes to stderr under --json, so stdout stays one document.
+            let say = |line: String| {
+                if json {
+                    eprintln!("{line}");
+                } else {
+                    println!("{line}");
+                }
+            };
+            say(match_line(&m));
+            follow_match(client, id, &start, &say).await?;
+            let done = client.get(&format!("/api/matches/{id}")).await?;
+            if json {
+                print(&done, true, match_text);
+            } else {
+                println!("{}", match_outcome(&done));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Prints each move of a match as the event stream delivers it, until the match ends.
+async fn follow_match(client: &Client, id: i64, start: &str, say: &dyn Fn(String)) -> Result<()> {
+    let mut last = 0u64;
+    let mut buffer = String::new();
+    loop {
+        let Ok(mut res) = client.events(last).await else {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            continue;
+        };
+        while let Ok(Some(chunk)) = res.chunk().await {
+            buffer += &String::from_utf8_lossy(&chunk).replace("\r\n", "\n");
+            while let Some(end) = buffer.find("\n\n") {
+                let block: String = buffer.drain(..end + 2).collect();
+                let (mut kind, mut data) = (String::new(), String::new());
+                for line in block.lines() {
+                    if let Some(v) = line.strip_prefix("id:") {
+                        last = v.trim().parse().unwrap_or(last);
+                    } else if let Some(v) = line.strip_prefix("event:") {
+                        kind = v.trim().to_owned();
+                    } else if let Some(v) = line.strip_prefix("data:") {
+                        data += v.trim_start();
+                    }
+                }
+                let Ok(event) = serde_json::from_str::<Value>(&data) else { continue };
+                if event["id"].as_i64() != Some(id) {
+                    continue;
+                }
+                match kind.as_str() {
+                    "match.move" => say(move_line(&event, start)),
+                    "match.ended" => return Ok(()),
+                    _ => {}
+                }
+            }
+        }
+        // The stream dropped: the match may have ended meanwhile.
+        let m = client.get(&format!("/api/matches/{id}")).await?;
+        if m["status"].as_str() != Some("running") {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
 }

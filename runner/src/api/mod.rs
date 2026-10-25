@@ -8,6 +8,7 @@ mod events;
 mod experiments;
 mod guard;
 mod jobs;
+mod matches;
 mod status;
 mod web;
 
@@ -35,6 +36,7 @@ pub struct AppState {
     pub machine: status::Machine,
     pub queue: Queue,
     pub live: crate::analysis::Live,
+    pub matches: crate::matches::Matches,
 }
 
 #[derive(OpenApi)]
@@ -56,6 +58,9 @@ fn api() -> (Router<Arc<AppState>>, utoipa::openapi::OpenApi) {
         .routes(routes!(jobs::log))
         .routes(routes!(analysis::analyse))
         .routes(routes!(analysis::start, analysis::stop))
+        .routes(routes!(matches::list, matches::create))
+        .routes(routes!(matches::get, matches::stop))
+        .routes(routes!(matches::pgn))
         .routes(routes!(experiments::list, experiments::create))
         .routes(routes!(experiments::batch))
         .routes(routes!(experiments::get, experiments::cancel))
@@ -79,7 +84,9 @@ pub async fn serve(config: Config) -> Result<()> {
         machine: status::Machine::detect(),
         queue: Queue::new(),
         live: crate::analysis::Live::new(),
+        matches: crate::matches::Matches::new(),
     });
+    crate::matches::recover(&state).await?;
     tokio::spawn(crate::jobs::worker(state.clone()));
 
     let (api, _) = api();

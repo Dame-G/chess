@@ -216,6 +216,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/matches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recent matches, newest first, without their moves. */
+        get: operations["list_matches"];
+        put?: never;
+        /**
+         * Starts a match between two builds and returns it. The moves arrive as `match.move` events, the thinking engine's
+         *     progress as `match.info`, and the end as `match.ended`. One match runs at a time: 409 while another is running.
+         */
+        post: operations["create_match"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/matches/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A match with its headers, every move (evaluation, depth, nodes, time and the clocks after it), the clocks now, the
+         *     side to move, its status and, once over, the result and reason.
+         */
+        get: operations["get_match"];
+        put?: never;
+        post?: never;
+        /** Stops the running match, which is recorded as aborted, and returns it. 409 if it is not running. */
+        delete: operations["stop_match"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/matches/{id}/pgn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The match as PGN, with a comment on every move (score/depth, time, nodes, clock) like the test PGNs. */
+        get: operations["get_match_pgn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/status": {
         parameters: {
             query?: never;
@@ -431,6 +490,11 @@ export interface components {
         };
         /** @enum {string} */
         ExperimentStatus: "queued" | "running" | "passed" | "failed" | "cancelled";
+        /**
+         * @description How a game came out, as PGN writes it.
+         * @enum {string}
+         */
+        GameResult: "1-0" | "0-1" | "1/2-1/2" | "*";
         GameSummary: {
             black: string;
             /** @description Position in the match's PGN, from 0. */
@@ -524,6 +588,100 @@ export interface components {
             name: string;
             threads: number;
         };
+        Match: {
+            adjudicate: boolean;
+            black: components["schemas"]["Player"];
+            /** @description Whether the opening came from the book. */
+            book: boolean;
+            /** Format: int64 */
+            clock_black_ms?: number | null;
+            /**
+             * Format: int64
+             * @description What each clock holds now, the thinking side's counting down. Absent when the match has no clock.
+             */
+            clock_white_ms?: number | null;
+            created_at: string;
+            finished_at?: string | null;
+            /** Format: int32 */
+            hash: number;
+            /** Format: int64 */
+            id: number;
+            /** @description Whether the engines ran with `Minimal` on, and so reported nothing while thinking. */
+            minimal?: boolean;
+            moves: components["schemas"]["MatchMove"][];
+            reason?: components["schemas"]["Reason"] | null;
+            result: components["schemas"]["GameResult"];
+            /** @description The position the game started from: `startpos` or a FEN. Any opening moves are already played in it. */
+            start_fen: string;
+            status: components["schemas"]["MatchStatus"];
+            /** Format: int32 */
+            threads: number;
+            time: components["schemas"]["MatchTime"];
+            /** @description The side to move. */
+            turn: components["schemas"]["Side"];
+            white: components["schemas"]["Player"];
+        };
+        /** @description One move of a game, with what the engine that played it reported. */
+        MatchMove: {
+            /** Format: int64 */
+            clock_black_ms?: number | null;
+            /**
+             * Format: int64
+             * @description What each clock holds after the move, increment included. Absent when the match has no clock.
+             */
+            clock_white_ms?: number | null;
+            /** Format: int32 */
+            depth?: number | null;
+            eval?: components["schemas"]["Score"] | null;
+            fen_after: string;
+            /** Format: int64 */
+            nodes?: number | null;
+            /**
+             * Format: int32
+             * @description 1 for the first move of the game.
+             */
+            ply: number;
+            san: string;
+            side: components["schemas"]["Side"];
+            /**
+             * Format: int64
+             * @description Measured think time.
+             */
+            time_ms: number;
+            uci: string;
+        };
+        MatchRequest: {
+            adjudicate?: boolean | null;
+            /**
+             * Format: int64
+             * @description The build that plays Black, by id.
+             */
+            black: number;
+            /**
+             * Format: int32
+             * @description Hash table size in MiB for each engine. Default 16, as in the tests.
+             */
+            hash?: number | null;
+            /**
+             * @description End decided games early, as the tests do: a side that has scored -4 or worse for three moves loses, and a
+             *     level game drawn from move 30. Off by default, so the game is played out.
+             *     Reckless's `Minimal` option, which the tests set: the engine then reports only its final line, so there is nothing
+             *     to watch while it thinks. Off by default, so `match.info` events flow; it does not change how the engine plays.
+             */
+            minimal?: boolean | null;
+            opening?: components["schemas"]["Opening"];
+            /**
+             * Format: int32
+             * @description Search threads for each engine. Default 1, so a match uses two threads and can run beside a test.
+             */
+            threads?: number | null;
+            time: components["schemas"]["MatchTime"];
+            /**
+             * Format: int64
+             * @description The build that plays White, by id.
+             */
+            white: number;
+        };
         /** @description One match between the dev and base builds. */
         MatchSpec: {
             /**
@@ -537,6 +695,42 @@ export interface components {
             tc: components["schemas"]["TimeControl"];
             /** Format: int32 */
             threads: number;
+        };
+        /** @enum {string} */
+        MatchStatus: "running" | "finished" | "aborted";
+        /** @description A match without its moves, for lists. */
+        MatchSummary: {
+            black: components["schemas"]["Player"];
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int32 */
+            plies: number;
+            reason?: components["schemas"]["Reason"] | null;
+            result: components["schemas"]["GameResult"];
+            start_fen: string;
+            status: components["schemas"]["MatchStatus"];
+            time: components["schemas"]["MatchTime"];
+            white: components["schemas"]["Player"];
+        };
+        /** @description How a match is timed. */
+        MatchTime: {
+            /** Format: double */
+            increment: number;
+            /** Format: double */
+            seconds: number;
+            /** @enum {string} */
+            type: "clock";
+        } | {
+            /** Format: int64 */
+            nodes: number;
+            /** @enum {string} */
+            type: "nodes";
+        } | {
+            /** Format: int64 */
+            ms: number;
+            /** @enum {string} */
+            type: "movetime";
         };
         NewBatch: {
             experiments: components["schemas"]["NewExperiment"][];
@@ -566,8 +760,29 @@ export interface components {
             /** @description Run these stages instead of the default funnel for the kind. */
             stages?: components["schemas"]["Stage"][] | null;
         };
+        /** @description Where the game starts. */
+        Opening: {
+            /** @enum {string} */
+            type: "start";
+        } | {
+            fen: string;
+            moves?: string[];
+            /** @enum {string} */
+            type: "position";
+        } | {
+            /** @enum {string} */
+            type: "book";
+        };
         /** @description Game-pair outcomes from the dev engine's side: `[LL, LD, WL+DD, WD, WW]`, i.e. pairs scoring 0, ½, 1, 1½ and 2. */
         Pentanomial: number[];
+        Player: {
+            /** Format: int64 */
+            build: number;
+            /** @description The first seven characters of its commit. */
+            commit: string;
+            /** @description The ref the build was made from, such as `main`. */
+            name: string;
+        };
         /** @description One point of a test's progress, for its chart. */
         Point: {
             /** Format: int64 */
@@ -582,6 +797,11 @@ export interface components {
          * @enum {string}
          */
         Preset: "vstc" | "stc" | "ltc" | "stc-hash" | "ltc-hash" | "smp" | "nodes";
+        /**
+         * @description Why a game ended.
+         * @enum {string}
+         */
+        Reason: "checkmate" | "stalemate" | "repetition" | "fifty_moves" | "insufficient_material" | "time" | "crash" | "illegal_move" | "resignation" | "draw_adjudication" | "aborted";
         RunnerStatus: {
             cpu: components["schemas"]["Machine"];
             /** @description The Reckless checkout the runner builds from. */
@@ -610,6 +830,8 @@ export interface components {
              */
             mate: number;
         };
+        /** @enum {string} */
+        Side: "white" | "black";
         /** @description The SPRT a test runs: Elo bounds in normalized Elo, and the error rates. */
         Sprt: {
             /** Format: double */
@@ -1087,6 +1309,150 @@ export interface operations {
                 };
                 content: {
                     "text/plain": string;
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_matches: {
+        parameters: {
+            query?: {
+                /** @description How many matches, newest first. Default 50. */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MatchSummary"][];
+                };
+            };
+        };
+    };
+    create_match: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MatchRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Match"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_match: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Match"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    stop_match: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Match"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_match_pgn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/x-chess-pgn": string;
                 };
             };
             404: {

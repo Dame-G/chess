@@ -77,6 +77,13 @@ const MIGRATIONS: &[&str] = &[
         nelo REAL,
         PRIMARY KEY (test_id, games)
     );",
+    // 4: engine-vs-engine matches you can watch. `data` is the whole game as JSON, rewritten after every move.
+    "CREATE TABLE matches (
+        id INTEGER PRIMARY KEY,
+        status TEXT NOT NULL,
+        data TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );",
 ];
 
 #[derive(Clone)]

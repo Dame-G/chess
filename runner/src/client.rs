@@ -36,6 +36,11 @@ impl Client {
         Ok(self.send(self.http.get(self.url(path))).await?.text().await?)
     }
 
+    /// The live event stream, from the event after `since`. Read it with [`reqwest::Response::chunk`].
+    pub async fn events(&self, since: u64) -> Result<reqwest::Response> {
+        self.send(self.http.get(self.url(&format!("/api/events?since={since}")))).await
+    }
+
     fn url(&self, path: &str) -> String {
         format!("{}{}", self.base, path)
     }

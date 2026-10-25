@@ -147,6 +147,11 @@ impl Engine {
 
     /// Sets the position (a FEN, or `startpos`) and starts a search. Read its output with [`Engine::next`].
     pub async fn go(&mut self, fen: &str, moves: &[String], limits: &Limits) -> Result<()> {
+        self.go_command(fen, moves, &limits.go()).await
+    }
+
+    /// Like [`Engine::go`] with the whole `go` command given, for clocks and other limits `Limits` does not carry.
+    pub async fn go_command(&mut self, fen: &str, moves: &[String], command: &str) -> Result<()> {
         let mut position =
             if fen == "startpos" { "position startpos".to_owned() } else { format!("position fen {fen}") };
         if !moves.is_empty() {
@@ -154,7 +159,7 @@ impl Engine {
             position += &moves.join(" ");
         }
         self.send(&position).await?;
-        self.send(&limits.go()).await
+        self.send(command).await
     }
 
     /// The next event of a running search.

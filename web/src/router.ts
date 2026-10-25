@@ -9,9 +9,10 @@ export const router = createRouter({
   routes: [
     { path: "/", name: "home", component: () => import("./views/HomeView.vue"), meta: { workspace: true } },
 
-    // The board: free analysis, or a played game with its test's games as the playlist.
+    // The board: free analysis, a played game with its test's games as the playlist, or a match between two builds.
     { path: "/board", name: "board", component: board, meta: { title: "Board", workspace: true } },
     { path: "/games/:test/:index", name: "game", component: board, meta: { title: "Game", workspace: true } },
+    { path: "/matches/:id", name: "match", component: board, meta: { title: "Match", workspace: true } },
 
     // The lab: experiments in the library, the chosen one on the stage.
     { path: "/lab", name: "lab", component: lab, meta: { title: "Lab", workspace: true } },

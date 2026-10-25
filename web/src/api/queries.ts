@@ -67,3 +67,10 @@ export const useGames = (id: MaybeRefOrGetter<number>) =>
 export function defaultBuild(builds: readonly Build[] | undefined): Build | undefined {
   return builds?.find((b) => b.ref === "main") ?? builds?.[0];
 }
+
+/** Recent matches, newest first, without their moves. The app refreshes them as matches start and end. */
+export const useMatches = () =>
+  useQuery({
+    key: ["matches"],
+    query: () => unwrap(api.GET("/api/matches", { params: { query: { limit: 30 } } })),
+  });
