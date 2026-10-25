@@ -1,0 +1,150 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "chess runner",
+    "description": "Builds, tests and analyses engine variants. Every command of the `chess` CLI maps onto one of these routes.",
+    "license": {
+      "name": "GPL-3.0-or-later",
+      "identifier": "GPL-3.0-or-later"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/events": {
+      "get": {
+        "tags": [
+          "runner"
+        ],
+        "summary": "Live events as server-sent events: every event has an id, and reconnecting with the last id seen replays what was\nmissed.",
+        "operationId": "events",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "description": "Replay events after this id. `Last-Event-ID` does the same for a reconnecting browser.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A text/event-stream of `Event`s",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/Event"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/status": {
+      "get": {
+        "tags": [
+          "runner"
+        ],
+        "summary": "The runner's version, machine and engine checkout.",
+        "operationId": "status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Event": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "data"
+        ],
+        "properties": {
+          "data": {},
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "kind": {
+            "type": "string",
+            "description": "What happened, such as `job.progress` or `analysis.info`."
+          }
+        }
+      },
+      "Machine": {
+        "type": "object",
+        "description": "The machine the runner is on, read once at start.",
+        "required": [
+          "name",
+          "cores",
+          "threads",
+          "memory"
+        ],
+        "properties": {
+          "cores": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "memory": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total memory in bytes.",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "threads": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "Status": {
+        "type": "object",
+        "required": [
+          "version",
+          "cpu",
+          "reckless_dir",
+          "reckless_found"
+        ],
+        "properties": {
+          "cpu": {
+            "$ref": "#/components/schemas/Machine"
+          },
+          "reckless_dir": {
+            "type": "string",
+            "description": "The Reckless checkout the runner builds from."
+          },
+          "reckless_found": {
+            "type": "boolean",
+            "description": "Whether that checkout exists."
+          },
+          "version": {
+            "type": "string",
+            "description": "The runner's version."
+          }
+        }
+      }
+    }
+  }
+}

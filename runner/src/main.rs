@@ -1,0 +1,97 @@
+//! `chess`: the runner and its command line. `chess serve` runs the API, the live event stream and the embedded UI;
+//! every other command is a client of a running runner and prints JSON with `--json`.
+
+mod api;
+mod client;
+mod config;
+mod events;
+mod store;
+
+use std::path::PathBuf;
+
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+
+use crate::config::Config;
+
+#[derive(Parser)]
+#[command(name = "chess", version, about = "Development harness for a Reckless fork")]
+struct Cli {
+    /// Data directory: database, builds, games, nets. Defaults to the platform's local data folder.
+    #[arg(long, global = true, env = "CHESS_DATA")]
+    data: Option<PathBuf>,
+
+    /// Runner URL for client commands.
+    #[arg(long, global = true, env = "CHESS_URL", default_value = "http://127.0.0.1:7878")]
+    url: String,
+
+    /// Bearer token for a remote runner. A local runner's token is read from its data directory.
+    #[arg(long, global = true, env = "CHESS_TOKEN", hide_env_values = true)]
+    token: Option<String>,
+
+    /// Print machine-readable JSON instead of text.
+    #[arg(long, global = true)]
+    json: bool,
+
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Run the runner: API, live events and the UI.
+    Serve {
+        /// Address to listen on. Anything other than a loopback address requires the token on every request.
+        #[arg(long, default_value = "127.0.0.1:7878")]
+        listen: String,
+
+        /// The Reckless checkout to build from.
+        #[arg(long, env = "RECKLESS_DIR", default_value = "../reckless")]
+        reckless: PathBuf,
+    },
+    /// Show the runner's status.
+    Status,
+    /// Print the token the hosted UI needs to reach this machine's runner.
+    Token,
+    /// Print the OpenAPI document.
+    Openapi,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cli = Cli::parse();
+    let data = cli.data.clone().unwrap_or_else(config::default_data_dir);
+
+    match cli.command {
+        Command::Serve { listen, reckless } => {
+            tracing_subscriber::fmt().with_target(false).init();
+            let config = Config::load(data, reckless, listen)?;
+            api::serve(config).await
+        }
+        Command::Token => {
+            let token = std::fs::read_to_string(config::token_path(&data)).map_err(|_| {
+                anyhow::anyhow!("no token in {} yet: start the runner once with `chess serve`", data.display())
+            })?;
+            println!("{}", token.trim());
+            Ok(())
+        }
+        Command::Openapi => {
+            println!("{}", api::openapi().to_pretty_json()?);
+            Ok(())
+        }
+        Command::Status => {
+            let client = client::Client::new(&cli.url, cli.token, &data);
+            let status: serde_json::Value = client.get("/api/status").await?;
+            client::print(&status, cli.json, |s| {
+                format!(
+                    "runner {} on {} ({} threads), reckless at {}",
+                    s["version"].as_str().unwrap_or("?"),
+                    s["cpu"]["name"].as_str().unwrap_or("?"),
+                    s["cpu"]["threads"],
+                    s["reckless_dir"].as_str().unwrap_or("?"),
+                )
+            });
+            Ok(())
+        }
+    }
+}

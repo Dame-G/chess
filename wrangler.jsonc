@@ -1,0 +1,14 @@
+{
+  // The hosted UI is a Worker with static assets only: the same build the runner embeds. All data stays with the runner.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chess",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./web/dist",
+    // A single-page app: every path that is not a file gets index.html, and the router takes over.
+    "not_found_handling": "single-page-application",
+  },
+  // A custom domain makes Cloudflare create the DNS record and the certificate for chess.dame.gg on deploy.
+  "routes": [{ "pattern": "chess.dame.gg", "custom_domain": true }],
+  "observability": { "enabled": true },
+}

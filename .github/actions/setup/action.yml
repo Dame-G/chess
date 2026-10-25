@@ -1,0 +1,22 @@
+name: Set up
+description: Installs pnpm, Node and the web dependencies; with `rust`, the Rust toolchain and a build cache too.
+inputs:
+  rust:
+    description: Also install Rust (stable, with rustfmt and clippy) and cache the build.
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v6
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        cache: pnpm
+    - run: pnpm install --frozen-lockfile
+      shell: bash
+    - if: inputs.rust == 'true'
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    - if: inputs.rust == 'true'
+      uses: Swatinem/rust-cache@v2

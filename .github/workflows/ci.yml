@@ -1,0 +1,61 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels its older run. Runs on main always finish, since Deploy follows them.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CI: "true"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The runner: formatting, lints (warnings fail) and tests, including the statistics checked against reference runs.
+  runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          rust: true
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+      # The web client's types come from the runner's OpenAPI document: fails when the committed ones are stale.
+      - run: pnpm api:check
+
+  # The web app: lint, formatting, types, unused code, tests and the production build.
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm knip
+      - run: pnpm test
+      - run: pnpm build
+
+  # The one check branch protection requires, so adding or renaming a job above never touches the rule.
+  ci-ok:
+    if: always()
+    needs: [runner, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "A required job did not pass."
+            exit 1
+          fi

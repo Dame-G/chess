@@ -1,0 +1,43 @@
+{
+  "name": "chess-harness",
+  "private": true,
+  "version": "0.0.0",
+  "description": "A development harness for a Reckless fork: builds, testing funnel, analysis, play and training. Published at https://chess.dame.gg.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "packageManager": "pnpm@12.14.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint . && stylelint \"web/**/*.{css,vue}\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "api": "node scripts/api-types.mjs",
+    "api:check": "node scripts/api-types.mjs --check",
+    "knip": "knip",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.5",
+    "eslint": "^10.13.0",
+    "eslint-plugin-vue": "^10.11.1",
+    "eslint-plugin-vuejs-accessibility": "^2.6.3",
+    "globals": "^17.13.0",
+    "knip": "^6.43.0",
+    "openapi-typescript": "^7.13.0",
+    "prettier": "^3.9.10",
+    "stylelint": "^17.16.0",
+    "stylelint-config-html": "^2.0.0",
+    "stylelint-config-standard": "^40.0.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vue-eslint-parser": "^10.4.1",
+    "wrangler": "^4.152.0"
+  }
+}

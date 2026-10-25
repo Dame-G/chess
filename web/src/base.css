@@ -1,0 +1,12 @@
+/* The page itself. eos styles its components; the document around them is the app's. */
+html {
+  scrollbar-gutter: stable;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--e-surface);
+  color: var(--e-ink);
+  font: var(--e-type-body);
+}

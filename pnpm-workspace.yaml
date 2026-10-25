@@ -1,0 +1,11 @@
+packages:
+  - web
+
+allowBuilds:
+  esbuild: true
+  workerd: true
+  sharp: true
+
+minimumReleaseAgeExclude:
+  - "@eos-ui/tokens@0.17.1"
+  - "@eos-ui/vue@0.17.1"
