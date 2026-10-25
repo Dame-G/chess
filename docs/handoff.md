@@ -15,6 +15,7 @@ The lab moves from Windows to the Linux partition on the same machine (i7-10700K
 
 ## State
 
+- **Engine-vs-engine live matches are done:** `/matches/:id`, `chess match`, `/api/matches`. They are the first piece of Phase 3; human-vs-build can reuse the same machinery.
 - **Phases 0–2 are done:**
   - runner: builds, jobs, analysis, experiments, funnels, batches, SSE
   - CLI with `--json`
