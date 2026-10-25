@@ -11,6 +11,7 @@ import {
   PhCaretRight,
   PhChartLine,
   PhClipboardText,
+  PhCopy,
   PhClockCounterClockwise,
   PhListBullets,
   PhFlask,
@@ -23,10 +24,10 @@ import {
   PhSpeakerSlash,
   PhSquaresFour,
 } from "@phosphor-icons/vue";
-import { useShortcuts } from "@eos-ui/vue";
+import { useCopy, useShortcuts, useToast } from "@eos-ui/vue";
 import { EBreadcrumb } from "@eos-ui/vue/components/EBreadcrumb";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { ECopyButton } from "@eos-ui/vue/components/ECopyButton";
+import { EMenu } from "@eos-ui/vue/components/EMenu";
 import { EDrawer } from "@eos-ui/vue/components/EDrawer";
 import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
@@ -800,6 +801,21 @@ const pgn = () =>
     ? gameState.value.data
     : toPgn({ fen: start.value, moves: moves.value.slice(0, isMatch.value ? undefined : cursor.value) });
 
+const { copy } = useCopy();
+const toast = useToast();
+async function copyAs(what: "FEN" | "PGN") {
+  const ok = await copy(what === "FEN" ? position.value.fen : pgn());
+  toast.show({
+    key: "copy",
+    title: ok ? `Copied the ${what === "FEN" ? "position" : "game"}` : "Couldn’t copy",
+    tone: ok ? "success" : "danger",
+  });
+}
+const copyItems = [
+  { label: "Position (FEN)", onClick: () => void copyAs("FEN") },
+  { label: "Game (PGN)", onClick: () => void copyAs("PGN") },
+];
+
 // ---------------------------------------------------------------------------------------------------------------------
 // The result, from the new version's side
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1295,8 +1311,11 @@ const filters = [
         </section>
 
         <footer class="tools">
-          <ECopyButton :text="() => position.fen" label="Copy FEN" size="sm" />
-          <ECopyButton :text="pgn" label="Copy PGN" size="sm" />
+          <EMenu label="Copy" :items="copyItems" side="top">
+            <template #trigger>
+              <EButton variant="quiet" size="sm" :icon="PhCopy">Copy</EButton>
+            </template>
+          </EMenu>
           <EButton v-if="inGame" variant="quiet" size="sm" :icon="PhChartLine" @click="fork([])">
             Analyse from here
           </EButton>
