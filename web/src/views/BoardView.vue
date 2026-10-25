@@ -904,6 +904,19 @@ function onKey(e: KeyboardEvent) {
   e.preventDefault();
 }
 onMounted(() => window.addEventListener("keydown", onKey));
+
+// The board's size step: eight device pixels, in CSS pixels. It follows the pixel ratio as the window moves between
+// screens or the page is zoomed.
+let stepQuery: MediaQueryList | undefined;
+function setStep() {
+  const ratio = window.devicePixelRatio || 1;
+  document.documentElement.style.setProperty("--cg-step", `${8 / ratio}px`);
+  stepQuery?.removeEventListener("change", setStep);
+  stepQuery = matchMedia(`(resolution: ${ratio}dppx)`);
+  stepQuery.addEventListener("change", setStep);
+}
+onMounted(setStep);
+onBeforeUnmount(() => stepQuery?.removeEventListener("change", setStep));
 onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 useShortcuts({
   home: () => go(0),
@@ -1430,10 +1443,24 @@ const filters = [
   --foot: 5.45rem;
   --strip: 2.5rem;
   --extra: 0px;
-  --side: min(
+  --side-raw: min(
     100cqh - var(--foot) - var(--extra) - 2 * var(--pad),
     100cqw - var(--lib) - var(--ws-inspector, 24rem) - var(--col) - var(--gap) - 2 * var(--pad)
   );
+}
+
+/* chessground draws its squares on a whole number of device pixels, eight squares wide, and floors the rest: a board
+   that is not a multiple of eight device pixels gets a sliver of empty frame on its right and bottom. The side is rounded
+   down to that step (`--cg-step`, eight device pixels in CSS pixels, set from the screen's pixel ratio), so the squares
+   meet the frame exactly. */
+.board-ws {
+  --side: var(--side-raw);
+}
+
+@supports (width: round(down, 10px, 1px)) {
+  .board-ws {
+    --side: round(down, var(--side-raw), var(--cg-step, 8px));
+  }
 }
 
 .board-ws--solo {
@@ -1739,7 +1766,7 @@ const filters = [
    then the buttons spread the width of the screen for thumbs. */
 @media (width < 64rem) {
   .board-ws {
-    --side: min(100cqw - var(--col) - var(--gap) - 2 * var(--pad), max(100dvh - 17rem - var(--extra), 16rem));
+    --side-raw: min(100cqw - var(--col) - var(--gap) - 2 * var(--pad), max(100dvh - 17rem - var(--extra), 16rem));
   }
 
   .board-ws :deep(.ws-stage) {
