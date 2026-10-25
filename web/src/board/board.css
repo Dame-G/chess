@@ -9,8 +9,8 @@
   --board-selected: rgb(250 205 80 / 70%);
   --board-mark: rgb(55 30 10 / 32%);
   --board-hover: rgb(250 205 80 / 45%);
-  --board-coord-light: #8d5f38;
-  --board-coord-dark: #f4e3c0;
+  --board-coord-light: #2b1a0c;
+  --board-coord-dark: #2b1a0c;
 
   width: 100%;
   aspect-ratio: 1;
@@ -22,6 +22,11 @@
 .board-cg {
   width: 100%;
   height: 100%;
+}
+
+/* A preview board takes no input. */
+.board--still cg-board {
+  cursor: default;
 }
 
 .board cg-board {
@@ -40,8 +45,8 @@
   --board-selected: rgb(244 196 80 / 62%);
   --board-mark: rgb(30 14 4 / 38%);
   --board-hover: rgb(244 196 80 / 42%);
-  --board-coord-light: #6d4528;
-  --board-coord-dark: #ecd9b4;
+  --board-coord-light: #1f1208;
+  --board-coord-dark: #fff6e0;
 }
 
 .board cg-board square.last-move {
@@ -52,16 +57,50 @@
   background-color: var(--board-selected);
 }
 
+/* A legal move is a dot, a capture a ring; the hard edge gets a hair of blend so it stays crisp on any pixel ratio. */
 .board cg-board square.move-dest {
-  background: radial-gradient(var(--board-mark) 19%, transparent 20%);
+  background: radial-gradient(circle closest-side, var(--board-mark) 0 24%, transparent 27%);
+  cursor: pointer;
 }
 
 .board cg-board square.oc.move-dest {
-  background: radial-gradient(transparent 0%, transparent 79%, var(--board-mark) 80%);
+  background: radial-gradient(circle closest-side, transparent 0 80%, var(--board-mark) 84% 100%);
 }
 
+/* Hovering a square you can move to lights it and grows the dot, so the target is clear before the click. */
 .board cg-board square.move-dest:hover {
-  background: var(--board-hover);
+  background: radial-gradient(circle closest-side, var(--board-mark) 0 32%, transparent 35%), var(--board-hover);
+}
+
+.board cg-board square.oc.move-dest:hover {
+  background: radial-gradient(circle closest-side, transparent 0 80%, var(--board-mark) 84% 100%), var(--board-hover);
+}
+
+/* A piece in hand lifts: a shadow under it, and its old square shows a faint ghost. */
+.board cg-board piece.dragging {
+  filter: drop-shadow(0 0.4rem 0.5rem rgb(40 20 5 / 38%));
+  cursor: grabbing;
+}
+
+.board piece.ghost {
+  opacity: 0.25;
+}
+
+/* Arrows arrive with a short fade; one that stays is never redrawn, so it never flickers between depths. */
+.board .cg-shapes g {
+  animation: board-arrow-in 0.24s ease-out both;
+}
+
+@keyframes board-arrow-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board .cg-shapes g {
+    animation: none;
+  }
 }
 
 /* A king in check glows red from its centre. */
@@ -78,8 +117,41 @@
 
 /* Coordinates take the other wood's colour, so each reads on the square it sits on. */
 .board coords {
-  font: 600 0.625rem/1 var(--e-font-mono, monospace);
+  font: 600 0.6875rem/1 var(--e-font-mono, monospace);
+  font-variant-numeric: tabular-nums;
   opacity: 1;
+  text-rendering: geometricPrecision;
+}
+
+/* Inside the board, in the corner squares: ranks down the left file, files along the bottom rank. Nothing sticks out
+   of the board, so nothing is clipped. */
+.board coords.ranks {
+  top: 0;
+  left: 0;
+  width: 0.875rem;
+  height: 100%;
+}
+
+.board coords.ranks coord {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 0.1875rem 0 0 0.25rem;
+  transform: none;
+}
+
+.board coords.files {
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 12.5%;
+}
+
+.board coords.files coord {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 0 0.25rem 0.1875rem 0;
 }
 
 .board coords coord {

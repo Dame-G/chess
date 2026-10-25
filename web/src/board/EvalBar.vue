@@ -12,8 +12,11 @@ const props = defineProps<{
   orientation?: Color;
 }>();
 
-/** White's share of the bar, from its chance to win. */
-const white = computed(() => (props.pawns === undefined ? 0.5 : winChance(props.pawns * 100)));
+/**
+ * White's share of the bar, from its chance to win. Rounded to a quarter of a percent so depths that agree to within a
+ * hair do not retarget the easing while the engine streams.
+ */
+const white = computed(() => (props.pawns === undefined ? 0.5 : Math.round(winChance(props.pawns * 100) * 400) / 400));
 const flipped = computed(() => props.orientation === "black");
 const leader = computed<Color>(() => (white.value >= 0.5 ? "white" : "black"));
 /** One decimal fits: `+0.3`, `-1.2`; a mate reads `M3`. */
@@ -41,7 +44,7 @@ const atBottom = computed(() => (leader.value === "white") !== flipped.value);
   >
     <span class="evalbar-label num" aria-hidden="true">{{ short && !atBottom ? short : "" }}</span>
     <div class="evalbar-track">
-      <div class="evalbar-white" :style="{ height: `${white * 100}%` }"></div>
+      <div class="evalbar-white" :style="{ transform: `scaleY(${white})` }"></div>
       <div class="evalbar-mid"></div>
     </div>
     <span class="evalbar-label num" aria-hidden="true">{{ short && atBottom ? short : "" }}</span>
@@ -58,18 +61,21 @@ const atBottom = computed(() => (leader.value === "white") !== flipped.value);
   min-height: 0;
 }
 
+/* Fixed-width zones with tabular figures: a new figure never moves anything. */
 .evalbar-label {
   align-self: center;
+  inline-size: 100%;
+  contain: layout paint;
   color: var(--e-ink);
   font: 600 0.6875rem/1 var(--e-font-mono);
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.04em;
+  text-align: center;
   white-space: nowrap;
 }
 
 .evalbar-track {
   position: relative;
-  display: flex;
-  flex-direction: column-reverse;
   width: var(--evalbar, 0.875rem);
   height: 100%;
   overflow: hidden;
@@ -78,13 +84,18 @@ const atBottom = computed(() => (leader.value === "white") !== flipped.value);
   box-shadow: 0 0 0 1px var(--e-border);
 }
 
-.evalbar--flipped .evalbar-track {
-  flex-direction: column;
+/* White's share is a scale from the bottom (the top when the board is flipped): composited, never a layout. */
+.evalbar-white {
+  position: absolute;
+  inset: 0;
+  background: #fffaf3;
+  transform-origin: 50% 100%;
+  transition: transform 0.6s cubic-bezier(0.22, 0.8, 0.2, 1);
+  will-change: transform;
 }
 
-.evalbar-white {
-  background: #fffaf3;
-  transition: height 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+.evalbar--flipped .evalbar-white {
+  transform-origin: 50% 0;
 }
 
 .evalbar-mid {

@@ -56,6 +56,7 @@ const word: Record<Outcome, string> = { W: "Won", D: "Drew", L: "Lost", "": "Unf
         <EButton
           v-for="r in rows"
           :key="r.g.index"
+          v-memo="[r.g.index === current, r.o]"
           role="listitem"
           variant="quiet"
           size="sm"
@@ -80,6 +81,7 @@ const word: Record<Outcome, string> = { W: "Won", D: "Drew", L: "Lost", "": "Unf
   height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
+  contain: strict;
 }
 
 .sizer {
@@ -90,6 +92,8 @@ const word: Record<Outcome, string> = { W: "Won", D: "Drew", L: "Lost", "": "Unf
   position: absolute;
   inset-inline: 0;
   top: 0;
+  contain: layout style;
+  will-change: transform;
 }
 
 .row {

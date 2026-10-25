@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useId } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, useId } from "vue";
 
 const props = defineProps<{
   /** What the strip is for, for screen readers. */
@@ -20,7 +20,6 @@ const TICK = 20;
 
 const id = useId();
 const last = computed(() => Math.max(1, props.values.length - 1));
-const pct = (i: number) => `${(Math.min(i, last.value) / last.value) * 100}%`;
 const y = (v: number) => 50 - v * 50;
 
 /** Runs of known values, so a gap in the evaluations breaks the line instead of bridging it. */
@@ -36,6 +35,7 @@ const runs = computed(() => {
   if (run.length) out.push(run);
   return out;
 });
+// These are strings: when the data has not changed they are equal, and Vue leaves the SVG alone.
 const outline = computed(() =>
   runs.value
     .filter((r) => r.length > 1)
@@ -56,47 +56,126 @@ const ticks = computed(() => {
 });
 
 const here = computed(() => Math.max(0, Math.min(last.value, props.cursor)));
-const dot = computed(() => props.values[here.value] ?? null);
+/** Where the board is, as a share of the strip, and where the line is at that point (0 top, 1 bottom). */
+const place = computed(() => {
+  const v = props.values[here.value];
+  return {
+    "--p": String(here.value / last.value),
+    "--y": String(v === null || v === undefined ? 0.5 : y(v) / 100),
+  };
+});
+const hasDot = computed(() => props.values[here.value] !== null && props.values[here.value] !== undefined);
 
-const hover = ref<number | null>(null);
 const dragging = ref(false);
 const root = ref<HTMLElement>();
+const guide = ref<HTMLElement>();
+const tip = ref<HTMLElement>();
+const tipMove = ref<HTMLElement>();
+const tipEval = ref<HTMLElement>();
 
 const describe = (i: number) => {
   const text = props.texts[i];
   return props.moves[i] ? (text ? `${props.moves[i]}, ${text}` : props.moves[i]!) : "";
 };
 
-function indexAt(e: PointerEvent) {
-  const box = root.value!.getBoundingClientRect();
-  const f = box.width ? (e.clientX - box.left) / box.width : 0;
-  return Math.max(0, Math.min(last.value, Math.round(f * last.value)));
-}
-
+// The pointer is followed with direct writes in an animation frame: no reactive state, so nothing re-renders while the
+// mouse moves, and the guide, the label and a drag all keep pace with the display.
+let width = 0;
+let left = 0;
+let pointerX = 0;
+let frame = 0;
+let shown = -1;
 let sent = -1;
-function onDown(e: PointerEvent) {
-  if (e.button !== 0) return;
-  dragging.value = true;
-  root.value!.setPointerCapture(e.pointerId);
-  const i = indexAt(e);
-  hover.value = i;
-  sent = i;
-  emit("select", i);
+let wantHover = false;
+let observer: ResizeObserver | undefined;
+
+function measure() {
+  const box = root.value?.getBoundingClientRect();
+  if (!box) return;
+  width = box.width;
+  left = box.left;
 }
-function onMove(e: PointerEvent) {
-  const i = indexAt(e);
-  hover.value = i;
+onMounted(() => {
+  observer = new ResizeObserver(measure);
+  observer.observe(root.value!);
+  measure();
+});
+onBeforeUnmount(() => {
+  observer?.disconnect();
+  cancelAnimationFrame(frame);
+});
+
+function paint() {
+  frame = 0;
+  const g = guide.value;
+  const t = tip.value;
+  if (!g || !t) return;
+  if (!wantHover || !width) {
+    g.style.opacity = "0";
+    t.style.opacity = "0";
+    shown = -1;
+    return;
+  }
+  const f = Math.max(0, Math.min(1, (pointerX - left) / width));
+  const i = Math.round(f * last.value);
+  // The guide is the pointer, to the pixel; the label names the move it would land on.
+  g.style.transform = `translate3d(${f * width}px,0,0)`;
+  g.style.opacity = "0.55";
+  if (i !== shown) {
+    shown = i;
+    tipMove.value!.textContent = props.moves[i] ?? "";
+    const text = props.texts[i];
+    tipEval.value!.textContent = text ?? "";
+    tipEval.value!.hidden = !text;
+  }
+  // The label keeps inside the strip: its edge, not its centre, follows the pointer near either end.
+  t.style.transform = `translate3d(${f * width}px,0,0) translate(${-f * 100}%,0)`;
+  t.style.opacity = "1";
   if (dragging.value && i !== sent) {
     sent = i;
     emit("select", i);
   }
 }
+function queue() {
+  if (!frame) frame = requestAnimationFrame(paint);
+}
+
+function indexAt(x: number) {
+  const f = width ? Math.max(0, Math.min(1, (x - left) / width)) : 0;
+  return Math.round(f * last.value);
+}
+
+function onEnter() {
+  measure();
+}
+function onDown(e: PointerEvent) {
+  if (e.button !== 0) return;
+  measure();
+  dragging.value = true;
+  root.value!.setPointerCapture(e.pointerId);
+  pointerX = e.clientX;
+  wantHover = true;
+  // The first press answers at once, not a frame later.
+  sent = indexAt(e.clientX);
+  emit("select", sent);
+  queue();
+}
+function onMove(e: PointerEvent) {
+  pointerX = e.clientX;
+  wantHover = true;
+  queue();
+}
 function onUp(e: PointerEvent) {
   dragging.value = false;
-  if (e.pointerType !== "mouse") hover.value = null;
+  if (e.pointerType !== "mouse") {
+    wantHover = false;
+    queue();
+  }
 }
 function onLeave() {
-  if (!dragging.value) hover.value = null;
+  if (dragging.value) return;
+  wantHover = false;
+  queue();
 }
 
 function onKey(e: KeyboardEvent) {
@@ -119,13 +198,6 @@ function onKey(e: KeyboardEvent) {
   e.stopPropagation();
   emit("select", Math.max(0, Math.min(last.value, to)));
 }
-
-/** The floating label keeps inside the strip: its edge, not its centre, follows the pointer near either end. */
-const tip = computed(() =>
-  hover.value === null
-    ? null
-    : { left: pct(hover.value), shift: `${-(Math.min(hover.value, last.value) / last.value) * 100}%` },
-);
 </script>
 
 <template>
@@ -133,6 +205,7 @@ const tip = computed(() =>
     ref="root"
     class="tl"
     :class="{ 'tl--drag': dragging }"
+    :style="place"
     role="slider"
     tabindex="0"
     :aria-label="label"
@@ -141,6 +214,7 @@ const tip = computed(() =>
     :aria-valuemax="last"
     :aria-valuenow="here"
     :aria-valuetext="describe(here) || 'Start'"
+    @pointerenter="onEnter"
     @pointerdown="onDown"
     @pointermove="onMove"
     @pointerup="onUp"
@@ -161,19 +235,15 @@ const tip = computed(() =>
         <path :d="outline" class="tl-line" />
       </svg>
       <!-- What is not played yet is dimmed. -->
-      <div class="tl-ahead" :style="{ insetInlineStart: pct(here) }"></div>
-      <div v-if="tip" class="tl-guide" :style="{ insetInlineStart: tip.left }"></div>
+      <div class="tl-ahead"></div>
+      <div ref="guide" class="tl-guide"></div>
     </div>
-    <div class="tl-now" :style="{ insetInlineStart: pct(here) }" aria-hidden="true">
-      <span v-if="dot !== null" class="tl-dot" :style="{ insetBlockStart: `${y(dot)}%` }"></span>
+    <div class="tl-now" aria-hidden="true">
+      <span class="tl-dot" :class="{ 'tl-dot--none': !hasDot }"></span>
     </div>
-    <div
-      v-if="tip && hover !== null"
-      class="tl-tip"
-      :style="{ insetInlineStart: tip.left, translate: `${tip.shift} 0` }"
-    >
-      <span class="tl-move">{{ moves[hover] }}</span>
-      <span v-if="texts[hover]" class="tl-eval num">{{ texts[hover] }}</span>
+    <div ref="tip" class="tl-tip" aria-hidden="true">
+      <span ref="tipMove" class="tl-move"></span>
+      <span ref="tipEval" class="tl-eval num" hidden></span>
     </div>
   </div>
 </template>
@@ -181,11 +251,13 @@ const tip = computed(() =>
 <style scoped>
 .tl {
   --tl-height: 2rem;
+  --ease: 0.14s cubic-bezier(0.3, 0.7, 0.3, 1);
 
   position: relative;
   height: var(--tl-height);
   min-width: 0;
   border-radius: var(--e-radius-sm);
+  container-type: inline-size;
   cursor: pointer;
   touch-action: none;
   user-select: none;
@@ -203,6 +275,11 @@ const tip = computed(() =>
   border-radius: inherit;
   background: color-mix(in oklab, var(--e-ink) 6%, var(--e-surface));
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--e-border) 70%, transparent);
+  transition: box-shadow 0.12s;
+}
+
+.tl:hover .tl-plot {
+  box-shadow: inset 0 0 0 1px var(--e-border-strong);
 }
 
 .tl-svg {
@@ -246,29 +323,38 @@ const tip = computed(() =>
   stroke-width: 1.5;
 }
 
+/* What is ahead: a veil scaled from the marker to the end, so it eases with the marker and never lays out. */
 .tl-ahead {
   position: absolute;
-  inset-block: 0;
-  inset-inline-end: 0;
+  inset: 0;
   background: color-mix(in oklab, var(--e-surface) 55%, transparent);
   pointer-events: none;
+  transform: scaleX(calc(1 - var(--p)));
+  transform-origin: 100% 50%;
+  transition: transform var(--ease);
 }
 
 .tl-guide {
   position: absolute;
   inset-block: 0;
+  inset-inline-start: 0;
   width: 1px;
   background: var(--e-ink);
-  opacity: 0.55;
+  opacity: 0;
   pointer-events: none;
+  will-change: transform;
 }
 
-/* Where the board is: a bar through the strip, a notch above it and a dot on the line. */
+/* Where the board is: a bar through the strip and a dot on the line, both easing to the next move. */
 .tl-now {
   position: absolute;
   inset-block: 0;
+  inset-inline-start: 0;
   width: 0;
   pointer-events: none;
+  transform: translateX(calc(var(--p) * 100cqw));
+  transition: transform var(--ease);
+  will-change: transform;
 }
 
 .tl-now::before {
@@ -282,6 +368,7 @@ const tip = computed(() =>
 
 .tl-dot {
   position: absolute;
+  inset-block-start: 0;
   inset-inline-start: -0.3125rem;
   width: 0.625rem;
   height: 0.625rem;
@@ -289,12 +376,28 @@ const tip = computed(() =>
   border-radius: 50%;
   background: var(--e-primary);
   box-shadow: 0 0 0 2px var(--e-surface);
+  transform: translateY(calc(var(--y) * var(--tl-height)));
+  transition:
+    transform var(--ease),
+    opacity 0.12s;
+}
+
+.tl-dot--none {
+  opacity: 0;
+}
+
+/* A drag follows the pointer exactly: no easing to lag behind it. */
+.tl--drag .tl-now,
+.tl--drag .tl-ahead,
+.tl--drag .tl-dot {
+  transition: none;
 }
 
 .tl-tip {
   position: absolute;
   z-index: 2;
   inset-block-end: calc(100% + var(--e-gap-snug));
+  inset-inline-start: 0;
   display: flex;
   align-items: baseline;
   gap: var(--e-gap-snug);
@@ -305,12 +408,23 @@ const tip = computed(() =>
     0 0 0 1px var(--e-border-strong),
     var(--e-shadow-drop);
   font: 600 var(--e-text-sm) / 1.2 var(--e-font-mono);
-  white-space: nowrap;
+  opacity: 0;
   pointer-events: none;
+  transition: opacity 0.1s;
+  white-space: nowrap;
+  will-change: transform;
 }
 
 .tl-eval {
   color: var(--e-muted);
   font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tl-now,
+  .tl-ahead,
+  .tl-dot {
+    transition: none;
+  }
 }
 </style>

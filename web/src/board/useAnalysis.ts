@@ -40,19 +40,38 @@ export function useAnalysis(input: {
   let pending: Info[] = [];
   let flushing: ReturnType<typeof setTimeout> | undefined;
   const FLUSH = 150;
+  /** What the engine last said about positions already visited, so stepping back shows it at once. */
+  const seen = new Map<string, Info[]>();
+  const SEEN = 400;
+  /** The depth a position was last searched to: shallower reports do not replace its lines until they pass it. */
+  let hold = 0;
+  const seenKey = () => `${input.build.value}|${input.multipv.value}|${input.position.value.fen}`;
 
   function flush() {
     flushing = undefined;
     if (!pending.length) return;
+    if (hold) {
+      // A new search starts shallow: keep the deeper lines on show until it catches up.
+      if (!pending[0] || pending[0].depth < hold) {
+        pending = [];
+        return;
+      }
+      hold = 0;
+    }
     const next = [...lines.value];
     pending.forEach((info, i) => info && (next[i] = info));
     pending = [];
     lines.value = next;
+    const key = seenKey();
+    seen.delete(key);
+    seen.set(key, next);
+    if (seen.size > SEEN) seen.delete(seen.keys().next().value!);
   }
   function drop() {
     clearTimeout(flushing);
     flushing = undefined;
     pending = [];
+    hold = 0;
     lines.value = [];
   }
 
@@ -71,6 +90,8 @@ export function useAnalysis(input: {
   useRunnerEvent("analysis.info", (data) => {
     const { session: s, info } = data as { session: number; info: Info };
     if (s !== session.value) return;
+    // A report without a move says nothing a line could show.
+    if (!info.pv.length) return;
     pending[info.multipv - 1] = info;
     if (info.multipv === 1) remember(input.position.value.fen, info);
     // Reports come many times a second; the lines only need to change a few times.
@@ -128,9 +149,14 @@ export function useAnalysis(input: {
         void stop();
         return;
       }
-      // What the old search reports is about another position now.
+      // What the old search reports is about another position now: show only what is known about this one.
       session.value = null;
       drop();
+      const known = seen.get(seenKey());
+      if (known?.[0]) {
+        lines.value = known;
+        hold = known[0].depth;
+      }
       timer = setTimeout(begin, 120);
     },
     { immediate: true },

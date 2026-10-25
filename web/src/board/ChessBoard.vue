@@ -16,24 +16,67 @@ const props = defineProps<{
   movable?: boolean;
   /** Arrows, such as the engine's best moves. */
   shapes?: DrawShape[];
+  /** A board to look at only, such as a preview: no moves, no animation. */
+  still?: boolean;
 }>();
 const emit = defineEmits<{ move: [uci: string] }>();
 
 const el = ref<HTMLElement>();
 let cg: Api | undefined;
 
-function config() {
+/** The longest a piece takes to travel, and the shortest worth animating. */
+const SLIDE = 180;
+const FASTEST = 70;
+const reduced = typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : undefined;
+
+let lastSet = 0;
+let lastFen = props.position.fen;
+
+/** How many squares differ between two positions: a step changes two to four, a jump many more. */
+function changed(a: string, b: string): number {
+  const expand = (fen: string) =>
+    fen
+      .split(" ")[0]!
+      .replace(/\d/g, (n) => ".".repeat(Number(n)))
+      .replace(/\//g, "");
+  const x = expand(a);
+  const y = expand(b);
+  let n = 0;
+  for (let i = 0; i < 64; i++) if (x[i] !== y[i]) n++;
+  return n;
+}
+
+/**
+ * Moves slide in as long as the steps are not coming faster than the slide itself: held arrow keys and fast autoplay
+ * snap instead of queueing up, a jump across the game snaps, and the slide shortens to fit the pace in between.
+ */
+function motion(next: Position) {
+  const now = performance.now();
+  const gap = now - lastSet;
+  lastSet = now;
+  const previous = lastFen;
+  lastFen = next.fen;
+  if (props.still || reduced?.matches || previous === next.fen) return { enabled: false };
+  if (changed(previous, next.fen) > 4) return { enabled: false };
+  const duration = Math.min(SLIDE, gap * 0.85);
+  return duration < FASTEST ? { enabled: false } : { enabled: true, duration };
+}
+
+function config(animation?: { enabled: boolean; duration?: number }) {
   const p = props.position;
+  const live = props.movable && !props.still;
   return {
     fen: p.fen,
     turnColor: p.turn,
     check: p.check ? p.turn : false,
     lastMove: p.lastMove,
     orientation: props.orientation ?? "white",
+    viewOnly: !!props.still,
+    ...(animation ? { animation } : {}),
     movable: {
       free: false,
-      color: props.movable ? p.turn : undefined,
-      dests: props.movable ? p.dests : new Map(),
+      color: live ? p.turn : undefined,
+      dests: live ? p.dests : new Map(),
       showDests: true,
     },
     drawable: { autoShapes: props.shapes ?? [] },
@@ -41,20 +84,31 @@ function config() {
 }
 
 onMounted(() => {
+  const c = config();
   cg = Chessground(el.value!, {
-    ...config(),
-    animation: { duration: 150 },
+    ...c,
+    animation: { enabled: !props.still, duration: SLIDE },
+    coordinates: true,
+    highlight: { lastMove: true, check: true },
+    draggable: { distance: 3, autoDistance: true, showGhost: true },
+    selectable: { enabled: true },
     premovable: { enabled: false },
     movable: {
-      ...config().movable,
+      ...c.movable,
       events: { after: (from: Key, to: Key) => emit("move", boardMove(props.position, from, to)) },
     },
   });
+  lastFen = props.position.fen;
+  lastSet = performance.now();
 });
 
 watch(
-  () => [props.position, props.orientation, props.movable],
-  () => cg?.set(config()),
+  () => props.position,
+  (p) => cg?.set(config(motion(p))),
+);
+watch(
+  () => [props.orientation, props.movable, props.still],
+  () => cg?.set(config({ enabled: false })),
 );
 watch(
   () => props.shapes,
@@ -65,7 +119,7 @@ onBeforeUnmount(() => cg?.destroy());
 </script>
 
 <template>
-  <div class="board">
+  <div class="board" :class="{ 'board--still': still }">
     <div ref="el" class="board-cg"></div>
   </div>
 </template>

@@ -154,3 +154,57 @@ export function readPosition(text: string): Line | undefined {
   if (!moves.length && !game.headers.has("FEN")) return undefined;
   return { fen: fen === INITIAL_FEN ? "startpos" : fen, moves };
 }
+
+/** What a pasted text came to: the position it holds, or the one thing to fix. */
+export type Reading =
+  | { empty: true }
+  | { empty?: false; line: Line; kind: "fen" | "pgn"; note?: string }
+  | { empty?: false; error: string };
+
+const setupProblem: Record<string, string> = {
+  ERR_EMPTY: "There are no pieces on the board.",
+  ERR_KINGS: "Each side needs exactly one king.",
+  ERR_OPPOSITE_CHECK: "The side that is not to move is in check, which cannot happen.",
+  ERR_PAWNS_ON_BACKRANK: "A pawn stands on the first or last rank.",
+};
+
+/** Reads a pasted FEN or PGN and says what is wrong with it in words, for a live check as the person types. */
+export function inspectPosition(text: string): Reading {
+  const trimmed = text.trim();
+  if (!trimmed) return { empty: true };
+  const parsed = parseFen(trimmed);
+  if (parsed.isOk) {
+    const pos = Chess.fromSetup(parsed.value);
+    if (pos.isErr) return { error: setupProblem[pos.error.message] ?? "That is not a legal position." };
+    return { line: { fen: trimmed, moves: [] }, kind: "fen" };
+  }
+  // Seven slashes and a side to move: they meant a FEN, so say what is wrong with it rather than "not a PGN".
+  if (/^\S+(\/\S+){7}(\s|$)/.test(trimmed)) {
+    return {
+      error: "The board part of that FEN does not have eight ranks of eight squares, or it has an unknown piece.",
+    };
+  }
+  const game = parsePgn(trimmed)[0];
+  if (!game) return { error: "Paste a FEN, or a PGN with moves." };
+  const start = startingPosition(game.headers);
+  if (start.isErr) return { error: "The FEN in that PGN's header is not a legal position." };
+  const pos = start.value;
+  const fen = makeFen(pos.toSetup());
+  const moves: string[] = [];
+  let note: string | undefined;
+  let n = 0;
+  for (const node of game.moves.mainline()) {
+    n++;
+    const move = parseSan(pos, node.san);
+    if (!move) {
+      note = `Move ${n}, ${node.san}, is not legal there, so the game stops before it.`;
+      break;
+    }
+    moves.push(makeUci(move));
+    pos.play(move);
+  }
+  if (!moves.length && !game.headers.has("FEN")) {
+    return { error: note ?? "No moves found. Paste a FEN, or a PGN with moves." };
+  }
+  return { line: { fen: fen === INITIAL_FEN ? "startpos" : fen, moves }, kind: "pgn", note };
+}

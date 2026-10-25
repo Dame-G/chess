@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { EButton } from "@eos-ui/vue/components/EButton";
+import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { followCurrent } from "./follow";
+import MoveRow from "./MoveRow.vue";
 
 const props = defineProps<{
   /** The moves in SAN, in order. */
@@ -10,20 +11,30 @@ const props = defineProps<{
   cursor: number;
   /** The FEN the line starts from, or `startpos`: it sets the first move number and who moves first. */
   start: string;
+  /** A game is on its way: placeholders instead of "no moves". */
+  loading?: boolean;
 }>();
 const emit = defineEmits<{ go: [ply: number] }>();
 
+/** The rows as the game wrote them. They depend on the moves alone, so stepping does not rebuild them. */
 const rows = computed(() => {
   const parts = props.start.split(" ");
   const blackFirst = props.start !== "startpos" && parts[1] === "b";
   const first = props.start === "startpos" ? 1 : Number(parts[5] ?? 1);
-  const all: ({ san: string; ply: number } | null)[] = [
-    ...(blackFirst ? [null] : []),
-    ...props.sans.map((san, i) => ({ san, ply: i + 1 })),
-  ];
-  const out: { number: number; plies: (typeof all)[number][] }[] = [];
-  for (let i = 0; i < all.length; i += 2)
-    out.push({ number: first + i / 2, plies: [all[i] ?? null, all[i + 1] ?? null] });
+  const shift = blackFirst ? 1 : 0;
+  const out: { number: number; a: string | null; b: string | null; pa: number; pb: number }[] = [];
+  const total = props.sans.length + shift;
+  for (let i = 0; i < total; i += 2) {
+    const a = i - shift;
+    const b = i + 1 - shift;
+    out.push({
+      number: first + i / 2,
+      a: props.sans[a] ?? null,
+      b: props.sans[b] ?? null,
+      pa: a + 1,
+      pb: b + 1,
+    });
+  }
   return out;
 });
 
@@ -32,25 +43,23 @@ followCurrent(list, () => props.cursor);
 </script>
 
 <template>
-  <div ref="list" class="moves" role="list" aria-label="Moves">
-    <template v-for="r in rows" :key="r.number">
-      <span class="no num" role="presentation">{{ r.number }}</span>
-      <template v-for="(p, i) in r.plies" :key="i">
-        <EButton
-          v-if="p"
-          role="listitem"
-          size="sm"
-          variant="quiet"
-          :aria-current="p.ply === cursor ? 'step' : undefined"
-          :class="{ future: p.ply > cursor }"
-          @click="emit('go', p.ply)"
-        >
-          {{ p.san }}
-        </EButton>
-        <span v-else class="gap">…</span>
-      </template>
-    </template>
-    <p v-if="!sans.length" class="none">No moves yet. Move a piece, or paste a game.</p>
+  <div ref="list" class="moves" role="list" aria-label="Moves" :aria-busy="loading || undefined">
+    <MoveRow
+      v-for="r in rows"
+      :key="r.number"
+      :number="r.number"
+      :a="r.a"
+      :b="r.b"
+      :pa="r.pa"
+      :pb="r.pb"
+      :cur-a="r.pa === cursor"
+      :cur-b="r.pb === cursor"
+      :fut-a="r.pa > cursor"
+      :fut-b="r.pb > cursor"
+      @go="emit('go', $event)"
+    />
+    <ESkeleton v-if="loading && !sans.length" :lines="8" label="Loading moves" class="none" />
+    <p v-else-if="!sans.length" class="none">No moves yet. Move a piece, or paste a game.</p>
   </div>
 </template>
 
@@ -63,47 +72,6 @@ followCurrent(list, () => props.cursor);
   overflow-y: auto;
   overscroll-behavior: contain;
   font-family: var(--e-font-mono);
-}
-
-.no {
-  display: grid;
-  align-items: center;
-  justify-content: end;
-  padding-inline: var(--e-gap-base);
-  background: color-mix(in oklab, var(--e-ink) 4%, transparent);
-  color: var(--e-muted);
-  font: var(--e-type-small);
-}
-
-.moves :deep(.e-btn) {
-  justify-content: flex-start;
-  min-height: 2.25rem;
-  padding-inline: var(--e-pad-control-sm);
-  border-radius: 0;
-  text-decoration: none;
-}
-
-/* The move on the board: the place tint, as eos marks where you are. */
-.moves :deep(.e-btn[aria-current]) {
-  background: var(--e-primary);
-  color: var(--e-on-primary);
-  font-weight: 700;
-}
-
-.moves :deep(.e-btn:focus-visible) {
-  outline: var(--e-stroke-focus) solid var(--e-focus-ring);
-  outline-offset: -2px;
-}
-
-.future {
-  opacity: 0.72;
-}
-
-.gap {
-  display: grid;
-  align-items: center;
-  padding-inline: var(--e-pad-control-sm);
-  color: var(--e-muted);
 }
 
 .none {

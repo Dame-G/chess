@@ -29,6 +29,8 @@ const rows = computed(() => {
     const sans = sanMoves({ fen: props.position.fen, moves: pv });
     return {
       id: l.multipv,
+      // What a line looks like, in one string: a report that repeats it leaves the line alone.
+      sig: `${whiteScore(l.score, props.position.turn)}|${props.position.fen}|${pv.join(" ")}`,
       white: whitePawns(l.score, props.position.turn) >= 0,
       score: whiteScore(l.score, props.position.turn),
       moves: sans.map((san, i) => {
@@ -43,7 +45,7 @@ const rows = computed(() => {
 
 <template>
   <ol class="lines" aria-label="Engine lines">
-    <li v-for="r in rows" :key="r.id" class="line">
+    <li v-for="r in rows" :key="r.id" v-memo="[r.sig]" class="line">
       <span class="score num" :class="r.white ? 'score--white' : 'score--black'">{{ r.score }}</span>
       <span class="pv">
         <template v-for="(m, i) in r.moves" :key="i">
@@ -53,7 +55,10 @@ const rows = computed(() => {
       </span>
     </li>
     <template v-if="!rows.length">
-      <li v-for="i in count" :key="i" class="line"><ESkeleton text /></li>
+      <li v-for="i in count" :key="i" class="line line--wait" aria-hidden="true">
+        <ESkeleton :height="24" />
+        <ESkeleton :lines="2" />
+      </li>
     </template>
   </ol>
 </template>
@@ -68,6 +73,7 @@ const rows = computed(() => {
 
 .line {
   display: grid;
+  min-height: 4rem;
   grid-template-columns: 3.5rem minmax(0, 1fr);
   align-items: start;
   gap: var(--e-gap-base);
@@ -99,9 +105,10 @@ const rows = computed(() => {
   flex-wrap: wrap;
   align-items: baseline;
 
-  /* Two rows of moves at most: the rest is one click away on the board. */
-  max-height: 3.75rem;
+  /* Two rows of moves, always: lines of different lengths never change the height of what is below. */
+  height: 3.25rem;
   overflow: hidden;
+  align-content: flex-start;
   font-family: var(--e-font-mono);
 }
 
@@ -114,7 +121,9 @@ const rows = computed(() => {
 
 .pv :deep(.e-btn) {
   flex: none;
-  min-height: 1.75rem;
+  height: 1.625rem;
+  min-height: 0;
+  padding-block: 0;
   padding-inline: 0.3125rem;
   text-decoration: none;
 }

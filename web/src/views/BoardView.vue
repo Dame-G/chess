@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch, type Slots } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, shallowRef, toRaw, watch, type Slots } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { useQuery } from "@pinia/colada";
 import type { DrawShape } from "@lichess-org/chessground/draw";
@@ -17,6 +17,8 @@ import {
   PhPlay,
   PhSkipBack,
   PhSkipForward,
+  PhSpeakerHigh,
+  PhSpeakerSlash,
   PhSquaresFour,
 } from "@phosphor-icons/vue";
 import { useShortcuts } from "@eos-ui/vue";
@@ -42,9 +44,10 @@ import Playlist from "../board/Playlist.vue";
 import Timeline from "../board/Timeline.vue";
 import Term from "../components/Term.vue";
 import Workspace from "../components/Workspace.vue";
-import { readGame } from "../board/game";
+import { readGame, type Game } from "../board/game";
 import { outcome, type Outcome } from "../board/playlist";
-import { play, readPosition, sanLine, sanMoves, toPgn } from "../board/position";
+import { inspectPosition, play, sanLine, sanMoves, toPgn } from "../board/position";
+import { playMoveSound, soundOf } from "../board/sound";
 import { useAnalysis, type Seen } from "../board/useAnalysis";
 import { api } from "../api/runner";
 import { defaultBuild, unwrap, useBuilds, useExperiment, useExperiments, useGames, useTest } from "../api/queries";
@@ -118,9 +121,23 @@ const gameQuery = useQuery({
     ),
 });
 const gameState = gameQuery.state;
-const game = computed(() => (isGame.value && gameState.value.data ? readGame(gameState.value.data) : undefined));
+const fresh = computed(() => (isGame.value && gameState.value.data ? readGame(gameState.value.data) : undefined));
+// Moving to another game keeps the last one on show until the new one has loaded, so nothing blanks or jumps: the
+// board keeps its position, the header its height, the timeline its graph.
+const held = shallowRef<Game>();
+watch(
+  fresh,
+  (g) => {
+    if (g) held.value = g;
+  },
+  { immediate: true },
+);
+watch(isGame, (g) => {
+  if (!g) held.value = undefined;
+});
+const game = computed(() => (isGame.value ? (fresh.value ?? held.value) : undefined));
 const gameFailed = computed(() => isGame.value && gameState.value.status === "error");
-const loading = computed(() => isGame.value && !game.value && gameState.value.status !== "error");
+const loading = computed(() => isGame.value && !fresh.value && gameState.value.status !== "error");
 
 const devWhite = computed(() => game.value?.headers.White === "dev");
 // Flipping is for this visit only: the board opens with White at the bottom, so a stale flip never surprises.
@@ -135,7 +152,7 @@ const flip = () => (orientation.value = orientation.value === "white" ? "black" 
 // A game comes in at its start (or at the move the address names, once), with the new version at the bottom.
 let wantedPly: number | null = typeof route.query.ply === "string" ? Number(route.query.ply) : null;
 watch(
-  game,
+  fresh,
   (g) => {
     if (!g) return;
     start.value = g.startFen;
@@ -210,7 +227,7 @@ const searching = computed(() => engineOn.value && !playing.value && !loading.va
 const { lines, error, evals } = useAnalysis({ start, position, build, multipv, active: searching });
 const best = computed(() => lines.value[0]);
 
-const shapes = computed<DrawShape[]>(() =>
+const wanted = computed<DrawShape[]>(() =>
   lines.value
     .filter(Boolean)
     .map((l, i) => ({
@@ -221,6 +238,31 @@ const shapes = computed<DrawShape[]>(() =>
     }))
     .reverse(),
 );
+// The arrows hold still unless the moves they point along change, and a change settles for a moment first, so an engine
+// that flips between two candidates while it searches does not make the board flicker. The first arrows show at once.
+const shapes = shallowRef<DrawShape[]>([]);
+const shapeKey = (list: DrawShape[]) => list.map((d) => `${d.orig}${d.dest}${d.brush}`).join();
+let settling: ReturnType<typeof setTimeout> | undefined;
+let settlingOn = "";
+watch(wanted, (next) => {
+  const key = shapeKey(next);
+  if (key === shapeKey(shapes.value)) {
+    clearTimeout(settling);
+    settlingOn = "";
+  } else if (!next.length || !shapes.value.length) {
+    clearTimeout(settling);
+    settlingOn = "";
+    shapes.value = next;
+  } else if (key !== settlingOn) {
+    clearTimeout(settling);
+    settlingOn = key;
+    settling = setTimeout(() => {
+      settlingOn = "";
+      shapes.value = wanted.value;
+    }, 220);
+  }
+});
+onBeforeUnmount(() => clearTimeout(settling));
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Evaluations: the engine's, and for a game what the players recorded
@@ -329,7 +371,8 @@ const test = computed(() => testState.value.data?.test);
 const { state: experimentState } = useExperiment(() => test.value?.experiment ?? 0);
 const experiment = computed(() => experimentState.value.data?.experiment);
 const { state: gamesState } = useGames(testId);
-const games = computed(() => gamesState.value.data ?? []);
+// Thousands of rows that are only read: skip the reactive proxies.
+const games = computed(() => toRaw(gamesState.value.data) ?? []);
 
 const filter = ref<"all" | Outcome>("all");
 const listed = computed(() =>
@@ -380,7 +423,7 @@ watch(playing, schedule);
 watch(rate, schedule);
 onBeforeUnmount(() => clearTimeout(timer));
 // A game that finished loading while playing carries on from its start.
-watch(game, () => {
+watch(fresh, () => {
   if (playing.value) schedule();
 });
 
@@ -390,17 +433,42 @@ watch(game, () => {
 
 const importOpen = ref(false);
 const importText = ref("");
-const importError = ref("");
+// The text is read a moment after typing stops, so a long PGN is not parsed on every key.
+const importRead = ref("");
+let reading: ReturnType<typeof setTimeout> | undefined;
+watch(importText, (t) => {
+  clearTimeout(reading);
+  if (!t.trim()) importRead.value = "";
+  else reading = setTimeout(() => (importRead.value = t), 180);
+});
+onBeforeUnmount(() => clearTimeout(reading));
+const imported = computed(() => inspectPosition(importRead.value));
+/** What the text holds, when it holds a position, and that position for the preview. */
+const importLine = computed(() => ("line" in imported.value ? imported.value : undefined));
+const importError = computed(() => ("error" in imported.value ? imported.value.error : ""));
+const importPreview = computed(() => {
+  const l = importLine.value?.line;
+  return l ? play(l) : undefined;
+});
+const importFacts = computed(() => {
+  const l = importLine.value;
+  const p = importPreview.value;
+  if (!l || !p) return "";
+  const who = p.turn === "white" ? "White" : "Black";
+  const n = l.line.moves.length;
+  const what = l.kind === "pgn" && n ? `${n} move${n === 1 ? "" : "s"}. ` : "";
+  return `${what}${who} to move${p.check ? ", in check" : ""}.`;
+});
+// Reading is pending while the text and what was read differ.
+const importPending = computed(() => importText.value.trim() !== importRead.value.trim());
+const importReady = computed(() => !importPending.value && !!importLine.value);
 
 function load() {
-  const line = readPosition(importText.value);
-  if (!line) {
-    importError.value = "That is not a FEN or a PGN with moves.";
-    return;
-  }
+  const line = importLine.value?.line;
+  if (!line || importPending.value) return;
   importOpen.value = false;
   importText.value = "";
-  importError.value = "";
+  importRead.value = "";
   if (isGame.value) {
     const query: Record<string, string> = {};
     if (line.fen !== "startpos") query.fen = line.fen;
@@ -535,6 +603,21 @@ onMounted(() => {
 onBeforeUnmount(() => observer?.disconnect());
 
 // ---------------------------------------------------------------------------------------------------------------------
+// Sound: off until asked for, a knock for a move, a heavier one for a capture, a ping for a check
+// ---------------------------------------------------------------------------------------------------------------------
+
+const sound = stored("board.sound", false);
+watch(cursor, (to, from) => {
+  // A single step makes its sound; jumps and held keys stay quiet (and the player drops steps that crowd each other).
+  if (!sound.value || Math.abs(to - from) !== 1) return;
+  playMoveSound(to > from ? soundOf(sans.value[to - 1]) : "move");
+});
+function toggleSound() {
+  sound.value = !sound.value;
+  if (sound.value) playMoveSound("move");
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Keyboard
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -545,6 +628,8 @@ function onKey(e: KeyboardEvent) {
     return;
   if (e.key === "ArrowLeft") go(cursor.value - 1);
   else if (e.key === "ArrowRight") go(cursor.value + 1);
+  else if (e.key === "ArrowUp") go(0);
+  else if (e.key === "ArrowDown") go(Infinity);
   else return;
   e.preventDefault();
 }
@@ -760,7 +845,11 @@ const filters = [
 
     <template #inspector>
       <div class="insp">
-        <header v-if="game" class="match">
+        <header v-if="loading && !game" class="match" aria-hidden="true">
+          <ESkeleton :height="20" width="70%" />
+          <ESkeleton :height="20" width="55%" />
+        </header>
+        <header v-else-if="game" class="match">
           <p class="who">
             <span :class="['chip', devWhite ? 'chip--white' : 'chip--black']" aria-hidden="true"></span>
             New version
@@ -831,8 +920,8 @@ const filters = [
           </template>
         </section>
 
-        <section class="moves" aria-label="Moves">
-          <MoveList :sans="sans" :cursor="cursor" :start="start" @go="go" />
+        <section class="pane-moves" aria-label="Moves">
+          <MoveList :sans="sans" :cursor="cursor" :start="start" :loading="loading" @go="go" />
         </section>
 
         <footer class="tools">
@@ -841,6 +930,16 @@ const filters = [
           <EButton v-if="isGame" variant="quiet" size="sm" :icon="PhChartLine" @click="fork([])">
             Analyse from here
           </EButton>
+          <EIconButton
+            :icon="sound ? PhSpeakerHigh : PhSpeakerSlash"
+            :label="sound ? 'Mute move sounds' : 'Play move sounds'"
+            tooltip
+            size="sm"
+            class="sound"
+            :variant="sound ? 'primary' : undefined"
+            :aria-pressed="sound"
+            @click="toggleSound"
+          />
         </footer>
       </div>
     </template>
@@ -855,16 +954,28 @@ const filters = [
     title="Paste a game or position"
     description="A FEN, or a PGN from Lichess, Chess.com or anywhere."
   >
-    <ETextarea
-      v-model="importText"
-      label="FEN or PGN"
-      :rows="6"
-      :error="importError || undefined"
-      placeholder="1. e4 e5 2. Nf3 Nc6 …"
-      data-autofocus
-    />
+    <div class="paste">
+      <ETextarea
+        v-model="importText"
+        label="FEN or PGN"
+        :rows="6"
+        :error="!importPending && importError ? importError : undefined"
+        :hint="importLine?.note"
+        placeholder="1. e4 e5 2. Nf3 Nc6 …"
+        data-autofocus
+        @keydown.ctrl.enter.prevent="load"
+        @keydown.meta.enter.prevent="load"
+      />
+      <!-- The result of reading it, so the person sees what Load will do before pressing it. -->
+      <div class="preview" :class="{ 'preview--on': importReady }" aria-live="polite">
+        <div class="preview-board">
+          <ChessBoard v-if="importPreview" still :position="importPreview" />
+        </div>
+        <p class="preview-facts">{{ importReady ? importFacts : "Paste or type to see the position." }}</p>
+      </div>
+    </div>
     <template #actions>
-      <EButton @click="load">Load</EButton>
+      <EButton :disabled="!importReady" @click="load">Load</EButton>
       <EButton variant="quiet" @click="importOpen = false">Cancel</EButton>
     </template>
   </EDialog>
@@ -977,11 +1088,13 @@ const filters = [
   gap: var(--gap);
   width: calc(var(--col) + var(--gap) + var(--side));
   height: var(--side);
-  transition: opacity var(--e-motion-fast, 0.15s);
+  transition: opacity 0.2s;
 }
 
+/* A game that loads at once never flashes: the dimming only starts if it takes a moment. */
 .loading .rig {
-  opacity: 0.5;
+  opacity: 0.55;
+  transition-delay: 0.18s;
 }
 
 /* Transport */
@@ -1012,6 +1125,40 @@ const filters = [
 
 .rate {
   margin-inline-start: var(--e-gap-snug);
+}
+
+/* Paste: the text, and under it what it was read as. */
+.paste {
+  display: grid;
+  gap: var(--e-gap-base);
+}
+
+.preview {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--e-gap-base);
+  min-height: 7.5rem;
+}
+
+.preview-board {
+  width: 7.5rem;
+  aspect-ratio: 1;
+  border-radius: var(--e-radius-sm);
+  background: color-mix(in oklab, var(--e-ink) 6%, var(--e-surface));
+  box-shadow: inset 0 0 0 1px var(--e-border);
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.preview--on .preview-board {
+  opacity: 1;
+}
+
+.preview-facts {
+  margin: 0;
+  color: var(--e-muted);
+  font: var(--e-type-small);
 }
 
 /* Inspector: sections divided by hairlines, each with the card padding. */
@@ -1096,7 +1243,7 @@ const filters = [
 }
 
 .big {
-  min-width: 4.5rem;
+  min-width: 6.2ch;
   font: 600 var(--e-text-3xl) / 1 var(--e-font-mono);
   letter-spacing: -0.03em;
 }
@@ -1108,8 +1255,10 @@ const filters = [
 .facts {
   display: grid;
   flex: 1;
+  align-content: center;
   gap: var(--e-gap-tight);
   min-width: 0;
+  min-height: 2.5rem;
   color: var(--e-muted);
   font: var(--e-type-small);
 }
@@ -1139,10 +1288,14 @@ const filters = [
   margin-block-start: var(--e-gap-tight);
 }
 
-.moves {
+.pane-moves {
   flex: 1 1 auto;
   min-height: 6rem;
   overflow: hidden;
+}
+
+.sound {
+  margin-inline-start: auto;
 }
 
 .tools {
@@ -1173,7 +1326,7 @@ const filters = [
     height: auto;
   }
 
-  .moves {
+  .pane-moves {
     flex: none;
     height: 18rem;
   }
