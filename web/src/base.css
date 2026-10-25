@@ -22,3 +22,19 @@ body {
 .num {
   font-variant-numeric: tabular-nums;
 }
+
+/* Panes scroll on their own, so their bars should be quiet. */
+* {
+  scrollbar-color: color-mix(in oklab, var(--e-muted) 45%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+/* eos draws its own focus ring on its controls. Anything else that can take focus gets the same one. */
+:where(a, [tabindex]):focus-visible {
+  outline: var(--e-stroke-focus) solid var(--e-focus-ring);
+  outline-offset: var(--e-stroke-focus);
+}
+
+::selection {
+  background: color-mix(in oklab, var(--e-primary) 28%, transparent);
+}

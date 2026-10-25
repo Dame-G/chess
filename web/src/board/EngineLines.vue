@@ -68,14 +68,15 @@ const rows = computed(() => {
 
 .line {
   display: grid;
-  grid-template-columns: 3.75rem minmax(0, 1fr);
-  align-items: center;
-  gap: var(--e-gap-snug);
-  padding-inline: var(--e-pad-control-sm);
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  align-items: start;
+  gap: var(--e-gap-base);
+  padding: var(--e-gap-snug) var(--ws-pad);
   border-block-start: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
 }
 
 .score {
+  margin-block-start: 0.125rem;
   padding: 0.125rem 0.25rem;
   border-radius: var(--e-radius-sm);
   font: 600 var(--e-text-sm) / 1.3 var(--e-font-mono);
@@ -95,16 +96,18 @@ const rows = computed(() => {
 
 .pv {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
+
+  /* Two rows of moves at most: the rest is one click away on the board. */
+  max-height: 3.75rem;
   overflow: hidden;
   font-family: var(--e-font-mono);
-  white-space: nowrap;
-  mask-image: linear-gradient(90deg, #000 calc(100% - 1.5rem), transparent);
 }
 
 .no {
   flex: none;
-  padding-inline-start: 0.25rem;
+  padding-inline-start: 0.375rem;
   color: var(--e-muted);
   font: var(--e-type-small);
 }
@@ -112,7 +115,7 @@ const rows = computed(() => {
 .pv :deep(.e-btn) {
   flex: none;
   min-height: 1.75rem;
-  padding-inline: 0.25rem;
+  padding-inline: 0.3125rem;
   text-decoration: none;
 }
 

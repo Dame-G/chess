@@ -57,7 +57,7 @@ followCurrent(list, () => props.cursor);
 <style scoped>
 .moves {
   display: grid;
-  grid-template-columns: 2.5rem 1fr 1fr;
+  grid-template-columns: 3rem 1fr 1fr;
   align-content: start;
   height: 100%;
   overflow-y: auto;
@@ -69,7 +69,7 @@ followCurrent(list, () => props.cursor);
   display: grid;
   align-items: center;
   justify-content: end;
-  padding-inline: var(--e-gap-snug);
+  padding-inline: var(--e-gap-base);
   background: color-mix(in oklab, var(--e-ink) 4%, transparent);
   color: var(--e-muted);
   font: var(--e-type-small);
@@ -77,7 +77,8 @@ followCurrent(list, () => props.cursor);
 
 .moves :deep(.e-btn) {
   justify-content: flex-start;
-  min-height: 1.875rem;
+  min-height: 2.25rem;
+  padding-inline: var(--e-pad-control-sm);
   border-radius: 0;
   text-decoration: none;
 }
@@ -96,14 +97,14 @@ followCurrent(list, () => props.cursor);
 .gap {
   display: grid;
   align-items: center;
-  padding-inline: var(--e-gap-snug);
+  padding-inline: var(--e-pad-control-sm);
   color: var(--e-muted);
 }
 
 .none {
   grid-column: 1 / -1;
   margin: 0;
-  padding: var(--e-pad-control-sm);
+  padding: var(--ws-pad);
   color: var(--e-muted);
   font: var(--e-type-small);
 }

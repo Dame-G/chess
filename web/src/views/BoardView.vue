@@ -37,7 +37,7 @@ import EngineLines from "../board/EngineLines.vue";
 import EvalBar from "../board/EvalBar.vue";
 import MoveList from "../board/MoveList.vue";
 import Playlist from "../board/Playlist.vue";
-import LineChart from "../charts/LineChart.vue";
+import Timeline from "../board/Timeline.vue";
 import Term from "../components/Term.vue";
 import Workspace from "../components/Workspace.vue";
 import { readGame } from "../board/game";
@@ -113,6 +113,7 @@ const gameQuery = useQuery({
 });
 const gameState = gameQuery.state;
 const game = computed(() => (isGame.value && gameState.value.data ? readGame(gameState.value.data) : undefined));
+const gameFailed = computed(() => isGame.value && gameState.value.status === "error");
 const loading = computed(() => isGame.value && !game.value && gameState.value.status !== "error");
 
 const devWhite = computed(() => game.value?.headers.White === "dev");
@@ -140,7 +141,8 @@ watch(
 );
 
 // The address follows the board, so a position can be bookmarked or shared.
-watch([start, moves, cursor, isGame], () => {
+let addressing: ReturnType<typeof setTimeout> | undefined;
+function writeAddress() {
   if (loading.value) return;
   const query: Record<string, string> = {};
   if (isGame.value) {
@@ -151,7 +153,13 @@ watch([start, moves, cursor, isGame], () => {
   }
   if (build.value && route.query.build) query.build = build.value;
   void router.replace({ query });
+}
+// Stepping or playing changes the move many times a second; the address only needs the place it settles on.
+watch([start, moves, cursor, isGame], () => {
+  clearTimeout(addressing);
+  addressing = setTimeout(writeAddress, 300);
 });
+onBeforeUnmount(() => clearTimeout(addressing));
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The engine
@@ -182,7 +190,7 @@ const noBuilds = computed(() => builds.value.status === "success" && builds.valu
 
 // Free analysis keeps the engine on; a game opens with it off, so stepping through costs nothing until it is wanted.
 const freeEngine = stored("board.engine", true);
-const gameEngine = ref(false);
+const gameEngine = stored("board.engine.game", false);
 const engineOn = computed({
   get: () => (isGame.value ? gameEngine.value : freeEngine.value),
   set: (v) => (isGame.value ? (gameEngine.value = v) : (freeEngine.value = v)),
@@ -237,6 +245,20 @@ const mover = computed(() => {
   return white === devWhite.value ? "New version" : "Current version";
 });
 
+/** The move that leads to each position: `Start`, `1. e4`, `1… e5`. Index 0 is the start. */
+const plyLabels = computed(() => {
+  const parts = start.value.split(" ");
+  const offset = start.value !== "startpos" && parts[1] === "b" ? 1 : 0;
+  const first = start.value === "startpos" ? 1 : Number(parts[5] ?? 1);
+  return [
+    "Start",
+    ...sans.value.map((san, i) => {
+      const ply = i + offset;
+      return `${first + Math.floor(ply / 2)}${ply % 2 === 0 ? "." : "…"} ${san}`;
+    }),
+  ];
+});
+
 /** The position after each ply, for the timeline. */
 const fens = computed(() => {
   const first = play({ fen: start.value, moves: [] })!.fen;
@@ -248,19 +270,18 @@ const fens = computed(() => {
 });
 /** Pawns as a share of a win, so one big swing does not flatten the rest: -1 for Black winning, 1 for White. */
 const gauge = (pawns: number) => (winChance(pawns * 100) - 0.5) * 2;
+/** What the timeline shows at each position: the recorded evaluation, else the engine's. */
 const timeline = computed(() => {
   const plies = game.value?.plies;
-  const values = fens.value.map((f, i) => {
+  const values: (number | null)[] = [];
+  const texts: (string | null)[] = [];
+  fens.value.forEach((f, i) => {
     const r = i > 0 ? plies?.[i - 1]?.eval : null;
-    if (r !== null && r !== undefined) return gauge(r);
-    const e = evals.get(f);
-    return e ? gauge(e.pawns) : null;
+    const e = r === null || r === undefined ? evals.get(f) : undefined;
+    values.push(r !== null && r !== undefined ? gauge(r) : e ? gauge(e.pawns) : null);
+    texts.push(r !== null && r !== undefined ? evalText(r) : (e?.text ?? null));
   });
-  // A single point has no line: the strip always spans two.
-  return {
-    x: values.length > 1 ? values.map((_, i) => i) : [0, 1],
-    values: values.length > 1 ? values : [values[0] ?? null, null],
-  };
+  return { values, texts };
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -290,14 +311,7 @@ function playMoves(uci: string[]) {
 }
 
 /** The move counter: `24. Nf3`, or `24… Nf3` for Black's. */
-const counter = computed(() => {
-  if (cursor.value === 0) return "Start";
-  const parts = start.value.split(" ");
-  const offset = start.value !== "startpos" && parts[1] === "b" ? 1 : 0;
-  const first = start.value === "startpos" ? 1 : Number(parts[5] ?? 1);
-  const ply = cursor.value - 1 + offset;
-  return `${first + Math.floor(ply / 2)}${ply % 2 === 0 ? "." : "…"} ${sans.value[cursor.value - 1] ?? ""}`;
-});
+const counter = computed(() => plyLabels.value[cursor.value] ?? "Start");
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The playlist
@@ -517,6 +531,9 @@ const filters = [
           <span class="count num">{{ listed.length.toLocaleString() }}</span>
         </div>
         <ESkeleton v-if="gamesState.status === 'pending'" :lines="6" label="Loading games" class="pad" />
+        <EEmptyState v-else-if="!listed.length" title="No games here" icon="info" size="sm" bare class="pad">
+          {{ filter === "all" ? "This test has no games yet." : "No game ended that way. Try another filter." }}
+        </EEmptyState>
         <Playlist v-else :games="listed" :current="index" @open="openGame($event)" />
       </div>
 
@@ -561,17 +578,15 @@ const filters = [
 
     <!-- Stage: the eval bar beside the board, as large as the pane allows. -->
     <div class="stage" :class="{ loading }">
-      <div class="fit">
-        <div class="rig">
-          <EvalBar :pawns="shown?.pawns" :text="shown?.text" :orientation="orientation" />
-          <ChessBoard
-            :position="position"
-            :orientation="orientation"
-            movable
-            :shapes="searching ? shapes : []"
-            @move="playMoves([$event])"
-          />
-        </div>
+      <div class="rig">
+        <EvalBar :pawns="shown?.pawns" :text="shown?.text" :orientation="orientation" />
+        <ChessBoard
+          :position="position"
+          :orientation="orientation"
+          movable
+          :shapes="searching ? shapes : []"
+          @move="playMoves([$event])"
+        />
       </div>
     </div>
 
@@ -620,19 +635,15 @@ const filters = [
           @click="go(Infinity)"
         />
       </div>
-      <div class="scrub">
-        <LineChart
-          label="Evaluation from White's side by move. Click or drag to seek."
-          bare
-          scrub
-          :x="timeline.x"
-          :series="[{ label: 'eval', values: timeline.values, fill: true }]"
-          :range="[-1, 1]"
-          :height="36"
-          :marker="cursor"
-          @select="go"
-        />
-      </div>
+      <Timeline
+        class="scrub"
+        label="Position in the game, with the evaluation. Click or drag to move."
+        :values="timeline.values"
+        :texts="timeline.texts"
+        :moves="plyLabels"
+        :cursor="cursor"
+        @select="go"
+      />
       <span class="counter num" aria-live="off">
         {{ counter }}
         <span v-if="moves.length" class="of">/ {{ moves.length }}</span>
@@ -671,6 +682,10 @@ const filters = [
           </p>
         </header>
 
+        <ENotice v-if="gameFailed" tone="danger" title="That game did not load" class="problem">
+          It may have been removed, or the runner is not reachable.
+        </ENotice>
+
         <section class="engine" aria-label="Engine">
           <EEmptyState v-if="noBuilds" title="No engine built yet" icon="info" size="sm" bare>
             Build Reckless once and it analyses here.
@@ -687,9 +702,7 @@ const filters = [
                 <template v-else>–</template>
               </div>
               <div class="facts num">
-                <p v-if="!engineOn">
-                  {{ shown ? "From the game" : "Engine off" }}
-                </p>
+                <p v-if="!engineOn">{{ shown ? "From the game" : "Engine off" }}</p>
                 <p v-else-if="playing">Paused while playing</p>
                 <p v-else-if="best">
                   <Term of="depth" inline>Depth</Term> {{ best.depth }}/{{ best.seldepth }} · {{ speed(best.nps) }}
@@ -702,14 +715,15 @@ const filters = [
                   <template v-if="played.time !== null">, {{ played.time.toFixed(2) }}s</template>
                 </p>
               </div>
+            </div>
+            <div v-if="engineOn" class="lines-bar">
+              <span>Lines</span>
               <ESegmented
-                v-if="engineOn"
                 v-model="multipv"
                 label="Lines to show"
                 hide-label
                 size="sm"
                 :options="['1', '2', '3', '5']"
-                class="count-pick"
               />
             </div>
             <ENotice v-if="error && best" tone="danger" title="The engine could not start" :role="false">
@@ -778,7 +792,7 @@ const filters = [
   align-items: center;
   justify-content: space-between;
   gap: var(--e-gap-snug);
-  padding: var(--e-gap-tight) var(--e-pad-control-sm);
+  padding: var(--e-gap-tight) var(--ws-pad);
   border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
 }
 
@@ -799,7 +813,7 @@ const filters = [
 
 .section {
   margin: var(--e-gap-snug) 0 0;
-  padding: var(--e-gap-tight) var(--e-pad-control-sm);
+  padding: var(--e-gap-tight) var(--ws-pad);
   color: var(--e-muted);
   font: var(--e-type-small);
   letter-spacing: 0.04em;
@@ -823,29 +837,26 @@ const filters = [
   white-space: nowrap;
 }
 
-/* Stage: the board is the largest square the pane allows, with the eval bar beside it. */
+/* Stage: the eval bar and the board are the largest square the pane's content box allows, centred on the axis with
+   room to spare. The pane itself is the size container, so nothing is measured in script. */
 .stage {
+  --bar: var(--evalbar, 1.5rem);
+  --gap: var(--e-gap-snug);
+  --side: min(100cqh, 100cqw - var(--bar) - var(--gap));
+
   display: grid;
+  place-content: center;
   min-height: 0;
   padding: var(--e-gap-snug);
   box-sizing: border-box;
-}
-
-.fit {
-  display: grid;
-  place-items: center;
-  min-height: 0;
   container-type: size;
 }
 
 .rig {
-  --bar: var(--evalbar, 1.5rem);
-  --gap: var(--e-gap-snug);
-  --side: min(100cqh, calc(100cqw - var(--bar) - var(--gap)));
-
   display: grid;
   grid-template-columns: var(--bar) var(--side);
   gap: var(--gap);
+  width: calc(var(--bar) + var(--gap) + var(--side));
   height: var(--side);
   transition: opacity var(--e-motion-fast, 0.15s);
 }
@@ -861,15 +872,17 @@ const filters = [
   gap: var(--e-gap-tight);
 }
 
+/* The timeline runs the full width above the controls, as a seek bar does in a player. */
 .scrub {
-  flex: 1 1 8rem;
-  min-width: 6rem;
+  flex: 1 0 100%;
+  order: -1;
 }
 
 .counter {
   min-width: 6rem;
+  margin-inline: var(--e-gap-base) auto;
   font: 600 var(--e-text-sm) / 1 var(--e-font-mono);
-  text-align: end;
+  text-align: start;
   white-space: nowrap;
 }
 
@@ -878,25 +891,34 @@ const filters = [
   font-weight: 400;
 }
 
-/* Inspector */
+.rate {
+  margin-inline-start: var(--e-gap-snug);
+}
+
+/* Inspector: sections divided by hairlines, each with the card padding. */
 .pick {
   flex: 1;
   min-width: 8rem;
 }
 
 .insp {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  --line: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
+
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
 }
 
+.insp > * {
+  flex: none;
+  border-block-end: var(--line);
+}
+
 .match {
   display: grid;
-  grid-row: 1;
-  gap: var(--e-gap-tight);
-  padding: var(--e-gap-snug) var(--e-pad-control-sm);
-  border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
+  gap: var(--e-gap-snug);
+  padding: var(--e-gap-base) var(--ws-pad);
 }
 
 .match p {
@@ -933,16 +955,25 @@ const filters = [
   background: #2a2420;
 }
 
+.problem {
+  margin: var(--e-gap-base) var(--e-pad-card);
+}
+
 .engine {
-  grid-row: 2;
-  border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
+  display: grid;
+  gap: var(--e-gap-snug);
+  padding-block: var(--e-gap-base) var(--e-gap-snug);
+}
+
+.engine :deep(.e-empty) {
+  padding-inline: var(--ws-pad);
 }
 
 .hero {
   display: flex;
   align-items: center;
-  gap: var(--e-gap-base);
-  padding: var(--e-gap-snug) var(--e-pad-control-sm);
+  gap: var(--e-gap-loose);
+  padding-inline: var(--ws-pad);
 }
 
 .big {
@@ -958,7 +989,7 @@ const filters = [
 .facts {
   display: grid;
   flex: 1;
-  gap: 0.125rem;
+  gap: var(--e-gap-tight);
   min-width: 0;
   color: var(--e-muted);
   font: var(--e-type-small);
@@ -976,44 +1007,45 @@ const filters = [
   color: var(--e-danger);
 }
 
-.count-pick {
-  flex: none;
+.lines-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline: var(--ws-pad);
+  color: var(--e-muted);
+  font: var(--e-type-small);
+}
+
+.engine :deep(.lines) {
+  margin-block-start: var(--e-gap-tight);
 }
 
 .moves {
-  grid-row: 3;
-  min-height: 0;
-  border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
+  flex: 1 1 auto;
+  min-height: 6rem;
+  overflow: hidden;
 }
 
 .tools {
-  grid-row: 4;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--e-gap-tight);
-  padding: var(--e-gap-tight) var(--e-pad-control-sm);
+  gap: var(--e-gap-snug);
+  padding: var(--e-gap-base) var(--ws-pad);
+  border-block-end: 0;
 }
 
 @media (width < 64rem) {
   .stage {
-    height: auto;
-  }
+    --side: min(100cqw - var(--bar) - var(--gap), 75dvh);
 
-  .fit {
-    display: block;
     container-type: inline-size;
-  }
-
-  .rig {
-    --side: min(calc(100cqw - var(--bar) - var(--gap)), 75dvh);
-
-    margin-inline: auto;
   }
 
   .scrub {
     flex-basis: 100%;
     order: 2;
+    margin-inline: 0;
   }
 
   .counter {
@@ -1025,7 +1057,8 @@ const filters = [
   }
 
   .moves {
-    max-height: 18rem;
+    flex: none;
+    height: 18rem;
   }
 }
 </style>

@@ -22,7 +22,7 @@ const kilo = (nps: number) => `${Math.round(nps / 1000)}k`;
       <span class="bar-track" aria-hidden="true"
         ><span :style="{ inlineSize: `${(b.nps / fastest) * 100}%` }"></span
       ></span>
-      <span class="bar-value num">{{ kilo(b.nps) }}</span>
+      <span class="bar-value num">{{ kilo(b.nps) }} n/s</span>
     </li>
   </ul>
 </template>
@@ -30,7 +30,6 @@ const kilo = (nps: number) => `${Math.round(nps / 1000)}k`;
 <style scoped>
 .bars {
   display: grid;
-  gap: var(--e-gap-tight);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -38,14 +37,18 @@ const kilo = (nps: number) => `${Math.round(nps / 1000)}k`;
 
 .bar {
   display: grid;
-  grid-template-columns: minmax(6rem, 11rem) minmax(0, 1fr) 3.5rem;
+  grid-template-columns: minmax(5rem, 9rem) minmax(0, 1fr) 4.5rem;
   align-items: center;
-  gap: var(--e-gap-snug);
+  gap: var(--e-gap-base);
+  padding: var(--e-gap-snug) var(--e-gap-base);
+  border-inline-start: 0.1875rem solid transparent;
   color: var(--e-muted);
   font: var(--e-type-small);
 }
 
 .bar--on {
+  border-inline-start-color: var(--e-primary);
+  background: var(--e-primary-soft);
   color: var(--e-ink);
 }
 
@@ -61,7 +64,7 @@ const kilo = (nps: number) => `${Math.round(nps / 1000)}k`;
 }
 
 .bar-track {
-  block-size: 0.5rem;
+  block-size: 0.625rem;
   background: var(--e-surface-tint);
 }
 

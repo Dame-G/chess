@@ -9,11 +9,25 @@ export interface FunnelStage {
   label: string;
   state: StageState;
   result?: Result;
-  /** A few words on how it went, for the stepper. */
-  note?: string;
+  /** How it went in a few mono words, for its cell in the pipeline: "-6.6 ± 5.2 Elo", "play changed", "waiting". */
+  line: string;
 }
 
 const stageName = (s: Experiment["funnel"][number]) => (s.type === "match" ? s.name : s.type);
+
+/** One stage's result in a few words. */
+function stageLine(name: string, state: StageState, result: Result | undefined, test: Test | undefined): string {
+  if (test?.estimate) return `${signed(test.estimate.elo, 1)} ± ${test.estimate.elo_error.toFixed(1)} Elo`;
+  if (name === "bench" && result) return /unchanged/.test(result.detail) ? "play identical" : "play changed";
+  if (name === "speed" && result) {
+    const m = result.detail.match(/([+-]\d+(?:\.\d+)?)% ± (\d+(?:\.\d+)?)%/);
+    if (m) return `${signed(Number(m[1]), 1)}% ± ${Number(m[2]).toFixed(1)}%`;
+  }
+  if (state === "upcoming") return "waiting";
+  if (state === "current")
+    return name === "bench" ? "checking" : name === "speed" ? "timing" : test ? "playing" : "starting";
+  return result?.passed ? "passed" : "failed";
+}
 
 /** Every stage of an experiment's funnel, with what happened in it. */
 export function funnelOf(e: Experiment, tests: readonly Test[]): FunnelStage[] {
@@ -22,12 +36,7 @@ export function funnelOf(e: Experiment, tests: readonly Test[]): FunnelStage[] {
     const result = e.results.find((r) => r.stage === name);
     const state: StageState = result ? (result.passed ? "done" : "error") : e.current === name ? "current" : "upcoming";
     const test = tests.find((t) => t.stage === name);
-    let note: string | undefined;
-    if (test?.estimate) note = `${signed(test.estimate.elo, 1)} Elo`;
-    else if (name === "bench" && result) note = /unchanged/.test(result.detail) ? "same" : "changed";
-    else if (name === "speed" && result) note = result.detail.match(/[+−-][\d.]+%/)?.[0]?.replace("-", "−");
-    else if (state === "current") note = "running";
-    return { name, label: stageLabel(name), state, result, note };
+    return { name, label: stageLabel(name), state, result, line: stageLine(name, state, result, test) };
   });
 }
 
@@ -103,4 +112,23 @@ export function shortAgo(iso: string, now = Date.now()): string {
   if (s < 3600) return `${Math.floor(s / 60)}m`;
   if (s < 86_400) return `${Math.floor(s / 3600)}h`;
   return `${Math.floor(s / 86_400)}d`;
+}
+
+/** Splits text around the search words, so the matches can be marked. */
+export function highlight(text: string, query: string): { text: string; hit: boolean }[] {
+  const q = query.trim().toLowerCase();
+  const at = q ? text.toLowerCase().indexOf(q) : -1;
+  if (at < 0) return [{ text, hit: false }];
+  return [
+    { text: text.slice(0, at), hit: false },
+    { text: text.slice(at, at + q.length), hit: true },
+    { text: text.slice(at + q.length), hit: false },
+  ].filter((s) => s.text);
+}
+
+/** The games split by result, as shares of the total, for the W–D–L bar. */
+export function record(games: readonly { white: string; result: string }[]): { W: number; D: number; L: number } {
+  const r = { W: 0, D: 0, L: 0 };
+  for (const g of games) r[outcome(g)]++;
+  return r;
 }

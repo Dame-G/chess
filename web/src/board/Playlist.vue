@@ -15,7 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{ open: [index: number] }>();
 
 // Thousands of games: only the rows in view exist.
-const ROW = 30;
+const ROW = 32;
 const box = ref<HTMLElement>();
 const top = ref(0);
 const height = ref(600);
@@ -96,7 +96,7 @@ const word: Record<Outcome, string> = { W: "Won", D: "Drew", L: "Lost", "": "Unf
   display: grid;
   grid-template-columns: 3rem 1.25rem 1.5rem 1fr;
   align-items: center;
-  height: 30px;
+  height: 32px;
   min-height: 0;
   padding-block: 0;
   border-radius: 0;

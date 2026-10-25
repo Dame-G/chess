@@ -19,15 +19,15 @@ const { state } = useTest(() => props.id);
 const test = computed(() => state.value.data?.test);
 const points = computed(() => state.value.data?.points ?? []);
 const sprt = computed(() => test.value?.spec.sprt);
-const lines = computed(() => {
-  const b = test.value && bounds(test.value);
-  return b
+const b = computed(() => (test.value ? bounds(test.value) : undefined));
+const lines = computed(() =>
+  b.value
     ? [
-        { value: b.reject, label: "fail line" },
-        { value: b.accept, label: "pass line" },
+        { value: b.value.reject, label: "reject" },
+        { value: b.value.accept, label: "accept" },
       ]
-    : [];
-});
+    : [],
+);
 const est = computed(() => test.value?.estimate);
 </script>
 
@@ -35,7 +35,7 @@ const est = computed(() => test.value?.estimate);
   <section v-if="test" class="test" :aria-label="`Test ${test.id}`">
     <DecisionGauge v-if="sprt" :test="test" />
 
-    <EGrid min="8rem" gap="base" class="figures">
+    <EGrid min="9rem" gap="loose" class="figures">
       <EMetric label="Games" :value="test.games.toLocaleString()" />
       <EMetric label="Score" :value="est ? `${(est.score * 100).toFixed(1)}%` : '–'" help="new version" />
       <EMetric label="Elo" :value="est ? signed(est.elo, 1) : '–'">
@@ -50,15 +50,18 @@ const est = computed(() => test.value?.estimate);
 
     <PairBar :penta="test.penta" />
 
-    <figure v-if="sprt && points.length > 1" class="evidence">
-      <figcaption><Term of="llr">Evidence over time</Term></figcaption>
+    <figure v-if="sprt && b && points.length > 1" class="evidence">
+      <figcaption class="cap">
+        <Term of="llr">Evidence over time</Term>
+        <span class="cap-bounds num">reject {{ signed(b.reject) }} · accept {{ signed(b.accept) }}</span>
+      </figcaption>
       <LineChart
-        label="Evidence (log-likelihood ratio) by games played"
+        label="Evidence (log-likelihood ratio) by games played, with the reject and accept lines"
         :x="points.map((p) => p.games)"
         :series="[{ label: 'evidence', values: points.map((p) => p.llr ?? null) }]"
         :lines="lines"
         x-label="games"
-        :height="170"
+        :height="190"
       />
     </figure>
 
@@ -76,24 +79,39 @@ const est = computed(() => test.value?.estimate);
 <style scoped>
 .test {
   display: grid;
-  gap: var(--e-gap-loose);
+  gap: var(--e-gap-section);
+}
+
+.figures {
+  padding-block: var(--e-gap-loose);
+  border-block: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 55%, transparent);
 }
 
 .evidence {
   display: grid;
-  gap: var(--e-gap-snug);
+  gap: var(--e-gap-base);
   margin: 0;
 }
 
-.evidence figcaption {
+.cap {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--e-gap-tight) var(--e-gap-base);
   font: var(--e-type-small);
+}
+
+.cap-bounds {
+  color: var(--e-muted);
+  font-size: var(--e-text-xs, 0.75rem);
 }
 
 .settings {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--e-gap-tight);
+  gap: var(--e-gap-snug);
   color: var(--e-muted);
   font: var(--e-type-small);
 }

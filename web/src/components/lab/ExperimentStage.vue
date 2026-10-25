@@ -1,32 +1,26 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { EStepper } from "@eos-ui/vue/components/EStepper";
+import { computed, useId } from "vue";
 import type { Experiment, Test } from "../../api/queries";
 import { ago, kinds, stages, verdict } from "../../format";
 import TestPanel from "../TestPanel.vue";
 import Term from "../Term.vue";
+import StagePipeline from "./StagePipeline.vue";
 import { funnelOf, verdictLine } from "./lab";
 
-const props = defineProps<{ experiment: Experiment; tests: Test[] }>();
-/** The stage shown below the stepper. */
-const stage = defineModel<string>("stage", { required: true });
+/** One experiment: how it stands in a sentence, the funnel it goes through, and the evidence of the chosen stage. */
+const props = defineProps<{ experiment: Experiment; tests: Test[]; stage: string }>();
 
+const panel = `panel-${useId()}`;
 const v = computed(() => verdict(props.experiment));
 const funnel = computed(() => funnelOf(props.experiment, props.tests));
-const picked = computed(() => funnel.value.find((s) => s.name === stage.value));
-const test = computed(() => props.tests.find((t) => t.stage === stage.value));
-const steps = computed(() =>
-  funnel.value.map((s) => ({
-    label: s.note ? `${s.label} · ${s.note}` : s.label,
-    state: s.state,
-    disabled: s.state === "upcoming",
-  })),
-);
+const picked = computed(() => funnel.value.find((s) => s.name === props.stage));
+const test = computed(() => props.tests.find((t) => t.stage === props.stage));
 </script>
 
 <template>
   <div class="stage">
-    <section class="intro">
+    <header class="intro">
+      <p :class="['verdict', `verdict--${v.tone}`]" aria-live="polite">{{ verdictLine(experiment, tests) }}</p>
       <p class="refs">
         <code>{{ experiment.dev }}</code> vs <code>{{ experiment.base }}</code>
         <span class="sep" aria-hidden="true">·</span>
@@ -37,27 +31,27 @@ const steps = computed(() =>
           <span class="sep" aria-hidden="true">·</span> batch {{ experiment.batch }}
         </template>
       </p>
-      <p v-if="experiment.hypothesis" class="hypothesis">{{ experiment.hypothesis }}</p>
-    </section>
+      <p v-if="experiment.hypothesis" class="idea">
+        <span class="idea-label">The idea</span>
+        {{ experiment.hypothesis }}
+      </p>
+    </header>
 
-    <p :class="['verdict', `verdict--${v.tone}`]" aria-live="polite">{{ verdictLine(experiment, tests) }}</p>
+    <StagePipeline :stages="funnel" :stage="stage" :panel="panel" />
 
-    <section :class="['funnel', 'sel-' + (funnel.findIndex((f) => f.name === stage) + 1)]">
-      <EStepper label="Stages" interactive :steps="steps" @select="(i) => (stage = funnel[i]!.name)" />
-    </section>
-
-    <section class="panel">
-      <TestPanel v-if="test" :id="test.id" />
-      <div v-else-if="picked" class="plain">
-        <p class="plain-line">
-          <strong>{{ picked.label }}.</strong>
-          {{ picked.result?.detail ?? (picked.state === "current" ? "Running now." : "Not reached yet.") }}
-        </p>
-        <p class="plain-detail">
-          {{ stages[picked.name]?.detail }}
-          <Term v-if="picked.name === 'bench'" of="bench" inline>What is a fingerprint?</Term>
-        </p>
+    <section v-if="picked" :id="panel" class="panel" role="tabpanel" :aria-labelledby="`${panel}-title`" tabindex="-1">
+      <div class="panel-head">
+        <h3 :id="`${panel}-title`" class="panel-title">{{ picked.label }}</h3>
+        <p class="panel-detail">{{ stages[picked.name]?.detail }}</p>
       </div>
+      <TestPanel v-if="test" :id="test.id" />
+      <p v-else-if="picked.result" class="plain num">{{ picked.result.detail }}</p>
+      <p v-else class="plain">
+        {{
+          picked.state === "current" ? "Running now. The result appears here as soon as it is in." : "Not reached yet."
+        }}
+      </p>
+      <Term v-if="picked.name === 'bench'" of="bench" inline>What is a fingerprint?</Term>
     </section>
   </div>
 </template>
@@ -66,34 +60,14 @@ const steps = computed(() =>
 .stage {
   display: grid;
   align-content: start;
-  gap: var(--e-gap-loose);
-  padding: var(--e-gap-loose) var(--e-pad-control-sm);
+  gap: var(--e-gap-section);
+  padding: var(--e-gap-section) var(--e-pad-card);
   min-width: 0;
 }
 
 .intro {
   display: grid;
-  gap: var(--e-gap-tight);
-}
-
-.refs {
-  margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
-}
-
-.refs code {
-  color: var(--e-ink);
-  font-family: var(--e-font-mono);
-}
-
-.sep {
-  margin-inline: 0.25rem;
-}
-
-.hypothesis {
-  margin: 0;
-  font: var(--e-type-body);
+  gap: var(--e-gap-base);
 }
 
 .verdict {
@@ -101,6 +75,7 @@ const steps = computed(() =>
   padding-inline-start: var(--e-gap-base);
   border-inline-start: 3px solid var(--e-border-strong);
   font: var(--e-type-deck);
+  text-wrap: balance;
 }
 
 .verdict--success {
@@ -115,43 +90,69 @@ const steps = computed(() =>
   border-color: var(--e-primary);
 }
 
-.funnel {
-  padding-block: var(--e-gap-snug);
-  border-block: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 55%, transparent);
-  overflow-x: auto;
+.refs,
+.idea {
+  margin: 0;
+  color: var(--e-muted);
+  font: var(--e-type-small);
 }
 
-.funnel :deep(.e-step-body) {
-  padding-block-end: 0.375rem;
-  border-block-end: 2px solid transparent;
+.refs code {
+  color: var(--e-ink);
+  font-family: var(--e-font-mono);
 }
 
-.sel-1 :deep(.e-step:nth-child(1) .e-step-body),
-.sel-2 :deep(.e-step:nth-child(2) .e-step-body),
-.sel-3 :deep(.e-step:nth-child(3) .e-step-body),
-.sel-4 :deep(.e-step:nth-child(4) .e-step-body),
-.sel-5 :deep(.e-step:nth-child(5) .e-step-body),
-.sel-6 :deep(.e-step:nth-child(6) .e-step-body) {
-  border-block-end-color: var(--e-primary);
-  font-weight: 700;
+.sep {
+  margin-inline: var(--e-gap-tight);
 }
 
-.plain {
+.idea {
+  display: grid;
+  gap: var(--e-gap-tight);
+  max-width: 60ch;
+}
+
+.idea-label {
+  font: var(--e-type-meta);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.panel {
+  display: grid;
+  gap: var(--e-gap-loose);
+  min-width: 0;
+}
+
+.panel:focus-visible {
+  outline: none;
+}
+
+.panel-head {
   display: grid;
   gap: var(--e-gap-tight);
 }
 
-.plain p {
+.panel-title {
   margin: 0;
+  font: var(--e-type-h5);
 }
 
-.plain-line {
-  font-family: var(--e-font-mono);
-  font-size: var(--e-text-sm);
-}
-
-.plain-detail {
+.panel-detail,
+.plain {
+  margin: 0;
   color: var(--e-muted);
   font: var(--e-type-small);
+}
+
+.panel-detail {
+  max-width: 60ch;
+}
+
+.plain {
+  padding: var(--e-gap-base) var(--e-pad-card);
+  border: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 55%, transparent);
+  border-radius: var(--e-radius-sm);
+  color: var(--e-ink);
 }
 </style>

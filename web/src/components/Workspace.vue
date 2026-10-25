@@ -46,6 +46,8 @@ defineSlots<{
 
 <style scoped>
 .ws {
+  /* The inline padding of every bar. Lists in a pane use it too, so their text lines up with the bar above. */
+  --ws-pad: var(--e-pad-control);
   --ws-line: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 55%, transparent);
 
   display: grid;
@@ -92,9 +94,9 @@ defineSlots<{
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--e-gap-snug);
-  min-height: var(--e-control-height);
-  padding: var(--e-gap-tight) var(--e-pad-control-sm);
+  gap: var(--e-gap-snug) var(--e-gap-base);
+  min-height: calc(var(--e-control-height) + var(--e-gap-base));
+  padding: var(--e-gap-snug) var(--ws-pad);
   box-sizing: border-box;
 }
 

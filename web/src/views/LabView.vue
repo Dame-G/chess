@@ -11,16 +11,16 @@ import { ESearchBar } from "@eos-ui/vue/components/ESearchBar";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESelect } from "@eos-ui/vue/components/ESelect";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
-import { EStamp } from "@eos-ui/vue/components/EStamp";
+import { EHighlight } from "@eos-ui/vue/components/EHighlight";
 import { api } from "../api/runner";
-import { useExperiment, useExperiments, useGames, type Experiment } from "../api/queries";
+import { useExperiment, useExperiments, useGames, useTest, type Experiment } from "../api/queries";
 import { verdict } from "../format";
 import HowItWorks from "../components/HowItWorks.vue";
 import NewExperiment from "../components/NewExperiment.vue";
 import Workspace from "../components/Workspace.vue";
 import ExperimentStage from "../components/lab/ExperimentStage.vue";
 import GameList from "../components/lab/GameList.vue";
-import { defaultStage, headline, outcome, shortAgo } from "../components/lab/lab";
+import { defaultStage, headline, highlight, shortAgo } from "../components/lab/lab";
 
 const route = useRoute();
 const router = useRouter();
@@ -31,7 +31,16 @@ const { state } = useExperiment(id);
 const experiment = computed(() =>
   state.value.data?.experiment.id === id.value ? state.value.data.experiment : undefined,
 );
-const tests = computed(() => state.value.data?.tests ?? []);
+const rawTests = computed(() => state.value.data?.tests ?? []);
+// A running test's progress arrives as its own events, so its live figures replace the experiment's older copy.
+const liveId = computed(() => rawTests.value.find((t) => t.running)?.id ?? 0);
+const { state: live } = useTest(liveId);
+const tests = computed(() => {
+  const fresh = live.value.data?.test;
+  return fresh && fresh.id === liveId.value
+    ? rawTests.value.map((t) => (t.id === fresh.id ? fresh : t))
+    : rawTests.value;
+});
 const active = computed(() => !!experiment.value && ["queued", "running"].includes(experiment.value.status));
 
 // ---- Library ----
@@ -55,6 +64,13 @@ const shown = computed(() => {
   );
 });
 
+/** The query to carry between experiments: the chosen stage belongs to one experiment only. */
+function keep() {
+  const rest = { ...route.query };
+  delete rest.stage;
+  return rest;
+}
+
 const mark = (e: Experiment) => {
   const tone = verdict(e).tone;
   return tone === "info" ? "primary" : tone === "neutral" ? "border-strong" : tone;
@@ -66,10 +82,16 @@ watch(
   ([rows, current]) => {
     if (current || !rows.length) return;
     const pick = rows.find((e) => e.status === "running") ?? rows[0]!;
-    void router.replace({ path: `/lab/${pick.id}`, query: route.query });
+    void router.replace({ path: `/lab/${pick.id}`, query: keep() });
   },
   { immediate: true },
 );
+
+function clear() {
+  search.value = "";
+  filter.value = "all";
+  batch.value = "";
+}
 
 const listEl = ref<HTMLElement>();
 watch(id, async () => {
@@ -85,7 +107,7 @@ function step(delta: number, event: KeyboardEvent) {
   event.preventDefault();
   const at = rows.findIndex((e) => e.id === id.value);
   const next = rows[Math.min(rows.length - 1, Math.max(0, at < 0 ? 0 : at + delta))]!;
-  void router.replace({ path: `/lab/${next.id}`, query: route.query });
+  void router.replace({ path: `/lab/${next.id}`, query: keep() });
 }
 
 // ---- New experiment: the command palette sends ?new=1 ----
@@ -107,17 +129,16 @@ useShortcuts(
 );
 
 // ---- The stage ----
-const picked = ref<string | null>(null);
-watch(id, () => (picked.value = null));
-const stage = computed(() => picked.value ?? (experiment.value ? defaultStage(experiment.value) : ""));
+// The chosen stage lives in the URL (?stage=), and falls back to the one running or last run.
+const stage = computed(() => {
+  const e = experiment.value;
+  if (!e) return "";
+  const asked = String(route.query.stage ?? "");
+  return e.funnel.some((s) => (s.type === "match" ? s.name : s.type) === asked) ? asked : defaultStage(e);
+});
 const test = computed(() => tests.value.find((t) => t.stage === stage.value));
 
 const { state: games } = useGames(() => test.value?.id ?? 0);
-const record = computed(() => {
-  const r = { W: 0, D: 0, L: 0 };
-  for (const g of games.value.data ?? []) r[outcome(g)]++;
-  return r;
-});
 
 const stopping = ref(false);
 async function cancel() {
@@ -166,14 +187,25 @@ async function cancel() {
 
     <template #library>
       <ESkeleton v-if="list.status === 'pending'" :lines="5" label="Loading experiments" />
-      <p v-else-if="!all.length" class="note">No experiments yet.</p>
-      <p v-else-if="!shown.length" class="note">Nothing matches.</p>
+      <EEmptyState v-else-if="!all.length" bare size="sm" title="No experiments yet">
+        Press Test an idea to try a change.
+      </EEmptyState>
+      <EEmptyState v-else-if="!shown.length" bare size="sm" title="Nothing matches">
+        <template #action>
+          <EButton variant="quiet" size="sm" @click="clear">Clear filters</EButton>
+        </template>
+      </EEmptyState>
       <ol v-else ref="listEl" class="rows">
         <li v-for="e in shown" :key="e.id">
           <RouterLink class="row" :to="`/lab/${e.id}`">
             <span class="row-mark" :style="{ background: `var(--e-${mark(e)})` }" aria-hidden="true"></span>
             <span class="row-top">
-              <span class="row-name">{{ e.name }}</span>
+              <span class="row-name">
+                <template v-for="(p, i) in highlight(e.name, search)" :key="i">
+                  <EHighlight v-if="p.hit">{{ p.text }}</EHighlight>
+                  <template v-else>{{ p.text }}</template>
+                </template>
+              </span>
               <span class="row-time num">{{ shortAgo(e.created_at) }}</span>
             </span>
             <span class="row-refs num">{{ e.dev }} vs {{ e.base }}</span>
@@ -188,20 +220,13 @@ async function cancel() {
 
     <template v-if="experiment" #stage-head>
       <h2 class="title">{{ experiment.name }}</h2>
-      <EStamp :tone="verdict(experiment).tone" :label="verdict(experiment).label" />
       <span class="grow"></span>
       <EButton v-if="active" variant="outline" size="sm" :icon="PhStop" :loading="stopping" @click="cancel">
         Stop
       </EButton>
     </template>
 
-    <ExperimentStage
-      v-if="experiment"
-      :experiment="experiment"
-      :tests="tests"
-      :stage="stage"
-      @update:stage="picked = $event"
-    />
+    <ExperimentStage v-if="experiment" :experiment="experiment" :tests="tests" :stage="stage" />
     <ENotice v-else-if="state.status === 'error'" class="pad" tone="danger" title="Could not load the experiment">
       {{ state.error?.message }}
     </ENotice>
@@ -218,11 +243,6 @@ async function cancel() {
       <h2 class="ins-title">Games</h2>
       <span class="ins-count num">{{ (games.data?.length ?? test.games).toLocaleString() }}</span>
       <span class="grow"></span>
-      <span class="record num" aria-label="The new version's wins, draws and losses">
-        <span class="record-w">{{ record.W.toLocaleString() }}</span
-        >–<span>{{ record.D.toLocaleString() }}</span
-        >–<span class="record-l">{{ record.L.toLocaleString() }}</span>
-      </span>
     </template>
     <template v-if="test" #inspector>
       <GameList :test="test.id" />
@@ -238,8 +258,8 @@ async function cancel() {
   flex: 1;
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
-  gap: var(--e-gap-snug);
-  padding-block: var(--e-gap-tight);
+  gap: var(--e-gap-base);
+  padding-block: var(--e-gap-snug);
 }
 
 .lib-top {
@@ -283,8 +303,9 @@ async function cancel() {
 .row {
   position: relative;
   display: grid;
-  gap: 0.125rem;
-  padding: 0.5rem var(--e-pad-control-sm) 0.5rem calc(var(--e-pad-control-sm) + 0.25rem);
+  gap: var(--e-gap-tight);
+  padding: var(--e-gap-base) var(--ws-pad, var(--e-pad-control-sm));
+  padding-inline-start: calc(var(--ws-pad, var(--e-pad-control-sm)) + 0.25rem);
   border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 35%, transparent);
   color: inherit;
   text-decoration: none;
@@ -296,6 +317,14 @@ async function cancel() {
 
 .row[aria-current] {
   background: var(--e-primary-soft);
+}
+
+.row[aria-current] .row-mark {
+  width: 4px;
+}
+
+.row[aria-current] .row-name {
+  color: var(--e-ink);
 }
 
 .row:focus-visible {
@@ -353,8 +382,31 @@ async function cancel() {
   color: var(--e-primary);
 }
 
+.row-result--info::before {
+  content: "";
+  display: inline-block;
+  width: 0.375rem;
+  height: 0.375rem;
+  margin-inline-end: var(--e-gap-snug);
+  border-radius: 50%;
+  background: currentcolor;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-result--info::before {
+    animation: none;
+  }
+}
+
 .how {
-  margin: var(--e-gap-snug) var(--e-pad-control-sm);
+  margin: var(--e-gap-base) var(--e-pad-control-sm);
 }
 
 .pad {
@@ -367,26 +419,11 @@ async function cancel() {
   align-content: start;
   gap: var(--e-gap-loose);
   max-width: 34rem;
-  padding: var(--e-gap-loose) var(--e-pad-control-sm);
+  padding: var(--e-gap-section) var(--e-pad-card);
 }
 
 .ins-count {
   color: var(--e-muted);
   font: var(--e-type-small);
-}
-
-.record {
-  display: inline-flex;
-  gap: 0.25rem;
-  color: var(--e-muted);
-  font: 600 var(--e-text-sm, 0.8125rem) / 1 var(--e-font-mono);
-}
-
-.record-w {
-  color: var(--e-success);
-}
-
-.record-l {
-  color: var(--e-danger);
 }
 </style>

@@ -153,12 +153,12 @@ const machine = computed(() => {
 <style scoped>
 .runner {
   display: grid;
-  gap: var(--e-gap-loose);
+  gap: var(--e-gap-section);
 }
 
 .part {
   display: grid;
-  gap: var(--e-gap-snug);
+  gap: var(--e-gap-base);
 }
 
 .part-title {
@@ -178,13 +178,16 @@ const machine = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--e-gap-base);
-  padding-block-end: var(--e-gap-snug);
-  border-block-end: var(--e-stroke-hair) solid var(--e-border);
+  gap: var(--e-gap-loose);
+  padding: var(--e-gap-base) var(--e-pad-control-sm);
+  border: var(--e-stroke-hair) solid var(--e-border);
+  background: var(--e-surface-tint);
 }
 
 .now-text {
   display: grid;
+  gap: var(--e-gap-tight);
+  min-inline-size: 0;
   margin: 0;
 }
 

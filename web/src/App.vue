@@ -1,18 +1,22 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from "vue";
+import { computed, onUnmounted, ref, watch, watchEffect } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import { useQueryCache } from "@pinia/colada";
 import {
+  PhCaretUp,
+  PhClipboardText,
+  PhClockCounterClockwise,
   PhCpu,
   PhFlask,
   PhGraph,
   PhHammer,
+  PhKeyboard,
   PhMagnifyingGlass,
   PhPlugsConnected,
   PhPlus,
-  PhClipboardText,
   PhWrench,
 } from "@phosphor-icons/vue";
+import { useShortcuts, useToast } from "@eos-ui/vue";
 import { EAppFooter } from "@eos-ui/vue/components/EAppFooter";
 import { EAppHeader } from "@eos-ui/vue/components/EAppHeader";
 import { EAppShell } from "@eos-ui/vue/components/EAppShell";
@@ -21,12 +25,15 @@ import { ECommandPalette, type CommandItem } from "@eos-ui/vue/components/EComma
 import { EKbd } from "@eos-ui/vue/components/EKbd";
 import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENavList } from "@eos-ui/vue/components/ENavList";
+import { EToastProvider } from "@eos-ui/vue/components/EToastProvider";
 import { dispatch, followEvents } from "./api/events";
 import { useBuilds, useExperiments } from "./api/queries";
 import { useActivity } from "./activity";
 import { verdict } from "./format";
+import { stored } from "./stored";
 import Logo from "./components/Logo.vue";
 import RunnerDrawer from "./components/RunnerDrawer.vue";
+import Shortcuts from "./components/Shortcuts.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -43,38 +50,140 @@ const workspace = computed(() => route.meta.workspace === true);
 
 const { summary, status, queued } = useActivity();
 const runnerOpen = ref(false);
+const shortcutsOpen = ref(false);
+const palette = ref(false);
 
-// One palette for the whole app: every place, every action, every experiment and engine.
+useShortcuts({ "?": () => (shortcutsOpen.value = true) });
+
+// ---- Runner connection: say so when it drops and when it is back, once.
+const toast = useToast();
+let seenOnline = false;
+watch(
+  () => summary.value.state,
+  (state, before) => {
+    if (state === "offline") {
+      if (seenOnline)
+        toast.show({
+          key: "runner",
+          title: "Runner disconnected",
+          message: "Start it again with chess serve.",
+          tone: "warning",
+        });
+    } else if (state !== "pending") {
+      if (before === "offline" && seenOnline)
+        toast.show({ key: "runner", title: "Runner reconnected", tone: "success" });
+      seenOnline = true;
+    }
+  },
+);
+
+// ---- Titles: the place, then what is open in it.
 const { state: experiments } = useExperiments();
 const { state: builds } = useBuilds();
-const commands = computed<CommandItem[]>(() => [
-  { id: "go:/board", label: "Open the board", group: "Go to", icon: PhGraph, keywords: ["analysis", "analyse"] },
-  { id: "go:/lab", label: "Open the lab", group: "Go to", icon: PhFlask, keywords: ["experiments", "tests"] },
-  { id: "go:/engines", label: "Open engines", group: "Go to", icon: PhWrench, keywords: ["builds"] },
-  { id: "go:/lab?new=1", label: "Test an idea", group: "Do", icon: PhPlus, keywords: ["new experiment"] },
-  { id: "go:/board?paste=1", label: "Paste a game or FEN", group: "Do", icon: PhClipboardText, keywords: ["pgn"] },
-  { id: "go:/engines?build=1", label: "Build an engine", group: "Do", icon: PhHammer, keywords: ["branch", "commit"] },
-  { id: "runner", label: "Show the runner", group: "Do", icon: PhCpu, keywords: ["jobs", "queue", "log"] },
-  ...(experiments.value.data ?? []).slice(0, 30).map((e) => ({
-    id: `go:/lab/${e.id}`,
-    label: e.name,
-    description: `${verdict(e).label} · ${e.dev} vs ${e.base}`,
-    group: "Experiments",
-    keywords: [e.dev, e.base],
-  })),
-  ...(builds.value.data ?? []).slice(0, 20).map((b) => ({
-    id: `go:/board?build=${b.id}`,
-    label: `Analyse with ${b.ref} #${b.id}`,
-    description: b.commit.slice(0, 10),
-    group: "Engines",
-    keywords: [b.commit],
-  })),
-]);
+watchEffect(() => {
+  const id = Number(route.params.id);
+  let what = route.meta.title;
+  if (route.name === "experiment") what = experiments.value.data?.find((e) => e.id === id)?.name ?? what;
+  if (route.name === "engine") {
+    const b = builds.value.data?.find((x) => x.id === id);
+    what = b ? `${b.ref} #${b.id} · Engines` : what;
+  }
+  document.title = what ? `${what} · Reckless Lab` : "Reckless Lab";
+});
+
+// ---- Command palette: places, actions, what you opened last, then everything else.
+const recent = stored<string[]>("recent", []);
+watch(
+  () => route.path,
+  (path) => {
+    if (!/^\/(lab|engines)\/\d+$/.test(path)) return;
+    recent.value = [path, ...recent.value.filter((p) => p !== path)].slice(0, 4);
+  },
+  { immediate: true },
+);
+
+const commands = computed<CommandItem[]>(() => {
+  const exps = experiments.value.data ?? [];
+  const blds = builds.value.data ?? [];
+  const seen = new Set<string>();
+  const recents: CommandItem[] = [];
+  for (const path of recent.value) {
+    const id = Number(path.split("/")[2]);
+    if (path.startsWith("/lab/")) {
+      const e = exps.find((x) => x.id === id);
+      if (e)
+        recents.push({
+          id: `go:${path}`,
+          label: e.name,
+          description: `${verdict(e).label} · ${e.dev} vs ${e.base}`,
+          group: "Recent",
+          icon: PhClockCounterClockwise,
+          keywords: [e.dev, e.base, "experiment"],
+        });
+    } else {
+      const b = blds.find((x) => x.id === id);
+      if (b)
+        recents.push({
+          id: `go:${path}`,
+          label: `${b.ref} #${b.id}`,
+          description: `Engine · ${b.commit.slice(0, 10)}`,
+          group: "Recent",
+          icon: PhClockCounterClockwise,
+          keywords: [b.commit, "engine", "build"],
+        });
+    }
+  }
+  for (const r of recents) seen.add(r.id);
+  return [
+    ...recents,
+    { id: "go:/board", label: "Open the board", group: "Go to", icon: PhGraph, keywords: ["analysis", "analyse"] },
+    { id: "go:/lab", label: "Open the lab", group: "Go to", icon: PhFlask, keywords: ["experiments", "tests"] },
+    { id: "go:/engines", label: "Open engines", group: "Go to", icon: PhWrench, keywords: ["builds"] },
+    { id: "go:/lab?new=1", label: "Test an idea", group: "Do", icon: PhPlus, keywords: ["new experiment"] },
+    { id: "go:/board?paste=1", label: "Paste a game or FEN", group: "Do", icon: PhClipboardText, keywords: ["pgn"] },
+    {
+      id: "go:/engines?build=1",
+      label: "Build an engine",
+      group: "Do",
+      icon: PhHammer,
+      keywords: ["branch", "commit"],
+    },
+    { id: "runner", label: "Show the runner", group: "Do", icon: PhCpu, keywords: ["jobs", "queue", "log"] },
+    {
+      id: "shortcuts",
+      label: "Keyboard shortcuts",
+      group: "Do",
+      icon: PhKeyboard,
+      shortcut: "?",
+      keywords: ["keys", "help"],
+    },
+    ...exps
+      .slice(0, 30)
+      .filter((e) => !seen.has(`go:/lab/${e.id}`))
+      .map((e) => ({
+        id: `go:/lab/${e.id}`,
+        label: e.name,
+        description: `${verdict(e).label} · ${e.dev} vs ${e.base}`,
+        group: "Experiments",
+        keywords: [e.dev, e.base],
+      })),
+    ...blds
+      .slice(0, 20)
+      .filter((b) => !seen.has(`go:/engines/${b.id}`))
+      .map((b) => ({
+        id: `go:/engines/${b.id}`,
+        label: `${b.ref} #${b.id}`,
+        description: `Engine · ${b.commit.slice(0, 10)}`,
+        group: "Engines",
+        keywords: [b.commit, "build"],
+      })),
+  ];
+});
 function run(item: CommandItem) {
   if (item.id === "runner") runnerOpen.value = true;
-  else if (item.id.startsWith("go:")) router.push(item.id.slice(3));
+  else if (item.id === "shortcuts") shortcutsOpen.value = true;
+  else if (item.id.startsWith("go:")) void router.push(item.id.slice(3));
 }
-const palette = ref(false);
 
 // One live stream for the whole app. A restarted runner may have a new build or schema, so everything refetches.
 const cache = useQueryCache();
@@ -100,62 +209,87 @@ onUnmounted(stop);
 </script>
 
 <template>
-  <EAppShell :class="['shell', { 'shell--workspace': workspace }]">
-    <template #header>
-      <EAppHeader class="top" brand-to="/" brand-label="Reckless Lab, home" :link-component="RouterLink">
-        <template #brand><Logo /></template>
-        <template #logo>
-          <ENavList
-            label="Main"
-            orientation="horizontal"
-            :link-component="RouterLink"
-            :items="items"
-            :is-current="isCurrent"
-          />
-        </template>
-        <template #actions>
-          <EButton variant="quiet" size="sm" :icon="PhMagnifyingGlass" class="search" @click="palette = true">
-            <span class="search-label">Search</span>
-            <EKbd class="search-kbd">Ctrl K</EKbd>
+  <EToastProvider>
+    <EAppShell :class="['shell', { 'shell--workspace': workspace }]">
+      <template #header>
+        <EAppHeader class="top" brand-to="/" brand-label="Reckless Lab, home" :link-component="RouterLink">
+          <template #brand><Logo /></template>
+          <template #logo>
+            <ENavList
+              class="places"
+              label="Main"
+              orientation="horizontal"
+              :link-component="RouterLink"
+              :items="items"
+              :is-current="isCurrent"
+            />
+          </template>
+          <template #actions>
+            <EButton
+              variant="quiet"
+              size="sm"
+              :icon="PhMagnifyingGlass"
+              class="search"
+              title="Search (Ctrl K)"
+              @click="palette = true"
+            >
+              <span class="search-label">Search</span>
+              <EKbd class="search-kbd" size="sm">Ctrl K</EKbd>
+            </EButton>
+          </template>
+        </EAppHeader>
+      </template>
+
+      <RouterView />
+
+      <template #footer>
+        <EAppFooter class="status">
+          <EButton
+            variant="quiet"
+            size="sm"
+            :icon="summary.state === 'offline' ? PhPlugsConnected : PhCpu"
+            :class="['status-runner', `status-runner--${summary.state}`]"
+            title="Show the runner: jobs, queue and output"
+            :aria-label="`Runner: ${[summary.label, ...summary.detail].join(', ')}. Show the runner.`"
+            @click="runnerOpen = true"
+          >
+            <span class="status-dot" aria-hidden="true"></span>
+            <span class="status-label">{{ summary.label }}</span>
+            <span v-if="summary.detail.length" class="status-detail">{{ summary.detail.join(" · ") }}</span>
+            <span v-if="queued" class="status-queue">{{ queued }} queued</span>
+            <PhCaretUp class="status-caret" aria-hidden="true" />
           </EButton>
-        </template>
-      </EAppHeader>
-    </template>
-
-    <RouterView />
-
-    <template #footer>
-      <EAppFooter class="status">
-        <EButton
-          variant="quiet"
-          size="sm"
-          :icon="summary.state === 'offline' ? PhPlugsConnected : PhCpu"
-          :class="['status-runner', `status-runner--${summary.state}`]"
-          :aria-label="`Runner: ${[summary.label, ...summary.detail].join(', ')}. Show the runner.`"
-          @click="runnerOpen = true"
-        >
-          <span class="status-dot" aria-hidden="true"></span>
-          <span class="status-label">{{ summary.label }}</span>
-          <span v-if="summary.detail.length" class="status-detail">· {{ summary.detail.join(" · ") }}</span>
-          <span v-if="queued" class="status-queue num">+{{ queued }} queued</span>
-        </EButton>
-        <span class="status-end">
-          <span v-if="status.data" class="status-meta">runner {{ status.data.version }}</span>
-          <ELink href="https://github.com/Dame-G/chess" external>Source</ELink>
-          <ELink href="https://github.com/Dame-G/reckless" external>Engine</ELink>
-        </span>
-      </EAppFooter>
-    </template>
-  </EAppShell>
-  <ECommandPalette
-    v-model:open="palette"
-    :items="commands"
-    label="Search Reckless Lab"
-    placeholder="Jump to an experiment, an engine or an action"
-    shortcut="mod+k"
-    @select="run"
-  />
-  <RunnerDrawer v-model:open="runnerOpen" />
+          <span class="status-end">
+            <span v-if="status.data" class="status-meta"
+              >{{ status.data.cpu.threads }} threads · runner {{ status.data.version }}</span
+            >
+            <EButton
+              variant="quiet"
+              size="sm"
+              :icon="PhKeyboard"
+              class="status-keys"
+              title="Keyboard shortcuts (?)"
+              @click="shortcutsOpen = true"
+            >
+              Shortcuts
+            </EButton>
+            <ELink href="https://github.com/Dame-G/chess" external>Source</ELink>
+            <ELink href="https://github.com/Dame-G/reckless" external>Engine</ELink>
+          </span>
+        </EAppFooter>
+      </template>
+    </EAppShell>
+    <ECommandPalette
+      v-model:open="palette"
+      :items="commands"
+      label="Search Reckless Lab"
+      placeholder="Jump to an experiment, an engine or an action"
+      shortcut="mod+k"
+      @select="run"
+    />
+    <RunnerDrawer v-model:open="runnerOpen" />
+    <Shortcuts v-model:open="shortcutsOpen" />
+  </EToastProvider>
 </template>
 
 <style scoped>
@@ -167,11 +301,11 @@ onUnmounted(stop);
   min-height: 0;
 }
 
-/* A workspace is dense: controls and pane bars are 2rem tall where a pointer is precise. Touch keeps eos's targets. */
+/* A workspace is dense but not cramped: 40px controls where a pointer is precise. Touch keeps eos's targets. */
 @media (pointer: fine) {
   .shell--workspace {
-    --e-control-height: 2.25rem;
-    --e-tap: 2rem;
+    --e-control-height: 2.5rem;
+    --e-tap: 2.25rem;
   }
 }
 
@@ -193,26 +327,47 @@ onUnmounted(stop);
 
 /* One slim row: logo, the three places, search. */
 .top {
-  --e-control-height: 2rem;
-  --e-tap: 2rem;
+  --e-control-height: 2.25rem;
+  --e-tap: 2.25rem;
 }
 
 .top :deep(.e-appheader-bar) {
-  min-block-size: 2.75rem;
+  min-block-size: 3rem;
+  gap: var(--e-gap-loose);
 }
 
 .top :deep(.e-appheader-logo) {
-  gap: var(--e-gap-base);
+  gap: var(--e-gap-section);
   font: var(--e-type-body);
 }
 
 .top :deep(.e-appheader-logo .e-nav > ul) {
+  gap: var(--e-gap-tight);
   flex-wrap: nowrap;
+}
+
+/* The current place is underlined in the brand colour: crisp, and readable at a glance. */
+.top :deep(.e-nav-item) {
+  padding-inline: var(--e-pad-control-sm);
+  border-color: transparent;
+  font-weight: 500;
+}
+
+.top :deep(.e-nav-item[aria-current="page"]) {
+  border-color: transparent;
+  background: var(--e-primary-soft);
+  box-shadow: inset 0 -0.125rem 0 var(--e-primary);
+  color: var(--e-primary);
+  font-weight: 600;
 }
 
 @media (width < 36rem) {
   .top :deep(.e-nav-item .e-icon) {
     display: none;
+  }
+
+  .top :deep(.e-appheader-logo) {
+    gap: var(--e-gap-base);
   }
 }
 
@@ -227,13 +382,19 @@ onUnmounted(stop);
   }
 }
 
-/* The footer is a status bar, like a media player's: one slim line, the runner on the left, small print on the right. */
+/* The footer is a status bar, like a media player's: one slim line of 40px, the runner on the left, small print on the right. */
 .status {
-  --status-height: 1.75rem;
+  --status-height: 2rem;
 
-  min-block-size: 0;
-  padding-block: 0;
+  min-block-size: 2.5rem;
+  padding-block: var(--e-gap-tight);
+  box-sizing: border-box;
   font: var(--e-type-small);
+}
+
+.status :deep(.e-shell-inner) {
+  gap: var(--e-gap-snug) var(--e-gap-loose);
+  flex-wrap: nowrap;
 }
 
 .status :deep(.e-btn),
@@ -243,8 +404,20 @@ onUnmounted(stop);
 }
 
 .status-runner {
+  gap: var(--e-gap-snug);
+  min-inline-size: 0;
   max-inline-size: min(48rem, 100%);
+  padding-inline: var(--e-pad-control-sm);
   font-family: var(--e-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.status-runner :deep(.e-btn-label),
+.status-runner :deep(.e-btn-text) {
+  display: flex;
+  align-items: center;
+  gap: var(--e-gap-snug);
+  min-inline-size: 0;
 }
 
 .status-label {
@@ -262,6 +435,24 @@ onUnmounted(stop);
 .status-detail,
 .status-queue {
   color: var(--e-muted);
+}
+
+.status-detail::before,
+.status-queue::before {
+  margin-inline-end: var(--e-gap-snug);
+  content: "\00b7";
+}
+
+.status-caret {
+  flex: none;
+  color: var(--e-muted);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.status-runner:hover .status-caret,
+.status-runner:focus-visible .status-caret {
+  opacity: 1;
 }
 
 .status-dot {
@@ -286,14 +477,23 @@ onUnmounted(stop);
 
 .status-end {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: var(--e-gap-base);
+  gap: var(--e-gap-loose);
   margin-inline-start: auto;
+  white-space: nowrap;
 }
 
 .status-meta {
   color: var(--e-muted);
   font-family: var(--e-font-mono);
+}
+
+@media (width < 56rem) {
+  .status-meta,
+  .status-keys {
+    display: none;
+  }
 }
 
 @media (width < 40rem) {
@@ -311,6 +511,10 @@ onUnmounted(stop);
 @media (prefers-reduced-motion: reduce) {
   .status-runner--busy .status-dot {
     animation: none;
+  }
+
+  .status-caret {
+    transition: none;
   }
 }
 </style>

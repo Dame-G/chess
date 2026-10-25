@@ -33,12 +33,26 @@ const router = useRouter();
 
 .cover-body {
   position: relative;
+  isolation: isolate;
   display: grid;
   align-content: center;
   justify-items: center;
   gap: var(--e-gap-base);
-  padding: var(--e-gap-section) var(--e-gutter);
+  padding: var(--e-gap-section) var(--e-gutter) 16vh;
   text-align: center;
+}
+
+/* A soft scrim keeps the text clear of the squares. */
+.cover-body::before {
+  content: "";
+  position: absolute;
+  inset: 12% 0 20%;
+  z-index: -1;
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    color-mix(in oklab, var(--e-surface) 70%, transparent),
+    transparent 100%
+  );
 }
 
 .cover-title {
@@ -56,7 +70,7 @@ const router = useRouter();
 }
 
 .cover-tagline {
-  max-width: 44ch;
+  max-width: 52ch;
   text-wrap: balance;
   margin: 0;
   font: var(--e-type-deck);
@@ -65,6 +79,13 @@ const router = useRouter();
 
 .cover-actions {
   justify-content: center;
-  margin-top: var(--e-gap-snug);
+  margin-top: var(--e-gap-base);
+}
+
+@media (min-width: 900px) {
+  .cover-tagline {
+    max-width: none;
+    white-space: nowrap;
+  }
 }
 </style>

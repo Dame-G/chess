@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { Test } from "../api/queries";
-import { bounds, duration, forecast } from "../format";
+import { bounds, duration, forecast, signed } from "../format";
 import Term from "./Term.vue";
 
+/** The test's evidence on a track between its two decision lines: fail on the left, pass on the right. */
 const props = defineProps<{ test: Test }>();
 
 const b = computed(() => bounds(props.test));
@@ -17,26 +18,29 @@ const at = computed(() => {
 });
 const zero = computed(() => (b.value ? -b.value.reject / (b.value.accept - b.value.reject) : 0.5));
 
+/** For screen readers: the page's sentence says the same in words. */
 const sentence = computed(() => {
   const t = props.test;
-  if (t.verdict === "accepted") return "Decided: the change passes this stage.";
-  if (t.verdict === "rejected") return "Decided: the change fails this stage.";
+  if (t.verdict === "accepted") return "Decided: passes this stage.";
+  if (t.verdict === "rejected") return "Decided: fails this stage.";
   if (!t.running) return "Stopped before a decision.";
   const fc = f.value;
-  if (!fc || fc.progress < 0.15) return "Too early to tell. The test keeps playing until the evidence is clear.";
-  const way = fc.toward === "accept" ? "passing" : "failing";
-  const pct = Math.round(fc.progress * 100);
-  const eta = fc.minutes !== undefined ? `, about ${duration(fc.minutes)} to go at this pace` : "";
-  return `Leaning towards ${way}: ${pct}% of the way to a decision${eta}.`;
+  if (!fc || fc.progress < 0.15) return "Too early to tell.";
+  const eta = fc.minutes !== undefined ? `, about ${duration(fc.minutes)} to go` : "";
+  return `Leaning towards ${fc.toward === "accept" ? "passing" : "failing"}${eta}.`;
 });
+const leaning = computed(() => (at.value >= zero.value ? "up" : "down"));
 </script>
 
 <template>
   <div v-if="b" class="gauge">
-    <div class="gauge-labels">
-      <span>Fails</span>
-      <Term of="llr">Evidence</Term>
-      <span>Passes</span>
+    <div class="gauge-top">
+      <span :class="['end', { 'end--on': leaning === 'down' && test.llr != null }]">Fails</span>
+      <span class="mid">
+        <Term of="llr">Evidence</Term>
+        <strong v-if="test.llr != null" :class="['num', 'now', `now--${leaning}`]">{{ signed(test.llr) }}</strong>
+      </span>
+      <span :class="['end', 'end--right', { 'end--on': leaning === 'up' && test.llr != null }]">Passes</span>
     </div>
     <div
       class="gauge-track"
@@ -50,13 +54,18 @@ const sentence = computed(() => {
       <div class="gauge-zero" :style="{ insetInlineStart: `${zero * 100}%` }"></div>
       <div
         class="gauge-fill"
-        :class="at >= zero ? 'gauge-fill--up' : 'gauge-fill--down'"
+        :class="`gauge-fill--${leaning}`"
         :style="{
           insetInlineStart: `${Math.min(at, zero) * 100}%`,
           width: `${Math.abs(at - zero) * 100}%`,
         }"
       ></div>
       <div class="gauge-marker" :style="{ insetInlineStart: `${at * 100}%` }"></div>
+    </div>
+    <div class="gauge-scale num" aria-hidden="true">
+      <span>{{ signed(b.reject) }}</span>
+      <span class="gauge-scale-zero" :style="{ insetInlineStart: `${zero * 100}%` }">0</span>
+      <span>{{ signed(b.accept) }}</span>
     </div>
   </div>
 </template>
@@ -67,24 +76,58 @@ const sentence = computed(() => {
   gap: var(--e-gap-snug);
 }
 
-.gauge-labels {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.gauge-top {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: baseline;
+  gap: var(--e-gap-base);
+  font: var(--e-type-small);
+}
+
+.end {
   color: var(--e-muted);
   font: var(--e-type-meta);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.end--right {
+  text-align: end;
+}
+
+.end--on {
+  color: var(--e-ink);
+  font-weight: 700;
+}
+
+.mid {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--e-gap-snug);
+}
+
+.now {
+  font-size: var(--e-text-md, 1rem);
+}
+
+.now--up {
+  color: var(--e-success);
+}
+
+.now--down {
+  color: var(--e-danger);
 }
 
 .gauge-track {
   position: relative;
-  height: 0.625rem;
+  height: 0.75rem;
+  margin-block: var(--e-gap-tight);
   border-radius: var(--e-radius-sm);
   background: linear-gradient(
     90deg,
-    color-mix(in oklab, var(--e-danger) 22%, var(--e-surface)),
+    color-mix(in oklab, var(--e-danger) 24%, var(--e-surface)),
     var(--e-surface-tint) 50%,
-    color-mix(in oklab, var(--e-success) 22%, var(--e-surface))
+    color-mix(in oklab, var(--e-success) 24%, var(--e-surface))
   );
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--e-border) 50%, transparent);
 }
@@ -99,8 +142,8 @@ const sentence = computed(() => {
 
 .gauge-fill {
   position: absolute;
-  top: 0.125rem;
-  bottom: 0.125rem;
+  top: 0.1875rem;
+  bottom: 0.1875rem;
   border-radius: 1px;
   transition:
     width 0.5s ease,
@@ -117,13 +160,27 @@ const sentence = computed(() => {
 
 .gauge-marker {
   position: absolute;
-  top: -0.25rem;
-  bottom: -0.25rem;
-  width: 3px;
-  margin-inline-start: -1.5px;
-  border-radius: 1px;
+  top: -0.375rem;
+  bottom: -0.375rem;
+  width: 4px;
+  margin-inline-start: -2px;
+  border-radius: 2px;
   background: var(--e-ink);
+  box-shadow: 0 0 0 2px var(--e-surface);
   transition: inset-inline-start 0.5s ease;
+}
+
+.gauge-scale {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  color: var(--e-muted);
+  font-size: var(--e-text-xs, 0.75rem);
+}
+
+.gauge-scale-zero {
+  position: absolute;
+  transform: translateX(-50%);
 }
 
 @media (prefers-reduced-motion: reduce) {

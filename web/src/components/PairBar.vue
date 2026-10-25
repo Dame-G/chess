@@ -28,7 +28,7 @@ const parts = computed(() =>
       ></span>
     </div>
     <ul class="pairs-legend">
-      <li v-for="p in parts" :key="p.name">
+      <li v-for="p in parts" :key="p.name" :class="{ none: !p.n }">
         <span :class="['pairs-swatch', p.cls]" aria-hidden="true"></span>
         {{ p.name }} <strong class="num">{{ p.n.toLocaleString() }}</strong>
         <span class="pairs-share num">{{ Math.round(p.share * 100) }}%</span>
@@ -40,12 +40,13 @@ const parts = computed(() =>
 <style scoped>
 .pairs {
   display: grid;
-  gap: var(--e-gap-snug);
+  gap: var(--e-gap-base);
   margin: 0;
 }
 
 .pairs-head {
   display: flex;
+  gap: var(--e-gap-base);
   justify-content: space-between;
   align-items: center;
   font: var(--e-type-small);
@@ -54,7 +55,7 @@ const parts = computed(() =>
 .pairs-bar {
   display: flex;
   gap: 2px;
-  height: 0.625rem;
+  height: 0.75rem;
   overflow: hidden;
   border-radius: var(--e-radius-sm);
   background: var(--e-surface-tint);
@@ -87,7 +88,7 @@ const parts = computed(() =>
 .pairs-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--e-gap-tight) var(--e-gap-base);
+  gap: var(--e-gap-snug) var(--e-gap-loose);
   margin: 0;
   padding: 0;
   color: var(--e-muted);
@@ -98,7 +99,11 @@ const parts = computed(() =>
 .pairs-legend li {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: var(--e-gap-snug);
+}
+
+.pairs-legend li.none {
+  opacity: 0.55;
 }
 
 .pairs-legend strong {

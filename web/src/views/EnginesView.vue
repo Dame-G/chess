@@ -30,7 +30,8 @@ const { state: jobs } = useJobs();
 
 // ---- Library: the build form and the builds
 
-const branch = ref("main");
+// Empty on purpose: the list suggests branches, and typing any branch, tag or commit works.
+const branch = ref("");
 const submitting = ref(false);
 const error = ref("");
 const combobox = ref<{ focus: () => void } | null>(null);
@@ -49,10 +50,12 @@ const already = computed(() => {
 });
 
 async function build() {
+  if (!branch.value.trim()) return;
   submitting.value = true;
   error.value = "";
   try {
-    await unwrap(api.POST("/api/builds", { body: { ref: branch.value } }));
+    await unwrap(api.POST("/api/builds", { body: { ref: branch.value.trim() } }));
+    branch.value = "";
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
@@ -197,15 +200,18 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
           size="sm"
           freeform
           placeholder="Branch, tag or commit"
+          autocomplete="off"
           :options="options"
           :loading="branches.status === 'pending'"
           :error="error || undefined"
           required
         />
         <EButton v-if="already" size="sm" variant="outline" @click="router.push(`/engines/${already.id}`)">
-          Open #{{ already.id }}
+          Already built: open
         </EButton>
-        <EButton v-else type="submit" size="sm" :icon="PhHammer" :loading="submitting">Build</EButton>
+        <EButton v-else type="submit" size="sm" :icon="PhHammer" :loading="submitting" :disabled="!branch.trim()">
+          Build
+        </EButton>
       </EForm>
     </template>
 
@@ -222,7 +228,7 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
 
       <ESkeleton v-if="builds.status === 'pending'" :lines="5" label="Loading engines" />
       <EEmptyState v-else-if="!builds.data?.length" title="No engines yet" size="sm" icon="info">
-        Build <code>main</code> above to get the current Reckless.
+        Type a branch, tag or commit above and press Build. <code>main</code> is the current Reckless.
       </EEmptyState>
       <ul v-else class="rows">
         <li v-for="b in builds.data" :key="b.id">
@@ -255,32 +261,36 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
       </EEmptyState>
 
       <template v-else-if="verdict">
-        <p class="subject">{{ current.subject }}</p>
+        <h2 class="subject">{{ current.subject }}</h2>
 
-        <ENotice :tone="verdict.tone" :title="verdict.title" :role="false">
-          {{ verdict.text }}
-          <Term of="bench" inline>What is a fingerprint?</Term>
-        </ENotice>
+        <div class="columns">
+          <div class="column">
+            <ENotice :tone="verdict.tone" :title="verdict.title" :role="false">
+              {{ verdict.text }}
+              <Term of="bench" inline>What is a fingerprint?</Term>
+            </ENotice>
 
-        <section class="section" aria-labelledby="speed-title">
-          <h2 id="speed-title" class="section-title">Speed</h2>
-          <p class="section-note">
-            {{ pace }} Measured on this machine; runs of the same commit differ by a few percent.
-          </p>
-          <SpeedBars :builds="builds.data ?? []" :selected="current.id" />
-        </section>
+            <section class="section" aria-labelledby="facts-title">
+              <h3 id="facts-title" class="section-title">Build</h3>
+              <EDescriptionList :items="details" />
+            </section>
+          </div>
 
-        <section class="section" aria-labelledby="facts-title">
-          <h2 id="facts-title" class="section-title">Build</h2>
-          <EDescriptionList :items="details" />
-        </section>
+          <section class="section" aria-labelledby="speed-title">
+            <h3 id="speed-title" class="section-title">Speed</h3>
+            <p class="section-note">
+              <b v-if="pace">{{ pace }}</b> Measured on this machine; runs of the same commit differ by a few percent.
+            </p>
+            <SpeedBars :builds="builds.data ?? []" :selected="current.id" />
+          </section>
+        </div>
 
         <EDisclosure v-model:open="logOpen" title="Compile log">
           <p v-if="logState === 'loading'" class="section-note">Loading…</p>
           <p v-else-if="logState === 'missing'" class="section-note">
             The log is no longer among the runner's recent jobs.
           </p>
-          <ECodeBlock v-else-if="log" :code="log" lang="text" label="Compile log" wrap />
+          <div v-else-if="log" class="log"><ECodeBlock :code="log" lang="text" label="Compile log" wrap /></div>
         </EDisclosure>
       </template>
     </div>
@@ -300,7 +310,7 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
   display: grid;
   gap: var(--e-gap-snug);
   margin: 0;
-  padding: var(--e-gap-snug) var(--e-pad-control-sm);
+  padding: var(--e-gap-base) var(--ws-pad, var(--e-pad-control));
   border-block-end: var(--e-stroke-hair) solid var(--e-border);
   background: var(--e-primary-soft);
   list-style: none;
@@ -330,21 +340,31 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
 .row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0 var(--e-gap-snug);
-  padding: var(--e-gap-snug) var(--e-pad-control-sm);
+  gap: var(--e-gap-tight) var(--e-gap-base);
+  padding: var(--e-gap-base) var(--ws-pad, var(--e-pad-control));
+  padding-inline-start: calc(var(--ws-pad, var(--e-pad-control)) - 0.1875rem);
   border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 55%, transparent);
   border-inline-start: 0.1875rem solid transparent;
   color: var(--e-ink);
   text-decoration: none;
+  transition: background-color 0.1s;
 }
 
 .row:hover {
   background: var(--e-surface-tint);
 }
 
+.row:focus-visible {
+  outline-offset: calc(-1 * var(--e-stroke-focus));
+}
+
 .row[aria-current="page"] {
   border-inline-start-color: var(--e-primary);
   background: var(--e-primary-soft);
+}
+
+.row[aria-current="page"] .row-ref {
+  color: var(--e-primary);
 }
 
 .row-ref {
@@ -398,12 +418,15 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
   font-weight: 600;
 }
 
+/* The stage uses its width: the fingerprint and details beside the speed chart, the log below. */
 .stage {
   display: grid;
   align-content: start;
-  gap: var(--e-gap-loose);
-  inline-size: min(100%, 46rem);
-  padding: var(--e-pad-card);
+  gap: var(--e-gap-section);
+  container-type: inline-size;
+  inline-size: 100%;
+  max-inline-size: 72rem;
+  padding: var(--e-pad-panel);
   box-sizing: border-box;
 }
 
@@ -412,9 +435,33 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
   font: var(--e-type-h4);
 }
 
+.columns {
+  display: grid;
+  align-items: start;
+  gap: var(--e-gap-section);
+}
+
+@container (width >= 44rem) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.column {
+  display: grid;
+  gap: var(--e-gap-section);
+  min-inline-size: 0;
+}
+
 .section {
   display: grid;
-  gap: var(--e-gap-snug);
+  gap: var(--e-gap-base);
+  min-inline-size: 0;
+}
+
+.log {
+  max-block-size: 24rem;
+  overflow: auto;
 }
 
 .section-title {
