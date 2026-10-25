@@ -106,7 +106,19 @@ const word: Record<Outcome, string> = { W: "Won", D: "Drew", L: "Lost", "": "Unf
 
 .row[aria-current] {
   background: var(--e-primary-soft);
-  color: var(--e-primary);
+  box-shadow: inset 3px 0 0 var(--e-primary);
+  color: var(--e-ink);
+  font-weight: 600;
+}
+
+.row[aria-current] .n,
+.row[aria-current] .len {
+  color: var(--e-ink);
+}
+
+.row:focus-visible {
+  outline: var(--e-stroke-focus) solid var(--e-focus-ring);
+  outline-offset: -2px;
 }
 
 .n {

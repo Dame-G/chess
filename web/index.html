@@ -4,6 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
+    <!-- Before the first paint: the saved choice (chess.scheme: "light", "dark", or absent for System) decides data-scheme. -->
+    <script>
+      (function () {
+        try {
+          var c = JSON.parse(localStorage.getItem("chess.scheme"));
+          var d = c === "dark" || (c !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+          var r = document.documentElement;
+          r.dataset.scheme = d ? "dark" : "light";
+          r.style.colorScheme = d ? "dark" : "light";
+        } catch (e) {}
+      })();
+    </script>
+    <!-- Page ground until the stylesheet arrives: Saddle's background in each scheme. -->
+    <style>
+      html {
+        background: #efe6d8;
+      }
+      html[data-scheme="dark"] {
+        background: #14100d;
+      }
+    </style>
     <title>Reckless Lab</title>
     <meta name="description" content="Development harness for a Reckless fork: builds, tests, analysis and play." />
   </head>

@@ -1,11 +1,11 @@
-import type { ThemeInput } from "@eos-ui/tokens";
+import { darkVariant, defineTheme, type ThemeInput } from "@eos-ui/tokens";
 
 /**
  * "Saddle": cognac leather and brass on linen by day, on espresso and walnut by night. Sharp corners, a thin slab and
  * snappy motion: a dense workbench, not a brochure. eos derives every other colour (the deep primary, soft tints,
  * borders, muted text) from these, holding its contrast minimums.
  */
-export const saddle: ThemeInput = {
+const saddle: ThemeInput = {
   name: "saddle",
   brand: "#b5652a",
   accent: "#a8842c",
@@ -31,3 +31,10 @@ export const saddle: ThemeInput = {
     brand: "#d4884a",
   },
 };
+
+/** The two schemes as fixed themes. The page picks one with `data-scheme` on `<html>` (see `scheme.ts`), not by media query. */
+export const saddleLight = defineTheme({ ...saddle, scheme: "light", dark: undefined });
+export const saddleDark = defineTheme({ ...darkVariant(saddle), name: "saddle-dark" });
+
+/** Both as CSS: light on `:root`, dark under `:root[data-scheme="dark"]`. Unlayered, so dark wins on specificity. */
+export const themeCss = `${saddleLight.css({ layer: false })}\n${saddleDark.css({ selector: ':root[data-scheme="dark"]', layer: false })}`;

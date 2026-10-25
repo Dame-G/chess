@@ -2,11 +2,12 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 
 // A chequerboard receding to a horizon and drifting towards the viewer, painted on one canvas in the theme's ink.
-// Rows are perspective-correct, fade with distance and with thinness (so they never shimmer), the vanishing point
-// eases towards the pointer, and a knight wanders across the squares.
+// Rows are perspective-correct and fade with distance and with thinness (so they never shimmer or pop), every square
+// stays drawn until it has left the canvas, the vanishing point eases towards the pointer, and a knight wanders across.
 
 const root = ref<HTMLElement | null>(null);
 const canvas = ref<HTMLCanvasElement | null>(null);
+const glow = ref<HTMLElement | null>(null);
 /** Rows per second the board travels: about one square every three seconds. */
 const SPEED = 0.3;
 /** Sideways drift, in squares per second. */
@@ -15,12 +16,14 @@ const DRIFT = 0.03;
 const MIN_GAP = 15;
 /** The farthest row, in squares. */
 const FAR = 36;
-/** The nearest row, in squares: rows past it leave through the bottom edge. */
-const NEAR = 0.3;
+/** Nearest depth a square is drawn to; far below the canvas, so only the clip matters. */
+const Z_MIN = 0.05;
 /** Where the horizon sits, as a share of the height. */
 const HORIZON = 0.34;
 /** Ink opacity of the nearest dark squares. */
 const PEAK = 0.1;
+/** Peak opacity of the knight's squares. */
+const TRAIL = 0.42;
 /** Rows thinner than the first number (px) vanish; fully drawn from the second. */
 const THIN: [number, number] = [1.2, 3];
 /** The still frame for reduced motion, in seconds. */
@@ -51,6 +54,8 @@ onMounted(() => {
   const ctx = cv?.getContext("2d");
   if (!el || !cv || !ctx) return;
 
+  // Colours are read from the computed custom properties (via `color` and `accent-color` on the canvas), so they follow
+  // whatever sets the theme: the system scheme, or an attribute or class on <html>.
   let ink = "";
   let brand = "";
   const readColours = () => {
@@ -74,6 +79,8 @@ onMounted(() => {
   const trail: Array<{ c: number; r: number; at: number }> = [];
   let hops = -1;
   const hop = (seconds: number, t: number) => {
+    // Squares fade out on their own; they are dropped only once nothing of them is left.
+    while (trail.length && seconds - trail[0]!.at > HOP * 2.8) trail.shift();
     const step = Math.floor(seconds / HOP);
     if (step === hops) return;
     hops = step;
@@ -81,7 +88,6 @@ onMounted(() => {
     // Restart when the trail has left the board or is empty; the knight lands a few rows out, off to a side.
     if (!last || last.r - t < 3) {
       const c = Math.round(Math.sin(step * 2.4) * 3);
-      trail.length = 0;
       trail.push({ c, r: Math.ceil(t) + 14, at: seconds });
       return;
     }
@@ -89,7 +95,21 @@ onMounted(() => {
     const options = KNIGHT.filter(([dc, dr]) => dr < 0 && Math.abs(last.c + dc) <= 5);
     const [dc, dr] = options[step % options.length] ?? [1, -2];
     trail.push({ c: last.c + dc, r: last.r + dr, at: seconds });
-    if (trail.length > 3) trail.shift();
+  };
+
+  /** Adds one square of the board to the current path. Both edges lie on one ray through the vanishing point, so a
+   * near edge clamped far below the canvas is exact for everything that is visible. */
+  const square = (cx: number, hy: number, depth: number, reach: number, l: number, za: number, zb: number) => {
+    const z0 = Math.max(Z_MIN, za);
+    const near = reach / z0;
+    const far = reach / zb;
+    const y0 = hy + depth / z0;
+    const y1 = hy + depth / zb;
+    ctx.moveTo(cx + l * near, y0);
+    ctx.lineTo(cx + (l + 1) * near, y0);
+    ctx.lineTo(cx + (l + 1) * far, y1);
+    ctx.lineTo(cx + l * far, y1);
+    ctx.closePath();
   };
 
   const paint = (seconds: number) => {
@@ -103,38 +123,37 @@ onMounted(() => {
     ctx.clearRect(0, 0, w, h);
     const hy = h * HORIZON + viewY * h * 0.025;
     const depth = (h - hy) * 0.9;
-    const reach = depth * 1.35;
+    // Squares narrow on tall, narrow screens, so a phone still sees a board and not a few giant tiles.
+    const reach = depth * 1.35 * Math.min(1, Math.max(0.5, (w / h) * 1.6));
     const t = seconds * SPEED;
     const sway = seconds * DRIFT;
     const cx = w / 2 + viewX * w * 0.04;
     hop(seconds, t);
+    if (glow.value) {
+      glow.value.style.transform = `translate3d(${(cx - w / 2).toFixed(2)}px, ${(hy - h * HORIZON).toFixed(2)}px, 0)`;
+    }
 
     ctx.fillStyle = ink;
-    // Far rows first, so a nearer row is never under a farther one. Each row is one path, so squares that touch never double up.
-    for (let n = Math.ceil(t + NEAR) + 1; n - t < FAR; n++) {
-      const z0 = n - 1 - t < NEAR ? NEAR : n - 1 - t;
+    // Far rows first. Each row is one path, so squares that touch never double up. A row stays until its far edge has
+    // left the bottom of the canvas, and a row's squares stay until they have left the sides.
+    for (let n = Math.floor(t) + 1; n - t < FAR; n++) {
+      const za = n - 1 - t;
       const z1 = n - t;
-      if (z1 <= NEAR) continue;
-      const y0 = hy + depth / z0;
       const y1 = hy + depth / z1;
-      if (y0 < 0 || y1 > h + 4) continue;
+      if (y1 >= h + 1) continue;
+      const y0 = hy + depth / Math.max(Z_MIN, za);
       const thin = smooth(THIN[0], THIN[1], y0 - y1);
-      if (thin <= 0.01) continue;
-      const near = reach / z0;
+      if (thin <= 0) continue;
+      // The narrowest a square gets on this row is at its far edge, so that edge decides which columns reach the canvas.
       const far = reach / z1;
-      const half = Math.ceil(cx / Math.min(near, far)) + 2;
-      const first = Math.floor(sway) - half;
+      const first = Math.floor(sway - cx / far) - 2;
+      const last = Math.ceil(sway + (w - cx) / far) + 2;
       const fog = (1 - z1 / FAR) ** 1.3;
       ctx.globalAlpha = PEAK * fog * thin * (1 + 0.5 * smooth(6, 1, z1));
       ctx.beginPath();
-      for (let i = first; i <= Math.floor(sway) + half; i++) {
+      for (let i = first; i <= last; i++) {
         if (((i + n) & 1) === 0) continue;
-        const l = i - sway;
-        ctx.moveTo(cx + l * near, y0);
-        ctx.lineTo(cx + (l + 1) * near, y0);
-        ctx.lineTo(cx + (l + 1) * far, y1);
-        ctx.lineTo(cx + l * far, y1);
-        ctx.closePath();
+        square(cx, hy, depth, reach, i - sway, za, z1);
       }
       ctx.fill();
     }
@@ -143,23 +162,16 @@ onMounted(() => {
     ctx.fillStyle = brand;
     for (const p of trail) {
       const age = seconds - p.at;
-      const life = smooth(0, 0.8, age) * (1 - smooth(HOP * 1.2, HOP * 2.8, age));
-      const z0 = p.r - 1 - t;
+      const life = smooth(0, 1.2, age) * (1 - smooth(HOP * 1.2, HOP * 2.8, age));
+      const za = p.r - 1 - t;
       const z1 = p.r - t;
-      if (life <= 0 || z0 < NEAR || z1 > FAR) continue;
-      const y0 = hy + depth / z0;
+      if (life <= 0 || z1 <= 0 || z1 >= FAR) continue;
       const y1 = hy + depth / z1;
-      const thin = smooth(THIN[0], THIN[1], y0 - y1);
-      const l = p.c - sway;
-      const near = reach / z0;
-      const far = reach / z1;
-      ctx.globalAlpha = 0.28 * life * thin * (1 - z1 / FAR);
+      if (y1 >= h + 1) continue;
+      const thin = smooth(THIN[0], THIN[1], hy + depth / Math.max(Z_MIN, za) - y1);
+      ctx.globalAlpha = TRAIL * life * thin * (1 - z1 / FAR) ** 0.6;
       ctx.beginPath();
-      ctx.moveTo(cx + l * near, y0);
-      ctx.lineTo(cx + (l + 1) * near, y0);
-      ctx.lineTo(cx + (l + 1) * far, y1);
-      ctx.lineTo(cx + l * far, y1);
-      ctx.closePath();
+      square(cx, hy, depth, reach, p.c - sway, za, z1);
       ctx.fill();
     }
 
@@ -196,18 +208,24 @@ onMounted(() => {
   resize.observe(el);
   cleanup.push(() => resize.disconnect());
 
-  // The ink changes with the colour scheme, whether the page follows the system or sets it itself.
+  // The ink changes with the colour scheme, whether the page follows the system or sets it itself (an attribute or class
+  // on <html>). A switch may transition, so the colours are read again a moment later.
+  let settle = 0;
   const rescheme = () => {
     readColours();
     draw();
+    clearTimeout(settle);
+    settle = window.setTimeout(() => {
+      readColours();
+      draw();
+    }, 400);
   };
   const observer = new MutationObserver(rescheme);
   observer.observe(document.documentElement, { attributes: true });
-  const dark = matchMedia("(prefers-color-scheme: dark)");
-  dark.addEventListener("change", rescheme);
+  observer.observe(document.body, { attributes: true });
   cleanup.push(() => {
     observer.disconnect();
-    dark.removeEventListener("change", rescheme);
+    clearTimeout(settle);
   });
 
   if (reduced) return;
@@ -238,6 +256,7 @@ onMounted(() => {
   cleanup.push(() => io.disconnect());
 
   let last = 0;
+  let lastRead = 0;
   let gap = MIN_GAP;
   let alive = true;
   const loop = (now: number) => {
@@ -245,6 +264,10 @@ onMounted(() => {
     requestAnimationFrame(loop);
     if (now - last < gap || !visible || document.visibilityState === "hidden") return;
     last = now;
+    if (now - lastRead > 1000) {
+      lastRead = now;
+      readColours();
+    }
     const start = performance.now();
     paint(clock());
     gap = Math.min(500, Math.max(MIN_GAP, (performance.now() - start) * 4));
@@ -263,7 +286,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="root" class="chequer" aria-hidden="true">
-    <div class="chequer-glow" />
+    <div ref="glow" class="chequer-glow" />
     <canvas ref="canvas" class="chequer-canvas" />
   </div>
 </template>
@@ -276,22 +299,45 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-/* A warm glow where the board meets the sky, behind the title. */
+/* A warm glow where the board meets the sky, behind the title. Extra stops keep the long fall-off smooth. */
 .chequer-glow {
   position: absolute;
-  inset: 0;
+  inset: -30px -80px;
   background:
-    radial-gradient(ellipse 55% 26% at 50% 34%, color-mix(in oklab, var(--e-brand) 20%, transparent), transparent 70%),
-    radial-gradient(ellipse 90% 10% at 50% 34%, color-mix(in oklab, var(--e-brand) 12%, transparent), transparent 80%);
+    radial-gradient(
+      ellipse 55% 26% at 50% 34%,
+      color-mix(in oklab, var(--e-brand) 20%, transparent),
+      color-mix(in oklab, var(--e-brand) 14%, transparent) 20%,
+      color-mix(in oklab, var(--e-brand) 8%, transparent) 40%,
+      color-mix(in oklab, var(--e-brand) 3%, transparent) 60%,
+      transparent 80%
+    ),
+    radial-gradient(
+      ellipse 90% 10% at 50% 34%,
+      color-mix(in oklab, var(--e-brand) 12%, transparent),
+      color-mix(in oklab, var(--e-brand) 6%, transparent) 40%,
+      color-mix(in oklab, var(--e-brand) 2%, transparent) 70%,
+      transparent 100%
+    );
+  will-change: transform;
 }
 
-/* The board dissolves towards the edges and the horizon's far corners. */
+/* Fine grain over the glow, so its soft gradient does not band. */
+.chequer-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='128' height='128'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 1 0 0 0 0'/></filter><rect width='128' height='128' filter='url(%23n)'/></svg>");
+}
+
+/* No edge mask: every square stays until it has left the canvas. Distance fog is painted into the squares. */
 .chequer-canvas {
   display: block;
   inline-size: 100%;
   block-size: 100%;
   color: var(--e-ink);
   accent-color: var(--e-brand);
-  mask-image: radial-gradient(ellipse 85% 100% at 50% 34%, #000 30%, transparent 100%);
 }
 </style>

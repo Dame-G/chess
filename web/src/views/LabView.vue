@@ -134,7 +134,7 @@ const stage = computed(() => {
   const e = experiment.value;
   if (!e) return "";
   const asked = String(route.query.stage ?? "");
-  return e.funnel.some((s) => (s.type === "match" ? s.name : s.type) === asked) ? asked : defaultStage(e);
+  return e.funnel.some((s) => (s.type === "match" ? s.name : s.type) === asked) ? asked : defaultStage(e, tests.value);
 });
 const test = computed(() => tests.value.find((t) => t.stage === stage.value));
 

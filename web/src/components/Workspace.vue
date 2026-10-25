@@ -5,6 +5,11 @@
  * own, so the stage never moves. Below 64rem they stack and the page scrolls instead.
  */
 defineProps<{
+  /**
+   * Let the stage's content set its own width: the stage column hugs it, the bars hug it, and the inspector (and any
+   * library) takes the slack. The content sizes itself from `100cqh` / `100cqw`, which resolve against this frame.
+   */
+  fit?: boolean;
   /** The library's accessible name, such as "Experiments". */
   libraryLabel?: string;
   /** The inspector's accessible name. */
@@ -25,7 +30,7 @@ defineSlots<{
 </script>
 
 <template>
-  <div :class="['ws', { 'ws--library': $slots.library, 'ws--inspector': $slots.inspector }]">
+  <div :class="['ws', { 'ws--fit': fit, 'ws--library': $slots.library, 'ws--inspector': $slots.inspector }]">
     <aside v-if="$slots.library" class="ws-pane ws-library" :aria-label="libraryLabel">
       <div v-if="$slots['library-head']" class="ws-head"><slot name="library-head" /></div>
       <div class="ws-scroll"><slot name="library" /></div>
@@ -122,7 +127,41 @@ defineSlots<{
   display: grid;
 }
 
+/* Fit: the stage column is as wide as its content and its rows hug it, so nothing around the content is dead space. */
+@media (width >= 64rem) {
+  .ws--fit {
+    container-type: size;
+  }
+
+  .ws--fit.ws--inspector {
+    grid-template-columns: auto minmax(var(--ws-inspector, 24rem), 1fr);
+  }
+
+  .ws--fit.ws--library.ws--inspector {
+    grid-template-columns: var(--ws-library, 18rem) auto minmax(var(--ws-inspector, 24rem), 1fr);
+  }
+
+  .ws--fit .ws-stage {
+    grid-template-rows: auto auto auto;
+    align-content: center;
+  }
+
+  .ws--fit .ws-stage .ws-scroll {
+    overflow: visible;
+  }
+
+  /* Bars take the content's width instead of setting it. */
+  .ws--fit .ws-stage > .ws-head,
+  .ws--fit .ws-stage > .ws-foot {
+    contain: inline-size;
+  }
+}
+
 @media (width < 64rem) {
+  .ws--fit {
+    container-type: inline-size;
+  }
+
   .ws,
   .ws--library,
   .ws--inspector,

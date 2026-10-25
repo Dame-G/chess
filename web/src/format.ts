@@ -18,8 +18,8 @@ export function signed(n: number, digits = 2): string {
 
 /** A time control for people: `8+0.08` or `25k nodes`. */
 export function timeControl(tc: { clock?: { seconds: number; increment: number }; nodes?: { nodes: number } }): string {
-  if (tc.clock) return `${tc.clock.seconds}s + ${tc.clock.increment}s`;
-  if (tc.nodes) return `${tc.nodes.nodes / 1000}k nodes a move`;
+  if (tc.clock) return `${tc.clock.seconds}+${tc.clock.increment}`;
+  if (tc.nodes) return `${tc.nodes.nodes / 1000}k nodes`;
   return "";
 }
 

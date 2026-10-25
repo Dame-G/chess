@@ -15,14 +15,17 @@ const props = defineProps<{
 /** White's share of the bar, from its chance to win. */
 const white = computed(() => (props.pawns === undefined ? 0.5 : winChance(props.pawns * 100)));
 const flipped = computed(() => props.orientation === "black");
-const leader = computed(() => (white.value >= 0.5 ? "white" : "black"));
-/** One decimal fits the bar: `+0.3`, `-1.2`; mates stay as given. */
+const leader = computed<Color>(() => (white.value >= 0.5 ? "white" : "black"));
+/** One decimal fits: `+0.3`, `-1.2`; a mate reads `M3`. */
 const short = computed(() => {
   const t = props.text;
-  if (!t || t.startsWith("#")) return t;
+  if (!t) return "";
+  if (t.startsWith("#")) return `M${t.replace(/^#-?/, "")}`;
   const n = Number(t.replace("−", "-"));
   return Number.isFinite(n) ? `${n > 0 ? "+" : ""}${n.toFixed(1)}` : t;
 });
+/** The figure sits at the end of the bar on the leading side: under it when that side is at the bottom. */
+const atBottom = computed(() => (leader.value === "white") !== flipped.value);
 </script>
 
 <template>
@@ -36,31 +39,52 @@ const short = computed(() => {
     :aria-valuenow="Math.round(white * 100)"
     :aria-valuetext="text ? `${text}, White ${Math.round(white * 100)}%` : 'No evaluation yet'"
   >
-    <div class="evalbar-white" :style="{ height: `${white * 100}%` }"></div>
-    <div class="evalbar-mid" aria-hidden="true"></div>
-    <span v-if="text" class="evalbar-text" :class="`evalbar-text--${leader}`" aria-hidden="true">{{ short }}</span>
+    <span class="evalbar-label num" aria-hidden="true">{{ short && !atBottom ? short : "" }}</span>
+    <div class="evalbar-track">
+      <div class="evalbar-white" :style="{ height: `${white * 100}%` }"></div>
+      <div class="evalbar-mid"></div>
+    </div>
+    <span class="evalbar-label num" aria-hidden="true">{{ short && atBottom ? short : "" }}</span>
   </div>
 </template>
 
 <style scoped>
+/* The bar sits between two label zones inside the board's height, so the board stays the governing size. */
 .evalbar {
+  display: grid;
+  grid-template-rows: var(--evalbar-label, 1.125rem) minmax(0, 1fr) var(--evalbar-label, 1.125rem);
+  justify-items: center;
+  width: var(--evalbar-col, 2rem);
+  min-height: 0;
+}
+
+.evalbar-label {
+  align-self: center;
+  color: var(--e-ink);
+  font: 600 0.6875rem/1 var(--e-font-mono);
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+}
+
+.evalbar-track {
   position: relative;
   display: flex;
   flex-direction: column-reverse;
-  width: var(--evalbar, 1.5rem);
+  width: var(--evalbar, 0.875rem);
+  height: 100%;
   overflow: hidden;
   border-radius: var(--e-radius-sm);
   background: #2a2420;
   box-shadow: 0 0 0 1px var(--e-border);
 }
 
-.evalbar--flipped {
+.evalbar--flipped .evalbar-track {
   flex-direction: column;
 }
 
 .evalbar-white {
-  background: linear-gradient(90deg, #f4ede2, #fffaf3);
-  transition: height 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+  background: #fffaf3;
+  transition: height 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .evalbar-mid {
@@ -68,36 +92,7 @@ const short = computed(() => {
   inset-inline: 0;
   top: 50%;
   height: 1px;
-  background: rgb(200 120 60 / 70%);
-}
-
-.evalbar-text {
-  position: absolute;
-  inset-inline: 0;
-  font: 600 0.625rem/1 var(--e-font-mono);
-  text-align: center;
-  letter-spacing: -0.04em;
-}
-
-/* The figure sits at the leading side's end, in that side's ink. */
-.evalbar-text--white {
-  bottom: 0.3rem;
-  color: #2a2420;
-}
-
-.evalbar-text--black {
-  top: 0.3rem;
-  color: #f4ede2;
-}
-
-.evalbar--flipped .evalbar-text--white {
-  top: 0.3rem;
-  bottom: auto;
-}
-
-.evalbar--flipped .evalbar-text--black {
-  top: auto;
-  bottom: 0.3rem;
+  background: rgb(200 120 60 / 80%);
 }
 
 @media (prefers-reduced-motion: reduce) {

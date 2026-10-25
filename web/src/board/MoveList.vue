@@ -85,13 +85,18 @@ followCurrent(list, () => props.cursor);
 
 /* The move on the board: the place tint, as eos marks where you are. */
 .moves :deep(.e-btn[aria-current]) {
-  background: var(--e-primary-soft);
-  color: var(--e-primary);
-  font-weight: 600;
+  background: var(--e-primary);
+  color: var(--e-on-primary);
+  font-weight: 700;
+}
+
+.moves :deep(.e-btn:focus-visible) {
+  outline: var(--e-stroke-focus) solid var(--e-focus-ring);
+  outline-offset: -2px;
 }
 
 .future {
-  opacity: 0.6;
+  opacity: 0.72;
 }
 
 .gap {

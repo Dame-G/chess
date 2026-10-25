@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch, type Slots } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { useQuery } from "@pinia/colada";
 import type { DrawShape } from "@lichess-org/chessground/draw";
@@ -11,6 +11,7 @@ import {
   PhChartLine,
   PhClipboardText,
   PhClockCounterClockwise,
+  PhListBullets,
   PhFlask,
   PhPause,
   PhPlay,
@@ -22,6 +23,7 @@ import { useShortcuts } from "@eos-ui/vue";
 import { EBreadcrumb } from "@eos-ui/vue/components/EBreadcrumb";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ECopyButton } from "@eos-ui/vue/components/ECopyButton";
+import { EDrawer } from "@eos-ui/vue/components/EDrawer";
 import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
@@ -82,6 +84,7 @@ function go(to: number) {
   cursor.value = Math.max(0, Math.min(moves.value.length, to));
 }
 function reset(fen = "startpos", line: string[] = []) {
+  drawerOpen.value = false;
   start.value = fen;
   moves.value = line;
   cursor.value = line.length;
@@ -117,7 +120,8 @@ const gameFailed = computed(() => isGame.value && gameState.value.status === "er
 const loading = computed(() => isGame.value && !game.value && gameState.value.status !== "error");
 
 const devWhite = computed(() => game.value?.headers.White === "dev");
-const freeOrientation = stored<"white" | "black">("board.orientation", "white");
+// Flipping is for this visit only: the board opens with White at the bottom, so a stale flip never surprises.
+const freeOrientation = ref<"white" | "black">("white");
 const gameOrientation = ref<"white" | "black">("white");
 const orientation = computed({
   get: () => (isGame.value ? gameOrientation.value : freeOrientation.value),
@@ -469,6 +473,66 @@ const result = computed(() => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
+// The library: beside the board when there is room, in a drawer when the board would otherwise shrink
+// ---------------------------------------------------------------------------------------------------------------------
+
+// The library's body is written once and shown either in the pane or in the drawer.
+let libraryBody: Slots["default"];
+const DefineLibrary = defineComponent({
+  setup:
+    (_, { slots }) =>
+    () => {
+      libraryBody = slots.default;
+      return null;
+    },
+});
+const UseLibrary = defineComponent({ setup: () => () => libraryBody?.() });
+
+const frame = ref<{ $el: HTMLElement }>();
+const stacked = ref(false);
+/** Whether the library fits beside a board that fills the height; it drops out when it does not. */
+const roomy = ref(true);
+/** The person's own choice, once they have made one. */
+const pinned = stored<boolean | null>("board.library", null);
+const libraryInline = computed(() => stacked.value || (pinned.value ?? roomy.value));
+const drawerOpen = ref(false);
+watch(libraryInline, (v) => {
+  if (v) drawerOpen.value = false;
+});
+watch(
+  () => route.fullPath,
+  () => (drawerOpen.value = false),
+);
+
+function toggleLibrary() {
+  if (libraryInline.value) pinned.value = false;
+  else if (roomy.value) pinned.value = true;
+  else drawerOpen.value = true;
+}
+
+let observer: ResizeObserver | undefined;
+onMounted(() => {
+  const el = frame.value!.$el;
+  const rem = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const measure = () => {
+    const r = rem();
+    const w = el.clientWidth;
+    stacked.value = w < 64 * r;
+    // The side the height allows, and the width the whole row needs for it (see the sizes in the styles below).
+    const pad = 0.75 * r;
+    const side = el.clientHeight - 5.45 * r - 2 * pad;
+    const needed = 16 * r + 22 * r + 2 * r + 0.375 * r + 2 * pad + side;
+    // A margin on the way back keeps it from flickering at the edge.
+    if (roomy.value && w < needed) roomy.value = false;
+    else if (!roomy.value && w > needed + 2.5 * r) roomy.value = true;
+  };
+  observer = new ResizeObserver(measure);
+  observer.observe(el);
+  measure();
+});
+onBeforeUnmount(() => observer?.disconnect());
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Keyboard
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -509,9 +573,66 @@ const filters = [
 </script>
 
 <template>
-  <Workspace library-label="Games and positions" inspector-label="Engine and moves">
+  <DefineLibrary>
+    <div v-if="isGame" class="games">
+      <div class="games-bar">
+        <ESegmented v-model="filter" label="Show games" hide-label size="sm" :options="filters" />
+        <span class="count num">{{ listed.length.toLocaleString() }}</span>
+      </div>
+      <ESkeleton v-if="gamesState.status === 'pending'" :lines="6" label="Loading games" class="pad" />
+      <EEmptyState v-else-if="!listed.length" title="No games here" icon="info" size="sm" bare class="pad">
+        {{ filter === "all" ? "This test has no games yet." : "No game ended that way. Try another filter." }}
+      </EEmptyState>
+      <Playlist v-else :games="listed" :current="index" @open="openGame($event)" />
+    </div>
+
+    <div v-else class="starts">
+      <EButton variant="quiet" size="sm" block :icon="PhSquaresFour" class="start" @click="reset()">
+        Start position
+      </EButton>
+      <EButton variant="quiet" size="sm" block :icon="PhClipboardText" class="start" @click="importOpen = true">
+        Paste a game or FEN
+      </EButton>
+      <template v-if="latestTest">
+        <h3 class="section">Latest test</h3>
+        <EButton
+          variant="quiet"
+          size="sm"
+          block
+          :icon="PhFlask"
+          class="start"
+          @click="router.push(`/games/${latestTest.id}/0`)"
+        >
+          {{ newest?.name }}
+          <span class="aside num">{{ latestTest.games.toLocaleString() }}</span>
+        </EButton>
+      </template>
+      <template v-if="recent.length">
+        <h3 class="section">Recent</h3>
+        <EButton
+          v-for="(r, i) in recent"
+          :key="i"
+          variant="quiet"
+          size="sm"
+          block
+          :icon="PhClockCounterClockwise"
+          class="start recent"
+          @click="reset(r.fen, r.moves)"
+        >
+          <span class="recent-text num">{{ recentLabel(r) }}</span>
+        </EButton>
+      </template>
+    </div>
+  </DefineLibrary>
+  <Workspace
+    ref="frame"
+    fit
+    :class="['board-ws', { 'board-ws--solo': !libraryInline }]"
+    library-label="Games and positions"
+    inspector-label="Engine and moves"
+  >
     <!-- Library: a game's playlist, or the places a free board can start from. -->
-    <template #library-head>
+    <template v-if="libraryInline" #library-head>
       <EBreadcrumb
         v-if="isGame"
         :link-component="RouterLink"
@@ -524,56 +645,8 @@ const filters = [
       <h2 v-else class="head-title">Positions</h2>
     </template>
 
-    <template #library>
-      <div v-if="isGame" class="games">
-        <div class="games-bar">
-          <ESegmented v-model="filter" label="Show games" hide-label size="sm" :options="filters" />
-          <span class="count num">{{ listed.length.toLocaleString() }}</span>
-        </div>
-        <ESkeleton v-if="gamesState.status === 'pending'" :lines="6" label="Loading games" class="pad" />
-        <EEmptyState v-else-if="!listed.length" title="No games here" icon="info" size="sm" bare class="pad">
-          {{ filter === "all" ? "This test has no games yet." : "No game ended that way. Try another filter." }}
-        </EEmptyState>
-        <Playlist v-else :games="listed" :current="index" @open="openGame($event)" />
-      </div>
-
-      <div v-else class="starts">
-        <EButton variant="quiet" size="sm" block :icon="PhSquaresFour" class="start" @click="reset()">
-          Start position
-        </EButton>
-        <EButton variant="quiet" size="sm" block :icon="PhClipboardText" class="start" @click="importOpen = true">
-          Paste a game or FEN
-        </EButton>
-        <template v-if="latestTest">
-          <h3 class="section">Latest test</h3>
-          <EButton
-            variant="quiet"
-            size="sm"
-            block
-            :icon="PhFlask"
-            class="start"
-            @click="router.push(`/games/${latestTest.id}/0`)"
-          >
-            {{ newest?.name }}
-            <span class="aside num">{{ latestTest.games.toLocaleString() }}</span>
-          </EButton>
-        </template>
-        <template v-if="recent.length">
-          <h3 class="section">Recent</h3>
-          <EButton
-            v-for="(r, i) in recent"
-            :key="i"
-            variant="quiet"
-            size="sm"
-            block
-            :icon="PhClockCounterClockwise"
-            class="start recent"
-            @click="reset(r.fen, r.moves)"
-          >
-            <span class="recent-text num">{{ recentLabel(r) }}</span>
-          </EButton>
-        </template>
-      </div>
+    <template v-if="libraryInline" #library>
+      <UseLibrary />
     </template>
 
     <!-- Stage: the eval bar beside the board, as large as the pane allows. -->
@@ -648,8 +721,25 @@ const filters = [
         {{ counter }}
         <span v-if="moves.length" class="of">/ {{ moves.length }}</span>
       </span>
+      <EButton
+        v-if="!stacked"
+        variant="quiet"
+        size="sm"
+        :icon="PhListBullets"
+        :aria-pressed="libraryInline"
+        @click="toggleLibrary"
+      >
+        {{ isGame ? "Games" : "Positions" }}
+      </EButton>
       <ESegmented v-model="rate" label="Speed" hide-label size="sm" :options="speeds" class="rate" />
-      <EIconButton :icon="PhArrowsDownUp" label="Flip board (F)" tooltip size="sm" @click="flip" />
+      <EIconButton
+        :icon="PhArrowsDownUp"
+        :label="orientation === 'black' ? 'Flip board (F), Black at the bottom' : 'Flip board (F)'"
+        tooltip
+        size="sm"
+        :variant="orientation === 'black' ? 'primary' : undefined"
+        @click="flip"
+      />
     </template>
 
     <!-- Inspector: the engine, then the moves, as on Lichess. -->
@@ -754,6 +844,10 @@ const filters = [
     </template>
   </Workspace>
 
+  <EDrawer v-model:open="drawerOpen" side="start" size="sm" :title="isGame ? 'Games' : 'Positions'">
+    <div class="drawer-body"><UseLibrary v-if="!libraryInline" /></div>
+  </EDrawer>
+
   <EDialog
     v-model:open="importOpen"
     title="Paste a game or position"
@@ -837,26 +931,49 @@ const filters = [
   white-space: nowrap;
 }
 
-/* Stage: the eval bar and the board are the largest square the pane's content box allows, centred on the axis with
-   room to spare. The pane itself is the size container, so nothing is measured in script. */
-.stage {
-  --bar: var(--evalbar, 1.5rem);
+/* Stage: the board drives the layout. Its side is the largest square the frame's height allows (less the transport and
+   padding), or what the width allows once the library and the inspector keep their minimum widths. The frame
+   (Workspace with fit) is the size container and the stage column hugs the rig, so only the inspector absorbs slack. */
+.board-ws {
+  --ws-library: 16rem;
+  --lib: var(--ws-library);
+  --ws-inspector: 22rem;
+  --col: 2rem;
   --gap: var(--e-gap-snug);
-  --side: min(100cqh, 100cqw - var(--bar) - var(--gap));
+  --pad: var(--ws-pad, var(--e-pad-control));
+  --foot: 5.45rem;
+  --side: min(
+    100cqh - var(--foot) - 2 * var(--pad),
+    100cqw - var(--lib) - var(--ws-inspector, 24rem) - var(--col) - var(--gap) - 2 * var(--pad)
+  );
+}
 
+.board-ws--solo {
+  --lib: 0px;
+}
+
+.drawer-body {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  height: calc(100dvh - 9rem);
+}
+
+.board-ws :deep(.ws-foot) {
+  padding-inline: var(--pad);
+}
+
+.stage {
   display: grid;
   place-content: center;
-  min-height: 0;
-  padding: var(--e-gap-snug);
+  padding: var(--pad);
   box-sizing: border-box;
-  container-type: size;
 }
 
 .rig {
   display: grid;
-  grid-template-columns: var(--bar) var(--side);
+  grid-template-columns: var(--col) var(--side);
   gap: var(--gap);
-  width: calc(var(--bar) + var(--gap) + var(--side));
+  width: calc(var(--col) + var(--gap) + var(--side));
   height: var(--side);
   transition: opacity var(--e-motion-fast, 0.15s);
 }
@@ -1036,10 +1153,8 @@ const filters = [
 }
 
 @media (width < 64rem) {
-  .stage {
-    --side: min(100cqw - var(--bar) - var(--gap), 75dvh);
-
-    container-type: inline-size;
+  .board-ws {
+    --side: min(100cqw - var(--col) - var(--gap) - 2 * var(--pad), 100dvh - 15rem);
   }
 
   .scrub {

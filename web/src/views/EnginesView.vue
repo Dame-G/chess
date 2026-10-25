@@ -425,7 +425,7 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
   gap: var(--e-gap-section);
   container-type: inline-size;
   inline-size: 100%;
-  max-inline-size: 72rem;
+  max-inline-size: 90rem;
   padding: var(--e-pad-panel);
   box-sizing: border-box;
 }

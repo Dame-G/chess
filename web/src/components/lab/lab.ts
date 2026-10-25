@@ -2,31 +2,38 @@ import type { Experiment, Test } from "../../api/queries";
 import { duration, forecast, signed, stageLabel } from "../../format";
 
 type Result = Experiment["results"][number];
-type StageState = "done" | "error" | "current" | "upcoming";
+type StageState = "done" | "error" | "current" | "stopped" | "upcoming";
 
 export interface FunnelStage {
   name: string;
   label: string;
   state: StageState;
   result?: Result;
-  /** How it went in a few mono words, for its cell in the pipeline: "-6.6 ± 5.2 Elo", "play changed", "waiting". */
-  line: string;
+  /** The stage's headline figure, for its tab: "-6.6", "changed", "identical", "+0.3%", or "—" before it has one. */
+  figure: string;
+  /** The margin of the figure, "± 5.2", shown smaller beside it. */
+  spread?: string;
+  /** What the figure measures: "Elo". Absent when the figure says it all. */
+  unit?: string;
 }
 
 const stageName = (s: Experiment["funnel"][number]) => (s.type === "match" ? s.name : s.type);
 
-/** One stage's result in a few words. */
-function stageLine(name: string, state: StageState, result: Result | undefined, test: Test | undefined): string {
-  if (test?.estimate) return `${signed(test.estimate.elo, 1)} ± ${test.estimate.elo_error.toFixed(1)} Elo`;
-  if (name === "bench" && result) return /unchanged/.test(result.detail) ? "play identical" : "play changed";
+type Headline = Pick<FunnelStage, "figure" | "spread" | "unit">;
+
+/** One stage's result as a figure. */
+function stageFigure(name: string, state: StageState, result: Result | undefined, test: Test | undefined): Headline {
+  if (test?.estimate)
+    return { figure: signed(test.estimate.elo, 1), spread: `± ${test.estimate.elo_error.toFixed(1)}`, unit: "Elo" };
+  if (name === "bench" && result)
+    return { figure: /unchanged|identical/.test(result.detail) ? "identical" : "changed" };
   if (name === "speed" && result) {
     const m = result.detail.match(/([+-]\d+(?:\.\d+)?)% ± (\d+(?:\.\d+)?)%/);
-    if (m) return `${signed(Number(m[1]), 1)}% ± ${Number(m[2]).toFixed(1)}%`;
+    if (m) return { figure: `${signed(Number(m[1]), 1)}%`, spread: `± ${Number(m[2]).toFixed(1)}`, unit: "speed" };
   }
-  if (state === "upcoming") return "waiting";
-  if (state === "current")
-    return name === "bench" ? "checking" : name === "speed" ? "timing" : test ? "playing" : "starting";
-  return result?.passed ? "passed" : "failed";
+  if (state === "current") return { figure: name === "bench" ? "checking" : name === "speed" ? "timing" : "starting" };
+  if (state === "upcoming") return { figure: "—" };
+  return { figure: result?.passed ? "passed" : "failed" };
 }
 
 /** Every stage of an experiment's funnel, with what happened in it. */
@@ -34,16 +41,25 @@ export function funnelOf(e: Experiment, tests: readonly Test[]): FunnelStage[] {
   return e.funnel.map((s) => {
     const name = stageName(s);
     const result = e.results.find((r) => r.stage === name);
-    const state: StageState = result ? (result.passed ? "done" : "error") : e.current === name ? "current" : "upcoming";
     const test = tests.find((t) => t.stage === name);
-    return { name, label: stageLabel(name), state, result, line: stageLine(name, state, result, test) };
+    const state: StageState = result
+      ? result.passed
+        ? "done"
+        : "error"
+      : e.current === name
+        ? "current"
+        : test
+          ? "stopped"
+          : "upcoming";
+    return { name, label: stageLabel(name), state, result, ...stageFigure(name, state, result, test) };
   });
 }
 
-/** The stage to show first: the one running, else the last one that ran. */
-export function defaultStage(e: Experiment): string {
+/** The stage to show first: the one running, else the last one that played games or ran. */
+export function defaultStage(e: Experiment, tests: readonly Test[] = []): string {
   const names = e.funnel.map(stageName);
-  return e.current ?? e.results.at(-1)?.stage ?? names[0] ?? "bench";
+  const played = names.filter((n) => tests.some((t) => t.stage === n)).at(-1);
+  return e.current ?? played ?? e.results.at(-1)?.stage ?? names[0] ?? "bench";
 }
 
 /** One plain sentence on where the experiment stands. */
@@ -62,6 +78,12 @@ export function verdictLine(e: Experiment, tests: readonly Test[]): string {
         : `Leaning towards ${way}.`;
     }
     case "cancelled": {
+      const cut = e.funnel
+        .map(stageName)
+        .map((n) => tests.find((t) => t.stage === n && !e.results.some((r) => r.stage === n)))
+        .findLast(Boolean);
+      if (cut)
+        return `Stopped during the ${stageLabel(cut.stage).toLowerCase()}, after ${cut.games.toLocaleString()} games.`;
       const last = e.results.at(-1);
       return last ? `Stopped after ${stageLabel(last.stage).toLowerCase()}.` : "Stopped before it started.";
     }

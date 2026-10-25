@@ -12,10 +12,14 @@ import "@fontsource-variable/jetbrains-mono";
 import "./base.css";
 import App from "./App.vue";
 import { router } from "./router";
-import { saddle } from "./theme";
+import { startScheme } from "./scheme";
+import { saddleLight, themeCss } from "./theme";
+
+// Both schemes ship as CSS, chosen by data-scheme on <html>; index.html sets it before the first paint.
+startScheme(themeCss);
 
 createApp(App)
-  .use(createEos({ locale: "en-US", theme: saddle }))
+  .use(createEos({ locale: "en-US", theme: saddleLight, applyTheme: false }))
   .use(createPinia())
   .use(PiniaColada, { queryOptions: { staleTime: 5_000 } })
   .use(router)

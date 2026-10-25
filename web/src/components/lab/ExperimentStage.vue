@@ -4,7 +4,7 @@ import type { Experiment, Test } from "../../api/queries";
 import { ago, kinds, stages, verdict } from "../../format";
 import TestPanel from "../TestPanel.vue";
 import Term from "../Term.vue";
-import StagePipeline from "./StagePipeline.vue";
+import StageTabs from "./StageTabs.vue";
 import { funnelOf, verdictLine } from "./lab";
 
 /** One experiment: how it stands in a sentence, the funnel it goes through, and the evidence of the chosen stage. */
@@ -37,22 +37,22 @@ const test = computed(() => props.tests.find((t) => t.stage === props.stage));
       </p>
     </header>
 
-    <StagePipeline :stages="funnel" :stage="stage" :panel="panel" />
-
-    <section v-if="picked" :id="panel" class="panel" role="tabpanel" :aria-labelledby="`${panel}-title`" tabindex="-1">
-      <div class="panel-head">
-        <h3 :id="`${panel}-title`" class="panel-title">{{ picked.label }}</h3>
+    <div class="unit">
+      <StageTabs :stages="funnel" :stage="stage" :panel="panel" />
+      <section v-if="picked" :id="panel" class="panel" role="tabpanel" :aria-label="picked.label" tabindex="-1">
         <p class="panel-detail">{{ stages[picked.name]?.detail }}</p>
-      </div>
-      <TestPanel v-if="test" :id="test.id" />
-      <p v-else-if="picked.result" class="plain num">{{ picked.result.detail }}</p>
-      <p v-else class="plain">
-        {{
-          picked.state === "current" ? "Running now. The result appears here as soon as it is in." : "Not reached yet."
-        }}
-      </p>
-      <Term v-if="picked.name === 'bench'" of="bench" inline>What is a fingerprint?</Term>
-    </section>
+        <TestPanel v-if="test" :id="test.id" />
+        <p v-else-if="picked.result" class="plain num">{{ picked.result.detail }}</p>
+        <p v-else class="plain">
+          {{
+            picked.state === "current"
+              ? "Running now. The result appears here as soon as it is in."
+              : "Not reached yet."
+          }}
+        </p>
+        <Term v-if="picked.name === 'bench'" of="bench" inline>What is a fingerprint?</Term>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -118,31 +118,30 @@ const test = computed(() => props.tests.find((t) => t.stage === props.stage));
   text-transform: uppercase;
 }
 
+.unit {
+  container-type: inline-size;
+  min-width: 0;
+  border: var(--e-stroke-hair) solid var(--e-border);
+  border-radius: var(--e-radius-sm);
+  overflow: hidden;
+}
+
 .panel {
   display: grid;
   gap: var(--e-gap-loose);
   min-width: 0;
+  padding: var(--e-pad-card);
+  background: var(--e-surface);
 }
 
 .panel:focus-visible {
   outline: none;
 }
 
-.panel-head {
-  display: grid;
-  gap: var(--e-gap-tight);
-}
-
-.panel-title {
-  margin: 0;
-  font: var(--e-type-h5);
-}
-
 .panel-detail,
 .plain {
-  margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
+  padding: var(--e-gap-base) 0;
+  color: var(--e-ink);
 }
 
 .panel-detail {

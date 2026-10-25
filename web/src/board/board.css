@@ -30,19 +30,18 @@
     repeating-conic-gradient(var(--board-dark) 0 25%, var(--board-light) 0 50%) 0 0 / 25% 25%;
 }
 
-@media (prefers-color-scheme: dark) {
-  .board {
-    --board-light: #c8a67a;
-    --board-dark: #86593a;
-    --board-wash: rgb(255 240 210 / 4%);
-    --board-shade: rgb(0 0 0 / 12%);
-    --board-last: rgb(236 176 60 / 42%);
-    --board-selected: rgb(244 196 80 / 62%);
-    --board-mark: rgb(30 14 4 / 38%);
-    --board-hover: rgb(244 196 80 / 42%);
-    --board-coord-light: #6d4528;
-    --board-coord-dark: #ecd9b4;
-  }
+/* The theme switch sets the resolved scheme on the root. */
+:root[data-scheme="dark"] .board {
+  --board-light: #c8a67a;
+  --board-dark: #86593a;
+  --board-wash: rgb(255 240 210 / 4%);
+  --board-shade: rgb(0 0 0 / 12%);
+  --board-last: rgb(236 176 60 / 42%);
+  --board-selected: rgb(244 196 80 / 62%);
+  --board-mark: rgb(30 14 4 / 38%);
+  --board-hover: rgb(244 196 80 / 42%);
+  --board-coord-light: #6d4528;
+  --board-coord-dark: #ecd9b4;
 }
 
 .board cg-board square.last-move {

@@ -11,10 +11,13 @@ import {
   PhGraph,
   PhHammer,
   PhKeyboard,
+  PhMoon,
   PhMagnifyingGlass,
   PhPlugsConnected,
   PhPlus,
+  PhSun,
   PhWrench,
+  PhDesktop,
 } from "@phosphor-icons/vue";
 import { useShortcuts, useToast } from "@eos-ui/vue";
 import { EAppFooter } from "@eos-ui/vue/components/EAppFooter";
@@ -34,6 +37,8 @@ import { stored } from "./stored";
 import Logo from "./components/Logo.vue";
 import RunnerDrawer from "./components/RunnerDrawer.vue";
 import Shortcuts from "./components/Shortcuts.vue";
+import ThemeSwitch from "./components/ThemeSwitch.vue";
+import { choice, type Choice } from "./scheme";
 
 const route = useRoute();
 const router = useRouter();
@@ -157,6 +162,13 @@ const commands = computed<CommandItem[]>(() => {
       shortcut: "?",
       keywords: ["keys", "help"],
     },
+    ...(["system", "light", "dark"] as const).map((value) => ({
+      id: `theme:${value}`,
+      label: `Theme: ${value[0]!.toUpperCase()}${value.slice(1)}`,
+      group: "Do",
+      icon: { system: PhDesktop, light: PhSun, dark: PhMoon }[value],
+      keywords: ["colour", "color", "scheme", "appearance", "dark mode", "light mode"],
+    })),
     ...exps
       .slice(0, 30)
       .filter((e) => !seen.has(`go:/lab/${e.id}`))
@@ -182,6 +194,7 @@ const commands = computed<CommandItem[]>(() => {
 function run(item: CommandItem) {
   if (item.id === "runner") runnerOpen.value = true;
   else if (item.id === "shortcuts") shortcutsOpen.value = true;
+  else if (item.id.startsWith("theme:")) choice.value = item.id.slice(6) as Choice;
   else if (item.id.startsWith("go:")) void router.push(item.id.slice(3));
 }
 
@@ -236,6 +249,7 @@ onUnmounted(stop);
               <span class="search-label">Search</span>
               <EKbd class="search-kbd" size="sm">Ctrl K</EKbd>
             </EButton>
+            <ThemeSwitch />
           </template>
         </EAppHeader>
       </template>

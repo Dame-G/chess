@@ -38,14 +38,14 @@ const est = computed(() => test.value?.estimate);
     <EGrid min="9rem" gap="loose" class="figures">
       <EMetric label="Games" :value="test.games.toLocaleString()" />
       <EMetric label="Score" :value="est ? `${(est.score * 100).toFixed(1)}%` : '–'" help="new version" />
-      <EMetric label="Elo" :value="est ? signed(est.elo, 1) : '–'">
-        <template #help>
-          <template v-if="est">± {{ est.elo_error.toFixed(1) }} · </template><Term of="elo" inline>what is Elo?</Term>
-        </template>
-      </EMetric>
       <EMetric label="Chance stronger" :value="est ? `${Math.round(est.los * 100)}%` : '–'">
         <template #help><Term of="los" inline>how sure?</Term></template>
       </EMetric>
+      <EMetric
+        label="Time control"
+        :value="timeControl(test.spec.tc)"
+        :help="`${test.spec.hash} MB hash · ${test.spec.threads} thread${test.spec.threads > 1 ? 's' : ''}`"
+      />
     </EGrid>
 
     <PairBar :penta="test.penta" />
@@ -66,11 +66,9 @@ const est = computed(() => test.value?.estimate);
     </figure>
 
     <div class="settings" aria-label="Test settings">
-      <ETag size="sm" :label="timeControl(test.spec.tc)" />
-      <ETag size="sm" :label="`${test.spec.hash} MB hash`" />
-      <ETag size="sm" :label="`${test.spec.threads} thread${test.spec.threads > 1 ? 's' : ''}`" />
       <ETag v-if="sprt" size="sm" :label="`bounds [${sprt.elo0}, ${sprt.elo1}]`" />
       <Term v-if="sprt" of="bounds" inline>What are bounds?</Term>
+      <Term of="elo" inline>What is Elo?</Term>
     </div>
   </section>
   <ESkeleton v-else-if="state.status === 'pending'" :lines="6" label="Loading the test" />
