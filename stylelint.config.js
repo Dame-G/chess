@@ -14,5 +14,7 @@ export default {
     "color-function-notation": null,
     "alpha-value-notation": null,
     "media-feature-range-notation": null,
+    // Vue's scoped styles reach into a child component with :deep().
+    "selector-pseudo-class-no-unknown": [true, { ignorePseudoClasses: ["deep"] }],
   },
 };

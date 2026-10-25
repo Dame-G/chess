@@ -1,12 +1,24 @@
-/* The page itself. eos styles its components; the document around them is the app's. */
+/* The page itself. eos styles its components; the document around them is the app's. The shell fills the window, so
+   the footer sits at the bottom of a short page. */
 html {
+  height: 100%;
   scrollbar-gutter: stable;
   text-size-adjust: 100%;
 }
 
 body {
+  height: 100%;
   margin: 0;
   background: var(--e-background);
   color: var(--e-ink);
   font: var(--e-type-body);
+}
+
+#app {
+  height: 100%;
+}
+
+/* Figures that change as they update (evals, counts) keep their width. */
+.num {
+  font-variant-numeric: tabular-nums;
 }

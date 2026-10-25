@@ -53,6 +53,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The Reckless checkout's branches and upstream's, most recently committed first: what can be built or tested. */
+        get: operations["list_branches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/builds": {
         parameters: {
             query?: never;
@@ -303,6 +320,20 @@ export interface components {
             engine: string;
             /** @description The last report of each line, best first. */
             lines: components["schemas"]["Info"][];
+        };
+        /** @description A branch of the checkout, newest commit first. */
+        Branch: {
+            /**
+             * Format: int64
+             * @description The node count the commit message claims (`Bench: N`).
+             */
+            bench?: number | null;
+            /** @description When its commit was made, ISO 8601. */
+            date: string;
+            /** @description The name to build or test, such as `main` or `upstream/main`. */
+            name: string;
+            sha: string;
+            subject: string;
         };
         Build: {
             /**
@@ -753,6 +784,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Experiment"][];
+                };
+            };
+        };
+    };
+    list_branches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Branch"][];
                 };
             };
         };

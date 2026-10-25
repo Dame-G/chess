@@ -21,6 +21,8 @@ pub enum ClientCommand {
         #[arg(long)]
         wait: bool,
     },
+    /// List the branches that can be built or tested, most recently committed first.
+    Branches,
     /// List builds, newest first.
     Builds,
     /// List recent jobs, newest first.
@@ -170,6 +172,10 @@ pub async fn run(client: Client, command: ClientCommand, json: bool) -> Result<(
             let build = client.get(&format!("/api/builds/{}", job["result"]["build"])).await?;
             print(&build, json, build_line);
         }
+        ClientCommand::Branches => {
+            let branches = client.get("/api/branches").await?;
+            print(&branches, json, |b| lines(b, branch_line));
+        }
         ClientCommand::Builds => {
             let builds = client.get("/api/builds").await?;
             print(&builds, json, |b| lines(b, build_line));
@@ -230,6 +236,12 @@ async fn wait_for(client: &Client, id: i64, json: bool) -> Result<Value> {
 
 fn lines(list: &Value, line: fn(&Value) -> String) -> String {
     list.as_array().into_iter().flatten().map(line).collect::<Vec<_>>().join("\n")
+}
+
+fn branch_line(b: &Value) -> String {
+    let date = b["date"].as_str().unwrap_or_default();
+    let day = date.get(..10).unwrap_or(date);
+    format!("{:<28} {day} {}", b["name"].as_str().unwrap_or_default(), b["subject"].as_str().unwrap_or_default())
 }
 
 fn job_line(j: &Value) -> String {

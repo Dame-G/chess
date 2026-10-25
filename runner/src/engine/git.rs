@@ -36,6 +36,51 @@ pub fn bench_line(message: &str) -> Option<u64> {
     message.lines().rev().find_map(|l| l.trim().strip_prefix("Bench:")?.trim().parse().ok())
 }
 
+/// A branch of the checkout, newest commit first.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct Branch {
+    /// The name to build or test, such as `main` or `upstream/main`.
+    pub name: String,
+    pub sha: String,
+    pub subject: String,
+    /// When its commit was made, ISO 8601.
+    pub date: String,
+    /// The node count the commit message claims (`Bench: N`).
+    pub bench: Option<u64>,
+}
+
+/// The checkout's own branches and upstream's, most recently committed first.
+pub async fn branches(repo: &Path) -> Result<Vec<Branch>> {
+    let format =
+        "%(refname:short)%00%(objectname)%00%(committerdate:iso-strict)%00%(contents:subject)%00%(contents)%1e";
+    let out = git(
+        repo,
+        &[
+            "for-each-ref",
+            "--sort=-committerdate",
+            &format!("--format={format}"),
+            "refs/heads",
+            "refs/remotes/upstream",
+        ],
+    )
+    .await?;
+    Ok(out
+        .split('\u{1e}')
+        .filter_map(|record| {
+            let mut f = record.trim_start_matches('\n').split('\0');
+            let (name, sha, date, subject, message) = (f.next()?, f.next()?, f.next()?, f.next()?, f.next()?);
+            // `upstream` alone is the remote's HEAD, an alias of one of its branches.
+            (!name.is_empty() && name != "upstream" && !name.ends_with("/HEAD")).then(|| Branch {
+                name: name.to_owned(),
+                sha: sha.to_owned(),
+                subject: subject.to_owned(),
+                date: date.to_owned(),
+                bench: bench_line(message),
+            })
+        })
+        .collect())
+}
+
 /// Checks `sha` out in the build worktree, creating it on first use.
 pub async fn checkout(repo: &Path, worktree: &Path, sha: &str) -> Result<()> {
     if worktree.join(".git").exists() {

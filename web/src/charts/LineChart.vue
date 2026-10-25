@@ -9,6 +9,8 @@ interface Series {
   values: (number | null)[];
   /** A colour token name without `--e-`, such as `primary`. */
   tone?: string;
+  /** Shades the area between the line and zero. */
+  fill?: boolean;
 }
 
 const props = defineProps<{
@@ -19,7 +21,16 @@ const props = defineProps<{
   /** Horizontal reference lines, such as SPRT bounds. */
   lines?: { value: number; label: string }[];
   height?: number;
+  /** A fixed range for the y axis. */
+  range?: [number, number];
+  /** Shows the legend under the chart. */
+  legend?: boolean;
+  /** Draws a vertical marker at this index of `x`, such as the move on the board. */
+  marker?: number;
+  /** The x axis's name. */
+  xLabel?: string;
 }>();
+const emit = defineEmits<{ select: [index: number] }>();
 
 const el = ref<HTMLElement>();
 let plot: uPlot | undefined;
@@ -30,23 +41,63 @@ function token(name: string, fallback: string) {
   return getComputedStyle(el.value!).getPropertyValue(`--e-${name}`).trim() || fallback;
 }
 
+/** A hex colour at an opacity, for fills: canvas has no colour-mix. */
+function alpha(color: string, a: number) {
+  return /^#[0-9a-f]{6}$/i.test(color)
+    ? `${color}${Math.round(a * 255)
+        .toString(16)
+        .padStart(2, "0")}`
+    : color;
+}
+
 function options(width: number): uPlot.Options {
   const ink = token("muted", "#888");
-  const grid = token("border", "rgba(128,128,128,0.2)");
-  const axis = { stroke: ink, grid: { stroke: grid, width: 1 }, ticks: { stroke: grid, width: 1 } };
+  const grid = alpha(token("border", "#888888"), 0.35);
+  const font = `11px ${token("font-mono", "monospace")}`;
+  const axis = { stroke: ink, font, grid: { stroke: grid, width: 1 }, ticks: { show: false } };
   const refLines = props.lines ?? [];
+  const markerColor = token("primary", "#36c");
   return {
     width,
     height: props.height ?? 220,
-    legend: { show: true },
-    cursor: { y: false },
-    scales: { x: { time: false } },
-    axes: [axis, axis],
+    legend: { show: props.legend ?? true },
+    cursor: { y: false, points: { size: 6 } },
+    scales: { x: { time: false }, ...(props.range ? { y: { range: props.range } } : {}) },
+    axes: [
+      { ...axis, label: props.xLabel, labelFont: font, labelSize: props.xLabel ? 18 : 0 },
+      { ...axis, size: 44 },
+    ],
     series: [
-      { label: "games" },
-      ...props.series.map((s) => ({ label: s.label, stroke: token(s.tone ?? "primary", "#36c"), width: 2 })),
+      { label: props.xLabel ?? "x" },
+      ...props.series.map((s) => {
+        const color = token(s.tone ?? "primary", "#36c");
+        return { label: s.label, stroke: color, width: 2, fill: s.fill ? alpha(color, 0.18) : undefined, fillTo: 0 };
+      }),
       ...refLines.map((l) => ({ label: l.label, stroke: ink, width: 1, dash: [4, 4], points: { show: false } })),
     ],
+    hooks: {
+      ready: [
+        (u) =>
+          u.over.addEventListener("click", () => {
+            if (u.cursor.idx != null) emit("select", u.cursor.idx);
+          }),
+      ],
+      draw: [
+        (u) => {
+          if (props.marker == null || props.x[props.marker] == null) return;
+          const x = Math.round(u.valToPos(props.x[props.marker]!, "x", true));
+          const ctx = u.ctx;
+          ctx.save();
+          ctx.strokeStyle = markerColor;
+          ctx.lineWidth = 2 * devicePixelRatio;
+          ctx.beginPath();
+          ctx.moveTo(x, u.bbox.top);
+          ctx.lineTo(x, u.bbox.top + u.bbox.height);
+          ctx.stroke();
+          ctx.restore();
+        },
+      ],
+    },
   };
 }
 
@@ -76,6 +127,10 @@ watch(
   () => [props.series.length, props.lines?.map((l) => l.value).join()],
   () => build(),
 );
+watch(
+  () => props.marker,
+  () => plot?.redraw(false),
+);
 
 onBeforeUnmount(() => {
   observer?.disconnect();
@@ -94,5 +149,10 @@ onBeforeUnmount(() => {
   margin: 0;
   min-width: 0;
   color: var(--e-muted);
+  font: var(--e-type-small);
+}
+
+.chart :deep(.u-over) {
+  cursor: crosshair;
 }
 </style>

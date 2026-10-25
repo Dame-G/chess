@@ -1,7 +1,8 @@
 import { Chess } from "chessops/chess";
 import { chessgroundDests } from "chessops/compat";
 import { INITIAL_FEN, makeFen, parseFen } from "chessops/fen";
-import { makeSanVariation } from "chessops/san";
+import { parsePgn, startingPosition } from "chessops/pgn";
+import { makeSan, makeSanVariation, parseSan } from "chessops/san";
 import { makeUci, parseUci } from "chessops/util";
 import type { Color, Key } from "@lichess-org/chessground/types";
 
@@ -99,4 +100,57 @@ export function whiteScore(score: Score, turn: Color): string {
   if ("mate" in score) return `#${score.mate * sign}`;
   const pawns = (score.cp * sign) / 100;
   return `${pawns > 0 ? "+" : ""}${pawns.toFixed(2)}`;
+}
+
+/** A score from White's side in pawns, with mates as ±100 so a graph or a bar can draw them. */
+export function whitePawns(score: Score, turn: Color): number {
+  const sign = turn === "white" ? 1 : -1;
+  if ("mate" in score) return (score.mate > 0 ? 100 : -100) * sign;
+  return (score.cp * sign) / 100;
+}
+
+/** The SAN of each move of a line, as far as its moves are legal. */
+export function sanMoves(line: Line): string[] {
+  const pos = setup(line.fen);
+  if (!pos) return [];
+  const sans: string[] = [];
+  for (const uci of line.moves) {
+    const move = parseUci(uci);
+    if (!move || !pos.isLegal(move)) break;
+    sans.push(makeSan(pos, move));
+    pos.play(move);
+  }
+  return sans;
+}
+
+/** A line as PGN: a FEN header when it does not start from the start, then numbered moves. */
+export function toPgn(line: Line): string {
+  const fen = line.fen === "startpos" ? INITIAL_FEN : line.fen;
+  const pos = setup(fen);
+  if (!pos) return "";
+  const moves = line.moves.map(parseUci).filter((m) => m !== undefined);
+  const headers = fen === INITIAL_FEN ? "" : `[SetUp "1"]\n[FEN "${fen}"]\n\n`;
+  return `${headers}${makeSanVariation(pos, moves)} *`.trim();
+}
+
+/** Reads a FEN, or a PGN's main line. `undefined` when it is neither. */
+export function readPosition(text: string): Line | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  if (isValidFen(trimmed)) return { fen: trimmed, moves: [] };
+  const game = parsePgn(trimmed)[0];
+  if (!game) return undefined;
+  const start = startingPosition(game.headers);
+  if (start.isErr) return undefined;
+  const pos = start.value;
+  const fen = makeFen(pos.toSetup());
+  const moves: string[] = [];
+  for (const node of game.moves.mainline()) {
+    const move = parseSan(pos, node.san);
+    if (!move) break;
+    moves.push(makeUci(move));
+    pos.play(move);
+  }
+  if (!moves.length && !game.headers.has("FEN")) return undefined;
+  return { fen: fen === INITIAL_FEN ? "startpos" : fen, moves };
 }

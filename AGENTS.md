@@ -7,6 +7,7 @@ chess status --json            # machine, runner version, Reckless checkout
 chess token                    # the token the hosted UI (or a remote client) needs
 
 chess build <ref> --wait       # build a branch, tag or commit, bench it, print the build
+chess branches                 # what can be built or tested: the fork's branches and upstream's, newest first
 chess builds                   # every build: commit, bench (and whether it matches the commit's Bench line), nps
 chess jobs | job <id> | log <id> | wait <id> | cancel <id>
 

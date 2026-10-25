@@ -10,7 +10,10 @@ use utoipa::ToSchema;
 
 use super::{ApiError, AppState};
 use crate::{
-    engine::build::{self, Build},
+    engine::{
+        build::{self, Build},
+        git,
+    },
     jobs::{self, Job, JobSpec},
 };
 
@@ -41,4 +44,10 @@ pub async fn create(
 ) -> Result<(StatusCode, Json<Job>), ApiError> {
     let job = jobs::submit(&state, JobSpec::Build { refname: req.refname }).await?;
     Ok((StatusCode::ACCEPTED, Json(job)))
+}
+
+/// The Reckless checkout's branches and upstream's, most recently committed first: what can be built or tested.
+#[utoipa::path(get, path = "/api/branches", operation_id = "list_branches", tag = "builds", responses((status = 200, body = Vec<git::Branch>)))]
+pub async fn branches(State(state): State<Arc<AppState>>) -> Result<Json<Vec<git::Branch>>, ApiError> {
+    Ok(Json(git::branches(&state.config.reckless).await?))
 }

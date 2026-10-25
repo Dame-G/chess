@@ -113,6 +113,29 @@
         }
       }
     },
+    "/api/branches": {
+      "get": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "The Reckless checkout's branches and upstream's, most recently committed first: what can be built or tested.",
+        "operationId": "list_branches",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Branch"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/builds": {
       "get": {
         "tags": [
@@ -704,6 +727,41 @@
               "$ref": "#/components/schemas/Info"
             },
             "description": "The last report of each line, best first."
+          }
+        }
+      },
+      "Branch": {
+        "type": "object",
+        "description": "A branch of the checkout, newest commit first.",
+        "required": [
+          "name",
+          "sha",
+          "subject",
+          "date"
+        ],
+        "properties": {
+          "bench": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The node count the commit message claims (`Bench: N`).",
+            "minimum": 0
+          },
+          "date": {
+            "type": "string",
+            "description": "When its commit was made, ISO 8601."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name to build or test, such as `main` or `upstream/main`."
+          },
+          "sha": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
           }
         }
       },
