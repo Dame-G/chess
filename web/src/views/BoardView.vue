@@ -80,6 +80,9 @@ watch(sans, (s) => {
   }
 });
 
+/** The library's drawer, for when it is not beside the board. Declared early: `reset` closes it during setup. */
+const drawerOpen = ref(false);
+
 function go(to: number) {
   cursor.value = Math.max(0, Math.min(moves.value.length, to));
 }
@@ -495,7 +498,6 @@ const roomy = ref(true);
 /** The person's own choice, once they have made one. */
 const pinned = stored<boolean | null>("board.library", null);
 const libraryInline = computed(() => stacked.value || (pinned.value ?? roomy.value));
-const drawerOpen = ref(false);
 watch(libraryInline, (v) => {
   if (v) drawerOpen.value = false;
 });
