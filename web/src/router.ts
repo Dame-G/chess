@@ -11,6 +11,24 @@ export const router = createRouter({
       meta: { title: "Engines" },
     },
     {
+      path: "/experiments",
+      name: "experiments",
+      component: () => import("./views/ExperimentsView.vue"),
+      meta: { title: "Experiments" },
+    },
+    {
+      path: "/experiments/:id",
+      name: "experiment",
+      component: () => import("./views/ExperimentView.vue"),
+      meta: { title: "Experiment" },
+    },
+    {
+      path: "/tests/:id/games/:index",
+      name: "game",
+      component: () => import("./views/GameView.vue"),
+      meta: { title: "Game" },
+    },
+    {
       path: "/analysis",
       name: "analysis",
       component: () => import("./views/AnalysisView.vue"),

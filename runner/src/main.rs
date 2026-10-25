@@ -8,9 +8,13 @@ mod client;
 mod config;
 mod engine;
 mod events;
+mod experiments;
+mod funnel;
 mod jobs;
 mod proc;
+mod stats;
 mod store;
+mod tools;
 
 use std::path::PathBuf;
 

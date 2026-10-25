@@ -36,6 +36,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queues several experiments under one name. They run in order. */
+        post: operations["create_batch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/builds": {
         parameters: {
             query?: never;
@@ -86,6 +103,45 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Experiments, newest first. */
+        get: operations["list_experiments"];
+        put?: never;
+        /**
+         * Queues an experiment: a dev ref against a base ref, through the default funnel for its kind, the given stages,
+         *     or a single match (`preset`).
+         */
+        post: operations["create_experiment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One experiment with its matches. */
+        get: operations["get_experiment"];
+        put?: never;
+        post?: never;
+        /** Cancels a queued experiment or stops a running one. */
+        delete: operations["cancel_experiment"];
         options?: never;
         head?: never;
         patch?: never;
@@ -152,6 +208,57 @@ export interface paths {
         };
         /** The runner's version, machine and engine checkout. */
         get: operations["get_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tests/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One match with its progress. */
+        get: operations["get_test"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tests/{id}/games": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A match's games so far. */
+        get: operations["list_games"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tests/{id}/games/{index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One game as PGN, with each move's evaluation, depth, nodes and time in its comment. */
+        get: operations["get_game"];
         put?: never;
         post?: never;
         delete?: never;
@@ -229,12 +336,79 @@ export interface components {
             /** @description A branch, tag or commit of the Reckless checkout, such as `main` or `upstream/main`. */
             ref: string;
         };
+        /** @description Elo and normalized Elo with 95% intervals (`±`), from game pairs. */
+        Estimate: {
+            /** Format: double */
+            elo: number;
+            /** Format: double */
+            elo_error: number;
+            /**
+             * Format: double
+             * @description Likelihood of superiority, 0 to 1.
+             */
+            los: number;
+            /** Format: double */
+            nelo: number;
+            /** Format: double */
+            nelo_error: number;
+            /**
+             * Format: double
+             * @description Average points per game, 0 to 1.
+             */
+            score: number;
+        };
         Event: {
             data: unknown;
             /** Format: int64 */
             id: number;
             /** @description What happened, such as `job.progress` or `analysis.info`. */
             kind: string;
+        };
+        Experiment: {
+            /** @description The baseline ref. */
+            base: string;
+            /** Format: int64 */
+            base_build?: number | null;
+            /** @description The batch it was submitted with, if any. */
+            batch?: string | null;
+            created_at: string;
+            /** @description The stage running now, while running. */
+            current?: string | null;
+            /** @description The changed ref. */
+            dev: string;
+            /** Format: int64 */
+            dev_build?: number | null;
+            finished_at?: string | null;
+            funnel: components["schemas"]["Stage"][];
+            hypothesis: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            job?: number | null;
+            kind: components["schemas"]["Kind"];
+            name: string;
+            /** @description Results of the stages run so far, in order. */
+            results: components["schemas"]["StageResult"][];
+            status: components["schemas"]["ExperimentStatus"];
+            /** @description Why it stopped, once finished. */
+            summary?: string | null;
+        };
+        ExperimentDetail: {
+            experiment: components["schemas"]["Experiment"];
+            /** @description Its matches, in the order they ran. */
+            tests: components["schemas"]["Test"][];
+        };
+        /** @enum {string} */
+        ExperimentStatus: "queued" | "running" | "passed" | "failed" | "cancelled";
+        GameSummary: {
+            black: string;
+            /** @description Position in the match's PGN, from 0. */
+            index: number;
+            /** Format: int32 */
+            plies: number;
+            result: string;
+            termination: string;
+            white: string;
         };
         /** @description One `info` line with a principal variation. */
         Info: {
@@ -274,9 +448,19 @@ export interface components {
             /** @enum {string} */
             kind: "build";
             ref: string;
+        } | {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            kind: "experiment";
         };
         /** @enum {string} */
         JobStatus: "queued" | "running" | "done" | "failed" | "cancelled";
+        /**
+         * @description What kind of change an experiment tests, which picks its funnel.
+         * @enum {string}
+         */
+        Kind: "gainer" | "nonregression" | "nonfunctional";
         /** @description How long to search. */
         Limits: {
             /** Format: int32 */
@@ -309,6 +493,78 @@ export interface components {
             name: string;
             threads: number;
         };
+        /** @description One match between the dev and base builds. */
+        MatchSpec: {
+            /**
+             * Format: int32
+             * @description Hash table size in MiB.
+             */
+            hash: number;
+            /** Format: int32 */
+            pairs?: number | null;
+            sprt?: components["schemas"]["Sprt"] | null;
+            tc: components["schemas"]["TimeControl"];
+            /** Format: int32 */
+            threads: number;
+        };
+        NewBatch: {
+            experiments: components["schemas"]["NewExperiment"][];
+            /** @description Names the batch; list it with `?batch=`. */
+            name: string;
+        };
+        /** @description An experiment to run. */
+        NewExperiment: {
+            /** @description The baseline. Defaults to `main`. */
+            base?: string;
+            /** @description SPRT bounds in normalized Elo for `preset`, such as `[0, 3]`. Left out (and no `pairs`), `[0, 3]`. */
+            bounds?: number[] | null;
+            dev: string;
+            /** @description What the change is expected to do, and why. */
+            hypothesis?: string;
+            kind?: components["schemas"]["Kind"];
+            /** @description Add an LTC confirmation to the default funnel. */
+            ltc?: boolean;
+            /** @description A short name. Defaults to the dev ref. */
+            name?: string | null;
+            /**
+             * Format: int32
+             * @description Play this many game pairs for `preset` instead of an SPRT.
+             */
+            pairs?: number | null;
+            preset?: components["schemas"]["Preset"] | null;
+            /** @description Run these stages instead of the default funnel for the kind. */
+            stages?: components["schemas"]["Stage"][] | null;
+        };
+        /** @description Game-pair outcomes from the dev engine's side: `[LL, LD, WL+DD, WD, WW]`, i.e. pairs scoring 0, ½, 1, 1½ and 2. */
+        Pentanomial: number[];
+        /** @description One point of a test's progress, for its chart. */
+        Point: {
+            /** Format: int64 */
+            games: number;
+            /** Format: double */
+            llr?: number | null;
+            /** Format: double */
+            nelo?: number | null;
+        };
+        /**
+         * @description Named settings, as Reckless names its tests.
+         * @enum {string}
+         */
+        Preset: "vstc" | "stc" | "ltc" | "stc-hash" | "ltc-hash" | "smp" | "nodes";
+        RunnerStatus: {
+            cpu: components["schemas"]["Machine"];
+            /** @description The Reckless checkout the runner builds from. */
+            reckless_dir: string;
+            /** @description Whether that checkout exists. */
+            reckless_found: boolean;
+            /**
+             * Format: int64
+             * @description The database schema version (migrations applied).
+             */
+            schema: number;
+            /** @description The runner's version. */
+            version: string;
+        };
         /** @description A search score from the side to move's point of view. */
         Score: {
             /**
@@ -323,20 +579,89 @@ export interface components {
              */
             mate: number;
         };
-        Status: {
-            cpu: components["schemas"]["Machine"];
-            /** @description The Reckless checkout the runner builds from. */
-            reckless_dir: string;
-            /** @description Whether that checkout exists. */
-            reckless_found: boolean;
+        /** @description The SPRT a test runs: Elo bounds in normalized Elo, and the error rates. */
+        Sprt: {
+            /** Format: double */
+            alpha: number;
+            /** Format: double */
+            beta: number;
+            /** Format: double */
+            elo0: number;
+            /** Format: double */
+            elo1: number;
+        };
+        Stage: {
+            functional: boolean;
+            /** @enum {string} */
+            type: "bench";
+        } | {
+            /** Format: int32 */
+            runs: number;
+            /** @enum {string} */
+            type: "speed";
+        } | (components["schemas"]["MatchSpec"] & {
+            name: string;
+        } & {
+            /** @enum {string} */
+            type: "match";
+        });
+        /** @description What a finished stage found. */
+        StageResult: {
+            /** @description One line on why, with the numbers. */
+            detail: string;
+            passed: boolean;
+            stage: string;
             /**
              * Format: int64
-             * @description The database schema version (migrations applied).
+             * @description The match, for a match stage.
              */
-            schema: number;
-            /** @description The runner's version. */
-            version: string;
+            test?: number | null;
         };
+        Test: {
+            /** Format: int64 */
+            base_build: number;
+            created_at: string;
+            /** Format: int64 */
+            dev_build: number;
+            estimate?: components["schemas"]["Estimate"] | null;
+            /** Format: int64 */
+            experiment: number;
+            finished_at?: string | null;
+            /** Format: int64 */
+            games: number;
+            /** Format: int64 */
+            id: number;
+            /** Format: double */
+            llr?: number | null;
+            penta: components["schemas"]["Pentanomial"];
+            running: boolean;
+            spec: components["schemas"]["MatchSpec"];
+            stage: string;
+            verdict?: components["schemas"]["Verdict"] | null;
+        };
+        TestDetail: {
+            /** @description Progress over the match: LLR and nElo by games played. */
+            points: components["schemas"]["Point"][];
+            test: components["schemas"]["Test"];
+        };
+        /** @description How long each move may take. */
+        TimeControl: {
+            /** @description Seconds per game plus an increment per move. */
+            clock: {
+                /** Format: double */
+                increment: number;
+                /** Format: double */
+                seconds: number;
+            };
+        } | {
+            /** @description A fixed number of nodes per move: no clock, so speed does not count, only search and evaluation. */
+            nodes: {
+                /** Format: int64 */
+                nodes: number;
+            };
+        };
+        /** @enum {string} */
+        Verdict: "accepted" | "rejected" | "continue";
     };
     responses: never;
     parameters: never;
@@ -406,6 +731,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    create_batch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewBatch"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Experiment"][];
+                };
             };
         };
     };
@@ -497,6 +845,101 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": components["schemas"]["Event"];
+                };
+            };
+        };
+    };
+    list_experiments: {
+        parameters: {
+            query?: {
+                /** @description Only the experiments of this batch. */
+                batch?: string | null;
+                /** @description How many, newest first. Default 100. */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Experiment"][];
+                };
+            };
+        };
+    };
+    create_experiment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewExperiment"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Experiment"];
+                };
+            };
+        };
+    };
+    get_experiment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentDetail"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancel_experiment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Experiment"];
                 };
             };
         };
@@ -618,8 +1061,84 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Status"];
+                    "application/json": components["schemas"]["RunnerStatus"];
                 };
+            };
+        };
+    };
+    get_test: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestDetail"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_games: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GameSummary"][];
+                };
+            };
+        };
+    };
+    get_game: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

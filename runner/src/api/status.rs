@@ -35,7 +35,7 @@ impl Machine {
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct Status {
+pub struct RunnerStatus {
     /// The runner's version.
     pub version: String,
     pub cpu: Machine,
@@ -48,11 +48,11 @@ pub struct Status {
 }
 
 /// The runner's version, machine and engine checkout.
-#[utoipa::path(get, path = "/api/status", operation_id = "get_status", tag = "runner", responses((status = 200, body = Status)))]
-pub async fn status(State(state): State<Arc<AppState>>) -> Result<Json<Status>, ApiError> {
+#[utoipa::path(get, path = "/api/status", operation_id = "get_status", tag = "runner", responses((status = 200, body = RunnerStatus)))]
+pub async fn status(State(state): State<Arc<AppState>>) -> Result<Json<RunnerStatus>, ApiError> {
     let reckless = &state.config.reckless;
     let schema = state.store.call(|c| Ok(c.pragma_query_value(None, "user_version", |r| r.get(0))?)).await?;
-    Ok(Json(Status {
+    Ok(Json(RunnerStatus {
         version: env!("CARGO_PKG_VERSION").to_owned(),
         cpu: state.machine.clone(),
         reckless_dir: reckless.display().to_string(),

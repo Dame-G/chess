@@ -9,6 +9,7 @@ import { dispatch, followEvents } from "./api/events";
 
 const route = useRoute();
 const items = [
+  { label: "Experiments", to: "/experiments" },
   { label: "Analysis", to: "/analysis" },
   { label: "Engines", to: "/engines" },
   { label: "Runner", to: "/" },
@@ -21,6 +22,16 @@ const stop = followEvents((event) => {
   if (event.kind === "job.updated") {
     cache.invalidateQueries({ key: ["jobs"] });
     if ((event.data as { status?: string }).status === "done") cache.invalidateQueries({ key: ["builds"] });
+  }
+  if (event.kind === "experiment.updated") {
+    const { id } = event.data as { id: number };
+    cache.invalidateQueries({ key: ["experiments"] });
+    cache.invalidateQueries({ key: ["experiment", id] });
+  }
+  if (event.kind === "test.progress") {
+    const { id } = event.data as { id: number };
+    cache.invalidateQueries({ key: ["test", id] });
+    cache.invalidateQueries({ key: ["games", id] });
   }
   dispatch(event);
 });
@@ -36,7 +47,7 @@ onUnmounted(stop);
           orientation="horizontal"
           :link-component="RouterLink"
           :items="items"
-          :is-current="(item) => item.to === route.path"
+          :is-current="(item) => (item.to === '/' ? route.path === '/' : route.path.startsWith(String(item.to)))"
         />
       </EAppHeader>
     </template>

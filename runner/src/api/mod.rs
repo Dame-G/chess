@@ -5,6 +5,7 @@ mod analysis;
 mod builds;
 mod error;
 mod events;
+mod experiments;
 mod guard;
 mod jobs;
 mod status;
@@ -54,6 +55,12 @@ fn api() -> (Router<Arc<AppState>>, utoipa::openapi::OpenApi) {
         .routes(routes!(jobs::log))
         .routes(routes!(analysis::analyse))
         .routes(routes!(analysis::start, analysis::stop))
+        .routes(routes!(experiments::list, experiments::create))
+        .routes(routes!(experiments::batch))
+        .routes(routes!(experiments::get, experiments::cancel))
+        .routes(routes!(experiments::test))
+        .routes(routes!(experiments::games))
+        .routes(routes!(experiments::game))
         .split_for_parts()
 }
 

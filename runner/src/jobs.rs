@@ -14,7 +14,7 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use utoipa::ToSchema;
 
-use crate::{api::AppState, engine::build};
+use crate::{api::AppState, engine::build, experiments};
 
 /// What a job does.
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
@@ -25,6 +25,8 @@ pub enum JobSpec {
         #[serde(rename = "ref")]
         refname: String,
     },
+    /// Run an experiment's funnel.
+    Experiment { id: i64 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -224,6 +226,22 @@ async fn run(state: &Arc<AppState>, job: Job) {
                 log: &log,
             };
             build::build(cx, refname).await.map(|b| serde_json::json!({ "build": b.id }))
+        }
+        JobSpec::Experiment { id } => {
+            let run = experiments::Run { state, cancel: &token, log: &log };
+            let outcome = experiments::run(run, *id).await;
+            // A build error or a crash ends the experiment too; its summary says why.
+            let ended = match &outcome {
+                Ok(_) => None,
+                Err(_) if token.is_cancelled() => {
+                    Some((experiments::ExperimentStatus::Cancelled, "cancelled".to_owned()))
+                }
+                Err(e) => Some((experiments::ExperimentStatus::Failed, format!("{e:#}"))),
+            };
+            if let Some((status, summary)) = ended {
+                let _ = experiments::finish(state, *id, status, &summary).await;
+            }
+            outcome.map(|status| serde_json::json!({ "experiment": id, "status": status }))
         }
     };
 

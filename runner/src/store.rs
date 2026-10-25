@@ -37,6 +37,46 @@ const MIGRATIONS: &[&str] = &[
         finished_at TEXT
     );
     CREATE INDEX jobs_status ON jobs (status, id);",
+    // 3: experiments, their matches, and the matches' progress.
+    "CREATE TABLE experiments (
+        id INTEGER PRIMARY KEY,
+        batch TEXT,
+        name TEXT NOT NULL,
+        hypothesis TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL,
+        base_ref TEXT NOT NULL,
+        dev_ref TEXT NOT NULL,
+        base_build INTEGER REFERENCES builds (id),
+        dev_build INTEGER REFERENCES builds (id),
+        funnel TEXT NOT NULL,
+        status TEXT NOT NULL,
+        results TEXT NOT NULL,
+        current TEXT,
+        summary TEXT,
+        job_id INTEGER REFERENCES jobs (id),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        finished_at TEXT
+    );
+    CREATE INDEX experiments_batch ON experiments (batch, id);
+    CREATE TABLE tests (
+        id INTEGER PRIMARY KEY,
+        experiment_id INTEGER NOT NULL REFERENCES experiments (id),
+        stage TEXT NOT NULL,
+        spec TEXT NOT NULL,
+        base_build INTEGER NOT NULL REFERENCES builds (id),
+        dev_build INTEGER NOT NULL REFERENCES builds (id),
+        running INTEGER NOT NULL,
+        penta TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        finished_at TEXT
+    );
+    CREATE TABLE test_points (
+        test_id INTEGER NOT NULL REFERENCES tests (id),
+        games INTEGER NOT NULL,
+        llr REAL,
+        nelo REAL,
+        PRIMARY KEY (test_id, games)
+    );",
 ];
 
 #[derive(Clone)]

@@ -80,6 +80,39 @@
         }
       }
     },
+    "/api/batches": {
+      "post": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "Queues several experiments under one name. They run in order.",
+        "operationId": "create_batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewBatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Experiment"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/builds": {
       "get": {
         "tags": [
@@ -193,6 +226,145 @@
               "text/event-stream": {
                 "schema": {
                   "$ref": "#/components/schemas/Event"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments": {
+      "get": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "Experiments, newest first.",
+        "operationId": "list_experiments",
+        "parameters": [
+          {
+            "name": "batch",
+            "in": "query",
+            "description": "Only the experiments of this batch.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many, newest first. Default 100.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Experiment"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "Queues an experiment: a dev ref against a base ref, through the default funnel for its kind, the given stages,\nor a single match (`preset`).",
+        "operationId": "create_experiment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewExperiment"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Experiment"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/experiments/{id}": {
+      "get": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "One experiment with its matches.",
+        "operationId": "get_experiment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentDetail"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      },
+      "delete": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "Cancels a queued experiment or stops a running one.",
+        "operationId": "cancel_experiment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Experiment"
                 }
               }
             }
@@ -344,11 +516,118 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Status"
+                  "$ref": "#/components/schemas/RunnerStatus"
                 }
               }
             }
           }
+        }
+      }
+    },
+    "/api/tests/{id}": {
+      "get": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "One match with its progress.",
+        "operationId": "get_test",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestDetail"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/tests/{id}/games": {
+      "get": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "A match's games so far.",
+        "operationId": "list_games",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GameSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tests/{id}/games/{index}": {
+      "get": {
+        "tags": [
+          "experiments"
+        ],
+        "summary": "One game as PGN, with each move's evaluation, depth, nodes and time in its comment.",
+        "operationId": "get_game",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {}
         }
       }
     }
@@ -504,6 +783,46 @@
           }
         }
       },
+      "Estimate": {
+        "type": "object",
+        "description": "Elo and normalized Elo with 95% intervals (`±`), from game pairs.",
+        "required": [
+          "elo",
+          "elo_error",
+          "nelo",
+          "nelo_error",
+          "los",
+          "score"
+        ],
+        "properties": {
+          "elo": {
+            "type": "number",
+            "format": "double"
+          },
+          "elo_error": {
+            "type": "number",
+            "format": "double"
+          },
+          "los": {
+            "type": "number",
+            "format": "double",
+            "description": "Likelihood of superiority, 0 to 1."
+          },
+          "nelo": {
+            "type": "number",
+            "format": "double"
+          },
+          "nelo_error": {
+            "type": "number",
+            "format": "double"
+          },
+          "score": {
+            "type": "number",
+            "format": "double",
+            "description": "Average points per game, 0 to 1."
+          }
+        }
+      },
       "Event": {
         "type": "object",
         "required": [
@@ -521,6 +840,175 @@
           "kind": {
             "type": "string",
             "description": "What happened, such as `job.progress` or `analysis.info`."
+          }
+        }
+      },
+      "Experiment": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "hypothesis",
+          "kind",
+          "base",
+          "dev",
+          "funnel",
+          "status",
+          "results",
+          "created_at"
+        ],
+        "properties": {
+          "base": {
+            "type": "string",
+            "description": "The baseline ref."
+          },
+          "base_build": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "batch": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The batch it was submitted with, if any."
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "current": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The stage running now, while running."
+          },
+          "dev": {
+            "type": "string",
+            "description": "The changed ref."
+          },
+          "dev_build": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "funnel": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Stage"
+            }
+          },
+          "hypothesis": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "job": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/Kind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StageResult"
+            },
+            "description": "Results of the stages run so far, in order."
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExperimentStatus"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it stopped, once finished."
+          }
+        }
+      },
+      "ExperimentDetail": {
+        "type": "object",
+        "required": [
+          "experiment",
+          "tests"
+        ],
+        "properties": {
+          "experiment": {
+            "$ref": "#/components/schemas/Experiment"
+          },
+          "tests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Test"
+            },
+            "description": "Its matches, in the order they ran."
+          }
+        }
+      },
+      "ExperimentStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "passed",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "GameSummary": {
+        "type": "object",
+        "required": [
+          "index",
+          "white",
+          "black",
+          "result",
+          "termination",
+          "plies"
+        ],
+        "properties": {
+          "black": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer",
+            "description": "Position in the match's PGN, from 0.",
+            "minimum": 0
+          },
+          "plies": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "result": {
+            "type": "string"
+          },
+          "termination": {
+            "type": "string"
+          },
+          "white": {
+            "type": "string"
           }
         }
       },
@@ -646,6 +1134,26 @@
                 "type": "string"
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "Run an experiment's funnel.",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "experiment"
+                ]
+              }
+            }
           }
         ],
         "description": "What a job does."
@@ -658,6 +1166,15 @@
           "done",
           "failed",
           "cancelled"
+        ]
+      },
+      "Kind": {
+        "type": "string",
+        "description": "What kind of change an experiment tests, which picks its funnel.",
+        "enum": [
+          "gainer",
+          "nonregression",
+          "nonfunctional"
         ]
       },
       "Limits": {
@@ -739,6 +1256,226 @@
           }
         }
       },
+      "MatchSpec": {
+        "type": "object",
+        "description": "One match between the dev and base builds.",
+        "required": [
+          "tc",
+          "threads",
+          "hash"
+        ],
+        "properties": {
+          "hash": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Hash table size in MiB.",
+            "minimum": 0
+          },
+          "pairs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "sprt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Sprt",
+                "description": "Stop when the SPRT decides. Without one, play `pairs` game pairs."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tc": {
+            "$ref": "#/components/schemas/TimeControl"
+          },
+          "threads": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "NewBatch": {
+        "type": "object",
+        "required": [
+          "name",
+          "experiments"
+        ],
+        "properties": {
+          "experiments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NewExperiment"
+            }
+          },
+          "name": {
+            "type": "string",
+            "description": "Names the batch; list it with `?batch=`."
+          }
+        }
+      },
+      "NewExperiment": {
+        "type": "object",
+        "description": "An experiment to run.",
+        "required": [
+          "dev"
+        ],
+        "properties": {
+          "base": {
+            "type": "string",
+            "description": "The baseline. Defaults to `main`."
+          },
+          "bounds": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "description": "SPRT bounds in normalized Elo for `preset`, such as `[0, 3]`. Left out (and no `pairs`), `[0, 3]`."
+          },
+          "dev": {
+            "type": "string"
+          },
+          "hypothesis": {
+            "type": "string",
+            "description": "What the change is expected to do, and why."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/Kind"
+          },
+          "ltc": {
+            "type": "boolean",
+            "description": "Add an LTC confirmation to the default funnel."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A short name. Defaults to the dev ref."
+          },
+          "pairs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Play this many game pairs for `preset` instead of an SPRT.",
+            "minimum": 0
+          },
+          "preset": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Preset",
+                "description": "Shorthand for a single match with these settings, instead of a funnel."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stages": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Stage"
+            },
+            "description": "Run these stages instead of the default funnel for the kind."
+          }
+        }
+      },
+      "Pentanomial": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "description": "Game-pair outcomes from the dev engine's side: `[LL, LD, WL+DD, WD, WW]`, i.e. pairs scoring 0, ½, 1, 1½ and 2."
+      },
+      "Point": {
+        "type": "object",
+        "description": "One point of a test's progress, for its chart.",
+        "required": [
+          "games"
+        ],
+        "properties": {
+          "games": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "llr": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "nelo": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "Preset": {
+        "type": "string",
+        "description": "Named settings, as Reckless names its tests.",
+        "enum": [
+          "vstc",
+          "stc",
+          "ltc",
+          "stc-hash",
+          "ltc-hash",
+          "smp",
+          "nodes"
+        ]
+      },
+      "RunnerStatus": {
+        "type": "object",
+        "required": [
+          "version",
+          "cpu",
+          "reckless_dir",
+          "reckless_found",
+          "schema"
+        ],
+        "properties": {
+          "cpu": {
+            "$ref": "#/components/schemas/Machine"
+          },
+          "reckless_dir": {
+            "type": "string",
+            "description": "The Reckless checkout the runner builds from."
+          },
+          "reckless_found": {
+            "type": "boolean",
+            "description": "Whether that checkout exists."
+          },
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The database schema version (migrations applied)."
+          },
+          "version": {
+            "type": "string",
+            "description": "The runner's version."
+          }
+        }
+      },
       "Score": {
         "oneOf": [
           {
@@ -772,37 +1509,308 @@
         ],
         "description": "A search score from the side to move's point of view."
       },
-      "Status": {
+      "Sprt": {
         "type": "object",
+        "description": "The SPRT a test runs: Elo bounds in normalized Elo, and the error rates.",
         "required": [
-          "version",
-          "cpu",
-          "reckless_dir",
-          "reckless_found",
-          "schema"
+          "elo0",
+          "elo1",
+          "alpha",
+          "beta"
         ],
         "properties": {
-          "cpu": {
-            "$ref": "#/components/schemas/Machine"
+          "alpha": {
+            "type": "number",
+            "format": "double"
           },
-          "reckless_dir": {
-            "type": "string",
-            "description": "The Reckless checkout the runner builds from."
+          "beta": {
+            "type": "number",
+            "format": "double"
           },
-          "reckless_found": {
-            "type": "boolean",
-            "description": "Whether that checkout exists."
+          "elo0": {
+            "type": "number",
+            "format": "double"
           },
-          "schema": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The database schema version (migrations applied)."
-          },
-          "version": {
-            "type": "string",
-            "description": "The runner's version."
+          "elo1": {
+            "type": "number",
+            "format": "double"
           }
         }
+      },
+      "Stage": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Bench both builds. A functional change must change the node count, and a non-functional one must not.",
+            "required": [
+              "functional",
+              "type"
+            ],
+            "properties": {
+              "functional": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "bench"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Bench both builds in turn, several times, and fail when dev is measurably slower.",
+            "required": [
+              "runs",
+              "type"
+            ],
+            "properties": {
+              "runs": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "speed"
+                ]
+              }
+            }
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MatchSpec"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "description": "A match between the builds; it passes when its SPRT accepts, or when its fixed games are played.",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "match"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "A match between the builds; it passes when its SPRT accepts, or when its fixed games are played."
+          }
+        ]
+      },
+      "StageResult": {
+        "type": "object",
+        "description": "What a finished stage found.",
+        "required": [
+          "stage",
+          "passed",
+          "detail"
+        ],
+        "properties": {
+          "detail": {
+            "type": "string",
+            "description": "One line on why, with the numbers."
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "test": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The match, for a match stage."
+          }
+        }
+      },
+      "Test": {
+        "type": "object",
+        "required": [
+          "id",
+          "experiment",
+          "stage",
+          "spec",
+          "base_build",
+          "dev_build",
+          "running",
+          "penta",
+          "games",
+          "created_at"
+        ],
+        "properties": {
+          "base_build": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "dev_build": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "estimate": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Estimate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "experiment": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "games": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "llr": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "penta": {
+            "$ref": "#/components/schemas/Pentanomial"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/MatchSpec"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "verdict": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Verdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "TestDetail": {
+        "type": "object",
+        "required": [
+          "test",
+          "points"
+        ],
+        "properties": {
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Point"
+            },
+            "description": "Progress over the match: LLR and nElo by games played."
+          },
+          "test": {
+            "$ref": "#/components/schemas/Test"
+          }
+        }
+      },
+      "TimeControl": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Seconds per game plus an increment per move.",
+            "required": [
+              "clock"
+            ],
+            "properties": {
+              "clock": {
+                "type": "object",
+                "description": "Seconds per game plus an increment per move.",
+                "required": [
+                  "seconds",
+                  "increment"
+                ],
+                "properties": {
+                  "increment": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "seconds": {
+                    "type": "number",
+                    "format": "double"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A fixed number of nodes per move: no clock, so speed does not count, only search and evaluation.",
+            "required": [
+              "nodes"
+            ],
+            "properties": {
+              "nodes": {
+                "type": "object",
+                "description": "A fixed number of nodes per move: no clock, so speed does not count, only search and evaluation.",
+                "required": [
+                  "nodes"
+                ],
+                "properties": {
+                  "nodes": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": "How long each move may take."
+      },
+      "Verdict": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "rejected",
+          "continue"
+        ]
       }
     }
   }

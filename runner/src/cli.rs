@@ -59,10 +59,95 @@ pub enum ClientCommand {
         #[arg(long, default_value_t = 1)]
         threads: u32,
     },
+    /// Experiments: a dev ref against a base ref through a funnel of stages.
+    #[command(subcommand)]
+    Experiment(ExperimentCommand),
+    /// Several experiments submitted, waited for and read together.
+    #[command(subcommand)]
+    Batch(BatchCommand),
+    /// One match between two refs: shorthand for an experiment with a single match stage.
+    Test {
+        #[arg(long)]
+        dev: String,
+        #[arg(long, default_value = "main")]
+        base: String,
+        /// vstc, stc, ltc, stc-hash, ltc-hash, smp or nodes.
+        #[arg(long, default_value = "stc")]
+        preset: String,
+        /// SPRT bounds in normalized Elo, such as 0,3 or -2.75,0.25. Default 0,3 unless --pairs is given.
+        #[arg(long, value_delimiter = ',', num_args = 2, allow_hyphen_values = true)]
+        bounds: Option<Vec<f64>>,
+        /// Play this many game pairs instead of an SPRT.
+        #[arg(long)]
+        pairs: Option<u32>,
+        #[arg(long)]
+        wait: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ExperimentCommand {
+    /// Queue an experiment.
+    New {
+        #[arg(long)]
+        dev: String,
+        #[arg(long, default_value = "main")]
+        base: String,
+        /// gainer, nonregression or nonfunctional: picks the funnel.
+        #[arg(long, default_value = "gainer")]
+        kind: String,
+        #[arg(long)]
+        name: Option<String>,
+        /// What the change should do, and why.
+        #[arg(long, default_value = "")]
+        hypothesis: String,
+        /// Add an LTC confirmation.
+        #[arg(long)]
+        ltc: bool,
+        #[arg(long)]
+        wait: bool,
+    },
+    /// List experiments, newest first.
+    List {
+        #[arg(long)]
+        batch: Option<String>,
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+    },
+    /// Show an experiment with its stages and matches.
+    Show { id: i64 },
+    /// Wait for an experiment to finish, then show it.
+    Wait { id: i64 },
+    /// Cancel a queued experiment or stop a running one.
+    Cancel { id: i64 },
+}
+
+#[derive(Subcommand)]
+pub enum BatchCommand {
+    /// Queue a batch from a JSON file (`-` for stdin): an array of experiments, each like the body of
+    /// POST /api/experiments ({ "dev": "...", "kind": "gainer", "hypothesis": "..." }).
+    Submit {
+        file: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        wait: bool,
+    },
+    /// Show a batch's experiments as one table.
+    Show { name: String },
+    /// Wait for every experiment of a batch to finish, then show the table.
+    Wait { name: String },
 }
 
 pub async fn run(client: Client, command: ClientCommand, json: bool) -> Result<()> {
     match command {
+        ClientCommand::Experiment(cmd) => return experiment(&client, cmd, json).await,
+        ClientCommand::Batch(cmd) => return batch(&client, cmd, json).await,
+        ClientCommand::Test { dev, base, preset, bounds, pairs, wait } => {
+            let body = json!({ "dev": dev, "base": base, "preset": preset, "bounds": bounds, "pairs": pairs });
+            let e = client.post("/api/experiments", body).await?;
+            return finish_experiment(&client, e, wait, json).await;
+        }
         ClientCommand::Status => {
             let s = client.get("/api/status").await?;
             print(&s, json, |s| {
@@ -172,4 +257,143 @@ fn build_line(b: &Value) -> String {
         b["nps"],
         b["subject"].as_str().unwrap_or(""),
     )
+}
+
+async fn experiment(client: &Client, cmd: ExperimentCommand, json: bool) -> Result<()> {
+    match cmd {
+        ExperimentCommand::New { dev, base, kind, name, hypothesis, ltc, wait } => {
+            let body =
+                json!({ "dev": dev, "base": base, "kind": kind, "name": name, "hypothesis": hypothesis, "ltc": ltc });
+            let e = client.post("/api/experiments", body).await?;
+            finish_experiment(client, e, wait, json).await?;
+        }
+        ExperimentCommand::List { batch, limit } => {
+            let query = match &batch {
+                Some(b) => format!("?limit={limit}&batch={}", urlencode(b)),
+                None => format!("?limit={limit}"),
+            };
+            let list = client.get(&format!("/api/experiments{query}")).await?;
+            print(&list, json, |l| lines(l, experiment_line));
+        }
+        ExperimentCommand::Show { id } => {
+            let detail = client.get(&format!("/api/experiments/{id}")).await?;
+            print(&detail, json, experiment_text);
+        }
+        ExperimentCommand::Wait { id } => {
+            let detail = wait_experiment(client, id).await?;
+            print(&detail, json, experiment_text);
+        }
+        ExperimentCommand::Cancel { id } => {
+            let e = client.delete(&format!("/api/experiments/{id}")).await?;
+            print(&e, json, experiment_line);
+        }
+    }
+    Ok(())
+}
+
+async fn batch(client: &Client, cmd: BatchCommand, json: bool) -> Result<()> {
+    match cmd {
+        BatchCommand::Submit { file, name, wait } => {
+            let text =
+                if file == "-" { std::io::read_to_string(std::io::stdin())? } else { std::fs::read_to_string(&file)? };
+            let experiments: Value = serde_json::from_str(&text)?;
+            let created = client.post("/api/batches", json!({ "name": name, "experiments": experiments })).await?;
+            if wait {
+                let table = wait_batch(client, &name).await?;
+                print(&table, json, |t| lines(t, experiment_line));
+            } else {
+                print(&created, json, |l| lines(l, experiment_line));
+            }
+        }
+        BatchCommand::Show { name } => {
+            let list = client.get(&format!("/api/experiments?limit=1000&batch={}", urlencode(&name))).await?;
+            print(&list, json, |l| lines(l, experiment_line));
+        }
+        BatchCommand::Wait { name } => {
+            let table = wait_batch(client, &name).await?;
+            print(&table, json, |t| lines(t, experiment_line));
+        }
+    }
+    Ok(())
+}
+
+async fn finish_experiment(client: &Client, e: Value, wait: bool, json: bool) -> Result<()> {
+    if wait {
+        let detail = wait_experiment(client, e["id"].as_i64().unwrap_or_default()).await?;
+        print(&detail, json, experiment_text);
+    } else {
+        print(&e, json, experiment_line);
+    }
+    Ok(())
+}
+
+fn finished(e: &Value) -> bool {
+    matches!(e["status"].as_str(), Some("passed" | "failed" | "cancelled"))
+}
+
+/// Polls an experiment until it finishes. Passing and failing are both answers, so both exit zero.
+async fn wait_experiment(client: &Client, id: i64) -> Result<Value> {
+    loop {
+        let detail = client.get(&format!("/api/experiments/{id}")).await?;
+        if finished(&detail["experiment"]) {
+            return Ok(detail);
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+
+async fn wait_batch(client: &Client, name: &str) -> Result<Value> {
+    loop {
+        let list = client.get(&format!("/api/experiments?limit=1000&batch={}", urlencode(name))).await?;
+        let all = list.as_array().cloned().unwrap_or_default();
+        if all.is_empty() {
+            bail!("no batch named {name}");
+        }
+        if all.iter().all(finished) {
+            return Ok(list);
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+
+fn urlencode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+fn experiment_line(e: &Value) -> String {
+    let status = e["status"].as_str().unwrap_or("?");
+    let tail = match (e["current"].as_str(), e["summary"].as_str()) {
+        (Some(stage), _) if status == "running" => format!("at {stage}"),
+        (_, Some(summary)) => summary.to_owned(),
+        _ => String::new(),
+    };
+    format!(
+        "experiment {} {} ({} vs {}) {status}  {tail}",
+        e["id"],
+        e["name"].as_str().unwrap_or("?"),
+        e["dev"].as_str().unwrap_or("?"),
+        e["base"].as_str().unwrap_or("?")
+    )
+}
+
+fn experiment_text(d: &Value) -> String {
+    let e = &d["experiment"];
+    let mut out = experiment_line(e);
+    if let Some(h) = e["hypothesis"].as_str().filter(|h| !h.is_empty()) {
+        out += &format!("\n  hypothesis: {h}");
+    }
+    for r in e["results"].as_array().into_iter().flatten() {
+        let mark = if r["passed"].as_bool() == Some(true) { "pass" } else { "FAIL" };
+        out += &format!("\n  {mark} {:<8} {}", r["stage"].as_str().unwrap_or("?"), r["detail"].as_str().unwrap_or(""));
+    }
+    for t in d["tests"].as_array().into_iter().flatten().filter(|t| t["running"].as_bool() == Some(true)) {
+        let llr = t["llr"].as_f64().map(|l| format!("LLR {l:.2}")).unwrap_or_default();
+        out += &format!("\n  running {:<5} {} games {llr}", t["stage"].as_str().unwrap_or("?"), t["games"]);
+    }
+    out
 }

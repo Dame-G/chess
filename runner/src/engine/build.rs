@@ -31,9 +31,12 @@ pub struct Build {
     /// Nodes per second during `bench` on this machine.
     pub nps: u64,
     pub created_at: String,
+    /// The tree and features: what the build is, and the folder its binary lives in.
+    #[serde(skip)]
+    pub key: String,
 }
 
-const COLUMNS: &str = "id, ref, commit_sha, subject, features, network, bench, bench_expected, nps, created_at";
+const COLUMNS: &str = "id, ref, commit_sha, subject, features, network, bench, bench_expected, nps, created_at, key";
 
 fn from_row(r: &Row) -> rusqlite::Result<Build> {
     Ok(Build {
@@ -47,6 +50,7 @@ fn from_row(r: &Row) -> rusqlite::Result<Build> {
         bench_expected: r.get::<_, Option<i64>>(7)?.map(|n| n as u64),
         nps: r.get::<_, i64>(8)? as u64,
         created_at: r.get(9)?,
+        key: r.get(10)?,
     })
 }
 
@@ -65,11 +69,12 @@ fn by_key(c: &Connection, key: &str) -> Result<Option<Build>> {
 
 /// Where a build's binary lives.
 pub fn binary(data: &Path, build: &Build) -> PathBuf {
-    data.join("builds").join(key(&build.commit, &build.features)).join(exe("reckless"))
+    data.join("builds").join(&build.key).join(exe("reckless"))
 }
 
-fn key(commit: &str, features: &str) -> String {
-    format!("{commit}-{features}")
+/// Two commits with the same tree build the same binary: rewording a message (to add its `Bench:` line) never rebuilds.
+fn key(tree: &str, features: &str) -> String {
+    format!("{tree}-{features}")
 }
 
 fn exe(name: &str) -> String {
@@ -88,7 +93,7 @@ pub struct BuildContext<'a> {
 pub async fn build(cx: BuildContext<'_>, refname: &str) -> Result<Build> {
     let commit = git::resolve(cx.reckless, refname).await?;
     let features = if has_clang().await { "syzygy" } else { "no-syzygy" };
-    let key = key(&commit.sha, features);
+    let key = key(&commit.tree, features);
     let existing = {
         cx.store
             .call({

@@ -9,6 +9,8 @@ use crate::proc;
 
 pub struct Commit {
     pub sha: String,
+    /// The tree: what was committed, whatever the message says. Builds are keyed by it.
+    pub tree: String,
     pub subject: String,
     /// The node count the commit message claims (`Bench: N`), Reckless's functional fingerprint.
     pub bench: Option<u64>,
@@ -20,7 +22,13 @@ pub async fn resolve(repo: &Path, refname: &str) -> Result<Commit> {
         .await
         .map_err(|_| anyhow::anyhow!("no commit named {refname} in {}", repo.display()))?;
     let message = git(repo, &["log", "-1", "--format=%B", &sha]).await?;
-    Ok(Commit { subject: message.lines().next().unwrap_or_default().to_owned(), bench: bench_line(&message), sha })
+    let tree = git(repo, &["rev-parse", &format!("{sha}^{{tree}}")]).await?;
+    Ok(Commit {
+        subject: message.lines().next().unwrap_or_default().to_owned(),
+        bench: bench_line(&message),
+        sha,
+        tree,
+    })
 }
 
 /// The last `Bench: N` line of a commit message.

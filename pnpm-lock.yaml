@@ -217,9 +217,21 @@ importers:
 
   web:
     dependencies:
+      '@eos-ui/tokens':
+        specifier: ^0.18.0
+        version: 0.18.0
       '@eos-ui/vue':
-        specifier: ^0.17.1
-        version: 0.17.1(vue@3.5.44(typescript@6.0.3))
+        specifier: ^0.18.0
+        version: 0.18.0(vue@3.5.44(typescript@6.0.3))
+      '@fontsource-variable/fraunces':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource-variable/hanken-grotesk':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource-variable/jetbrains-mono':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@lichess-org/chessground':
         specifier: ^10.5.0
         version: 10.5.0
@@ -235,6 +247,9 @@ importers:
       pinia:
         specifier: ^4.1.0
         version: 4.1.0(@vue/devtools-api@8.2.1)(typescript@6.0.3)(vue@3.5.44(typescript@6.0.3))
+      uplot:
+        specifier: ^1.6.32
+        version: 1.6.32
       vue:
         specifier: ^3.5.44
         version: 3.5.44(typescript@6.0.3)
@@ -417,12 +432,12 @@ packages:
   '@emnapi/wasi-threads@1.2.2':
     resolution: {integrity: sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA==}
 
-  '@eos-ui/tokens@0.17.1':
-    resolution: {integrity: sha512-cwRgfc5WSHBRkpULHtLqtdX2f0y1aEO4VQTOiH2NZfW3LUni6KUWx+1q6t9wnX2w/htCnFcbzPtteozW2Of+Sg==}
+  '@eos-ui/tokens@0.18.0':
+    resolution: {integrity: sha512-yhkubh39LY7Km7HM6mOzpbshrH17J78zMPTjkb11Iq1dnf4LUYVLkZntaFncSd1Z7OGKnqAtWKMrtym+aFC4bg==}
     engines: {node: '>=22'}
 
-  '@eos-ui/vue@0.17.1':
-    resolution: {integrity: sha512-BfI+0mNbRYYz8790N8lX24gHhBdrsZ0NkU2mLF3ZD2Tq+paS1IQLv0FN1Vb3WPjlzlxUkndG25/nKXDQ3qvrtg==}
+  '@eos-ui/vue@0.18.0':
+    resolution: {integrity: sha512-G4RLGt6TwsChz9VvdrMvFiT7Ut9pyG0/nNQk9/ITbDhCZr2bIkU8uPYbFiJXDM4XJcZ5tIk4lku1Uig/79ocHg==}
     engines: {node: '>=22'}
     peerDependencies:
       '@iconify/vue': ^5.0.0
@@ -639,6 +654,15 @@ packages:
     resolution: {integrity: sha512-043dyEKD9TDSfz080YH2vobubgg+NIo/9Fw4RAl7sEMpD8Am1DNrrSTl/GpMBjyGHoD/FbJY2QLawY+HSQsEIA==}
     peerDependencies:
       vue: '>=3.3.0'
+
+  '@fontsource-variable/fraunces@5.3.0':
+    resolution: {integrity: sha512-9BYGySn4AHEJdgp9Z28tQ3X+laJMEOITXkQarZXeloWQZDq5oOvXJ3kDA8c7MGIfpogIaZfjrQBqmda8POOCKA==}
+
+  '@fontsource-variable/hanken-grotesk@5.3.0':
+    resolution: {integrity: sha512-DOd0FqL+3cH2dfNy0JtSq9tUfxBz5mLmHMjTU0DOr3E9Zo6wxuatCl53DIPNrSPgCsnuKyM739BTIG5glCLirw==}
+
+  '@fontsource-variable/jetbrains-mono@5.3.0':
+    resolution: {integrity: sha512-F32xpS2NsGYoQi2ADSkKTgpJj7ozajsGgDJ8woTnqjmIB+dxDIqImjl4pXZVEExu8UFZ2ndhmX18EBS/hdz3Lw==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -1449,27 +1473,11 @@ packages:
     peerDependencies:
       vue: ^3.5.0
 
-  '@vueuse/core@15.0.0':
-    resolution: {integrity: sha512-Zv67h5mrk7YHDJsRObx+DXaCBz6RKBUpxqLesJ+3xZNPG6yuQs7ja7kg3veFrrouYLWAqydQ7CwGEbLVxB43Ng==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      vue: ^3.5.0
-
   '@vueuse/metadata@14.4.0':
     resolution: {integrity: sha512-swx/255R6JyHZFJhx845iz5CRWDZdCfvkZOpACWc5+c5WHcG24mv8gUT1WIdFQaHt6dq79rvILd9QnCWiyVm9g==}
 
-  '@vueuse/metadata@15.0.0':
-    resolution: {integrity: sha512-sfWE5LADAKJ0KnjtGliMdSN8Ij/L7uP6rXIZlgPloAI4zvvefbw6H5Lt7KJA6RqQOYgVqWF5Guj50HHMIzygBg==}
-    engines: {node: '>=22'}
-
   '@vueuse/shared@14.4.0':
     resolution: {integrity: sha512-JRgY90Sz8DDtPMsaDflvPMp9xYk69JZAmbuDvAquUVXKr2gEjqtzGNTTthLfckH0BzBqvnu31gb4a8TGLRe79g==}
-    peerDependencies:
-      vue: ^3.5.0
-
-  '@vueuse/shared@15.0.0':
-    resolution: {integrity: sha512-vbNXhGrbV53xPOMSyOzMHQRvhMgZf7oNDw2RChUetVxwTIEkInQ1joZ9JbT0G3z2n2AJNjvmCWeM9ySYrnvogA==}
-    engines: {node: '>=22'}
     peerDependencies:
       vue: ^3.5.0
 
@@ -2596,6 +2604,9 @@ packages:
       webpack:
         optional: true
 
+  uplot@1.6.32:
+    resolution: {integrity: sha512-KIMVnG68zvu5XXUbC4LQEPnhwOxBuLyW1AHtpm6IKTXImkbLgkMy+jabjLgSLMasNuGGzQm/ep3tOkyTxpiQIw==}
+
   uri-js-replace@1.0.2:
     resolution: {integrity: sha512-VeBBt/nMxedczht3KDL2yBBMJqIxpCQLMZp3UJ1otcWwUHdQW4IiyHpJivExzSK+FdxTowRfGL4FmwDqH9+S8Q==}
 
@@ -2954,13 +2965,12 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@eos-ui/tokens@0.17.1': {}
+  '@eos-ui/tokens@0.18.0': {}
 
-  '@eos-ui/vue@0.17.1(vue@3.5.44(typescript@6.0.3))':
+  '@eos-ui/vue@0.18.0(vue@3.5.44(typescript@6.0.3))':
     dependencies:
-      '@eos-ui/tokens': 0.17.1
+      '@eos-ui/tokens': 0.18.0
       '@tanstack/vue-virtual': 3.13.48(vue@3.5.44(typescript@6.0.3))
-      '@vueuse/core': 15.0.0(vue@3.5.44(typescript@6.0.3))
       reka-ui: 2.11.0(vue@3.5.44(typescript@6.0.3))
       vue: 3.5.44(typescript@6.0.3)
 
@@ -3092,6 +3102,12 @@ snapshots:
       '@floating-ui/dom': 1.8.0
       '@floating-ui/utils': 0.2.12
       vue: 3.5.44(typescript@6.0.3)
+
+  '@fontsource-variable/fraunces@5.3.0': {}
+
+  '@fontsource-variable/hanken-grotesk@5.3.0': {}
+
+  '@fontsource-variable/jetbrains-mono@5.3.0': {}
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -3800,22 +3816,9 @@ snapshots:
       '@vueuse/shared': 14.4.0(vue@3.5.44(typescript@6.0.3))
       vue: 3.5.44(typescript@6.0.3)
 
-  '@vueuse/core@15.0.0(vue@3.5.44(typescript@6.0.3))':
-    dependencies:
-      '@types/web-bluetooth': 0.0.21
-      '@vueuse/metadata': 15.0.0
-      '@vueuse/shared': 15.0.0(vue@3.5.44(typescript@6.0.3))
-      vue: 3.5.44(typescript@6.0.3)
-
   '@vueuse/metadata@14.4.0': {}
 
-  '@vueuse/metadata@15.0.0': {}
-
   '@vueuse/shared@14.4.0(vue@3.5.44(typescript@6.0.3))':
-    dependencies:
-      vue: 3.5.44(typescript@6.0.3)
-
-  '@vueuse/shared@15.0.0(vue@3.5.44(typescript@6.0.3))':
     dependencies:
       vue: 3.5.44(typescript@6.0.3)
 
@@ -4960,6 +4963,8 @@ snapshots:
       esbuild: 0.28.2
       rolldown: 1.2.15
       vite: 8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)
+
+  uplot@1.6.32: {}
 
   uri-js-replace@1.0.2: {}
 
