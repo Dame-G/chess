@@ -1447,16 +1447,13 @@ const filters = [
     100cqh - var(--foot) - var(--extra) - 2 * var(--pad),
     100cqw - var(--lib) - var(--ws-inspector, 24rem) - var(--col) - var(--gap) - 2 * var(--pad)
   );
+  --side: var(--side-raw);
 }
 
 /* chessground draws its squares on a whole number of device pixels, eight squares wide, and floors the rest: a board
    that is not a multiple of eight device pixels gets a sliver of empty frame on its right and bottom. The side is rounded
    down to that step (`--cg-step`, eight device pixels in CSS pixels, set from the screen's pixel ratio), so the squares
    meet the frame exactly. */
-.board-ws {
-  --side: var(--side-raw);
-}
-
 @supports (width: round(down, 10px, 1px)) {
   .board-ws {
     --side: round(down, var(--side-raw), var(--cg-step, 8px));
