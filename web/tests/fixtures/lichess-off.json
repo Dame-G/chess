@@ -1,0 +1,25 @@
+{
+  "configured": false,
+  "account": null,
+  "online": false,
+  "state": "off",
+  "error": null,
+  "playing": [],
+  "settings": {
+    "build": null,
+    "hash": 64,
+    "threads": 1,
+    "move_overhead": 300,
+    "accept_rated": true,
+    "accept_casual": true,
+    "speeds": ["bullet", "blitz", "rapid"],
+    "min_initial": 60,
+    "max_initial": 1800,
+    "min_increment": 0,
+    "max_increment": 30,
+    "from_position": false,
+    "accept_humans": true,
+    "accept_bots": true,
+    "max_games": 1
+  }
+}

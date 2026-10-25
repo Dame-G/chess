@@ -21,7 +21,7 @@ const open = defineModel<boolean>("open", { default: false });
 const router = useRouter();
 const { state: builds } = useBuilds();
 const { state: recent } = useMatches();
-const running = computed(() => recent.value.data?.find((m) => m.status === "running"));
+const running = computed(() => recent.value.data?.find((m) => m.status === "running" && !m.lichess));
 
 const white = ref("");
 const black = ref("");

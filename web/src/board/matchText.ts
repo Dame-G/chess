@@ -26,7 +26,7 @@ export function matchTimeText(t: MatchTime): string {
   return `${t.ms / 1000} s a move`;
 }
 
-type Ended = Pick<Match, "result" | "reason" | "status">;
+type Ended = Pick<Match, "result" | "reason" | "status"> & { lichess?: Match["lichess"] };
 
 /**
  * Who won and why, in plain words: "Black won on time", "Draw by threefold repetition". With the players' names the
@@ -38,7 +38,19 @@ export function outcomeText(m: Ended, names?: { white: string; black: string }):
   const loser = side === "White" ? "Black" : "White";
   switch (m.reason) {
     case "aborted":
-      return "Stopped before the end";
+      return m.lichess ? "Aborted" : "Stopped before the end";
+    case "resigned":
+      return `${loser} resigned`;
+    case "agreement":
+      return "Draw agreed";
+    case "abandoned":
+      return winner ? `${loser} left the game` : "Game abandoned";
+    case "no_start":
+      return "Aborted, the game never started";
+    case "cheat":
+      return winner ? `${winner} won, ${loser} was disqualified` : "Game ended by a fair-play ruling";
+    case "variant_end":
+      return winner ? `${winner} won by the variant's rule` : "Draw by the variant's rule";
     case "checkmate":
       return `${winner} won by checkmate`;
     case "time":

@@ -21,6 +21,14 @@ export const router = createRouter({
     { path: "/engines", name: "engines", component: engines, meta: { title: "Engines", workspace: true } },
     { path: "/engines/:id", name: "engine", component: engines, meta: { title: "Engines", workspace: true } },
 
+    // The Lichess bot: its games, rules and challenges.
+    {
+      path: "/lichess",
+      name: "lichess",
+      component: () => import("./views/LichessView.vue"),
+      meta: { title: "Lichess", workspace: true },
+    },
+
     // Old addresses.
     { path: "/analysis", redirect: (to) => ({ path: "/board", query: to.query }) },
     { path: "/experiments", redirect: "/lab" },

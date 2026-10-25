@@ -1,0 +1,30 @@
+{
+  "configured": true,
+  "account": {
+    "id": "recklessbot",
+    "username": "RecklessBot",
+    "title": "BOT",
+    "bot": true
+  },
+  "online": true,
+  "state": "online",
+  "error": null,
+  "playing": [2],
+  "settings": {
+    "build": "main",
+    "hash": 64,
+    "threads": 1,
+    "move_overhead": 300,
+    "accept_rated": true,
+    "accept_casual": true,
+    "speeds": ["bullet", "blitz", "rapid"],
+    "min_initial": 60,
+    "max_initial": 1800,
+    "min_increment": 0,
+    "max_increment": 30,
+    "from_position": false,
+    "accept_humans": true,
+    "accept_bots": true,
+    "max_games": 1
+  }
+}

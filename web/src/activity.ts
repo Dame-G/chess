@@ -1,6 +1,7 @@
 import { computed } from "vue";
-import { useExperiment, useExperiments, useJobs, useMatches, useStatus, useTest } from "./api/queries";
+import { useExperiment, useExperiments, useJobs, useLichess, useMatches, useStatus, useTest } from "./api/queries";
 import { forecast, stageLabel } from "./format";
+import { opponentOf } from "./lichess";
 
 /** What the runner is doing, in a few words: for the status bar and the overview. */
 export function useActivity() {
@@ -17,7 +18,18 @@ export function useActivity() {
   });
   // A live engine match runs beside the queue, so it is reported on its own.
   const { state: matches } = useMatches();
-  const live = computed(() => matches.value.data?.find((m) => m.status === "running"));
+  const live = computed(() => matches.value.data?.find((m) => m.status === "running" && !m.lichess));
+  // The Lichess bot plays beside everything else: it adds a word to the status, it never replaces it.
+  const { state: lichess } = useLichess();
+  const bot = computed(() => {
+    const l = lichess.value.data;
+    if (!l?.online) return undefined;
+    const game = matches.value.data?.find((m) => m.status === "running" && m.lichess);
+    if (game) return { playing: true, text: `vs ${opponentOf(game).player.name}` } as const;
+    if (l.state === "error") return { playing: false, text: "Lichess bot not connected" } as const;
+    if (l.state === "connecting") return { playing: false, text: "Lichess bot connecting" } as const;
+    return { playing: false, text: "Lichess bot online" } as const;
+  });
   const liveName = computed(() => (live.value ? `${live.value.white.name} vs ${live.value.black.name}` : ""));
 
   const queued = computed(() => (jobs.value.data ?? []).filter((j) => j.status === "queued").length);
@@ -28,7 +40,7 @@ export function useActivity() {
   const { state: match } = useTest(matchId);
   const playing = computed(() => (matchId.value > 0 ? match.value.data?.test : undefined));
 
-  const summary = computed(() => {
+  const base = computed(() => {
     if (status.value.status === "error") return { state: "offline", label: "Not connected", detail: [] } as const;
     if (status.value.status === "pending" && !status.value.data)
       return { state: "pending", label: "Connecting", detail: [] } as const;
@@ -49,6 +61,17 @@ export function useActivity() {
     }
     if (live.value) detailParts.push(`live match: ${liveName.value}`);
     return { state: "busy", label: stage, detail: detailParts } as const;
+  });
+
+  const summary = computed(() => {
+    const b = base.value;
+    const x = bot.value;
+    if (!x || b.state === "offline" || b.state === "pending") return b;
+    if (b.state === "idle")
+      return x.playing
+        ? ({ state: "busy", label: "Playing on Lichess", detail: [x.text] } as const)
+        : ({ state: "idle", label: x.text, detail: [] } as const);
+    return { ...b, detail: [...b.detail, x.playing ? `Lichess ${x.text}` : x.text] };
   });
 
   return { status, running, experiment, live, queued, summary };

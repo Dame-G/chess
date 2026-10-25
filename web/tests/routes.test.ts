@@ -42,16 +42,25 @@ function runner(input: RequestInfo | URL): Promise<Response> {
     [/^\/api\/tests\/2\/games$/, () => json("games-2.json")],
     [/^\/api\/tests\/2\/games\/\d+$/, () => text("game-2-0.pgn")],
     [/^\/api\/analysis$/, () => Response.json({ session: 1 })],
-    [/^\/api\/matches$/, () => json("matches.json")],
+    [
+      /^\/api\/matches$/,
+      () => json(url.searchParams.get("source") === "lichess" ? "matches-lichess.json" : "matches.json"),
+    ],
     [/^\/api\/matches\/1$/, () => json("match-1.json")],
+    [/^\/api\/matches\/2$/, () => json("match-2.json")],
+    [/^\/api\/lichess$/, () => json(lichess)],
+    [/^\/api\/lichess\/bots$/, () => json("bots.json")],
   ];
   const hit = routes.find(([pattern]) => pattern.test(path));
   if (!hit) missing.push(`${path}`);
   return Promise.resolve(hit ? hit[1]() : new Response(JSON.stringify({ error: "not found" }), { status: 404 }));
 }
 
+/** Which state the Lichess bot is in for the page under test. */
+let lichess = "lichess-off.json";
+
 const fen = encodeURIComponent("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-const routes: [string, string][] = [
+const routes: [string, string, string?][] = [
   ["/", "Open the board"],
   ["/board", "Start position"],
   [`/board?fen=${fen}&moves=e2e4`, "1. e4"],
@@ -62,6 +71,12 @@ const routes: [string, string][] = [
   ["/lab/3?stage=bench", "test/no-nmp vs main"],
   ["/engines", "Analyse with it"],
   ["/engines/1", "Fingerprint matches"],
+  ["/lichess", "Create the token"],
+  ["/lichess", "is not a bot account yet", "lichess-person.json"],
+  ["/lichess", "Stockfish-Bot", "lichess-connected.json"],
+  ["/lichess", "Playing a game", "lichess-connected.json"],
+  ["/matches/2", "Black resigned", "lichess-connected.json"],
+  ["/matches/2", "View on Lichess", "lichess-connected.json"],
 ];
 
 let mounted: VueApp | undefined;
@@ -86,30 +101,35 @@ async function settle() {
 }
 
 describe("routes", () => {
-  it.each(routes)("%s renders its content without errors or warnings", { timeout: 30_000 }, async (path, shows) => {
-    problems.length = 0;
-    missing.length = 0;
-    const { default: App } = await import("../src/App.vue");
-    const { router } = await import("../src/router");
-    const root = document.createElement("div");
-    document.body.append(root);
+  it.each(routes)(
+    "%s renders its content without errors or warnings",
+    { timeout: 30_000 },
+    async (path, shows, bot) => {
+      lichess = bot ?? "lichess-off.json";
+      problems.length = 0;
+      missing.length = 0;
+      const { default: App } = await import("../src/App.vue");
+      const { router } = await import("../src/router");
+      const root = document.createElement("div");
+      document.body.append(root);
 
-    const app = createApp(App);
-    app.config.errorHandler = (e, _vm, info) => problems.push(`error in ${info}: ${String(e)}`);
-    app.config.warnHandler = (msg) => problems.push(`warning: ${msg}`);
-    app
-      .use(createEos({ locale: "en-US", applyTheme: false }))
-      .use(createPinia())
-      .use(PiniaColada, { queryOptions: { staleTime: 5_000 } })
-      .use(router);
-    mounted = app;
+      const app = createApp(App);
+      app.config.errorHandler = (e, _vm, info) => problems.push(`error in ${info}: ${String(e)}`);
+      app.config.warnHandler = (msg) => problems.push(`warning: ${msg}`);
+      app
+        .use(createEos({ locale: "en-US", applyTheme: false }))
+        .use(createPinia())
+        .use(PiniaColada, { queryOptions: { staleTime: 5_000 } })
+        .use(router);
+      mounted = app;
 
-    await router.push(path);
-    await router.isReady();
-    app.mount(root);
-    await settle();
-    expect(problems).toEqual([]);
-    expect(root.textContent).toContain(shows);
-    expect(missing).toEqual([]);
-  });
+      await router.push(path);
+      await router.isReady();
+      app.mount(root);
+      await settle();
+      expect(problems).toEqual([]);
+      expect(root.textContent).toContain(shows);
+      expect(missing).toEqual([]);
+    },
+  );
 });

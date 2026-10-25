@@ -4,9 +4,12 @@ import { clockText, type Side } from "./matchText";
 
 const props = defineProps<{
   side: Side;
-  /** The build's ref and the start of its commit. */
+  /** The build's ref, or a Lichess player's name. */
   name: string;
-  commit: string;
+  /** A Lichess title such as GM or BOT. */
+  title?: string | null;
+  /** What follows the name: the start of the build's commit, a Lichess rating. */
+  detail: string;
   /** What the clock holds, in milliseconds, as of `at`. `null` when the match has no clock. */
   ms: number | null;
   /** When `ms` was true, as a `performance.now()` reading. */
@@ -60,8 +63,9 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
   <div class="strip" :class="{ 'strip--active': active }" role="group" :aria-label="`${side}: ${name}`">
     <span :class="['chip', `chip--${side}`]" aria-hidden="true"></span>
     <span class="who">
+      <span v-if="title" class="title">{{ title }}</span>
       <span class="name">{{ name }}</span>
-      <span class="commit num">{{ commit }}</span>
+      <span class="commit num">{{ detail }}</span>
     </span>
     <span
       v-if="score"
@@ -127,6 +131,13 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.title {
+  flex: none;
+  color: var(--e-primary);
+  font: var(--e-type-small);
+  font-weight: 700;
 }
 
 .commit {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, h, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ECodeBlock } from "@eos-ui/vue/components/ECodeBlock";
 import { EDescriptionList } from "@eos-ui/vue/components/EDescriptionList";
@@ -9,7 +10,7 @@ import { EStamp } from "@eos-ui/vue/components/EStamp";
 import { ETable } from "@eos-ui/vue/components/ETable";
 import { useRunnerEvent } from "../api/events";
 import { api, isRemote } from "../api/runner";
-import { unwrap, useExperiments, useJobs, useStatus, type Job } from "../api/queries";
+import { unwrap, useExperiments, useJobs, useLichess, useStatus, type Job } from "../api/queries";
 import { ago, failure, jobTone } from "../format";
 import { useActivity } from "../activity";
 import ConnectRunner from "./ConnectRunner.vue";
@@ -21,6 +22,23 @@ const { state: jobs } = useJobs();
 const { state: experiments } = useExperiments();
 
 const { live } = useActivity();
+const router = useRouter();
+const { state: lichess } = useLichess();
+/** The Lichess bot, when it is switched on: a line here, the controls on its own page. */
+const bot = computed(() => {
+  const l = lichess.value.data;
+  if (!l?.online) return undefined;
+  const who = l.account?.username ?? "The bot";
+  if (l.state === "error") return `${who} is not connected to Lichess: ${l.error ?? "unknown error"}`;
+  if (l.state === "connecting") return `${who} is connecting to Lichess`;
+  return l.playing.length
+    ? `${who} is playing ${l.playing.length === 1 ? "a game" : `${l.playing.length} games`} on Lichess`
+    : `${who} is online on Lichess`;
+});
+function openBot() {
+  open.value = false;
+  void router.push("/lichess");
+}
 const running = computed(() => jobs.value.data?.find((j) => j.status === "running"));
 const queued = computed(() => (jobs.value.data ?? []).filter((j) => j.status === "queued").reverse());
 const recent = computed(() => (jobs.value.data ?? []).filter((j) => j.finished_at).slice(0, 6));
@@ -124,7 +142,16 @@ const machine = computed(() => {
             >
           </span>
         </p>
-        <p v-else-if="!running" class="muted">Nothing. Start a build or an experiment and it appears here.</p>
+        <p v-if="bot" class="now now--live">
+          <span class="now-text">
+            <b>Lichess bot</b>
+            <span class="muted">{{ bot }}</span>
+          </span>
+          <EButton variant="outline" size="sm" @click="openBot">Open</EButton>
+        </p>
+        <p v-if="!running && !live && !bot" class="muted">
+          Nothing. Start a build or an experiment and it appears here.
+        </p>
         <ECodeBlock v-if="running && log.length" :code="log.join('\n')" lang="text" label="Live output" wrap />
       </section>
 

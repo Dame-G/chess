@@ -1,0 +1,19 @@
+[
+  {
+    "name": "Stockfish-Bot",
+    "title": "BOT",
+    "ratings": {
+      "bullet": 3100,
+      "blitz": 3200,
+      "rapid": 3000,
+      "classical": null
+    }
+  },
+  {
+    "name": "tiny-bot",
+    "title": "BOT",
+    "ratings": {
+      "blitz": 1400
+    }
+  }
+]

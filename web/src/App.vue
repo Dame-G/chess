@@ -4,6 +4,7 @@ import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import { useQueryCache } from "@pinia/colada";
 import {
   PhCaretUp,
+  PhCrown,
   PhClipboardText,
   PhSword,
   PhClockCounterClockwise,
@@ -34,6 +35,7 @@ import { dispatch, followEvents } from "./api/events";
 import { useBuilds, useExperiments } from "./api/queries";
 import { useActivity } from "./activity";
 import { ago, verdict } from "./format";
+import { recordChallenge } from "./lichess";
 import { stored } from "./stored";
 import Logo from "./components/Logo.vue";
 import RunnerDrawer from "./components/RunnerDrawer.vue";
@@ -47,6 +49,7 @@ const items = [
   { label: "Board", to: "/board", icon: PhGraph },
   { label: "Lab", to: "/lab", icon: PhFlask },
   { label: "Engines", to: "/engines", icon: PhWrench },
+  { label: "Lichess", to: "/lichess", icon: PhCrown },
 ];
 const isCurrent = (item: { to?: unknown }) =>
   route.path.startsWith(String(item.to)) ||
@@ -149,6 +152,7 @@ const commands = computed<CommandItem[]>(() => {
     { id: "go:/board", label: "Open the board", group: "Go to", icon: PhGraph, keywords: ["analysis", "analyse"] },
     { id: "go:/lab", label: "Open the lab", group: "Go to", icon: PhFlask, keywords: ["experiments", "tests"] },
     { id: "go:/engines", label: "Open engines", group: "Go to", icon: PhWrench, keywords: ["builds"] },
+    { id: "go:/lichess", label: "Open Lichess", group: "Go to", icon: PhCrown, keywords: ["bot", "online", "play"] },
     { id: "go:/lab?new=1", label: "Test an idea", group: "Do", icon: PhPlus, keywords: ["new experiment"] },
     { id: "go:/board?paste=1", label: "Paste a game or FEN", group: "Do", icon: PhClipboardText, keywords: ["pgn"] },
     {
@@ -164,6 +168,13 @@ const commands = computed<CommandItem[]>(() => {
       group: "Do",
       icon: PhHammer,
       keywords: ["branch", "commit"],
+    },
+    {
+      id: "go:/lichess?challenge=1",
+      label: "Challenge a bot",
+      group: "Do",
+      icon: PhCrown,
+      keywords: ["lichess", "play", "opponent"],
     },
     { id: "runner", label: "Show the runner", group: "Do", icon: PhCpu, keywords: ["jobs", "queue", "log"] },
     ...(touch
@@ -233,6 +244,8 @@ const stop = followEvents((event) => {
     cache.invalidateQueries({ key: ["test", id] });
     cache.invalidateQueries({ key: ["games", id] });
   }
+  if (event.kind === "lichess.status") cache.setQueryData(["lichess"], event.data);
+  if (event.kind === "lichess.challenge") recordChallenge(event.data);
   dispatch(event);
 });
 onUnmounted(stop);
@@ -266,7 +279,7 @@ onUnmounted(stop);
               <span class="search-label">Search</span>
               <EKbd class="search-kbd" size="sm">Ctrl K</EKbd>
             </EButton>
-            <ThemeSwitch />
+            <ThemeSwitch class="theme" />
           </template>
         </EAppHeader>
       </template>
@@ -396,6 +409,23 @@ onUnmounted(stop);
 
   .top :deep(.e-appheader-logo) {
     gap: var(--e-gap-base);
+  }
+
+  /* Four places fit a phone only when each is as wide as its word. */
+  .top :deep(.e-nav-item) {
+    padding-inline: var(--e-gap-snug);
+    font-size: var(--e-text-sm);
+  }
+
+  .top :deep(.e-appheader-bar) {
+    gap: var(--e-gap-base);
+  }
+}
+
+/* The theme is one command away in Search: on a phone the header keeps room for the four places. */
+@media (width < 30rem) {
+  .top :deep(.theme) {
+    display: none;
   }
 }
 

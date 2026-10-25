@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { EButton } from "@eos-ui/vue/components/EButton";
+import { gameClock, oursOf, oursText } from "../lichess";
 import { matchTimeText, type MatchSummary } from "./matchText";
 
 defineProps<{
@@ -10,11 +11,21 @@ defineProps<{
 const emit = defineEmits<{ open: [id: number] }>();
 
 /** The time control, and how long it went; a match still being played has no count worth showing. */
-const detail = (m: MatchSummary) =>
-  m.status === "running"
-    ? matchTimeText(m.time)
-    : `${matchTimeText(m.time)} · ${Math.ceil(m.plies / 2)} moves${m.status === "aborted" ? " · stopped" : ""}`;
-const shown = (r: MatchSummary["result"]) => (r === "1/2-1/2" ? "½–½" : r === "*" ? "·" : r.replace("-", "–"));
+const detail = (m: MatchSummary) => {
+  const clock = m.lichess ? `Lichess · ${gameClock(m)}` : matchTimeText(m.time);
+  return m.status === "running"
+    ? clock
+    : `${clock} · ${Math.ceil(m.plies / 2)} moves${m.status === "aborted" ? " · stopped" : ""}`;
+};
+/** A local match reads as its score; a Lichess game as how it went for our bot. */
+const shown = (m: MatchSummary) =>
+  m.lichess
+    ? oursText[oursOf(m)]
+    : m.result === "1/2-1/2"
+      ? "½–½"
+      : m.result === "*"
+        ? "·"
+        : m.result.replace("-", "–");
 </script>
 
 <template>
@@ -34,7 +45,7 @@ const shown = (r: MatchSummary["result"]) => (r === "1/2-1/2" ? "½–½" : r ==
       <span v-if="m.status === 'running'" class="res res--live num"
         ><span class="dot" aria-hidden="true"></span>Live</span
       >
-      <span v-else class="res num">{{ shown(m.result) }}</span>
+      <span v-else class="res num">{{ shown(m) }}</span>
       <span class="what">
         <span class="names">
           <span class="n">{{ m.white.name }}</span>

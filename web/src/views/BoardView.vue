@@ -571,7 +571,8 @@ function strip(side: Side) {
   return {
     side,
     name: player.name,
-    commit: player.commit,
+    title: player.title,
+    detail: [player.commit, player.rating].filter(Boolean).join(" · "),
     ms,
     at,
     ticking,
@@ -587,7 +588,9 @@ const engineRows = computed<EngineRow[]>(() => {
   const m = matchData.value;
   if (!m) return [];
   const liveView = matchLive.value && attached.value;
-  return (["white", "black"] as const).map((side) => {
+  // A Lichess opponent reports nothing to read: only our own engine has a row.
+  const sides = (["white", "black"] as const).filter((side) => !m.lichess || m[side].build != null);
+  return sides.map((side) => {
     const t = thinking.value[side];
     if (liveView && t && m.turn === side && t.ply === moves.value.length + 1) {
       return {
