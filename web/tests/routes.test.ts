@@ -56,7 +56,7 @@ const routes: [string, string][] = [
   ["/board", "Start position"],
   [`/board?fen=${fen}&moves=e2e4`, "1. e4"],
   ["/games/2/0", "Nd7"],
-  ["/matches/1", "Black won on time"],
+  ["/matches/1", "Black (test/no-nmp) won on time"],
   ["/lab", "test/no-nmp vs main"],
   ["/lab/3", "test/no-nmp vs main"],
   ["/lab/3?stage=bench", "test/no-nmp vs main"],

@@ -13,7 +13,8 @@ import { outcome, record } from "./lab";
 const props = defineProps<{ test: number }>();
 const { state } = useGames(() => props.test);
 
-const PAGE = 150;
+/** Stacked on a phone the list pushes the library far down the page, so it opens shorter there. */
+const PAGE = matchMedia("(width < 64rem)").matches ? 25 : 150;
 const shown = ref(PAGE);
 const only = ref<"all" | "W" | "D" | "L">("all");
 watch(
@@ -213,6 +214,7 @@ const parts = computed(() => [
 }
 
 .game {
+  min-height: 2.75rem;
   padding: var(--e-gap-snug) var(--ws-pad, var(--e-pad-card));
   border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 35%, transparent);
   color: inherit;

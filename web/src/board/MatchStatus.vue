@@ -21,7 +21,12 @@ const stamp = computed(() => {
   if (props.match.status === "aborted") return { label: "Stopped", tone: "neutral" } as const;
   return { label: "Final", tone: "neutral" } as const;
 });
-const sentence = computed(() => (running.value ? "In progress" : outcomeText(props.match)));
+/** Live, the stamp says it all; behind the latest move it says what the board is showing. */
+const sentence = computed(() => {
+  if (props.match.status === "aborted") return "No result";
+  if (!running.value) return outcomeText(props.match, { white: props.match.white.name, black: props.match.black.name });
+  return props.attached ? "" : "Not showing the latest move";
+});
 const facts = computed(() => {
   const m = props.match;
   const parts = [matchTimeText(m.time), `${moves.value} move${moves.value === 1 ? "" : "s"}`];
@@ -34,9 +39,10 @@ const facts = computed(() => {
   <header class="status">
     <p class="line">
       <EStamp size="sm" :tone="stamp.tone" :label="stamp.label" />
-      <strong class="sentence" aria-live="polite">{{ sentence }}</strong>
+      <strong v-if="sentence" class="sentence" aria-live="polite">{{ sentence }}</strong>
+      <span v-else class="facts num">{{ facts }}</span>
     </p>
-    <p class="facts num">{{ facts }}</p>
+    <p v-if="sentence" class="facts num">{{ facts }}</p>
     <div class="actions">
       <EButton v-if="running" variant="danger" size="sm" :icon="PhStop" :loading="busy" @click="$emit('stop')">
         Stop match

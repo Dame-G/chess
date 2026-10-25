@@ -5,6 +5,7 @@ import { parsePgn, startingPosition } from "chessops/pgn";
 import { makeSan, makeSanVariation, parseSan } from "chessops/san";
 import { makeUci, parseUci } from "chessops/util";
 import type { Color, Key } from "@lichess-org/chessground/types";
+import { signed } from "../format";
 
 /** A position as the runner takes it: a starting FEN (or `startpos`) and the UCI moves played from it. */
 export interface Line {
@@ -94,12 +95,12 @@ export function sanLine(fen: string, pv: string[]): string {
 
 export type Score = { cp: number } | { mate: number };
 
-/** A score for display from White's side: `+0.35`, `-1.20`, `#3`, `#-2`. Engines report it for the side to move. */
+/** A score for display from White's side: `+0.35`, `−1.20`, `M3` (White mates in 3), `−M2`. Engines report it for the side to move. */
 export function whiteScore(score: Score, turn: Color): string {
   const sign = turn === "white" ? 1 : -1;
-  if ("mate" in score) return `#${score.mate * sign}`;
+  if ("mate" in score) return `${score.mate * sign < 0 ? "−" : ""}M${Math.abs(score.mate)}`;
   const pawns = (score.cp * sign) / 100;
-  return `${pawns > 0 ? "+" : ""}${pawns.toFixed(2)}`;
+  return signed(pawns);
 }
 
 /** A score from White's side in pawns, with mates as ±100 so a graph or a bar can draw them. */

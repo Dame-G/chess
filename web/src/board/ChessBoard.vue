@@ -88,7 +88,7 @@ onMounted(() => {
   cg = Chessground(el.value!, {
     ...c,
     animation: { enabled: !props.still, duration: SLIDE },
-    coordinates: true,
+    coordinates: !props.still,
     highlight: { lastMove: true, check: true },
     draggable: { distance: 3, autoDistance: true, showGhost: true },
     selectable: { enabled: true },

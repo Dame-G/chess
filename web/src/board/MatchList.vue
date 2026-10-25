@@ -9,6 +9,11 @@ defineProps<{
 }>();
 const emit = defineEmits<{ open: [id: number] }>();
 
+/** The time control, and how long it went; a match still being played has no count worth showing. */
+const detail = (m: MatchSummary) =>
+  m.status === "running"
+    ? matchTimeText(m.time)
+    : `${matchTimeText(m.time)} · ${Math.ceil(m.plies / 2)} moves${m.status === "aborted" ? " · stopped" : ""}`;
 const shown = (r: MatchSummary["result"]) => (r === "1/2-1/2" ? "½–½" : r === "*" ? "·" : r.replace("-", "–"));
 </script>
 
@@ -23,7 +28,7 @@ const shown = (r: MatchSummary["result"]) => (r === "1/2-1/2" ? "½–½" : r ==
       block
       class="row"
       :aria-current="m.id === current ? 'true' : undefined"
-      :aria-label="`${m.white.name} against ${m.black.name}${m.status === 'running' ? ', live' : ''}`"
+      :aria-label="`${m.white.name} against ${m.black.name}${m.status === 'running' ? ', live' : m.status === 'aborted' ? ', stopped' : ''}`"
       @click="emit('open', m.id)"
     >
       <span v-if="m.status === 'running'" class="res res--live num"
@@ -36,7 +41,7 @@ const shown = (r: MatchSummary["result"]) => (r === "1/2-1/2" ? "½–½" : r ==
           <span class="vs">vs</span>
           <span class="n">{{ m.black.name }}</span>
         </span>
-        <span class="tc num">{{ matchTimeText(m.time) }} · {{ Math.ceil(m.plies / 2) }} moves</span>
+        <span class="tc num">{{ detail(m) }}</span>
       </span>
     </EButton>
   </div>
@@ -57,6 +62,7 @@ const shown = (r: MatchSummary["result"]) => (r === "1/2-1/2" ? "½–½" : r ==
   padding-block: 0.25rem;
   border-radius: 0;
   text-align: start;
+  text-decoration: none;
 }
 
 .row[aria-current] {

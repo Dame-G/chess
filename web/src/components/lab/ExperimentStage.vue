@@ -5,7 +5,7 @@ import { ago, kinds, stages, verdict } from "../../format";
 import TestPanel from "../TestPanel.vue";
 import Term from "../Term.vue";
 import StageTabs from "./StageTabs.vue";
-import { funnelOf, verdictLine } from "./lab";
+import { funnelOf, plainDetail, verdictLine } from "./lab";
 
 /** One experiment: how it stands in a sentence, the funnel it goes through, and the evidence of the chosen stage. */
 const props = defineProps<{ experiment: Experiment; tests: Test[]; stage: string }>();
@@ -42,7 +42,7 @@ const test = computed(() => props.tests.find((t) => t.stage === props.stage));
       <section v-if="picked" :id="panel" class="panel" role="tabpanel" :aria-label="picked.label" tabindex="-1">
         <p class="panel-detail">{{ stages[picked.name]?.detail }}</p>
         <TestPanel v-if="test" :id="test.id" />
-        <p v-else-if="picked.result" class="plain num">{{ picked.result.detail }}</p>
+        <p v-else-if="picked.result" class="plain">{{ plainDetail(picked.result.detail) }}</p>
         <p v-else class="plain">
           {{
             picked.state === "current"

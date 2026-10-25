@@ -42,7 +42,7 @@ export const glossary = {
   },
   eval: {
     term: "Evaluation",
-    text: "Who is better and by how much, in pawns from White's side: +1.00 is about a pawn up for White. #3 is mate in 3.",
+    text: "Who is better and by how much, in pawns from White's side: +1.00 is about a pawn up for White. M3 is mate in 3, and −M3 is mate in 3 for Black.",
   },
   branch: {
     term: "Branch",

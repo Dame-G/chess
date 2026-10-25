@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, h, ref, watch } from "vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ECodeBlock } from "@eos-ui/vue/components/ECodeBlock";
 import { EDescriptionList } from "@eos-ui/vue/components/EDescriptionList";
@@ -10,7 +10,8 @@ import { ETable } from "@eos-ui/vue/components/ETable";
 import { useRunnerEvent } from "../api/events";
 import { api, isRemote } from "../api/runner";
 import { unwrap, useExperiments, useJobs, useStatus, type Job } from "../api/queries";
-import { ago, jobTone } from "../format";
+import { ago, failure, jobTone } from "../format";
+import { useActivity } from "../activity";
 import ConnectRunner from "./ConnectRunner.vue";
 
 const open = defineModel<boolean>("open", { default: false });
@@ -19,6 +20,7 @@ const { state: status, refetch } = useStatus();
 const { state: jobs } = useJobs();
 const { state: experiments } = useExperiments();
 
+const { live } = useActivity();
 const running = computed(() => jobs.value.data?.find((j) => j.status === "running"));
 const queued = computed(() => (jobs.value.data ?? []).filter((j) => j.status === "queued").reverse());
 const recent = computed(() => (jobs.value.data ?? []).filter((j) => j.finished_at).slice(0, 6));
@@ -73,7 +75,11 @@ const machine = computed(() => {
     { label: "Cores", text: `${s.cpu.cores} cores, ${s.cpu.threads} threads, ${gib(s.cpu.memory)} memory` },
     {
       label: "Engine code",
-      text: s.reckless_dir,
+      text: h(
+        "span",
+        { class: "num", style: { fontFamily: "var(--e-font-mono)", overflowWrap: "anywhere" } },
+        s.reckless_dir,
+      ),
       stamp: s.reckless_found ? "Found" : "Missing",
       stampTone: s.reckless_found ? ("success" as const) : ("danger" as const),
     },
@@ -101,11 +107,6 @@ const machine = computed(() => {
       </template>
       <ConnectRunner v-if="isRemote" @connected="refetch()" />
 
-      <section v-if="machine.length" class="part" aria-labelledby="r-machine">
-        <h3 id="r-machine" class="part-title">This machine</h3>
-        <EDescriptionList :items="machine" />
-      </section>
-
       <section class="part" aria-labelledby="r-now">
         <h3 id="r-now" class="part-title">Doing now</h3>
         <div v-if="running" class="now">
@@ -115,7 +116,15 @@ const machine = computed(() => {
           </p>
           <EButton variant="outline" size="sm" @click="cancel(running)">Stop</EButton>
         </div>
-        <p v-else class="muted">Nothing. Start a build or an experiment and it appears here.</p>
+        <p v-if="live" class="now now--live">
+          <span class="now-text">
+            <b>Live match</b>
+            <span class="muted"
+              >{{ live.white.name }} vs {{ live.black.name }}, started {{ ago(live.created_at) }}</span
+            >
+          </span>
+        </p>
+        <p v-else-if="!running" class="muted">Nothing. Start a build or an experiment and it appears here.</p>
         <ECodeBlock v-if="running && log.length" :code="log.join('\n')" lang="text" label="Live output" wrap />
       </section>
 
@@ -138,13 +147,20 @@ const machine = computed(() => {
             <tr v-for="j in recent" :key="j.id">
               <td>
                 {{ describe(j) }}
-                <span v-if="j.error" class="muted">: {{ j.error }}</span>
+                <span v-if="j.status === 'failed'" class="muted why" :title="j.error ?? undefined">{{
+                  failure(j.error, j.spec.kind)
+                }}</span>
               </td>
               <td class="muted when">{{ ago(j.finished_at!) }}</td>
               <td><EStamp size="sm" :tone="jobTone[j.status]" :label="outcome[j.status]" /></td>
             </tr>
           </tbody>
         </ETable>
+      </section>
+
+      <section v-if="machine.length" class="part" aria-labelledby="r-machine">
+        <h3 id="r-machine" class="part-title">This machine</h3>
+        <EDescriptionList :items="machine" />
       </section>
     </div>
   </EDrawer>
@@ -174,8 +190,13 @@ const machine = computed(() => {
   white-space: nowrap;
 }
 
+.why {
+  display: block;
+}
+
 .now {
   display: flex;
+  margin: 0;
   align-items: center;
   justify-content: space-between;
   gap: var(--e-gap-loose);

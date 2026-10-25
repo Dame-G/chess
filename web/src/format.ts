@@ -168,3 +168,14 @@ export function ending(termination: string | undefined): string {
       return termination ? termination[0]!.toUpperCase() + termination.slice(1) : "Unknown";
   }
 }
+
+/** Why a job failed, in a sentence, without git's command line or a file path. */
+export function failure(error: string | null | undefined, kind?: "build" | "experiment"): string {
+  if (!error) return kind === "build" ? "The build failed." : "It failed.";
+  const missing = /^no commit named (.+?) in /.exec(error);
+  if (missing) return `There is no branch, tag or commit called ${missing[1]}.`;
+  const first = (error.split("\n")[0] ?? "").replace(/\s*:?\s*git -C .*$/, "").trim();
+  return first && first.length <= 120 && !/[A-Za-z]:[\\/]/.test(first)
+    ? first
+    : "It failed. The runner's log has the details.";
+}

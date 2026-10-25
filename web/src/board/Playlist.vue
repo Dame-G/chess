@@ -63,6 +63,7 @@ const word: Record<Outcome, string> = { W: "Won", D: "Drew", L: "Lost", "": "Unf
           block
           :aria-current="r.g.index === current ? 'true' : undefined"
           :aria-label="`Game ${r.g.index + 1}, ${word[r.o]}`"
+          :title="`Game ${r.g.index + 1}: the new version played ${r.g.white === 'dev' ? 'White' : 'Black'}. ${word[r.o]} in ${Math.ceil(r.g.plies / 2)} moves.`"
           class="row"
           @click="emit('open', r.g.index)"
         >
@@ -106,6 +107,7 @@ const word: Record<Outcome, string> = { W: "Won", D: "Drew", L: "Lost", "": "Unf
   border-radius: 0;
   font-family: var(--e-font-mono);
   text-align: start;
+  text-decoration: none;
 }
 
 .row[aria-current] {

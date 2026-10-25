@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { PhPlus, PhStop } from "@phosphor-icons/vue";
+import { PhList, PhPlus, PhStop } from "@phosphor-icons/vue";
 import { useShortcuts } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
@@ -14,7 +14,7 @@ import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { EHighlight } from "@eos-ui/vue/components/EHighlight";
 import { api } from "../api/runner";
 import { useExperiment, useExperiments, useGames, useTest, type Experiment } from "../api/queries";
-import { verdict } from "../format";
+import { stageLabel, verdict } from "../format";
 import HowItWorks from "../components/HowItWorks.vue";
 import NewExperiment from "../components/NewExperiment.vue";
 import Workspace from "../components/Workspace.vue";
@@ -88,6 +88,14 @@ watch(
   },
   { immediate: true },
 );
+
+/** Below 64rem the library sits under the stage: this brings it into view. */
+function toLibrary() {
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  document
+    .querySelector("aside[aria-label='Experiments']")
+    ?.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
+}
 
 function clear() {
   search.value = "";
@@ -193,13 +201,14 @@ async function cancel() {
         Press Test an idea to try a change.
       </EEmptyState>
       <EEmptyState v-else-if="!shown.length" bare size="sm" title="Nothing matches">
+        Try another word, or a different filter.
         <template #action>
           <EButton variant="quiet" size="sm" @click="clear">Clear filters</EButton>
         </template>
       </EEmptyState>
       <ol v-else ref="listEl" class="rows">
         <li v-for="e in shown" :key="e.id">
-          <RouterLink class="row" :to="`/lab/${e.id}`">
+          <RouterLink class="row" :to="`/lab/${e.id}`" :title="`${e.name}: ${e.dev} vs ${e.base}`">
             <span class="row-mark" :style="{ background: `var(--e-${mark(e)})` }" aria-hidden="true"></span>
             <span class="row-top">
               <span class="row-name">
@@ -211,7 +220,10 @@ async function cancel() {
               <span class="row-time num">{{ shortAgo(e.created_at) }}</span>
             </span>
             <span class="row-refs num">{{ e.dev }} vs {{ e.base }}</span>
-            <span :class="['row-result', `row-result--${verdict(e).tone}`]">{{ headline(e) }}</span>
+            <span :class="['row-result', `row-result--${verdict(e).tone}`]">
+              <strong class="row-verdict">{{ headline(e).label }}</strong>
+              <span v-if="headline(e).figure" class="num">{{ headline(e).figure }}</span>
+            </span>
           </RouterLink>
         </li>
       </ol>
@@ -223,6 +235,7 @@ async function cancel() {
     <template v-if="staged" #stage-head>
       <h2 class="title">{{ experiment?.name ?? "" }}</h2>
       <span class="grow"></span>
+      <EButton class="to-library" variant="quiet" size="sm" :icon="PhList" @click="toLibrary">Experiments</EButton>
       <EButton v-if="active" variant="outline" size="sm" :icon="PhStop" :loading="stopping" @click="cancel">
         Stop
       </EButton>
@@ -251,7 +264,11 @@ async function cancel() {
       <GameList v-if="test" :test="test.id" />
       <ESkeleton v-else-if="!experiment" class="pad" :lines="6" label="Loading games" />
       <EEmptyState v-else bare size="sm" title="No games here">
-        {{ stage === "bench" ? "The fingerprint check plays no games." : "This step has not played any games." }}
+        {{
+          ["bench", "speed"].includes(stage)
+            ? `The ${stageLabel(stage).toLowerCase()} check plays no games.`
+            : "This step has not played any games yet."
+        }}
       </EEmptyState>
     </template>
   </Workspace>
@@ -284,6 +301,8 @@ async function cancel() {
 }
 
 .title {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   font: var(--e-type-h4);
   text-overflow: ellipsis;
@@ -292,13 +311,6 @@ async function cancel() {
 
 .grow {
   flex: 1;
-}
-
-.note {
-  margin: 0;
-  padding: var(--e-pad-control-sm);
-  color: var(--e-muted);
-  font: var(--e-type-small);
 }
 
 .rows {
@@ -374,7 +386,29 @@ async function cancel() {
 }
 
 .row-result {
-  font-family: var(--e-font-mono);
+  display: flex;
+  gap: var(--e-gap-snug);
+  align-items: baseline;
+}
+
+.row-verdict {
+  flex: none;
+  font-weight: 600;
+}
+
+.row-result .num {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.to-library {
+  display: none;
+}
+
+@media (width < 64rem) {
+  .to-library {
+    display: inline-flex;
+  }
 }
 
 .row-result--success {
@@ -394,7 +428,7 @@ async function cancel() {
   display: inline-block;
   width: 0.375rem;
   height: 0.375rem;
-  margin-inline-end: var(--e-gap-snug);
+  align-self: center;
   border-radius: 50%;
   background: currentcolor;
   animation: pulse 1.4s ease-in-out infinite;

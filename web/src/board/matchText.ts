@@ -28,10 +28,14 @@ export function matchTimeText(t: MatchTime): string {
 
 type Ended = Pick<Match, "result" | "reason" | "status">;
 
-/** Who won and why, in plain words: "Black won on time", "Draw by threefold repetition". */
-export function outcomeText(m: Ended): string {
-  const winner = m.result === "1-0" ? "White" : m.result === "0-1" ? "Black" : undefined;
-  const loser = winner === "White" ? "Black" : "White";
+/**
+ * Who won and why, in plain words: "Black won on time", "Draw by threefold repetition". With the players' names the
+ * winner reads "Black (main) won", so a match of two builds with the same name is still clear.
+ */
+export function outcomeText(m: Ended, names?: { white: string; black: string }): string {
+  const side = m.result === "1-0" ? "White" : m.result === "0-1" ? "Black" : undefined;
+  const winner = side && names ? `${side} (${names[side === "White" ? "white" : "black"]})` : side;
+  const loser = side === "White" ? "Black" : "White";
   switch (m.reason) {
     case "aborted":
       return "Stopped before the end";

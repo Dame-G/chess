@@ -146,7 +146,7 @@ a.tab:focus-visible {
   margin-block-end: calc(-1 * var(--e-stroke-hair));
   padding-block-end: calc(var(--e-gap-loose) + var(--e-stroke-hair));
   background: var(--e-surface);
-  box-shadow: inset 0 2px 0 var(--e-primary);
+  box-shadow: inset 0 3px 0 var(--e-primary);
 }
 
 .tab--upcoming {
@@ -247,22 +247,27 @@ a.tab:focus-visible {
   }
 }
 
-/* A phone: the tabs scroll sideways, each wide enough to read its figure. */
+/* A phone: three stages fit side by side; more scroll sideways. The figure drops its unit to a second line. */
 @container (width < 34rem) {
   .tabs {
-    grid-auto-columns: minmax(8.5rem, 1fr);
+    grid-auto-columns: minmax(7.5rem, 1fr);
   }
 
   .tab {
-    padding: var(--e-gap-base) var(--e-gap-loose);
+    padding: var(--e-gap-base) var(--e-gap-base);
   }
 
   .tab[aria-selected="true"] {
     padding-block-end: calc(var(--e-gap-base) + var(--e-stroke-hair));
   }
 
+  .kick {
+    gap: var(--e-gap-tight);
+    letter-spacing: 0.02em;
+  }
+
   .fig-main {
-    font-size: var(--e-text-2xl, 1.5rem);
+    font-size: var(--e-text-xl, 1.25rem);
   }
 }
 

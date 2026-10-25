@@ -38,8 +38,8 @@ describe("sanLine and whiteScore", () => {
   it("writes a line in SAN and scores from White's side", () => {
     expect(sanLine("startpos", ["e2e4", "e7e5", "g1f3"])).toBe("1. e4 e5 2. Nf3");
     expect(whiteScore({ cp: 35 }, "white")).toBe("+0.35");
-    expect(whiteScore({ cp: 35 }, "black")).toBe("-0.35");
-    expect(whiteScore({ mate: 2 }, "black")).toBe("#-2");
+    expect(whiteScore({ cp: 35 }, "black")).toBe("−0.35");
+    expect(whiteScore({ mate: 2 }, "black")).toBe("−M2");
   });
 });
 

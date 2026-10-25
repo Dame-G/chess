@@ -34,9 +34,9 @@ const buildOptions = computed(() =>
 );
 
 const presets = [
-  { value: "bullet", label: "Bullet 1+0.01" },
-  { value: "blitz", label: "Blitz 10+0.1" },
-  { value: "rapid", label: "Rapid 60+0.6" },
+  { value: "bullet", label: "Bullet" },
+  { value: "blitz", label: "Blitz" },
+  { value: "rapid", label: "Rapid" },
   { value: "custom", label: "Custom" },
 ];
 const clocks: Record<string, [number, number]> = { bullet: [1, 0.01], blitz: [10, 0.1], rapid: [60, 0.6] };
@@ -46,18 +46,27 @@ const customIncrement = stored<number | null>("match.increment", 0.3);
 
 const here = computed(() => props.fen === "startpos" && !props.moves.length);
 const openings = computed(() => [
-  { value: "start", label: "Start position" },
-  { value: "position", label: "This position", disabled: here.value },
-  { value: "book", label: "Random book opening" },
+  { value: "start", label: "Start" },
+  { value: "position", label: "Board", disabled: here.value },
+  { value: "book", label: "Book" },
 ]);
-const opening = stored("match.opening", "start");
+const chosenOpening = stored("match.opening", "start");
+// A stored choice of "the board" does not apply while the board is at the start.
+const opening = computed({
+  get: () => (chosenOpening.value === "position" && here.value ? "start" : chosenOpening.value),
+  set: (v) => (chosenOpening.value = v),
+});
 const openingHint = computed(() => {
   if (opening.value === "position")
     return props.moves.length
-      ? `The board as it stands, after ${props.moves.length} move${props.moves.length === 1 ? "" : "s"}.`
-      : "The board as it stands.";
-  if (opening.value === "book") return "A line from the opening book the tests use, different every time.";
-  return undefined;
+      ? `From the board as it stands, after ${props.moves.length} move${props.moves.length === 1 ? "" : "s"}.`
+      : "From the board as it stands.";
+  if (opening.value === "book") return "A random line from the opening book the tests use.";
+  return "From the starting position.";
+});
+const clockHint = computed(() => {
+  const inc = increment.value;
+  return `${seconds.value} seconds each, plus ${inc} ${inc === 1 ? "second" : "seconds"} a move.`;
 });
 
 // Each time it opens: newest main against the newest other build, and a stored opening that still applies.
@@ -71,7 +80,6 @@ watch(open, (o) => {
   if (!o) return;
   error.value = "";
   pick();
-  if (opening.value === "position" && here.value) opening.value = "start";
 });
 // Opened before the builds arrived: fill the choice in when they do.
 watch(
@@ -133,11 +141,17 @@ function watchRunning() {
     size="md"
   >
     <form class="form" @submit.prevent="start">
-      <div class="pair">
+      <div class="pair pair--builds">
         <ESelect v-model="white" label="White" size="sm" :options="buildOptions" />
         <ESelect v-model="black" label="Black" size="sm" :options="buildOptions" />
       </div>
-      <ESegmented v-model="preset" label="Time control" size="sm" :options="presets" />
+      <ESegmented
+        v-model="preset"
+        label="Time control"
+        size="sm"
+        :options="presets"
+        :hint="preset === 'custom' ? undefined : clockHint"
+      />
       <div v-if="preset === 'custom'" class="pair">
         <ENumberField v-model="customSeconds" label="Seconds each" size="sm" :min="1" :step="1" />
         <ENumberField v-model="customIncrement" label="Increment" size="sm" :min="0" :step="0.01" suffix="s" />
@@ -167,5 +181,12 @@ function watchRunning() {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--e-gap-base);
+}
+
+/* Build names are long ("test/no-nmp · 85865a3"): on a phone each gets the full width rather than a clipped half. */
+@media (width < 30rem) {
+  .pair--builds {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

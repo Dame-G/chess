@@ -53,7 +53,6 @@ const est = computed(() => test.value?.estimate);
     <figure v-if="sprt && b && points.length > 1" class="evidence">
       <figcaption class="cap">
         <Term of="llr">Evidence over time</Term>
-        <span class="cap-bounds num">reject {{ signed(b.reject) }} · accept {{ signed(b.accept) }}</span>
       </figcaption>
       <LineChart
         label="Evidence (log-likelihood ratio) by games played, with the reject and accept lines"
@@ -66,7 +65,7 @@ const est = computed(() => test.value?.estimate);
     </figure>
 
     <div class="settings" aria-label="Test settings">
-      <ETag v-if="sprt" size="sm" :label="`bounds [${sprt.elo0}, ${sprt.elo1}]`" />
+      <ETag v-if="sprt" size="sm" :label="`bounds [${signed(sprt.elo0, 0)}, ${signed(sprt.elo1, 0)}]`" />
       <Term v-if="sprt" of="bounds" inline>What are bounds?</Term>
       <Term of="elo" inline>What is Elo?</Term>
     </div>
@@ -98,11 +97,6 @@ const est = computed(() => test.value?.estimate);
   align-items: baseline;
   gap: var(--e-gap-tight) var(--e-gap-base);
   font: var(--e-type-small);
-}
-
-.cap-bounds {
-  color: var(--e-muted);
-  font-size: var(--e-text-xs, 0.75rem);
 }
 
 .settings {

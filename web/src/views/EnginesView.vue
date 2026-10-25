@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, h, nextTick, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { PhCheckCircle, PhChartLine, PhHammer, PhMinusCircle, PhWarning } from "@phosphor-icons/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
@@ -13,6 +13,7 @@ import { EIcon } from "@eos-ui/vue/components/EIcon";
 import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { EProgress } from "@eos-ui/vue/components/EProgress";
+import { ESelect } from "@eos-ui/vue/components/ESelect";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import Workspace from "../components/Workspace.vue";
 import SpeedBars from "../components/engines/SpeedBars.vue";
@@ -20,7 +21,7 @@ import Term from "../components/Term.vue";
 import { useRunnerEvent } from "../api/events";
 import { api } from "../api/runner";
 import { unwrap, useBranches, useBuilds, useJobs, type Build } from "../api/queries";
-import { ago } from "../format";
+import { ago, failure, speed } from "../format";
 
 const route = useRoute();
 const router = useRouter();
@@ -81,6 +82,13 @@ const pending = computed(() =>
     .filter((j) => j.spec.kind === "build" && (j.status === "running" || j.status === "queued"))
     .reverse(),
 );
+/** The newest build job, when it failed: otherwise a bad branch name would vanish without a word. */
+const dismissed = ref(0);
+const failed = computed(() => {
+  const latest = (jobs.value.data ?? []).find((j) => j.spec.kind === "build");
+  if (latest?.status !== "failed" || latest.spec.kind !== "build" || latest.id === dismissed.value) return undefined;
+  return { id: latest.id, ref: latest.spec.ref, error: latest.error };
+});
 const lastLine = ref("");
 useRunnerEvent("job.log", (data) => {
   const { id, line } = data as { id: number; line: string };
@@ -96,8 +104,6 @@ const marks = {
   differs: { icon: PhWarning, label: "Fingerprint differs from its commit", class: "mark--bad" },
   unchecked: { icon: PhMinusCircle, label: "Commit has no Bench line to compare with", class: "mark--none" },
 } as const;
-
-const kilo = (nps: number) => `${Math.round(nps / 1000)}k`;
 
 // ---- Stage: the chosen build
 
@@ -128,7 +134,7 @@ const verdict = computed(() => {
     return {
       tone: "warning",
       title: "Fingerprint differs from the commit",
-      text: `It searched ${b.bench.toLocaleString("en")} positions where the commit's message says ${b.bench_expected?.toLocaleString("en")}. Either the message is out of date or the engine does not search the same way twice. Check before testing with it.`,
+      text: `It counted ${b.bench.toLocaleString("en")} nodes where the commit's message says ${b.bench_expected?.toLocaleString("en")}. Either the message is out of date or the engine does not search the same way twice. Check before testing with it.`,
     } as const;
   return {
     tone: "info",
@@ -148,16 +154,45 @@ const pace = computed(() => {
   return gap < 0.01 ? "The fastest build so far." : `${Math.round(gap * 100)}% slower than the fastest build.`;
 });
 
+const mono = (text: string) =>
+  h("span", { class: "num", style: { fontFamily: "var(--e-font-mono)", overflowWrap: "anywhere" } }, text);
+
 const details = computed(() => {
   const b = current.value;
   if (!b) return [];
   return [
-    { label: "Commit", text: b.commit },
-    { label: "Network", text: b.network ?? "None embedded" },
+    { label: "Commit", text: mono(b.commit) },
+    { label: "Network", text: b.network ? mono(b.network) : "None embedded" },
     { label: "Fingerprint", text: `${b.bench.toLocaleString("en")} nodes` },
     { label: "Tablebases", text: b.features === "syzygy" ? "Included" : "Not included" },
-    others.value.length ? { label: "Same branch", text: others.value.map((o) => `#${o.id}`).join(", ") } : null,
+    others.value.length
+      ? {
+          label: `Also built from ${b.ref}`,
+          text: h(
+            "span",
+            { style: { display: "inline-flex", flexWrap: "wrap", gap: "var(--e-gap-base)" } },
+            others.value.map((o) =>
+              h(ELink, { linkComponent: RouterLink, to: `/engines/${o.id}`, class: "num" }, () => `#${o.id}`),
+            ),
+          ),
+        }
+      : null,
   ];
+});
+
+/** On a phone the library sits below the stage, so the build can be switched from the top instead. */
+const switchOptions = computed(() =>
+  (builds.value.data ?? []).map((b) => ({
+    value: String(b.id),
+    label: `${b.ref} #${b.id}`,
+    description: `${b.commit.slice(0, 7)} · ${ago(b.created_at)} · ${speed(b.nps)}`,
+  })),
+);
+const picked = computed({
+  get: () => String(id.value || ""),
+  set: (v: string) => {
+    if (v) void router.push(`/engines/${v}`);
+  },
 });
 
 // The compile log lives with the job that built it, loaded only when opened.
@@ -225,6 +260,18 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
         </li>
       </ul>
 
+      <ENotice
+        v-if="failed"
+        class="failed"
+        tone="danger"
+        :title="`Build of ${failed.ref} failed`"
+        closable
+        :role="false"
+        @close="dismissed = failed.id"
+      >
+        {{ failure(failed.error, "build") }}
+      </ENotice>
+
       <ESkeleton v-if="builds.status === 'pending'" :lines="5" label="Loading engines" />
       <EEmptyState v-else-if="!builds.data?.length" title="No engines yet" size="sm" icon="info">
         Type a branch, tag or commit above and press Build. <code>main</code> is the current Reckless.
@@ -232,12 +279,14 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
       <ul v-else class="rows">
         <li v-for="b in builds.data" :key="b.id">
           <ELink :link-component="RouterLink" :to="`/engines/${b.id}`" class="row">
-            <span class="row-ref">{{ b.ref }}</span>
-            <span class="row-mark" :class="marks[check(b)].class" :title="marks[check(b)].label">
-              <EIcon :name="marks[check(b)].icon" :label="marks[check(b)].label" />
+            <span class="row-ref" :title="b.ref">
+              <span class="row-name">{{ b.ref }}</span>
+              <span class="row-mark" :class="marks[check(b)].class" :title="marks[check(b)].label">
+                <EIcon :name="marks[check(b)].icon" :label="marks[check(b)].label" />
+              </span>
             </span>
-            <span class="row-sub num">{{ b.commit.slice(0, 7) }} · {{ ago(b.created_at) }}</span>
-            <span class="row-speed num">{{ kilo(b.nps) }} n/s</span>
+            <span class="row-speed num">{{ speed(b.nps) }}</span>
+            <span class="row-sub num">#{{ b.id }} · {{ b.commit.slice(0, 7) }} · {{ ago(b.created_at) }}</span>
           </ELink>
         </li>
       </ul>
@@ -245,12 +294,21 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
 
     <template v-if="current" #stage-head>
       <h1 class="head">
-        <span class="head-ref">{{ current.ref }}</span> at <span class="head-ref">{{ current.commit.slice(0, 7) }}</span
-        >, built {{ ago(current.created_at) }}
+        <span class="head-ref">{{ current.ref }}</span> <span class="head-id num">#{{ current.id }}</span> at
+        <span class="head-ref">{{ current.commit.slice(0, 7) }}</span
+        >, built <span :title="new Date(current.created_at).toLocaleString('en')">{{ ago(current.created_at) }}</span>
       </h1>
       <EButton variant="outline" size="sm" :icon="PhChartLine" class="head-action" @click="analyse">
         Analyse with it
       </EButton>
+      <ESelect
+        v-model="picked"
+        class="head-switch"
+        label="Switch build"
+        hide-label
+        size="sm"
+        :options="switchOptions"
+      />
     </template>
 
     <div class="stage">
@@ -275,7 +333,7 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
             </section>
           </div>
 
-          <section class="section" aria-labelledby="speed-title">
+          <section class="section section--speed" aria-labelledby="speed-title">
             <h3 id="speed-title" class="section-title">Speed</h3>
             <p class="section-note">
               <b v-if="pace">{{ pace }}</b> Measured on this machine; runs of the same commit differ by a few percent.
@@ -367,19 +425,36 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
 }
 
 .row-ref {
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: var(--e-gap-snug);
+  min-inline-size: 0;
   font: var(--e-type-body);
   font-family: var(--e-font-mono);
   font-weight: 600;
+}
+
+.row-name {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .row-mark {
   display: inline-flex;
-  grid-row: 1;
-  grid-column: 2;
+  flex: none;
   align-items: center;
+}
+
+.row-sub {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.failed {
+  margin: var(--e-gap-base) var(--ws-pad, var(--e-pad-control));
 }
 
 .mark--ok {
@@ -403,6 +478,7 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
 
 .row-speed {
   text-align: end;
+  white-space: nowrap;
 }
 
 .head {
@@ -415,6 +491,22 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
 .head-ref {
   font-family: var(--e-font-mono);
   font-weight: 600;
+}
+
+.head-id {
+  color: var(--e-muted);
+  font-family: var(--e-font-mono);
+}
+
+.head-switch {
+  display: none;
+  flex: 1 1 100%;
+}
+
+@media (width < 64rem) {
+  .head-switch {
+    display: block;
+  }
 }
 
 /* The stage uses its width: the fingerprint and details beside the speed chart, the log below. */
@@ -456,6 +548,11 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
   display: grid;
   gap: var(--e-gap-base);
   min-inline-size: 0;
+}
+
+/* The bars fit themselves to their own column, not the window. */
+.section--speed {
+  container-type: inline-size;
 }
 
 .log {

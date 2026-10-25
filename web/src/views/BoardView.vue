@@ -392,7 +392,7 @@ onBeforeUnmount(() => clearTimeout(settling));
 // Evaluations: the engine's, and for a game what the players recorded
 // ---------------------------------------------------------------------------------------------------------------------
 
-const evalText = (e: number) => (Math.abs(e) >= 100 ? (e > 0 ? "#" : "#-") : signed(e));
+const evalText = (e: number) => (Math.abs(e) >= 100 ? (e > 0 ? "Mate" : "−Mate") : signed(e));
 
 /** The move just played on the board, when it belongs to a game. */
 const played = computed(() => (game.value && cursor.value > 0 ? game.value.plies[cursor.value - 1] : undefined));
@@ -981,7 +981,7 @@ const filters = [
           class="start"
           @click="router.push(`/games/${latestTest.id}/0`)"
         >
-          {{ newest?.name }}
+          <span class="grow">{{ newest?.name }}</span>
           <span class="aside num">{{ latestTest.games.toLocaleString() }}</span>
         </EButton>
       </template>
@@ -1111,24 +1111,35 @@ const filters = [
       />
       <span class="counter num" aria-live="off">
         {{ counter }}
-        <span v-if="moves.length" class="of">/ {{ moves.length }}</span>
+        <span v-if="moves.length" class="of" title="Moves played so far, counting each side's move"
+          >/ {{ moves.length }}</span
+        >
       </span>
-      <EButton
+      <EIconButton
         v-if="!stacked"
-        variant="quiet"
-        size="sm"
         :icon="PhListBullets"
+        :label="`${libraryName} list`"
+        tooltip
+        size="sm"
+        :variant="libraryInline ? 'primary' : undefined"
         :aria-pressed="libraryInline"
         @click="toggleLibrary"
-      >
-        {{ libraryName }}
-      </EButton>
-      <ESegmented v-if="!isMatch" v-model="rate" label="Speed" hide-label size="sm" :options="speeds" class="rate" />
+      />
+      <ESegmented
+        v-if="!isMatch && !(stacked && !moves.length)"
+        v-model="rate"
+        label="Speed"
+        hide-label
+        size="sm"
+        :options="speeds"
+        class="rate"
+      />
       <EIconButton
         :icon="PhArrowsDownUp"
         :label="orientation === 'black' ? 'Flip board (F), Black at the bottom' : 'Flip board (F)'"
         tooltip
         size="sm"
+        class="flip"
         :variant="orientation === 'black' ? 'primary' : undefined"
         @click="flip"
       />
@@ -1176,6 +1187,24 @@ const filters = [
             <EStamp size="sm" :tone="result.tone" :label="result.label" />
             {{ ending(game.headers.Termination) }} after {{ Math.ceil(game.plies.length / 2) }} moves
           </p>
+          <div v-if="stacked" class="hop">
+            <EIconButton
+              :icon="PhCaretLeft"
+              label="Previous game (P)"
+              tooltip
+              size="sm"
+              :disabled="!previousGame"
+              @click="openGame(previousGame?.index)"
+            />
+            <EIconButton
+              :icon="PhCaretRight"
+              label="Next game (N)"
+              tooltip
+              size="sm"
+              :disabled="!nextGame"
+              @click="openGame(nextGame?.index)"
+            />
+          </div>
         </header>
 
         <ENotice v-if="matchError" tone="danger" title="That did not work" class="problem">
@@ -1203,7 +1232,8 @@ const filters = [
           </EEmptyState>
 
           <template v-else>
-            <div class="hero">
+            <p v-if="!engineOn && !shown" class="off">Engine off</p>
+            <div v-else class="hero">
               <div class="big num" :class="{ dim: !shown }">
                 <template v-if="shown">{{ shown.text }}</template>
                 <template v-else-if="searching">…</template>
@@ -1287,7 +1317,7 @@ const filters = [
       <ETextarea
         v-model="importText"
         label="FEN or PGN"
-        :rows="6"
+        :rows="4"
         :error="!importPending && importError ? importError : undefined"
         :hint="importLine?.note"
         placeholder="1. e4 e5 2. Nf3 Nc6 …"
@@ -1366,11 +1396,19 @@ const filters = [
   justify-content: flex-start;
   border-radius: 0;
   text-align: start;
+  text-decoration: none;
 }
 
 .aside {
   margin-inline-start: auto;
   color: var(--e-muted);
+}
+
+.grow {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recent-text {
@@ -1490,6 +1528,13 @@ const filters = [
   margin-inline-start: var(--e-gap-snug);
 }
 
+.off {
+  margin: 0;
+  padding-inline: var(--ws-pad);
+  color: var(--e-muted);
+  font: var(--e-type-small);
+}
+
 .live {
   margin-inline-start: var(--e-gap-snug);
 }
@@ -1502,14 +1547,14 @@ const filters = [
 
 .preview {
   display: grid;
-  grid-template-columns: 7.5rem minmax(0, 1fr);
+  grid-template-columns: 6.5rem minmax(0, 1fr);
   align-items: center;
   gap: var(--e-gap-base);
-  min-height: 7.5rem;
+  min-height: 6.5rem;
 }
 
 .preview-board {
-  width: 7.5rem;
+  width: 6.5rem;
   aspect-ratio: 1;
   border-radius: var(--e-radius-sm);
   background: color-mix(in oklab, var(--e-ink) 6%, var(--e-surface));
@@ -1531,7 +1576,7 @@ const filters = [
 /* Inspector: sections divided by hairlines, each with the card padding. */
 .pick {
   flex: 1;
-  min-width: 8rem;
+  min-width: 10rem;
 }
 
 .insp {
@@ -1552,6 +1597,21 @@ const filters = [
   display: grid;
   gap: var(--e-gap-snug);
   padding: var(--e-gap-base) var(--ws-pad);
+}
+
+.match:has(.hop) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.match:has(.hop) > p {
+  grid-column: 1;
+}
+
+.hop {
+  display: flex;
+  grid-area: 1 / 2 / 3;
+  gap: var(--e-gap-tight);
 }
 
 .match p {
@@ -1661,7 +1721,7 @@ const filters = [
   overflow: hidden;
 }
 
-.sound {
+.tools :deep(.sound) {
   margin-inline-start: auto;
 }
 
@@ -1674,19 +1734,64 @@ const filters = [
   border-block-end: 0;
 }
 
+/* Below 64rem the panes stack: the board, the transport (a bar pinned to the bottom of the window, in thumb reach), then the inspector
+   and the library. The board takes the width, and the transport is a small stack of rows: where we are, the timeline,
+   then the buttons spread the width of the screen for thumbs. */
 @media (width < 64rem) {
   .board-ws {
-    --side: min(100cqw - var(--col) - var(--gap) - 2 * var(--pad), 100dvh - 15rem - var(--extra));
+    --side: min(100cqw - var(--col) - var(--gap) - 2 * var(--pad), max(100dvh - 17rem - var(--extra), 16rem));
   }
 
-  .scrub {
-    flex-basis: 100%;
-    order: 2;
-    margin-inline: 0;
+  .board-ws :deep(.ws-stage) {
+    display: contents;
+  }
+
+  .board-ws :deep(.ws-stage-body),
+  .board-ws :deep(.ws-foot) {
+    grid-row: auto;
+  }
+
+  .board-ws :deep(.ws-foot) {
+    order: 9;
+    position: sticky;
+    inset-block-end: 0;
+    z-index: 3;
+    gap: var(--e-gap-tight) var(--e-gap-snug);
+    padding-block: var(--e-gap-snug);
+    background: var(--e-surface);
+    box-shadow: 0 -1px 0 var(--e-border);
   }
 
   .counter {
-    margin-inline-start: auto;
+    order: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-inline: var(--e-gap-tight) 0;
+  }
+
+  .rate {
+    order: 2;
+    margin-inline-start: 0;
+  }
+
+  .board-ws :deep(.flip) {
+    order: 3;
+  }
+
+  .scrub {
+    order: 4;
+    flex: 1 0 100%;
+    margin-inline: 0;
+  }
+
+  .buttons {
+    order: 5;
+    flex: 1 0 100%;
+    justify-content: space-between;
+  }
+
+  .live {
+    margin-inline-start: 0;
   }
 
   .insp {
@@ -1696,6 +1801,26 @@ const filters = [
   .pane-moves {
     flex: none;
     height: 18rem;
+  }
+
+  /* A long list scrolls inside its own box; the page keeps scrolling around it. */
+  .games {
+    height: auto;
+  }
+
+  .games :deep(.playlist) {
+    height: 20rem;
+  }
+
+  .match-rows {
+    max-height: 20rem;
+  }
+}
+
+@media (width < 40rem) {
+  .board-ws {
+    --pad: 0.5rem;
+    --col: 1.75rem;
   }
 }
 </style>

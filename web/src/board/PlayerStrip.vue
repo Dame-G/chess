@@ -63,7 +63,13 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
       <span class="name">{{ name }}</span>
       <span class="commit num">{{ commit }}</span>
     </span>
-    <span v-if="score" class="score num" :aria-label="`Scored ${score}`">{{ score }}</span>
+    <span
+      v-if="score"
+      class="score num"
+      :aria-label="`Scored ${score}`"
+      :title="score === '1' ? 'Won' : score === '0' ? 'Lost' : 'Drew'"
+      >{{ score }}</span
+    >
     <span ref="clock" class="clock num" :class="{ 'clock--idle': ms === null }" role="timer"></span>
   </div>
 </template>

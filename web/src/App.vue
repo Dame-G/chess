@@ -33,7 +33,7 @@ import { EToastProvider } from "@eos-ui/vue/components/EToastProvider";
 import { dispatch, followEvents } from "./api/events";
 import { useBuilds, useExperiments } from "./api/queries";
 import { useActivity } from "./activity";
-import { verdict } from "./format";
+import { ago, verdict } from "./format";
 import { stored } from "./stored";
 import Logo from "./components/Logo.vue";
 import RunnerDrawer from "./components/RunnerDrawer.vue";
@@ -55,7 +55,7 @@ const isCurrent = (item: { to?: unknown }) =>
 /** Workspaces fill the window and scroll inside their panes; the cover page scrolls like a page. */
 const workspace = computed(() => route.meta.workspace === true);
 
-const { summary, status, queued } = useActivity();
+const { summary, queued } = useActivity();
 const runnerOpen = ref(false);
 const shortcutsOpen = ref(false);
 const palette = ref(false);
@@ -109,6 +109,9 @@ watch(
   { immediate: true },
 );
 
+/** A touch screen has no keyboard to take shortcuts from. */
+const touch = matchMedia("(hover: none) and (pointer: coarse)").matches;
+
 const commands = computed<CommandItem[]>(() => {
   const exps = experiments.value.data ?? [];
   const blds = builds.value.data ?? [];
@@ -133,7 +136,7 @@ const commands = computed<CommandItem[]>(() => {
         recents.push({
           id: `go:${path}`,
           label: `${b.ref} #${b.id}`,
-          description: `Engine · ${b.commit.slice(0, 10)}`,
+          description: `Engine · ${b.commit.slice(0, 7)} · ${ago(b.created_at)}`,
           group: "Recent",
           icon: PhClockCounterClockwise,
           keywords: [b.commit, "engine", "build"],
@@ -163,14 +166,18 @@ const commands = computed<CommandItem[]>(() => {
       keywords: ["branch", "commit"],
     },
     { id: "runner", label: "Show the runner", group: "Do", icon: PhCpu, keywords: ["jobs", "queue", "log"] },
-    {
-      id: "shortcuts",
-      label: "Keyboard shortcuts",
-      group: "Do",
-      icon: PhKeyboard,
-      shortcut: "?",
-      keywords: ["keys", "help"],
-    },
+    ...(touch
+      ? []
+      : [
+          {
+            id: "shortcuts",
+            label: "Keyboard shortcuts",
+            group: "Do",
+            icon: PhKeyboard,
+            shortcut: "?",
+            keywords: ["keys", "help"],
+          },
+        ]),
     ...(["system", "light", "dark"] as const).map((value) => ({
       id: `theme:${value}`,
       label: `Theme: ${value[0]!.toUpperCase()}${value.slice(1)}`,
@@ -194,7 +201,7 @@ const commands = computed<CommandItem[]>(() => {
       .map((b) => ({
         id: `go:/engines/${b.id}`,
         label: `${b.ref} #${b.id}`,
-        description: `Engine · ${b.commit.slice(0, 10)}`,
+        description: `Engine · ${b.commit.slice(0, 7)} · ${ago(b.created_at)}`,
         group: "Engines",
         keywords: [b.commit, "build"],
       })),
@@ -284,9 +291,6 @@ onUnmounted(stop);
             <PhCaretUp class="status-caret" aria-hidden="true" />
           </EButton>
           <span class="status-end">
-            <span v-if="status.data" class="status-meta"
-              >{{ status.data.cpu.threads }} threads · runner {{ status.data.version }}</span
-            >
             <EButton
               variant="quiet"
               size="sm"
@@ -307,7 +311,7 @@ onUnmounted(stop);
       v-model:open="palette"
       :items="commands"
       label="Search Reckless Lab"
-      placeholder="Jump to an experiment, an engine or an action"
+      placeholder="Search experiments, engines, actions"
       shortcut="mod+k"
       @select="run"
     />
@@ -479,6 +483,19 @@ onUnmounted(stop);
   opacity: 1;
 }
 
+/* No hover on a touch screen: the caret is always there, and the bar is a proper tap target. */
+@media (pointer: coarse) {
+  .status {
+    --status-height: 2.75rem;
+
+    min-block-size: 3.25rem;
+  }
+
+  .status-caret {
+    opacity: 1;
+  }
+}
+
 .status-dot {
   flex: none;
   width: 0.5rem;
@@ -508,13 +525,7 @@ onUnmounted(stop);
   white-space: nowrap;
 }
 
-.status-meta {
-  color: var(--e-muted);
-  font-family: var(--e-font-mono);
-}
-
 @media (width < 56rem) {
-  .status-meta,
   .status-keys {
     display: none;
   }

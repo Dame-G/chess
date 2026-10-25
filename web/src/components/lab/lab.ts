@@ -1,5 +1,5 @@
 import type { Experiment, Test } from "../../api/queries";
-import { duration, forecast, signed, stageLabel } from "../../format";
+import { duration, forecast, signed, stageLabel, verdict } from "../../format";
 
 type Result = Experiment["results"][number];
 type StageState = "done" | "error" | "current" | "stopped" | "upcoming";
@@ -108,17 +108,17 @@ export function verdictLine(e: Experiment, tests: readonly Test[]): string {
   }
 }
 
-/** The library row's one line: how it is doing, or how it ended. */
-export function headline(e: Experiment): string {
-  if (e.status === "queued") return "Waiting…";
-  if (e.status === "running") return e.current ? `Testing… ${stageLabel(e.current).toLowerCase()}` : "Testing…";
-  if (e.status === "cancelled") return "Stopped";
+/** The library row's line: the status in words, then the figure behind it. */
+export function headline(e: Experiment): { label: string; figure: string } {
+  const label = verdict(e).label;
+  if (e.status === "queued" || e.status === "cancelled") return { label, figure: "" };
+  if (e.status === "running") return { label, figure: e.current ? stageLabel(e.current).toLowerCase() : "" };
   // The runner's summary leads with Elo, the figure the stage shows too.
   const elo = e.summary?.match(/([+-]?\d+(?:\.\d+)?) ± (\d+(?:\.\d+)?) Elo/);
-  if (elo) return `${signed(Number(elo[1]), 1)} ± ${Number(elo[2]).toFixed(1)} Elo`;
-  const all = e.summary?.match(/^(\d+) of (\d+) stages$/);
-  if (all) return all[1] === all[2] ? `All ${all[1]} stages passed` : (e.summary ?? "");
-  return e.summary ?? "";
+  if (elo) return { label, figure: `${signed(Number(elo[1]), 1)} ± ${Number(elo[2]).toFixed(1)} Elo` };
+  const speed = e.results.find((r) => r.stage === "speed")?.detail.match(/([+-]\d+(?:\.\d+)?)% ± (\d+(?:\.\d+)?)%/);
+  if (speed) return { label, figure: `speed ${signed(Number(speed[1]), 1)}%` };
+  return { label, figure: "" };
 }
 
 /** A game from the new version's side. */
@@ -153,4 +153,13 @@ export function record(games: readonly { white: string; result: string }[]): { W
   const r = { W: 0, D: 0, L: 0 };
   for (const g of games) r[outcome(g)]++;
   return r;
+}
+
+/** A runner's result line in plain words: the stage names the new version, and big counts get separators. */
+export function plainDetail(detail: string): string {
+  return detail
+    .replace(/^dev speed/, "The new version's speed is")
+    .replace(/^bench unchanged at/, "The fingerprint is unchanged at")
+    .replace(/^bench (?=\d)/, "The fingerprint changed: ")
+    .replace(/\d{4,}/g, (n) => Number(n).toLocaleString());
 }

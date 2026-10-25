@@ -37,6 +37,7 @@ const groups = [
     description="Keys work whenever you are not typing."
     size="md"
   >
+    <p class="touch">Shortcuts are for a keyboard. On a touch screen every one of these has a button.</p>
     <div class="groups">
       <section v-for="g in groups" :key="g.title" class="group" :aria-labelledby="`sc-${g.title}`">
         <h3 :id="`sc-${g.title}`" class="group-title">{{ g.title }}</h3>
@@ -59,6 +60,23 @@ const groups = [
 </template>
 
 <style scoped>
+/* A phone has no keys to press: say so instead of listing them. */
+.touch {
+  display: none;
+  margin: 0;
+  color: var(--e-muted);
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .touch {
+    display: block;
+  }
+
+  .groups {
+    display: none;
+  }
+}
+
 .groups {
   display: grid;
   gap: var(--e-gap-section);

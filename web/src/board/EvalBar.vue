@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { Color } from "@lichess-org/chessground/types";
-import { winChance } from "../format";
+import { signed, winChance } from "../format";
 
 const props = defineProps<{
   /** White's advantage in pawns, mates as ±100. `undefined` before the engine has spoken. */
   pawns?: number;
-  /** The text to show, such as `+0.35` or `#3`. */
+  /** The text to show, such as `+0.35` or `M3`. */
   text?: string;
   /** Which side is at the bottom of the board. */
   orientation?: Color;
@@ -23,9 +23,9 @@ const leader = computed<Color>(() => (white.value >= 0.5 ? "white" : "black"));
 const short = computed(() => {
   const t = props.text;
   if (!t) return "";
-  if (t.startsWith("#")) return `M${t.replace(/^#-?/, "")}`;
+  if (t.includes("M")) return `${/^[-−]/.test(t) ? "−" : ""}M${t.match(/d+/)?.[0] ?? ""}`;
   const n = Number(t.replace("−", "-"));
-  return Number.isFinite(n) ? `${n > 0 ? "+" : ""}${n.toFixed(1)}` : t;
+  return Number.isFinite(n) ? signed(n, 1) : t;
 });
 /** The figure sits at the end of the bar on the leading side: under it when that side is at the bottom. */
 const atBottom = computed(() => (leader.value === "white") !== flipped.value);

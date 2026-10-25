@@ -88,7 +88,7 @@ async function submit() {
   <EDialog
     v-model:open="open"
     title="Test an idea"
-    description="Does the change on a branch make Reckless stronger? It plays the current version until the results are clear."
+    description="Does the change on a branch make Reckless stronger? The two versions play each other until the result is clear."
     size="lg"
   >
     <EForm id="new-experiment" :submitting="submitting" @submit="submit">
@@ -116,7 +116,13 @@ async function submit() {
         label="What should it do?"
         :options="Object.entries(kinds).map(([value, k]) => ({ value, label: k.label, description: k.detail }))"
       />
-      <ETextField v-model="name" label="Name" :placeholder="subject" optional hint="Left empty, the commit's title." />
+      <ETextField
+        v-model="name"
+        label="Name"
+        :placeholder="subject"
+        optional
+        hint="Left empty, it uses the commit's title."
+      />
       <ETextarea
         v-model="hypothesis"
         label="Why should it work?"
