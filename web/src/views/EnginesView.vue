@@ -155,7 +155,6 @@ const details = computed(() => {
     { label: "Commit", text: b.commit },
     { label: "Network", text: b.network ?? "None embedded" },
     { label: "Fingerprint", text: `${b.bench.toLocaleString("en")} nodes` },
-    { label: "Speed", text: `${Math.round(b.nps).toLocaleString("en")} nodes/s on this machine` },
     { label: "Tablebases", text: b.features === "syzygy" ? "Included" : "Not included" },
     others.value.length ? { label: "Same branch", text: others.value.map((o) => `#${o.id}`).join(", ") } : null,
   ];

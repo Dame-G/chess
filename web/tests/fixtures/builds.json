@@ -1,0 +1,50 @@
+[
+  {
+    "id": 4,
+    "ref": "test/no-nmp",
+    "commit": "85865a3b5eebf402eeff5b814e7f40629a889b6b",
+    "subject": "Disable null move pruning (deliberately weaker)",
+    "features": "no-syzygy",
+    "network": "v60-7f587dfb.nnue",
+    "bench": 4191354,
+    "bench_expected": null,
+    "nps": 296480,
+    "created_at": "2026-10-25T18:06:20.651Z"
+  },
+  {
+    "id": 3,
+    "ref": "test/comment",
+    "commit": "2089bd4ca557a4ef4489b8cee07a9d58f89e0135",
+    "subject": "Clarify the NMP comment",
+    "features": "no-syzygy",
+    "network": "v60-7f587dfb.nnue",
+    "bench": 2837905,
+    "bench_expected": null,
+    "nps": 335015,
+    "created_at": "2026-10-25T18:02:37.771Z"
+  },
+  {
+    "id": 2,
+    "ref": "main",
+    "commit": "69aea9086899189ee38fd3e556bf9469b805552a",
+    "subject": "Minor code cleanups (#1123)",
+    "features": "no-syzygy",
+    "network": "v60-7f587dfb.nnue",
+    "bench": 2837905,
+    "bench_expected": 2837905,
+    "nps": 318114,
+    "created_at": "2026-10-25T18:01:46.294Z"
+  },
+  {
+    "id": 1,
+    "ref": "main",
+    "commit": "69aea9086899189ee38fd3e556bf9469b805552a",
+    "subject": "Minor code cleanups (#1123)",
+    "features": "no-syzygy",
+    "network": "v60-7f587dfb.nnue",
+    "bench": 2837905,
+    "bench_expected": 2837905,
+    "nps": 372102,
+    "created_at": "2026-10-25T17:36:08.444Z"
+  }
+]

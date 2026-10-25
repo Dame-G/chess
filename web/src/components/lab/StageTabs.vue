@@ -229,7 +229,7 @@ a.tab:focus-visible {
 
 .tab--upcoming .fig-main {
   color: var(--e-muted);
-  opacity: 0.6;
+  opacity: 0.75;
 }
 
 .sr-only {

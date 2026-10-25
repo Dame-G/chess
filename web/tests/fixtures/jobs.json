@@ -1,0 +1,62 @@
+[
+  {
+    "id": 6,
+    "spec": { "kind": "experiment", "id": 3 },
+    "status": "done",
+    "result": { "experiment": 3, "status": "failed" },
+    "error": null,
+    "created_at": "2026-10-25T18:15:44.836Z",
+    "started_at": "2026-10-25T18:15:44.841Z",
+    "finished_at": "2026-10-25T19:49:33.219Z"
+  },
+  {
+    "id": 5,
+    "spec": { "kind": "experiment", "id": 2 },
+    "status": "cancelled",
+    "result": null,
+    "error": null,
+    "created_at": "2026-10-25T18:00:51.652Z",
+    "started_at": "2026-10-25T18:04:13.334Z",
+    "finished_at": "2026-10-25T18:14:33.117Z"
+  },
+  {
+    "id": 4,
+    "spec": { "kind": "experiment", "id": 1 },
+    "status": "done",
+    "result": { "experiment": 1, "status": "passed" },
+    "error": null,
+    "created_at": "2026-10-25T18:00:51.641Z",
+    "started_at": "2026-10-25T18:00:51.647Z",
+    "finished_at": "2026-10-25T18:04:13.331Z"
+  },
+  {
+    "id": 3,
+    "spec": { "kind": "build", "ref": "nonexistent" },
+    "status": "failed",
+    "result": null,
+    "error": "no commit named nonexistent in C:\\dev\\reckless: git -C C:\\dev\\reckless rev-parse --verify --quiet nonexistent^{commit} failed: ",
+    "created_at": "2026-10-25T17:36:16.263Z",
+    "started_at": "2026-10-25T17:36:16.265Z",
+    "finished_at": "2026-10-25T17:36:16.385Z"
+  },
+  {
+    "id": 2,
+    "spec": { "kind": "build", "ref": "upstream/main" },
+    "status": "done",
+    "result": { "build": 1 },
+    "error": null,
+    "created_at": "2026-10-25T17:36:15.146Z",
+    "started_at": "2026-10-25T17:36:15.149Z",
+    "finished_at": "2026-10-25T17:36:15.387Z"
+  },
+  {
+    "id": 1,
+    "spec": { "kind": "build", "ref": "main" },
+    "status": "done",
+    "result": { "build": 1 },
+    "error": null,
+    "created_at": "2026-10-25T17:34:48.197Z",
+    "started_at": "2026-10-25T17:34:48.202Z",
+    "finished_at": "2026-10-25T17:36:08.448Z"
+  }
+]

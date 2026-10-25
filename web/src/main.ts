@@ -18,9 +18,13 @@ import { saddleLight, themeCss } from "./theme";
 // Both schemes ship as CSS, chosen by data-scheme on <html>; index.html sets it before the first paint.
 startScheme(themeCss);
 
-createApp(App)
+const app = createApp(App)
   .use(createEos({ locale: "en-US", theme: saddleLight, applyTheme: false }))
   .use(createPinia())
   .use(PiniaColada, { queryOptions: { staleTime: 5_000 } })
-  .use(router)
-  .mount("#app");
+  .use(router);
+
+// The first route decides the shell's shape (a workspace fills the window), so mount once it is known: otherwise the
+// header and panes jump from the narrow page layout to the full one.
+await router.isReady();
+app.mount("#app");

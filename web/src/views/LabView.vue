@@ -41,6 +41,8 @@ const tests = computed(() => {
     ? rawTests.value.map((t) => (t.id === fresh.id ? fresh : t))
     : rawTests.value;
 });
+/** Whether an experiment is chosen or on its way, so the panes around the stage keep their size while it loads. */
+const staged = computed(() => id.value > 0 || list.value.status === "pending" || !!experiment.value);
 const active = computed(() => !!experiment.value && ["queued", "running"].includes(experiment.value.status));
 
 // ---- Library ----
@@ -218,8 +220,8 @@ async function cancel() {
       </EDisclosure>
     </template>
 
-    <template v-if="experiment" #stage-head>
-      <h2 class="title">{{ experiment.name }}</h2>
+    <template v-if="staged" #stage-head>
+      <h2 class="title">{{ experiment?.name ?? "" }}</h2>
       <span class="grow"></span>
       <EButton v-if="active" variant="outline" size="sm" :icon="PhStop" :loading="stopping" @click="cancel">
         Stop
@@ -239,13 +241,18 @@ async function cancel() {
       <HowItWorks />
     </div>
 
-    <template v-if="test" #inspector-head>
+    <!-- Kept while an experiment is chosen, so the stage keeps its width when a stage has no games to list. -->
+    <template v-if="staged" #inspector-head>
       <h2 class="ins-title">Games</h2>
-      <span class="ins-count num">{{ (games.data?.length ?? test.games).toLocaleString() }}</span>
+      <span v-if="test" class="ins-count num">{{ (games.data?.length ?? test.games).toLocaleString() }}</span>
       <span class="grow"></span>
     </template>
-    <template v-if="test" #inspector>
-      <GameList :test="test.id" />
+    <template v-if="staged" #inspector>
+      <GameList v-if="test" :test="test.id" />
+      <ESkeleton v-else-if="!experiment" class="pad" :lines="6" label="Loading games" />
+      <EEmptyState v-else bare size="sm" title="No games here">
+        {{ stage === "bench" ? "The fingerprint check plays no games." : "This step has not played any games." }}
+      </EEmptyState>
     </template>
   </Workspace>
 

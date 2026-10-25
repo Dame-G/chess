@@ -1,0 +1,80 @@
+{
+  "experiment": {
+    "id": 3,
+    "batch": null,
+    "name": "no null move",
+    "hypothesis": "Disabling NMP is a large loss; the screen should reject it fast.",
+    "kind": "gainer",
+    "base": "main",
+    "dev": "test/no-nmp",
+    "base_build": 2,
+    "dev_build": 4,
+    "funnel": [
+      { "type": "bench", "functional": true },
+      {
+        "type": "match",
+        "name": "screen",
+        "tc": { "clock": { "seconds": 4.0, "increment": 0.04 } },
+        "threads": 1,
+        "hash": 16,
+        "sprt": { "elo0": -5.0, "elo1": 0.0, "alpha": 0.05, "beta": 0.1 },
+        "pairs": null
+      },
+      {
+        "type": "match",
+        "name": "stc",
+        "tc": { "clock": { "seconds": 8.0, "increment": 0.08 } },
+        "threads": 1,
+        "hash": 16,
+        "sprt": { "elo0": 0.0, "elo1": 3.0, "alpha": 0.05, "beta": 0.1 },
+        "pairs": null
+      }
+    ],
+    "status": "failed",
+    "results": [
+      { "stage": "bench", "passed": true, "detail": "bench 2837905 → 4191354", "test": null },
+      {
+        "stage": "screen",
+        "passed": false,
+        "detail": "rejected [-5, 0] after 6650 games, -6.6 ± 5.2 Elo (-10.7 nElo)",
+        "test": 2
+      }
+    ],
+    "current": null,
+    "summary": "screen: rejected [-5, 0] after 6650 games, -6.6 ± 5.2 Elo (-10.7 nElo)",
+    "job": 6,
+    "created_at": "2026-10-25T18:15:44.831Z",
+    "finished_at": "2026-10-25T19:49:33.214Z"
+  },
+  "tests": [
+    {
+      "id": 2,
+      "experiment": 3,
+      "stage": "screen",
+      "spec": {
+        "tc": { "clock": { "seconds": 4.0, "increment": 0.04 } },
+        "threads": 1,
+        "hash": 16,
+        "sprt": { "elo0": -5.0, "elo1": 0.0, "alpha": 0.05, "beta": 0.1 },
+        "pairs": null
+      },
+      "base_build": 2,
+      "dev_build": 4,
+      "running": false,
+      "penta": [126, 862, 1452, 783, 102],
+      "games": 6650,
+      "llr": -2.2595759770344364,
+      "verdict": "rejected",
+      "estimate": {
+        "elo": -6.636042847015163,
+        "elo_error": 5.175405149632475,
+        "nelo": -10.710609090136343,
+        "nelo_error": 8.350482431605437,
+        "los": 0.0059699678095574416,
+        "score": 0.49045112781954886
+      },
+      "created_at": "2026-10-25T18:15:45.632Z",
+      "finished_at": "2026-10-25T19:49:33.207Z"
+    }
+  ]
+}

@@ -10,5 +10,5 @@ export default defineConfig({
     proxy: { "/api": { target: "http://127.0.0.1:7878", changeOrigin: false } },
   },
   build: { target: "es2022" },
-  test: { include: ["tests/**/*.test.ts"], environment: "node" },
+  test: { include: ["tests/**/*.test.ts"], environment: "happy-dom" },
 });
