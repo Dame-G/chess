@@ -171,7 +171,7 @@ onBeforeUnmount(() => {
         <ECheckboxGroup v-model="who" label="Opponents" orientation="horizontal" :options="whoOptions" />
       </div>
       <div class="pair">
-        <ENumberField v-model="minInitial" label="Clock from" size="sm" :min="0" :step="0.25" suffix="min" />
+        <ENumberField v-model="minInitial" label="Clock from" size="sm" :min="0" :step="1" suffix="min" />
         <ENumberField v-model="maxInitial" label="Clock up to" size="sm" :min="0" :step="1" suffix="min" />
         <ENumberField v-model="draft.min_increment" label="Increment from" size="sm" :min="0" suffix="s" />
         <ENumberField v-model="draft.max_increment" label="Increment up to" size="sm" :min="0" suffix="s" />
