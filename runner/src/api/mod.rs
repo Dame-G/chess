@@ -8,6 +8,7 @@ mod events;
 mod experiments;
 mod guard;
 mod jobs;
+mod lichess;
 mod matches;
 mod status;
 mod web;
@@ -37,6 +38,22 @@ pub struct AppState {
     pub queue: Queue,
     pub live: crate::analysis::Live,
     pub matches: crate::matches::Matches,
+    pub lichess: crate::lichess::Bot,
+}
+
+impl AppState {
+    pub fn new(config: Config, store: Store, brains: crate::lichess::Brains) -> Self {
+        Self {
+            lichess: crate::lichess::Bot::new(&config.lichess_url, brains),
+            config,
+            store,
+            events: Events::new(),
+            machine: status::Machine::detect(),
+            queue: Queue::new(),
+            live: crate::analysis::Live::new(),
+            matches: crate::matches::Matches::new(),
+        }
+    }
 }
 
 #[derive(OpenApi)]
@@ -61,6 +78,14 @@ fn api() -> (Router<Arc<AppState>>, utoipa::openapi::OpenApi) {
         .routes(routes!(matches::list, matches::create))
         .routes(routes!(matches::get, matches::stop))
         .routes(routes!(matches::pgn))
+        .routes(routes!(lichess::status))
+        .routes(routes!(lichess::set_token, lichess::clear_token))
+        .routes(routes!(lichess::settings, lichess::put_settings))
+        .routes(routes!(lichess::start))
+        .routes(routes!(lichess::stop))
+        .routes(routes!(lichess::upgrade))
+        .routes(routes!(lichess::challenge))
+        .routes(routes!(lichess::bots))
         .routes(routes!(experiments::list, experiments::create))
         .routes(routes!(experiments::batch))
         .routes(routes!(experiments::get, experiments::cancel))
@@ -77,17 +102,11 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
 pub async fn serve(config: Config) -> Result<()> {
     let store = Store::open(&config.data.join("runner.db"))?;
     let listen = config.listen;
-    let state = Arc::new(AppState {
-        config,
-        store,
-        events: Events::new(),
-        machine: status::Machine::detect(),
-        queue: Queue::new(),
-        live: crate::analysis::Live::new(),
-        matches: crate::matches::Matches::new(),
-    });
+    let state = Arc::new(AppState::new(config, store, crate::lichess::engines()));
     crate::matches::recover(&state).await?;
     tokio::spawn(crate::jobs::worker(state.clone()));
+    // Back online if it was when the runner stopped; games still running on Lichess resume in their records.
+    crate::lichess::resume(&state).await?;
 
     let (api, _) = api();
     let api = api.layer(middleware::from_fn_with_state(state.clone(), guard::guard));

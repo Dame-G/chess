@@ -28,6 +28,10 @@ impl Client {
         Ok(self.send(self.http.post(self.url(path)).json(&body)).await?.json().await?)
     }
 
+    pub async fn put(&self, path: &str, body: Value) -> Result<Value> {
+        Ok(self.send(self.http.put(self.url(path)).json(&body)).await?.json().await?)
+    }
+
     pub async fn delete(&self, path: &str) -> Result<Value> {
         Ok(self.send(self.http.delete(self.url(path))).await?.json().await?)
     }

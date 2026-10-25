@@ -11,6 +11,7 @@ mod events;
 mod experiments;
 mod funnel;
 mod jobs;
+mod lichess;
 mod matches;
 mod proc;
 mod stats;
@@ -58,6 +59,10 @@ enum Command {
         /// The Reckless checkout to build from.
         #[arg(long, env = "RECKLESS_DIR", default_value = "../reckless")]
         reckless: PathBuf,
+
+        /// The Lichess server the bot plays on.
+        #[arg(long, env = "LICHESS_URL", default_value = config::LICHESS_URL)]
+        lichess_url: String,
     },
     #[command(flatten)]
     Client(cli::ClientCommand),
@@ -73,9 +78,9 @@ async fn main() -> Result<()> {
     let data = cli.data.clone().unwrap_or_else(config::default_data_dir);
 
     match cli.command {
-        Command::Serve { listen, reckless } => {
+        Command::Serve { listen, reckless, lichess_url } => {
             tracing_subscriber::fmt().with_target(false).init();
-            let config = Config::load(data, reckless, listen)?;
+            let config = Config::load(data, reckless, listen, lichess_url)?;
             api::serve(config).await
         }
         Command::Token => {

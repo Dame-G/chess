@@ -629,7 +629,8 @@ async function stopMatch() {
 /** The same match again from the same position, with the colours kept or swapped. */
 async function again(swap: boolean) {
   const m = matchData.value;
-  if (!m) return;
+  // A Lichess game has an opponent that is not one of our builds: there is nothing to replay it with.
+  if (!m || m.white.build == null || m.black.build == null) return;
   matchBusy.value = true;
   matchError.value = "";
   try {

@@ -68,6 +68,8 @@ pub enum ClientCommand {
         #[arg(long, default_value_t = 20)]
         limit: u32,
     },
+    /// The Lichess bot: with no subcommand, its status. A build plays as your Lichess BOT account.
+    Lichess(LichessCommand),
     /// Experiments: a dev ref against a base ref through a funnel of stages.
     #[command(subcommand)]
     Experiment(ExperimentCommand),
@@ -155,6 +157,92 @@ pub struct NewMatch {
     follow: bool,
 }
 
+#[derive(Args)]
+pub struct LichessCommand {
+    #[command(subcommand)]
+    action: Option<LichessAction>,
+}
+
+#[derive(Subcommand)]
+pub enum LichessAction {
+    /// Store the bot's Lichess token (scope bot:play), read from stdin so it stays out of shell history. Lichess checks
+    /// it, and the account it belongs to is shown.
+    Token,
+    /// Forget the token and take the bot offline. Games in progress are played out.
+    Logout,
+    /// Show the settings, or change the ones named by flags.
+    Settings(LichessSettings),
+    /// Take the bot online: it answers challenges and plays, and stays online across restarts.
+    Start,
+    /// Take the bot offline. Games in progress are played out.
+    Stop,
+    /// Challenge a Lichess player (usually another bot). The bot must be online.
+    Challenge {
+        username: String,
+        /// The clock as Lichess writes it: minutes plus increment seconds, such as 3+2 (or 0.5+0 for 30 seconds).
+        #[arg(long, default_value = "3+2")]
+        tc: String,
+        #[arg(long)]
+        rated: bool,
+        /// white, black or random: the colour our build plays.
+        #[arg(long, default_value = "random")]
+        color: String,
+    },
+    /// List the bots online on Lichess now, with their ratings.
+    Bots,
+    /// Turn the account into a BOT account. This cannot be undone, and Lichess only allows it for an account that has
+    /// never played a game.
+    Upgrade {
+        /// Required: says you know the upgrade is permanent.
+        #[arg(long)]
+        yes_irreversible: bool,
+    },
+}
+
+/// Flags change only what they name; the rest stays as it is.
+#[derive(Args)]
+pub struct LichessSettings {
+    /// The build that plays: an id, or a ref meaning its newest build at the start of each game.
+    #[arg(long)]
+    build: Option<String>,
+    /// Hash table size in MiB.
+    #[arg(long)]
+    hash: Option<u32>,
+    /// Search threads per game.
+    #[arg(long)]
+    threads: Option<u32>,
+    /// Milliseconds kept in hand on every move for network lag (Reckless's MoveOverhead).
+    #[arg(long)]
+    move_overhead: Option<u32>,
+    /// Accept rated challenges: true or false.
+    #[arg(long, value_name = "BOOL")]
+    rated: Option<bool>,
+    /// Accept casual challenges: true or false.
+    #[arg(long, value_name = "BOOL")]
+    casual: Option<bool>,
+    /// The speeds accepted, such as bullet,blitz,rapid (classical too). Never correspondence.
+    #[arg(long, value_delimiter = ',')]
+    speeds: Option<Vec<String>>,
+    /// The initial clocks accepted, in seconds, as MIN-MAX such as 60-1800.
+    #[arg(long)]
+    initial: Option<String>,
+    /// The increments accepted, in seconds, as MIN-MAX such as 0-30.
+    #[arg(long)]
+    increment: Option<String>,
+    /// Also accept standard chess from a set position: true or false.
+    #[arg(long, value_name = "BOOL")]
+    from_position: Option<bool>,
+    /// Accept challenges from people: true or false.
+    #[arg(long, value_name = "BOOL")]
+    humans: Option<bool>,
+    /// Accept challenges from other bots: true or false.
+    #[arg(long, value_name = "BOOL")]
+    bots: Option<bool>,
+    /// Games at once.
+    #[arg(long)]
+    max_games: Option<u32>,
+}
+
 #[derive(Subcommand)]
 pub enum ExperimentCommand {
     /// Queue an experiment.
@@ -214,6 +302,7 @@ pub async fn run(client: Client, command: ClientCommand, json: bool) -> Result<(
         ClientCommand::Experiment(cmd) => return experiment(&client, cmd, json).await,
         ClientCommand::Batch(cmd) => return batch(&client, cmd, json).await,
         ClientCommand::Match(cmd) => return matches(&client, cmd, json).await,
+        ClientCommand::Lichess(cmd) => return lichess(&client, cmd, json).await,
         ClientCommand::Matches { limit } => {
             let list = client.get(&format!("/api/matches?limit={limit}")).await?;
             print(&list, json, |l| lines(l, match_line));
@@ -530,6 +619,11 @@ fn match_outcome(m: &Value) -> String {
         (Some(w), "resignation") => format!("{w} won by adjudication"),
         (Some(w), "crash") => format!("{w} won: the other engine crashed"),
         (Some(w), "illegal_move") => format!("{w} won: the other engine played an illegal move"),
+        (Some(w), "resigned") => format!("{w} won by resignation"),
+        (Some(w), "abandoned") => format!("{w} won: the other side left"),
+        (Some(w), "no_start") => format!("{w} won: the other side never moved"),
+        (None, "agreement") => "Draw by agreement".into(),
+        (None, "abandoned") => "Draw: a side left".into(),
         (Some(w), _) => format!("{w} won"),
         (None, "stalemate") => "Draw by stalemate".into(),
         (None, "repetition") => "Draw by threefold repetition".into(),
@@ -710,4 +804,198 @@ async fn follow_match(client: &Client, id: i64, start: &str, say: &dyn Fn(String
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The Lichess bot
+// ---------------------------------------------------------------------------------------------------------------------
+
+fn lichess_text(s: &Value) -> String {
+    let who = match s["account"]["username"].as_str() {
+        Some(name) => match s["account"]["title"].as_str() {
+            Some(title) => format!("{title} {name}"),
+            None => name.to_owned(),
+        },
+        None if s["configured"].as_bool() == Some(true) => "token stored, account not checked yet".into(),
+        None => "no token: store one with `chess lichess token`".into(),
+    };
+    let mut out = format!("lichess: {who}, {}", s["state"].as_str().unwrap_or("?"));
+    if let Some(e) = s["error"].as_str() {
+        out += &format!(" ({e})");
+    }
+    if s["account"]["bot"].as_bool() == Some(false) {
+        out += "\n  not a BOT account: `chess lichess upgrade --yes-irreversible` converts it, for good";
+    }
+    let playing: Vec<String> = s["playing"].as_array().into_iter().flatten().map(|m| format!("match {m}")).collect();
+    if !playing.is_empty() {
+        out += &format!("\n  playing {}", playing.join(", "));
+    }
+    out + "\n" + &lichess_settings_text(&s["settings"])
+}
+
+fn lichess_settings_text(s: &Value) -> String {
+    let on = |key: &str| s[key].as_bool() == Some(true);
+    let speeds: Vec<&str> = s["speeds"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+    let modes = match (on("accept_rated"), on("accept_casual")) {
+        (true, true) => "rated and casual",
+        (true, false) => "rated only",
+        (false, true) => "casual only",
+        (false, false) => "nothing",
+    };
+    let from = match (on("accept_humans"), on("accept_bots")) {
+        (true, true) => "people and bots",
+        (true, false) => "people only",
+        (false, true) => "bots only",
+        (false, false) => "nobody",
+    };
+    format!(
+        "  build {}, hash {} MiB, {} thread(s), move overhead {} ms\n  accepts {modes} {} at {}-{}s +{}-{}s{}, from \
+         {from}, {} game(s) at once",
+        s["build"].as_str().unwrap_or("(none chosen)"),
+        s["hash"],
+        s["threads"],
+        s["move_overhead"],
+        speeds.join("/"),
+        s["min_initial"],
+        s["max_initial"],
+        s["min_increment"],
+        s["max_increment"],
+        if on("from_position") { ", from set positions too" } else { "" },
+        s["max_games"],
+    )
+}
+
+/// `MIN-MAX` as two numbers.
+fn parse_range(text: &str) -> Result<(u32, u32)> {
+    let (lo, hi) = text.split_once('-').unwrap_or((text, text));
+    match (lo.trim().parse(), hi.trim().parse()) {
+        (Ok(lo), Ok(hi)) => Ok((lo, hi)),
+        _ => bail!("a range looks like 60-1800, not {text}"),
+    }
+}
+
+/// The settings with the flags applied over them.
+fn apply_settings(mut s: Value, a: LichessSettings) -> Result<Value> {
+    let mut set = |key: &str, value: Value| s[key] = value;
+    if let Some(b) = a.build {
+        set("build", json!(b));
+    }
+    if let Some(v) = a.hash {
+        set("hash", json!(v));
+    }
+    if let Some(v) = a.threads {
+        set("threads", json!(v));
+    }
+    if let Some(v) = a.move_overhead {
+        set("move_overhead", json!(v));
+    }
+    if let Some(v) = a.rated {
+        set("accept_rated", json!(v));
+    }
+    if let Some(v) = a.casual {
+        set("accept_casual", json!(v));
+    }
+    if let Some(v) = a.speeds {
+        set("speeds", json!(v.iter().map(|s| s.trim().to_lowercase()).collect::<Vec<_>>()));
+    }
+    if let Some(r) = a.initial {
+        let (lo, hi) = parse_range(&r)?;
+        set("min_initial", json!(lo));
+        set("max_initial", json!(hi));
+    }
+    if let Some(r) = a.increment {
+        let (lo, hi) = parse_range(&r)?;
+        set("min_increment", json!(lo));
+        set("max_increment", json!(hi));
+    }
+    if let Some(v) = a.from_position {
+        set("from_position", json!(v));
+    }
+    if let Some(v) = a.humans {
+        set("accept_humans", json!(v));
+    }
+    if let Some(v) = a.bots {
+        set("accept_bots", json!(v));
+    }
+    if let Some(v) = a.max_games {
+        set("max_games", json!(v));
+    }
+    Ok(s)
+}
+
+fn bot_line(bot: &Value) -> String {
+    let r = |speed: &str| bot["ratings"][speed].as_u64().map_or_else(|| "-".to_owned(), |n| n.to_string());
+    format!(
+        "{:<24} bullet {:>5}  blitz {:>5}  rapid {:>5}  classical {:>5}",
+        bot["name"].as_str().unwrap_or("?"),
+        r("bullet"),
+        r("blitz"),
+        r("rapid"),
+        r("classical"),
+    )
+}
+
+async fn lichess(client: &Client, cmd: LichessCommand, json: bool) -> Result<()> {
+    let Some(action) = cmd.action else {
+        print(&client.get("/api/lichess").await?, json, lichess_text);
+        return Ok(());
+    };
+    match action {
+        LichessAction::Token => {
+            use std::io::{BufRead, IsTerminal};
+            if std::io::stdin().is_terminal() {
+                eprint!("Paste the bot's Lichess token (scope bot:play) and press Enter: ");
+            }
+            let mut token = String::new();
+            std::io::stdin().lock().read_line(&mut token)?;
+            let token = token.trim();
+            if token.is_empty() {
+                bail!("no token on stdin");
+            }
+            print(&client.put("/api/lichess/token", json!({ "token": token })).await?, json, lichess_text);
+        }
+        LichessAction::Logout => print(&client.delete("/api/lichess/token").await?, json, lichess_text),
+        LichessAction::Settings(a) => {
+            let current = client.get("/api/lichess/settings").await?;
+            let stored = client.put("/api/lichess/settings", apply_settings(current, a)?).await?;
+            print(&stored, json, lichess_settings_text);
+        }
+        LichessAction::Start => print(&client.post("/api/lichess/start", json!({})).await?, json, lichess_text),
+        LichessAction::Stop => print(&client.post("/api/lichess/stop", json!({})).await?, json, lichess_text),
+        LichessAction::Challenge { username, tc, rated, color } => {
+            let (minutes, increment) = tc.split_once('+').unwrap_or((&tc, "0"));
+            let (Ok(minutes), Ok(increment)) = (minutes.parse::<f64>(), increment.parse::<u32>()) else {
+                bail!("a Lichess clock looks like 3+2 (minutes plus increment seconds), not {tc}");
+            };
+            let body = json!({
+                "username": username,
+                "clock_seconds": (minutes * 60.0).round() as u32,
+                "increment": increment,
+                "rated": rated,
+                "color": color,
+            });
+            let sent = client.post("/api/lichess/challenge", body).await?;
+            print(&sent, json, |c| {
+                format!(
+                    "challenged {} to {}+{} {}: {}",
+                    c["username"].as_str().unwrap_or("?"),
+                    c["clock_seconds"].as_u64().unwrap_or(0) as f64 / 60.0,
+                    c["increment"],
+                    if c["rated"].as_bool() == Some(true) { "rated" } else { "casual" },
+                    c["url"].as_str().unwrap_or("?"),
+                )
+            });
+        }
+        LichessAction::Bots => print(&client.get("/api/lichess/bots").await?, json, |b| lines(b, bot_line)),
+        LichessAction::Upgrade { yes_irreversible } => {
+            if !yes_irreversible {
+                bail!(
+                    "upgrading to a BOT account cannot be undone, and only works for an account that has never played \
+                     a game: pass --yes-irreversible to go ahead"
+                );
+            }
+            print(&client.post("/api/lichess/upgrade", json!({ "confirm": true })).await?, json, lichess_text);
+        }
+    }
+    Ok(())
 }

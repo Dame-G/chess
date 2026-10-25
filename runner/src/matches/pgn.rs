@@ -50,18 +50,34 @@ fn time_control(t: MatchTime) -> String {
 
 pub fn to_pgn(m: &Match) -> String {
     let date = m.created_at.get(..10).unwrap_or("????-??-??").replace('-', ".");
-    let name = |p: &super::Player| format!("{} {}", p.name, p.commit);
+    let name = |p: &super::Player| format!("{} {}", p.name, p.commit).trim_end().to_owned();
     let mut out = String::new();
     let mut header = |key: &str, value: &str| {
         let _ = writeln!(out, "[{key} \"{}\"]", quoted(value));
     };
-    header("Event", "Reckless Lab match");
-    header("Site", "Reckless Lab");
+    match &m.lichess {
+        Some(l) => {
+            header("Event", &format!("Lichess {} {} game", if l.rated { "rated" } else { "casual" }, l.speed));
+            header("Site", &l.url);
+        }
+        None => {
+            header("Event", "Reckless Lab match");
+            header("Site", "Reckless Lab");
+        }
+    }
     header("Date", &date);
     header("Round", &m.id.to_string());
     header("White", &name(&m.white));
     header("Black", &name(&m.black));
     header("Result", m.result.as_str());
+    for (key, p) in [("White", &m.white), ("Black", &m.black)] {
+        if let Some(rating) = p.rating {
+            header(&format!("{key}Elo"), &rating.to_string());
+        }
+        if let Some(title) = &p.title {
+            header(&format!("{key}Title"), title);
+        }
+    }
     header("TimeControl", &time_control(m.time));
     if let Some(reason) = m.reason {
         header("Termination", reason.termination());
@@ -140,7 +156,8 @@ mod tests {
     }
 
     fn game(start_fen: &str) -> Match {
-        let player = |name: &str| Player { build: 1, name: name.into(), commit: "abc1234".into() };
+        let player =
+            |name: &str| Player { build: Some(1), name: name.into(), commit: "abc1234".into(), ..Player::default() };
         Match {
             id: 7,
             white: player("main"),
@@ -165,7 +182,49 @@ mod tests {
             ],
             created_at: "2026-10-25T12:34:56.789Z".into(),
             finished_at: None,
+            lichess: None,
         }
+    }
+
+    #[test]
+    fn a_lichess_game_names_its_site_ratings_and_opponent() {
+        let mut g = game("startpos");
+        g.lichess = Some(crate::matches::LichessGame {
+            id: "q7ZvsdUF".into(),
+            url: "https://lichess.org/q7ZvsdUF".into(),
+            rated: true,
+            speed: "blitz".into(),
+            our_side: Side::White,
+        });
+        g.black = Player {
+            name: "someone".into(),
+            rating: Some(1873),
+            title: Some("BOT".into()),
+            lichess: Some("someone".into()),
+            ..Player::default()
+        };
+        let pgn = to_pgn(&g);
+        assert!(pgn.contains("[Event \"Lichess rated blitz game\"]"), "{pgn}");
+        assert!(pgn.contains("[Site \"https://lichess.org/q7ZvsdUF\"]"));
+        assert!(pgn.contains("[Black \"someone\"]"));
+        assert!(pgn.contains("[BlackElo \"1873\"]"));
+        assert!(pgn.contains("[BlackTitle \"BOT\"]"));
+    }
+
+    #[test]
+    fn an_old_stored_match_still_reads() {
+        // A record from before Lichess games: a plain build id, no ratings, no `lichess` block.
+        let json = serde_json::json!({
+            "id": 3, "white": { "build": 1, "name": "main", "commit": "abc1234" },
+            "black": { "build": 2, "name": "dev", "commit": "def5678" },
+            "time": { "type": "clock", "seconds": 10.0, "increment": 0.1 }, "start_fen": "startpos", "book": false,
+            "hash": 16, "threads": 1, "adjudicate": false, "status": "finished", "result": "1-0",
+            "reason": "checkmate", "turn": "black", "clock_white_ms": 100, "clock_black_ms": 200, "moves": [],
+            "created_at": "2026-10-25T12:00:00Z", "finished_at": null
+        });
+        let m: Match = serde_json::from_value(json).unwrap();
+        assert_eq!(m.white.build, Some(1));
+        assert!(m.lichess.is_none());
     }
 
     #[test]

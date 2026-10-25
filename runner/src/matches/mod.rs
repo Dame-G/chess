@@ -4,12 +4,14 @@
 //! runs at a time, on two search threads. Every game is stored: finished ones replay, and `/pgn` exports them.
 //!
 //! The game itself is a plain record ([`Match`]) that the player task fills in; a later human-versus-build game can
-//! reuse it by supplying the moves of one side from somewhere other than an engine.
+//! reuse it by supplying the moves of one side from somewhere other than an engine. Games played elsewhere (the
+//! Lichess bot's) fill the same record through a [`Recorder`], so they show on the same board and replay the same way.
 
 mod pgn;
 pub mod rules;
 
 use std::{
+    collections::HashMap,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -84,13 +86,48 @@ pub struct MatchRequest {
     pub adjudicate: Option<bool>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, ToSchema)]
 pub struct Player {
-    pub build: i64,
-    /// The ref the build was made from, such as `main`.
+    /// The build that played, by id. Absent for a Lichess opponent, which is not one of ours.
+    #[serde(default)]
+    pub build: Option<i64>,
+    /// The ref the build was made from, such as `main`; for a Lichess opponent, its username.
     pub name: String,
-    /// The first seven characters of its commit.
+    /// The first seven characters of its commit; empty for a Lichess opponent.
     pub commit: String,
+    /// The Lichess rating the player had for this game's speed.
+    #[serde(default)]
+    pub rating: Option<u32>,
+    /// The Lichess title, such as `BOT` or `GM`.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// The Lichess username the player played under, ours included.
+    #[serde(default)]
+    pub lichess: Option<String>,
+}
+
+/// What a game played on Lichess adds to the record.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct LichessGame {
+    /// The Lichess game id, such as `q7ZvsdUF`.
+    pub id: String,
+    /// `https://lichess.org/<id>`.
+    pub url: String,
+    pub rated: bool,
+    /// `bullet`, `blitz`, `rapid` or `classical`, as Lichess names the game's speed.
+    pub speed: String,
+    /// The side our build played.
+    pub our_side: Side,
+}
+
+/// Which matches a list holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Source {
+    /// Matches between two builds on this machine.
+    Local,
+    /// Games the bot played on Lichess.
+    Lichess,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -150,6 +187,10 @@ pub struct Match {
     pub moves: Vec<MatchMove>,
     pub created_at: String,
     pub finished_at: Option<String>,
+    /// Set when the bot played the game on Lichess. Its clocks are Lichess's, and the opponent's moves carry no
+    /// evaluation.
+    #[serde(default)]
+    pub lichess: Option<LichessGame>,
 }
 
 /// A match without its moves, for lists.
@@ -165,6 +206,17 @@ pub struct MatchSummary {
     pub reason: Option<Reason>,
     pub plies: u32,
     pub created_at: String,
+    pub lichess: Option<LichessGame>,
+}
+
+/// A build as a player of a game.
+pub fn player(b: &Build) -> Player {
+    Player {
+        build: Some(b.id),
+        name: b.refname.clone(),
+        commit: b.commit.chars().take(7).collect(),
+        ..Player::default()
+    }
 }
 
 impl Match {
@@ -180,6 +232,7 @@ impl Match {
             reason: self.reason,
             plies: self.moves.len() as u32,
             created_at: self.created_at.clone(),
+            lichess: self.lichess.clone(),
         }
     }
 }
@@ -202,8 +255,13 @@ fn load(c: &Connection, id: i64) -> Result<Option<Match>> {
     data.map(|d| serde_json::from_str(&d).context("read a stored match")).transpose()
 }
 
-fn recent(c: &Connection, limit: u32) -> Result<Vec<MatchSummary>> {
-    let mut stmt = c.prepare("SELECT data FROM matches ORDER BY id DESC LIMIT ?1")?;
+fn recent(c: &Connection, limit: u32, source: Option<Source>) -> Result<Vec<MatchSummary>> {
+    let filter = match source {
+        None => "",
+        Some(Source::Local) => "WHERE json_extract(data, '$.lichess') IS NULL",
+        Some(Source::Lichess) => "WHERE json_extract(data, '$.lichess') IS NOT NULL",
+    };
+    let mut stmt = c.prepare(&format!("SELECT data FROM matches {filter} ORDER BY id DESC LIMIT ?1"))?;
     let rows = stmt.query_map([limit], |r| r.get::<_, String>(0))?;
     let mut out = Vec::new();
     for data in rows {
@@ -256,16 +314,22 @@ struct Live {
 }
 
 pub struct Matches {
+    /// The one local match.
     live: Mutex<Option<Live>>,
+    /// Games recorded from elsewhere (the Lichess bot's), any number at once, beside the local one.
+    external: Mutex<HashMap<i64, Live>>,
 }
 
 impl Matches {
     pub fn new() -> Self {
-        Self { live: Mutex::new(None) }
+        Self { live: Mutex::new(None), external: Mutex::new(HashMap::new()) }
     }
 
     fn shared(&self, id: i64) -> Option<Arc<Mutex<Shared>>> {
-        self.live.lock().unwrap().as_ref().filter(|l| l.id == id).map(|l| l.shared.clone())
+        if let Some(shared) = self.live.lock().unwrap().as_ref().filter(|l| l.id == id).map(|l| l.shared.clone()) {
+            return Some(shared);
+        }
+        self.external.lock().unwrap().get(&id).map(|l| l.shared.clone())
     }
 }
 
@@ -293,8 +357,8 @@ pub async fn get(state: &AppState, id: i64) -> Result<Option<Match>> {
     state.store.call(move |c| load(c, id)).await
 }
 
-pub async fn list(state: &AppState, limit: u32) -> Result<Vec<MatchSummary>> {
-    state.store.call(move |c| recent(c, limit)).await
+pub async fn list(state: &AppState, limit: u32, source: Option<Source>) -> Result<Vec<MatchSummary>> {
+    state.store.call(move |c| recent(c, limit, source)).await
 }
 
 /// Stops the running match, which is recorded as aborted, and returns it. 409 when that match is not running.
@@ -307,6 +371,13 @@ pub async fn stop(state: &AppState, id: i64) -> Result<Match, ApiError> {
         .as_ref()
         .filter(|l| l.id == id)
         .map(|l| (l.cancel.clone(), l.shared.clone()));
+    // A game recorded from elsewhere ends where it is played: cancelling asks its player to resign (or abort) it, and
+    // the record ends when that game does.
+    let external = state.matches.external.lock().unwrap().get(&id).map(|l| l.cancel.clone());
+    if let Some(cancel) = external {
+        cancel.cancel();
+        return get(state, id).await?.ok_or(ApiError::not_found("no such match"));
+    }
     let Some((cancel, shared)) = live else {
         return match get(state, id).await? {
             Some(_) => Err(ApiError::conflict("that match is not running")),
@@ -393,8 +464,6 @@ pub async fn start(state: &Arc<AppState>, req: MatchRequest) -> Result<Match, Ap
     let black_engine = engines.pop().unwrap();
     let white_engine = engines.pop().unwrap();
 
-    let player =
-        |b: &Build| Player { build: b.id, name: b.refname.clone(), commit: b.commit.chars().take(7).collect() };
     let (clock_white_ms, clock_black_ms) = match plan.time {
         MatchTime::Clock { seconds, .. } => (Some((seconds * 1000.0) as u64), Some((seconds * 1000.0) as u64)),
         _ => (None, None),
@@ -419,6 +488,7 @@ pub async fn start(state: &Arc<AppState>, req: MatchRequest) -> Result<Match, Ap
         moves: Vec::new(),
         created_at: String::new(),
         finished_at: None,
+        lichess: None,
     };
     game = state
         .store
@@ -551,7 +621,21 @@ async fn play(
 ) {
     let id = shared.lock().unwrap().game.id;
     let ending = game_loop(&state, &shared, &cancel, [&mut white, &mut black], &plan).await;
+    let game = conclude(&state, &shared, ending).await;
+    // The match leaves the live slot before the end is announced, so a client that starts another one on the news can.
+    {
+        let mut live = state.matches.live.lock().unwrap();
+        if live.as_ref().is_some_and(|l| l.id == id) {
+            *live = None;
+        }
+    }
+    emit_ended(&state, &game);
+    let _ = white.send("quit").await;
+    let _ = black.send("quit").await;
+}
 
+/// Records the end of a game: its result, its reason and when it finished.
+async fn conclude(state: &AppState, shared: &Mutex<Shared>, ending: Ending) -> Match {
     let game = {
         let mut s = shared.lock().unwrap();
         s.thinking = None;
@@ -560,6 +644,7 @@ async fn play(
         s.game.reason = Some(ending.reason);
         s.game.clone()
     };
+    let id = game.id;
     let mut stored = game.clone();
     let saved = state
         .store
@@ -570,22 +655,42 @@ async fn play(
         })
         .await;
     match saved {
-        Ok(stored) => shared.lock().unwrap().game.finished_at = stored.finished_at,
-        Err(e) => tracing::error!("could not store match {id}: {e:#}"),
-    }
-    // The match leaves the live slot before the end is announced, so a client that starts another one on the news can.
-    {
-        let mut live = state.matches.live.lock().unwrap();
-        if live.as_ref().is_some_and(|l| l.id == id) {
-            *live = None;
+        Ok(stored) => {
+            shared.lock().unwrap().game.finished_at = stored.finished_at.clone();
+            stored
+        }
+        Err(e) => {
+            tracing::error!("could not store match {id}: {e:#}");
+            game
         }
     }
+}
+
+fn emit_ended(state: &AppState, game: &Match) {
     state.events.emit(
         "match.ended",
-        serde_json::json!({ "id": id, "result": game.result, "reason": ending.reason, "status": game.status }),
+        serde_json::json!({ "id": game.id, "result": game.result, "reason": game.reason, "status": game.status }),
     );
-    let _ = white.send("quit").await;
-    let _ = black.send("quit").await;
+}
+
+fn emit_move(state: &AppState, id: i64, mv: &MatchMove) {
+    state.events.emit(
+        "match.move",
+        serde_json::json!({
+            "id": id,
+            "ply": mv.ply,
+            "side": mv.side,
+            "uci": mv.uci,
+            "san": mv.san,
+            "fen_after": mv.fen_after,
+            "clock_white_ms": mv.clock_white_ms,
+            "clock_black_ms": mv.clock_black_ms,
+            "eval": mv.eval,
+            "depth": mv.depth,
+            "nodes": mv.nodes,
+            "time_ms": mv.time_ms,
+        }),
+    );
 }
 
 async fn game_loop(
@@ -721,22 +826,132 @@ async fn game_loop(
         if let Err(e) = state.store.call(move |c| save(c, &stored)).await {
             tracing::error!("could not store match {id}: {e:#}");
         }
-        state.events.emit(
-            "match.move",
-            serde_json::json!({
-                "id": id,
-                "ply": mv.ply,
-                "side": mv.side,
-                "uci": mv.uci,
-                "san": mv.san,
-                "fen_after": mv.fen_after,
-                "clock_white_ms": mv.clock_white_ms,
-                "clock_black_ms": mv.clock_black_ms,
-                "eval": mv.eval,
-                "depth": mv.depth,
-                "nodes": mv.nodes,
-                "time_ms": mv.time_ms,
-            }),
-        );
+        emit_move(state, id, &mv);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Games played elsewhere
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// The record of a game whose moves come from somewhere other than this module's player, such as a Lichess game the
+/// bot plays. It is stored, listed, followed and replayed like any match, and announced with the same events, but it
+/// runs beside the local match rather than taking its slot, and any number can run at once.
+pub struct Recorder {
+    state: Arc<AppState>,
+    shared: Arc<Mutex<Shared>>,
+    id: i64,
+}
+
+/// The stored match of a Lichess game, so a game the bot comes back to (after a restart, or a dropped stream) goes on
+/// in the same record.
+pub async fn find_lichess(state: &AppState, game: &str) -> Result<Option<Match>> {
+    let game = game.to_owned();
+    state
+        .store
+        .call(move |c| {
+            let data: Option<String> = c
+                .query_row(
+                    "SELECT data FROM matches WHERE json_extract(data, '$.lichess.id') = ?1 ORDER BY id DESC LIMIT 1",
+                    [game],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            data.map(|d| serde_json::from_str(&d).context("read a stored match")).transpose()
+        })
+        .await
+}
+
+impl Recorder {
+    /// Starts recording `game`, running: a new record when its id is 0, else the stored one it continues. `cancel` is
+    /// what `DELETE /api/matches/{id}` triggers; the game's player decides what stopping means.
+    pub async fn open(state: &Arc<AppState>, mut game: Match, cancel: CancellationToken) -> Result<Self> {
+        game.status = MatchStatus::Running;
+        game.result = GameResult::Unfinished;
+        game.reason = None;
+        game.finished_at = None;
+        let game = state
+            .store
+            .call(move |c| {
+                if game.id == 0 {
+                    game.created_at = now(c)?;
+                    c.execute("INSERT INTO matches (status, data) VALUES ('running', '{}')", [])?;
+                    game.id = c.last_insert_rowid();
+                }
+                save(c, &game)?;
+                Ok(game)
+            })
+            .await?;
+        let id = game.id;
+        let shared = Arc::new(Mutex::new(Shared { game: game.clone(), thinking: None }));
+        state.matches.external.lock().unwrap().insert(id, Live { id, cancel, shared: shared.clone() });
+        state.events.emit("match.started", serde_json::json!({ "id": id, "match": game }));
+        Ok(Self { state: state.clone(), shared, id })
+    }
+
+    pub fn id(&self) -> i64 {
+        self.id
+    }
+
+    /// The record as it stands.
+    pub fn game(&self) -> Match {
+        self.shared.lock().unwrap().game.clone()
+    }
+
+    /// Whether the side to move's clock is running, and since when, so readers see it run down between moves.
+    pub fn thinking(&self, since: Option<Instant>) {
+        self.shared.lock().unwrap().thinking = since;
+    }
+
+    /// The clocks as the game's host reports them now.
+    pub fn clocks(&self, white_ms: Option<u64>, black_ms: Option<u64>) {
+        let mut s = self.shared.lock().unwrap();
+        s.game.clock_white_ms = white_ms;
+        s.game.clock_black_ms = black_ms;
+    }
+
+    /// Adds a move, stores the game and announces the move. `turn` is the side to move after it.
+    pub async fn push(&self, mv: MatchMove, turn: Side) {
+        let stored = {
+            let mut s = self.shared.lock().unwrap();
+            s.game.turn = turn;
+            if mv.clock_white_ms.is_some() || mv.clock_black_ms.is_some() {
+                s.game.clock_white_ms = mv.clock_white_ms;
+                s.game.clock_black_ms = mv.clock_black_ms;
+            }
+            s.game.moves.push(mv.clone());
+            s.game.clone()
+        };
+        let id = self.id;
+        if let Err(e) = self.state.store.call(move |c| save(c, &stored)).await {
+            tracing::error!("could not store match {id}: {e:#}");
+        }
+        emit_move(&self.state, id, &mv);
+    }
+
+    /// Drops the recorded moves from `len` on, when the host's game and the record part ways (a takeback).
+    pub fn truncate(&self, len: usize) {
+        self.shared.lock().unwrap().game.moves.truncate(len);
+    }
+
+    /// Announces a progress report of the engine choosing the move at `ply`.
+    pub fn info(&self, ply: u32, side: Side, info: &Info) {
+        emit_info(&self.state, self.id, ply, side, info);
+    }
+
+    /// Records the end, takes the game off the running list and announces it.
+    pub async fn finish(&self, ending: Ending) -> Match {
+        let game = conclude(&self.state, &self.shared, ending).await;
+        self.state.matches.external.lock().unwrap().remove(&self.id);
+        emit_ended(&self.state, &game);
+        game
+    }
+}
+
+impl Drop for Recorder {
+    /// A player that gives up without finishing (it failed) leaves the running list all the same; the stored record
+    /// stays as it stood until the next start marks it aborted.
+    fn drop(&mut self) {
+        self.state.matches.external.lock().unwrap().remove(&self.id);
     }
 }

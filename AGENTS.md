@@ -84,6 +84,37 @@ How games are run and ended:
 
 The game record (`runner/src/matches/mod.rs`) is a plain `Match` filled in by a player task. A later human-versus-build game can fill the same record by taking one side's moves from the board instead of an engine.
 
+## The Lichess bot
+
+One of our builds plays as the user's Lichess BOT account through the Bot API. The user makes the account and a personal token with the `bot:play` scope on lichess.org; nothing here creates either. The token is kept in the data directory as `lichess-token` (mode 0600 on Unix) and no route returns it; the settings and whether the bot was online are rows of the `meta` table, so a restarted runner comes back online by itself. `LICHESS_URL` (default https://lichess.org) points the runner at another server, such as the mock the tests use.
+
+```bash
+chess lichess                     # status: account, state, games being played, settings
+chess lichess token < token.txt   # store the token, read from stdin (never argv); Lichess checks it
+chess lichess logout              # forget it and go offline
+chess lichess settings --build main --hash 64 --threads 1 --move-overhead 300 \
+  --rated true --casual true --speeds bullet,blitz,rapid --initial 60-1800 --increment 0-30 \
+  --from-position false --humans true --bots true --max-games 1   # each flag changes only itself
+chess lichess start | stop        # online across restarts until stopped; stopping lets running games finish
+chess lichess challenge <user> --tc 3+2 [--rated] [--color white|black|random]   # minutes+seconds, as Lichess writes it
+chess lichess bots                # bots online now, with ratings
+chess lichess upgrade --yes-irreversible   # make the account a BOT account: permanent, only for an account with no games
+```
+
+The routes: `GET /api/lichess` (`{ configured, account: {id, username, title, bot}, online, state: off|connecting|online|error, error, playing: [match ids], settings }`), `PUT /api/lichess/token` `{ token }` and `DELETE` (both answer the status), `GET`/`PUT /api/lichess/settings`, `POST /api/lichess/start`, `/stop`, `/upgrade` (body `{ "confirm": true }`, else 400), `POST /api/lichess/challenge` `{ username, clock_seconds, increment, rated, color }` (201, `{ id, url, username, rated, clock_seconds, increment, color }`; 409 while offline) and `GET /api/lichess/bots` (`[{ name, title, ratings: {bullet, blitz, rapid, classical} }]`). Errors from Lichess come back as 400 (it refused), 429 (rate-limited) or 502 (unreachable).
+
+How it plays:
+
+- The settings (`runner/src/lichess/rules.rs`) pick the build (an id, or a ref meaning its newest build when each game starts), hash (64), threads (1), `MoveOverhead` (300 ms, for the network) and the challenges taken: rated and casual, speeds (bullet, blitz and rapid by default; never correspondence), the initial clock and increment ranges, standard chess (and `fromPosition` if allowed), people and bots, and games at once (1). Anything else is declined with Lichess's reason: `variant`, `timeControl`, `tooFast`, `tooSlow`, `casual` (only rated wanted), `rated` (only casual wanted), `noBot`, `onlyBot`, `later` (busy), `generic` (no build).
+- Each game has its own task and engine process, up from the first move to the last. The engine is given Lichess's clocks (`go wtime btime winc binc`); draw offers are ignored; when the opponent leaves, the win is claimed once Lichess allows; if the engine dies or answers an illegal move, the game is resigned (aborted before both sides have moved). Streams reconnect with backoff, and a 429 waits a minute.
+- Every game is a `Match` with a `lichess` block `{ id, url, rated, speed, our_side }`, so `/matches/<id>`, the events and `/pgn` work as for local matches. The opponent's `Player` has no `build` but has `name`, `rating`, `title` and `lichess`; its moves carry no eval. Clocks are Lichess's. Lichess games run beside the one local match and never get or cause a 409; `GET /api/matches?source=lichess|local` lists one kind. `DELETE /api/matches/{id}` on a Lichess game resigns it, and the record ends when Lichess confirms. A game the bot comes back to (after a restart) continues in the same record.
+- Lichess endings add reasons: `resigned`, `agreement`, `abandoned` (Lichess's `timeout`: left and claimed), `no_start`, `cheat`, `variant_end` and `other`; `aborted`, `time`, `checkmate`, `stalemate` and the draw rules map to the reasons above.
+
+Events on `/api/events`:
+
+- `lichess.status`: the whole status (as `GET /api/lichess`) whenever the connection, the account, the settings or the games being played change.
+- `lichess.challenge`: `{ id, direction: incoming|outgoing, from: {name, title, rating}, to, rated, speed, variant, clock: {initial, increment} | null, decision: accepted|declined|canceled, reason }`. `reason` is the Lichess decline key, ours for incoming challenges and theirs for outgoing ones.
+
 ## Working on the harness itself
 
 - `runner/` is Rust (axum, rusqlite, utoipa). After changing a route or a type it returns, run `corepack pnpm api` and commit the regenerated `runner/openapi.json` and `web/src/api/schema.d.ts`.

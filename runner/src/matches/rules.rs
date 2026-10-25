@@ -90,21 +90,41 @@ pub enum Reason {
     Resignation,
     /// Adjudicated: the evaluation sat at zero for many moves.
     DrawAdjudication,
-    /// Stopped by the person watching, or by the runner restarting.
+    /// Stopped by the person watching, or by the runner restarting; on Lichess, aborted before it got going.
     Aborted,
+    /// A player resigned (a Lichess game).
+    Resigned,
+    /// The players agreed a draw (a Lichess game).
+    Agreement,
+    /// A player left and the other claimed the game, or a draw (Lichess's `timeout`).
+    Abandoned,
+    /// A player did not make a first move in time (Lichess's `noStart`).
+    NoStart,
+    /// Lichess ended the game for a breach of its fair-play rules.
+    Cheat,
+    /// The variant's own ending, such as a king reaching the centre.
+    VariantEnd,
+    /// Lichess ended the game for a reason it did not name.
+    Other,
 }
 
 impl Reason {
     /// The `Termination` header of the PGN.
     pub fn termination(self) -> &'static str {
         match self {
-            Self::Checkmate | Self::Stalemate | Self::Repetition | Self::FiftyMoves | Self::InsufficientMaterial => {
-                "normal"
-            }
+            Self::Checkmate
+            | Self::Stalemate
+            | Self::Repetition
+            | Self::FiftyMoves
+            | Self::InsufficientMaterial
+            | Self::Resigned
+            | Self::Agreement
+            | Self::VariantEnd
+            | Self::Other => "normal",
             Self::Time => "time forfeit",
-            Self::Crash | Self::IllegalMove => "rules infraction",
+            Self::Crash | Self::IllegalMove | Self::Cheat => "rules infraction",
             Self::Resignation | Self::DrawAdjudication => "adjudication",
-            Self::Aborted => "abandoned",
+            Self::Aborted | Self::Abandoned | Self::NoStart => "abandoned",
         }
     }
 }

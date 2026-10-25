@@ -216,6 +216,163 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lichess": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The bot: whether a token is stored and whose it is, whether it is online and how its connection stands, the
+         *     matches of the games it is playing, and its settings. The token itself is never returned.
+         */
+        get: operations["get_lichess"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/bots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The bots online on Lichess now (up to fifty), with their ratings: who there is to challenge. */
+        get: operations["list_lichess_bots"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/challenge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Challenges a Lichess player (usually another bot) to a standard game with our build. If accepted, the game starts
+         *     like any other and is recorded as a match. 409 while the bot is offline.
+         */
+        post: operations["create_lichess_challenge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The bot's settings: the build that plays, its hash, threads and move overhead, and which challenges it accepts. */
+        get: operations["get_lichess_settings"];
+        /**
+         * Replaces the bot's settings (fields left out take their defaults) and answers with them as stored, numbers brought
+         *     into range. 400 if the build does not exist or a range is upside down.
+         */
+        put: operations["set_lichess_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Takes the bot online: it follows the account's event stream, answers challenges by its settings and plays every
+         *     game that starts, and stays online across restarts until stopped. 409 without a token, a BOT account or a build.
+         */
+        post: operations["start_lichess"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Takes the bot offline. Games in progress are played out. */
+        post: operations["stop_lichess"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Stores the bot's Lichess token, once Lichess has accepted it, and answers with the account it belongs to (whose
+         *     `bot` says whether it can play yet). The token stays in the runner's data directory and is never returned. 400 if
+         *     Lichess rejects it.
+         */
+        put: operations["set_lichess_token"];
+        post?: never;
+        /** Forgets the token and takes the bot offline. Games in progress are played out. */
+        delete: operations["clear_lichess_token"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/upgrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turns the token's account into a Lichess BOT account. IRREVERSIBLE: a BOT account can never play as a person
+         *     again, and Lichess only upgrades an account that has never played a game. Requires `{ "confirm": true }`.
+         */
+        post: operations["upgrade_lichess_account"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/matches": {
         parameters: {
             query?: never;
@@ -223,12 +380,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Recent matches, newest first, without their moves. */
+        /**
+         * Recent matches, newest first, without their moves: local ones and the bot's Lichess games alike, unless `source`
+         *     picks one kind.
+         */
         get: operations["list_matches"];
         put?: never;
         /**
          * Starts a match between two builds and returns it. The moves arrive as `match.move` events, the thinking engine's
-         *     progress as `match.info`, and the end as `match.ended`. One match runs at a time: 409 while another is running.
+         *     progress as `match.info`, and the end as `match.ended`. One local match runs at a time: 409 while another is
+         *     running. The bot's Lichess games run beside it and do not count.
          */
         post: operations["create_match"];
         delete?: never;
@@ -251,7 +412,11 @@ export interface paths {
         get: operations["get_match"];
         put?: never;
         post?: never;
-        /** Stops the running match, which is recorded as aborted, and returns it. 409 if it is not running. */
+        /**
+         * Stops the running match, which is recorded as aborted, and returns it. 409 if it is not running. A Lichess game is
+         *     resigned instead (aborted, if it has not got going), and the answer is the game as it stands: it ends, and
+         *     `match.ended` follows, once Lichess confirms.
+         */
         delete: operations["stop_match"];
         options?: never;
         head?: never;
@@ -347,6 +512,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description The Lichess account the token belongs to. */
+        Account: {
+            /** @description Whether it is a BOT account, the only kind the Bot API plays with. */
+            bot: boolean;
+            /** @description The lower-case id, as games name players. */
+            id: string;
+            title?: string | null;
+            username: string;
+        };
         AnalysisRequest: {
             /**
              * Format: int64
@@ -380,6 +554,11 @@ export interface components {
             /** @description The last report of each line, best first. */
             lines: components["schemas"]["Info"][];
         };
+        /**
+         * @description Where the bot's connection to Lichess stands.
+         * @enum {string}
+         */
+        BotState: "off" | "connecting" | "online" | "error";
         /** @description A branch of the checkout, newest commit first. */
         Branch: {
             /**
@@ -425,6 +604,37 @@ export interface components {
         BuildRequest: {
             /** @description A branch, tag or commit of the Reckless checkout, such as `main` or `upstream/main`. */
             ref: string;
+        };
+        /** @enum {string} */
+        ChallengeColor: "random" | "white" | "black";
+        ChallengeRequest: {
+            /**
+             * Format: int32
+             * @description The initial clock in seconds. Lichess takes 0, 15, 30, 45, 60, 90, or a whole number of minutes.
+             */
+            clock_seconds: number;
+            /** @description The colour our build plays. Default random. */
+            color?: components["schemas"]["ChallengeColor"];
+            /**
+             * Format: int32
+             * @description Seconds added after every move.
+             */
+            increment?: number;
+            rated?: boolean;
+            /** @description Who to challenge: a Lichess username, usually another bot's. */
+            username: string;
+        };
+        ChallengeSent: {
+            /** Format: int32 */
+            clock_seconds: number;
+            color: components["schemas"]["ChallengeColor"];
+            /** @description The challenge id, which becomes the game id if it is accepted. */
+            id: string;
+            /** Format: int32 */
+            increment: number;
+            rated: boolean;
+            url: string;
+            username: string;
         };
         /** @description Elo and normalized Elo with 95% intervals (`±`), from game pairs. */
         Estimate: {
@@ -556,6 +766,31 @@ export interface components {
          * @enum {string}
          */
         Kind: "gainer" | "nonregression" | "nonfunctional";
+        /** @description What a game played on Lichess adds to the record. */
+        LichessGame: {
+            /** @description The Lichess game id, such as `q7ZvsdUF`. */
+            id: string;
+            /** @description The side our build played. */
+            our_side: components["schemas"]["Side"];
+            rated: boolean;
+            /** @description `bullet`, `blitz`, `rapid` or `classical`, as Lichess names the game's speed. */
+            speed: string;
+            /** @description `https://lichess.org/<id>`. */
+            url: string;
+        };
+        LichessStatus: {
+            account?: components["schemas"]["Account"] | null;
+            /** @description Whether a token is stored. */
+            configured: boolean;
+            /** @description What went wrong last, while `state` is `error`. */
+            error?: string | null;
+            /** @description Whether the bot is switched on. It stays on across restarts until stopped. */
+            online: boolean;
+            /** @description The matches of the games being played now. */
+            playing: number[];
+            settings: components["schemas"]["Settings"];
+            state: components["schemas"]["BotState"];
+        };
         /** @description How long to search. */
         Limits: {
             /** Format: int32 */
@@ -606,6 +841,7 @@ export interface components {
             hash: number;
             /** Format: int64 */
             id: number;
+            lichess?: components["schemas"]["LichessGame"] | null;
             /** @description Whether the engines ran with `Minimal` on, and so reported nothing while thinking. */
             minimal?: boolean;
             moves: components["schemas"]["MatchMove"][];
@@ -704,6 +940,7 @@ export interface components {
             created_at: string;
             /** Format: int64 */
             id: number;
+            lichess?: components["schemas"]["LichessGame"] | null;
             /** Format: int32 */
             plies: number;
             reason?: components["schemas"]["Reason"] | null;
@@ -760,6 +997,11 @@ export interface components {
             /** @description Run these stages instead of the default funnel for the kind. */
             stages?: components["schemas"]["Stage"][] | null;
         };
+        OnlineBot: {
+            name: string;
+            ratings: components["schemas"]["Ratings"];
+            title?: string | null;
+        };
         /** @description Where the game starts. */
         Opening: {
             /** @enum {string} */
@@ -776,12 +1018,24 @@ export interface components {
         /** @description Game-pair outcomes from the dev engine's side: `[LL, LD, WL+DD, WD, WW]`, i.e. pairs scoring 0, ½, 1, 1½ and 2. */
         Pentanomial: number[];
         Player: {
-            /** Format: int64 */
-            build: number;
-            /** @description The first seven characters of its commit. */
+            /**
+             * Format: int64
+             * @description The build that played, by id. Absent for a Lichess opponent, which is not one of ours.
+             */
+            build?: number | null;
+            /** @description The first seven characters of its commit; empty for a Lichess opponent. */
             commit: string;
-            /** @description The ref the build was made from, such as `main`. */
+            /** @description The Lichess username the player played under, ours included. */
+            lichess?: string | null;
+            /** @description The ref the build was made from, such as `main`; for a Lichess opponent, its username. */
             name: string;
+            /**
+             * Format: int32
+             * @description The Lichess rating the player had for this game's speed.
+             */
+            rating?: number | null;
+            /** @description The Lichess title, such as `BOT` or `GM`. */
+            title?: string | null;
         };
         /** @description One point of a test's progress, for its chart. */
         Point: {
@@ -797,11 +1051,22 @@ export interface components {
          * @enum {string}
          */
         Preset: "vstc" | "stc" | "ltc" | "stc-hash" | "ltc-hash" | "smp" | "nodes";
+        /** @description A bot's rating at each speed it has played. */
+        Ratings: {
+            /** Format: int32 */
+            blitz?: number | null;
+            /** Format: int32 */
+            bullet?: number | null;
+            /** Format: int32 */
+            classical?: number | null;
+            /** Format: int32 */
+            rapid?: number | null;
+        };
         /**
          * @description Why a game ended.
          * @enum {string}
          */
-        Reason: "checkmate" | "stalemate" | "repetition" | "fifty_moves" | "insufficient_material" | "time" | "crash" | "illegal_move" | "resignation" | "draw_adjudication" | "aborted";
+        Reason: "checkmate" | "stalemate" | "repetition" | "fifty_moves" | "insufficient_material" | "time" | "crash" | "illegal_move" | "resignation" | "draw_adjudication" | "aborted" | "resigned" | "agreement" | "abandoned" | "no_start" | "cheat" | "variant_end" | "other";
         RunnerStatus: {
             cpu: components["schemas"]["Machine"];
             /** @description The Reckless checkout the runner builds from. */
@@ -830,8 +1095,105 @@ export interface components {
              */
             mate: number;
         };
+        /** @description The bot's settings: what plays, how, and which challenges it accepts. Stored in the database. */
+        Settings: {
+            /**
+             * @description Accept challenges from other bots.
+             * @default true
+             */
+            accept_bots: boolean;
+            /**
+             * @description Accept casual challenges.
+             * @default true
+             */
+            accept_casual: boolean;
+            /**
+             * @description Accept challenges from people.
+             * @default true
+             */
+            accept_humans: boolean;
+            /**
+             * @description Accept rated challenges.
+             * @default true
+             */
+            accept_rated: boolean;
+            /**
+             * @description The build that plays: an id such as `12`, or a ref such as `main` meaning the newest build of it at the start of
+             *     each game. Nothing plays (challenges are declined) until one is chosen.
+             * @default null
+             */
+            build: string | null;
+            /**
+             * @description Also accept standard chess from a set position (Lichess's `fromPosition`). Other variants are always declined.
+             * @default false
+             */
+            from_position: boolean;
+            /**
+             * Format: int32
+             * @description Hash table size in MiB. Default 64.
+             * @default 64
+             */
+            hash: number;
+            /**
+             * Format: int32
+             * @description Games at once. Challenges beyond this are declined as `later`. Default 1.
+             * @default 1
+             */
+            max_games: number;
+            /**
+             * Format: int32
+             * @description The largest increment accepted, in seconds.
+             * @default 30
+             */
+            max_increment: number;
+            /**
+             * Format: int32
+             * @description The longest initial clock accepted, in seconds.
+             * @default 1800
+             */
+            max_initial: number;
+            /**
+             * Format: int32
+             * @description The smallest increment accepted, in seconds.
+             * @default 0
+             */
+            min_increment: number;
+            /**
+             * Format: int32
+             * @description The shortest initial clock accepted, in seconds.
+             * @default 60
+             */
+            min_initial: number;
+            /**
+             * Format: int32
+             * @description Milliseconds the engine keeps in hand on every move for the network, as Reckless's `MoveOverhead` (0 to 2000).
+             *     Default 300.
+             * @default 300
+             */
+            move_overhead: number;
+            /**
+             * @description The speeds accepted. Correspondence is never played.
+             * @default [
+             *       "bullet",
+             *       "blitz",
+             *       "rapid"
+             *     ]
+             */
+            speeds: components["schemas"]["Speed"][];
+            /**
+             * Format: int32
+             * @description Search threads per game. Default 1.
+             * @default 1
+             */
+            threads: number;
+        };
         /** @enum {string} */
         Side: "white" | "black";
+        /**
+         * @description A Lichess speed the bot can play. Correspondence is not one.
+         * @enum {string}
+         */
+        Speed: "bullet" | "blitz" | "rapid" | "classical";
         /** @description The SPRT a test runs: Elo bounds in normalized Elo, and the error rates. */
         Sprt: {
             /** Format: double */
@@ -912,6 +1274,14 @@ export interface components {
                 /** Format: int64 */
                 nodes: number;
             };
+        };
+        TokenRequest: {
+            /** @description A Lichess personal API token with the `bot:play` scope, made at https://lichess.org/account/oauth/token. */
+            token: string;
+        };
+        UpgradeRequest: {
+            /** @description Must be `true`: the upgrade cannot be undone. */
+            confirm?: boolean;
         };
         /** @enum {string} */
         Verdict: "accepted" | "rejected" | "continue";
@@ -1319,11 +1689,273 @@ export interface operations {
             };
         };
     };
+    get_lichess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LichessStatus"];
+                };
+            };
+        };
+    };
+    list_lichess_bots: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnlineBot"][];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_lichess_challenge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChallengeRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeSent"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_lichess_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settings"];
+                };
+            };
+        };
+    };
+    set_lichess_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Settings"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settings"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    start_lichess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LichessStatus"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    stop_lichess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LichessStatus"];
+                };
+            };
+        };
+    };
+    set_lichess_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LichessStatus"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clear_lichess_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LichessStatus"];
+                };
+            };
+        };
+    };
+    upgrade_lichess_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpgradeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LichessStatus"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_matches: {
         parameters: {
             query?: {
                 /** @description How many matches, newest first. Default 50. */
                 limit?: number | null;
+                /** @description Only local matches (`local`) or only the bot's Lichess games (`lichess`). Both when absent. */
+                source?: ("local" | "lichess") | null;
             };
             header?: never;
             path?: never;

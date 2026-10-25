@@ -8,20 +8,25 @@ use anyhow::{Context, Result};
 /// The hosted UI. It may call a local runner with the token.
 pub const HOSTED_ORIGIN: &str = "https://chess.dame.gg";
 
+/// The Lichess the bot plays on, unless `LICHESS_URL` names another (a local mock in tests).
+pub const LICHESS_URL: &str = "https://lichess.org";
+
 pub struct Config {
     pub data: PathBuf,
     pub reckless: PathBuf,
     pub listen: SocketAddr,
     pub token: String,
+    /// The Lichess server the bot talks to.
+    pub lichess_url: String,
 }
 
 impl Config {
-    pub fn load(data: PathBuf, reckless: PathBuf, listen: String) -> Result<Self> {
+    pub fn load(data: PathBuf, reckless: PathBuf, listen: String, lichess_url: String) -> Result<Self> {
         std::fs::create_dir_all(&data).with_context(|| format!("create data directory {}", data.display()))?;
         let listen = listen.parse().with_context(|| format!("parse listen address {listen}"))?;
         let reckless = std::path::absolute(&reckless).unwrap_or(reckless);
         let token = load_or_create_token(&data)?;
-        Ok(Self { data, reckless, listen, token })
+        Ok(Self { data, reckless, listen, token, lichess_url })
     }
 
     /// Bound to a loopback address: requests without an `Origin` (the CLI, curl, agents) come from this machine.

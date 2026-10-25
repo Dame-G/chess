@@ -5,6 +5,7 @@ use axum::{
 };
 
 /// An error as the API returns it: a status and `{ "error": "..." }`, the same shape the guard uses.
+#[derive(Debug)]
 pub struct ApiError {
     pub status: StatusCode,
     pub message: String,
@@ -21,6 +22,16 @@ impl ApiError {
 
     pub fn conflict(message: &str) -> Self {
         Self { status: StatusCode::CONFLICT, message: message.to_owned() }
+    }
+
+    /// A service the runner relies on (Lichess) failed or could not be reached.
+    pub fn bad_gateway(message: &str) -> Self {
+        Self { status: StatusCode::BAD_GATEWAY, message: message.to_owned() }
+    }
+
+    /// A service the runner relies on (Lichess) asks for a pause.
+    pub fn too_many_requests(message: &str) -> Self {
+        Self { status: StatusCode::TOO_MANY_REQUESTS, message: message.to_owned() }
     }
 }
 
