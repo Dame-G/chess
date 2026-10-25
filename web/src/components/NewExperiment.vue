@@ -5,9 +5,11 @@ import { ECombobox } from "@eos-ui/vue/components/ECombobox";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { EForm } from "@eos-ui/vue/components/EForm";
+import { EGrid } from "@eos-ui/vue/components/EGrid";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ERadioGroup } from "@eos-ui/vue/components/ERadioGroup";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
+import { ETag } from "@eos-ui/vue/components/ETag";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import { ETextarea } from "@eos-ui/vue/components/ETextarea";
 import { api } from "../api/runner";
@@ -46,11 +48,12 @@ watch(
 );
 const subject = computed(() => branches.value.data?.find((b) => b.name === dev.value)?.subject);
 
-const plan = computed(() => {
-  const names =
-    kind.value === "nonfunctional" ? ["bench", "speed"] : ["bench", "screen", "stc", ...(ltc.value ? ["ltc"] : [])];
-  return names.map(stageLabel).join(" → ");
-});
+/** The stages it will go through, in words. */
+const plan = computed(() =>
+  (kind.value === "nonfunctional" ? ["bench", "speed"] : ["bench", "screen", "stc", ...(ltc.value ? ["ltc"] : [])]).map(
+    stageLabel,
+  ),
+);
 
 async function submit() {
   submitting.value = true;
@@ -72,7 +75,7 @@ async function submit() {
     dev.value = "";
     name.value = "";
     hypothesis.value = "";
-    router.push(`/experiments/${e.id}`);
+    await router.push(`/lab/${e.id}`);
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
@@ -85,19 +88,29 @@ async function submit() {
   <EDialog
     v-model:open="open"
     title="Test an idea"
-    description="Pick the branch with your change. It plays the current version until the results are clear."
+    description="Does the change on a branch make Reckless stronger? It plays the current version until the results are clear."
     size="lg"
   >
     <EForm id="new-experiment" :submitting="submitting" @submit="submit">
-      <ECombobox
-        v-model="dev"
-        label="Branch with the change"
-        freeform
-        :options="options"
-        :loading="branches.status === 'pending'"
-        hint="Commit your change to a branch of the Reckless code first."
-        required
-      />
+      <EGrid min="14rem" gap="base">
+        <ECombobox
+          v-model="dev"
+          label="New version (branch)"
+          freeform
+          :options="options"
+          :loading="branches.status === 'pending'"
+          hint="Commit your change to a branch first."
+          required
+        />
+        <ECombobox
+          v-model="base"
+          label="Compare with"
+          :options="options"
+          freeform
+          required
+          hint="Usually main, the current best."
+        />
+      </EGrid>
       <ERadioGroup
         v-model="kind"
         label="What should it do?"
@@ -111,25 +124,25 @@ async function submit() {
         optional
         placeholder="Pruning more at shallow depth saves time for the moves that matter."
       />
-      <ECombobox
-        v-model="base"
-        label="Compare with"
-        :options="options"
-        freeform
-        required
-        hint="Usually main, the current best."
-      />
       <ESwitch
         v-if="kind !== 'nonfunctional'"
         v-model="ltc"
         label="Confirm with long games too"
         hint="Adds 40-second games after the short ones: a few more hours."
       />
-      <p class="plan"><strong>Stages:</strong> {{ plan }}</p>
+      <div class="plan">
+        <span class="plan-label">It will go through</span>
+        <template v-for="(p, i) in plan" :key="p">
+          <span v-if="i" class="plan-arrow" aria-hidden="true">→</span>
+          <ETag size="sm" :label="p" />
+        </template>
+      </div>
       <ENotice v-if="error" tone="danger" title="Could not start it" :role="false">{{ error }}</ENotice>
     </EForm>
     <template #actions>
-      <EButton type="submit" form="new-experiment" :loading="submitting">Start experiment</EButton>
+      <EButton type="submit" form="new-experiment" :loading="submitting" :disabled="!dev.trim()">
+        Start experiment
+      </EButton>
       <EButton variant="quiet" @click="open = false">Cancel</EButton>
     </template>
   </EDialog>
@@ -137,8 +150,15 @@ async function submit() {
 
 <style scoped>
 .plan {
-  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--e-gap-tight);
   color: var(--e-muted);
   font: var(--e-type-small);
+}
+
+.plan-label {
+  margin-inline-end: var(--e-gap-tight);
 }
 </style>

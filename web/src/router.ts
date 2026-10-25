@@ -7,7 +7,7 @@ const engines = () => import("./views/EnginesView.vue");
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: "/", name: "home", component: () => import("./views/HomeView.vue") },
+    { path: "/", name: "home", component: () => import("./views/HomeView.vue"), meta: { workspace: true } },
 
     // The board: free analysis, or a played game with its test's games as the playlist.
     { path: "/board", name: "board", component: board, meta: { title: "Board", workspace: true } },

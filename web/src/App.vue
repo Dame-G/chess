@@ -41,7 +41,7 @@ const isCurrent = (item: { to?: unknown }) =>
 /** Workspaces fill the window and scroll inside their panes; the cover page scrolls like a page. */
 const workspace = computed(() => route.meta.workspace === true);
 
-const { summary, status } = useActivity();
+const { summary, status, queued } = useActivity();
 const runnerOpen = ref(false);
 
 // One palette for the whole app: every place, every action, every experiment and engine.
@@ -102,21 +102,23 @@ onUnmounted(stop);
 <template>
   <EAppShell :class="['shell', { 'shell--workspace': workspace }]">
     <template #header>
-      <EAppHeader brand-to="/" brand-label="Reckless Lab, home" :link-component="RouterLink">
+      <EAppHeader class="top" brand-to="/" brand-label="Reckless Lab, home" :link-component="RouterLink">
         <template #brand><Logo /></template>
+        <template #logo>
+          <ENavList
+            label="Main"
+            orientation="horizontal"
+            :link-component="RouterLink"
+            :items="items"
+            :is-current="isCurrent"
+          />
+        </template>
         <template #actions>
           <EButton variant="quiet" size="sm" :icon="PhMagnifyingGlass" class="search" @click="palette = true">
             <span class="search-label">Search</span>
             <EKbd class="search-kbd">Ctrl K</EKbd>
           </EButton>
         </template>
-        <ENavList
-          label="Main"
-          orientation="horizontal"
-          :link-component="RouterLink"
-          :items="items"
-          :is-current="isCurrent"
-        />
       </EAppHeader>
     </template>
 
@@ -129,15 +131,19 @@ onUnmounted(stop);
           size="sm"
           :icon="summary.state === 'offline' ? PhPlugsConnected : PhCpu"
           :class="['status-runner', `status-runner--${summary.state}`]"
-          :aria-label="`Runner: ${summary.label}. Show the runner.`"
+          :aria-label="`Runner: ${[summary.label, ...summary.detail].join(', ')}. Show the runner.`"
           @click="runnerOpen = true"
         >
           <span class="status-dot" aria-hidden="true"></span>
           <span class="status-label">{{ summary.label }}</span>
+          <span v-if="summary.detail.length" class="status-detail">· {{ summary.detail.join(" · ") }}</span>
+          <span v-if="queued" class="status-queue num">+{{ queued }} queued</span>
         </EButton>
-        <span v-if="status.data" class="status-meta">runner {{ status.data.version }}</span>
-        <ELink href="https://github.com/Dame-G/chess" external>Source</ELink>
-        <ELink href="https://github.com/Dame-G/reckless" external>Engine</ELink>
+        <span class="status-end">
+          <span v-if="status.data" class="status-meta">runner {{ status.data.version }}</span>
+          <ELink href="https://github.com/Dame-G/chess" external>Source</ELink>
+          <ELink href="https://github.com/Dame-G/reckless" external>Engine</ELink>
+        </span>
       </EAppFooter>
     </template>
   </EAppShell>
@@ -161,6 +167,14 @@ onUnmounted(stop);
   min-height: 0;
 }
 
+/* A workspace is dense: controls and pane bars are 2rem tall where a pointer is precise. Touch keeps eos's targets. */
+@media (pointer: fine) {
+  .shell--workspace {
+    --e-control-height: 2.25rem;
+    --e-tap: 2rem;
+  }
+}
+
 .shell--workspace :deep(.e-shell-body) {
   min-height: 0;
   padding: 0;
@@ -177,6 +191,31 @@ onUnmounted(stop);
   }
 }
 
+/* One slim row: logo, the three places, search. */
+.top {
+  --e-control-height: 2rem;
+  --e-tap: 2rem;
+}
+
+.top :deep(.e-appheader-bar) {
+  min-block-size: 2.75rem;
+}
+
+.top :deep(.e-appheader-logo) {
+  gap: var(--e-gap-base);
+  font: var(--e-type-body);
+}
+
+.top :deep(.e-appheader-logo .e-nav > ul) {
+  flex-wrap: nowrap;
+}
+
+@media (width < 36rem) {
+  .top :deep(.e-nav-item .e-icon) {
+    display: none;
+  }
+}
+
 .search-label {
   color: var(--e-muted);
 }
@@ -188,27 +227,47 @@ onUnmounted(stop);
   }
 }
 
-/* The footer is a status bar: the runner on the left, small print on the right. */
+/* The footer is a status bar, like a media player's: one slim line, the runner on the left, small print on the right. */
 .status {
+  --status-height: 1.75rem;
+
+  min-block-size: 0;
+  padding-block: 0;
   font: var(--e-type-small);
 }
 
+.status :deep(.e-btn),
 .status-runner {
-  max-width: min(36rem, 70vw);
+  min-block-size: var(--status-height);
+  block-size: var(--status-height);
+}
+
+.status-runner {
+  max-inline-size: min(48rem, 100%);
   font-family: var(--e-font-mono);
 }
 
 .status-label {
+  flex: none;
+  font-weight: 600;
+}
+
+.status-label,
+.status-detail {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.status-detail,
+.status-queue {
+  color: var(--e-muted);
 }
 
 .status-dot {
   flex: none;
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: 50%;
   background: var(--e-muted);
 }
 
@@ -225,9 +284,22 @@ onUnmounted(stop);
   background: var(--e-danger);
 }
 
+.status-end {
+  display: flex;
+  align-items: center;
+  gap: var(--e-gap-base);
+  margin-inline-start: auto;
+}
+
 .status-meta {
   color: var(--e-muted);
   font-family: var(--e-font-mono);
+}
+
+@media (width < 40rem) {
+  .status-end {
+    display: none;
+  }
 }
 
 @keyframes pulse {

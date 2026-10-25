@@ -1,14 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ECodeBlock } from "@eos-ui/vue/components/ECodeBlock";
 import { EDescriptionList } from "@eos-ui/vue/components/EDescriptionList";
 import { EDrawer } from "@eos-ui/vue/components/EDrawer";
-import { EGrid } from "@eos-ui/vue/components/EGrid";
-import { EHeading } from "@eos-ui/vue/components/EHeading";
-import { EMetric } from "@eos-ui/vue/components/EMetric";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
-import { EStack } from "@eos-ui/vue/components/EStack";
 import { EStamp } from "@eos-ui/vue/components/EStamp";
 import { ETable } from "@eos-ui/vue/components/ETable";
 import { useRunnerEvent } from "../api/events";
@@ -27,42 +23,75 @@ const running = computed(() => jobs.value.data?.find((j) => j.status === "runnin
 const queued = computed(() => (jobs.value.data ?? []).filter((j) => j.status === "queued").reverse());
 const recent = computed(() => (jobs.value.data ?? []).filter((j) => j.finished_at).slice(0, 6));
 
-/** The last lines the running job printed, as they arrive. */
+const LINES = 14;
+
+/** The last lines the running job printed: what it had already printed, then each line as it arrives. */
 const log = ref<string[]>([]);
 let logFor = 0;
+watch(
+  () => (open.value ? running.value?.id : undefined),
+  async (id) => {
+    logFor = id ?? 0;
+    log.value = [];
+    if (!id) return;
+    const { data } = await api.GET("/api/jobs/{id}/log", { params: { path: { id } }, parseAs: "text" });
+    if (id === logFor && data) log.value = [...data.trimEnd().split("\n").slice(-LINES), ...log.value].slice(-LINES);
+  },
+  { immediate: true },
+);
 useRunnerEvent("job.log", (data) => {
   const { id, line } = data as { id: number; line: string };
-  if (id !== logFor) {
-    logFor = id;
-    log.value = [];
-  }
-  log.value = [...log.value.slice(-14), line];
+  if (id !== logFor) return;
+  log.value = [...log.value.slice(-(LINES - 1)), line];
 });
 
 function describe(job: Job): string {
   if (job.spec.kind === "build") return `Build ${job.spec.ref}`;
   const id = job.spec.id;
   const e = experiments.value.data?.find((x) => x.id === id);
-  return e ? `Experiment: ${e.name}` : `Experiment ${id}`;
+  return e ? `Test ${e.name}` : `Test ${id}`;
 }
+
+const outcome = {
+  queued: "Waiting",
+  running: "Running",
+  done: "Done",
+  failed: "Failed",
+  cancelled: "Stopped",
+} as const;
 
 async function cancel(job: Job) {
   await unwrap(api.DELETE("/api/jobs/{id}", { params: { path: { id: job.id } } }));
 }
 
 const gib = (bytes: number) => `${Math.round(bytes / 2 ** 30)} GB`;
+const machine = computed(() => {
+  const s = status.value.data;
+  if (!s) return [];
+  return [
+    { label: "Processor", text: s.cpu.name.replace(/\((R|TM)\)/g, "").replace(/\s+/g, " ") },
+    { label: "Cores", text: `${s.cpu.cores} cores, ${s.cpu.threads} threads, ${gib(s.cpu.memory)} memory` },
+    {
+      label: "Engine code",
+      text: s.reckless_dir,
+      stamp: s.reckless_found ? "Found" : "Missing",
+      stampTone: s.reckless_found ? ("success" as const) : ("danger" as const),
+    },
+    { label: "Runner", text: `version ${s.version}` },
+  ];
+});
 </script>
 
 <template>
   <EDrawer
     v-model:open="open"
     title="Runner"
-    description="The machine that builds, tests and analyses engines."
+    description="The program on your computer that builds engines and plays the test games, one job at a time."
     size="md"
   >
-    <EStack gap="section">
+    <div class="runner">
       <template v-if="status.status === 'error'">
-        <ENotice tone="warning" title="No runner connected">
+        <ENotice tone="warning" title="No runner connected" :role="false">
           <template v-if="isRemote">
             Start one with <code>chess serve</code> on your machine, then connect to it below. Your browser may ask to
             allow access to devices on your local network.
@@ -72,65 +101,96 @@ const gib = (bytes: number) => `${Math.round(bytes / 2 ** 30)} GB`;
       </template>
       <ConnectRunner v-if="isRemote" @connected="refetch()" />
 
-      <template v-if="status.data">
-        <EGrid min="8rem" gap="base">
-          <EMetric label="Threads" :value="status.data.cpu.threads" :help="`${status.data.cpu.cores} cores`" />
-          <EMetric label="Memory" :value="gib(status.data.cpu.memory)" />
-          <EMetric label="Version" :value="status.data.version" />
-        </EGrid>
-        <EDescriptionList
-          :items="[
-            { label: 'Processor', text: status.data.cpu.name },
-            {
-              label: 'Reckless code',
-              text: status.data.reckless_dir,
-              stamp: status.data.reckless_found ? 'Found' : 'Missing',
-              stampTone: status.data.reckless_found ? 'success' : 'danger',
-            },
-          ]"
-        />
-      </template>
+      <section v-if="machine.length" class="part" aria-labelledby="r-machine">
+        <h3 id="r-machine" class="part-title">This machine</h3>
+        <EDescriptionList :items="machine" />
+      </section>
 
-      <EStack gap="snug">
-        <EHeading :level="3">Working on</EHeading>
-        <ENotice v-if="running" tone="info" :title="describe(running)" :role="false">
-          Started {{ ago(running.started_at ?? running.created_at) }}.
-          <template #actions>
-            <EButton variant="outline" size="sm" @click="cancel(running)">Stop</EButton>
-          </template>
-        </ENotice>
-        <p v-else class="quiet">Nothing. Builds and experiments run here one at a time.</p>
-        <ECodeBlock v-if="running && log.length" :code="log.join('\n')" lang="text" label="Latest output" wrap />
-      </EStack>
+      <section class="part" aria-labelledby="r-now">
+        <h3 id="r-now" class="part-title">Doing now</h3>
+        <div v-if="running" class="now">
+          <p class="now-text">
+            <b>{{ describe(running) }}</b>
+            <span class="muted">started {{ ago(running.started_at ?? running.created_at) }}</span>
+          </p>
+          <EButton variant="outline" size="sm" @click="cancel(running)">Stop</EButton>
+        </div>
+        <p v-else class="muted">Nothing. Start a build or an experiment and it appears here.</p>
+        <ECodeBlock v-if="running && log.length" :code="log.join('\n')" lang="text" label="Live output" wrap />
+      </section>
 
-      <ETable v-if="queued.length" caption="Up next" dense>
-        <tbody>
-          <tr v-for="j in queued" :key="j.id">
-            <td>{{ describe(j) }}</td>
-            <td class="e-num"><EButton variant="quiet" size="sm" @click="cancel(j)">Remove</EButton></td>
-          </tr>
-        </tbody>
-      </ETable>
+      <section v-if="queued.length" class="part" aria-labelledby="r-next">
+        <h3 id="r-next" class="part-title">Up next</h3>
+        <ETable caption="Waiting jobs" dense hide-caption>
+          <tbody>
+            <tr v-for="j in queued" :key="j.id">
+              <td>{{ describe(j) }}</td>
+              <td class="e-num"><EButton variant="quiet" size="sm" @click="cancel(j)">Remove</EButton></td>
+            </tr>
+          </tbody>
+        </ETable>
+      </section>
 
-      <ETable v-if="recent.length" caption="Recently finished" dense>
-        <tbody>
-          <tr v-for="j in recent" :key="j.id">
-            <td>
-              {{ describe(j) }}
-              <span v-if="j.error" class="quiet">: {{ j.error }}</span>
-            </td>
-            <td>{{ ago(j.finished_at!) }}</td>
-            <td><EStamp size="sm" :tone="jobTone[j.status]" :label="j.status" /></td>
-          </tr>
-        </tbody>
-      </ETable>
-    </EStack>
+      <section v-if="recent.length" class="part" aria-labelledby="r-done">
+        <h3 id="r-done" class="part-title">Recently finished</h3>
+        <ETable caption="Finished jobs" dense hide-caption>
+          <tbody>
+            <tr v-for="j in recent" :key="j.id">
+              <td>
+                {{ describe(j) }}
+                <span v-if="j.error" class="muted">: {{ j.error }}</span>
+              </td>
+              <td class="muted when">{{ ago(j.finished_at!) }}</td>
+              <td><EStamp size="sm" :tone="jobTone[j.status]" :label="outcome[j.status]" /></td>
+            </tr>
+          </tbody>
+        </ETable>
+      </section>
+    </div>
   </EDrawer>
 </template>
 
 <style scoped>
-.quiet {
+.runner {
+  display: grid;
+  gap: var(--e-gap-loose);
+}
+
+.part {
+  display: grid;
+  gap: var(--e-gap-snug);
+}
+
+.part-title {
   margin: 0;
   color: var(--e-muted);
+  font: var(--e-type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.when {
+  white-space: nowrap;
+}
+
+.now {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-gap-base);
+  padding-block-end: var(--e-gap-snug);
+  border-block-end: var(--e-stroke-hair) solid var(--e-border);
+}
+
+.now-text {
+  display: grid;
+  margin: 0;
+}
+
+.muted {
+  margin: 0;
+  color: var(--e-muted);
+  font: var(--e-type-small);
 }
 </style>

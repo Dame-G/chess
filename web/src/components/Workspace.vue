@@ -88,6 +88,7 @@ defineSlots<{
 
 .ws-head,
 .ws-foot {
+  grid-row: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -102,11 +103,14 @@ defineSlots<{
 }
 
 .ws-foot {
+  grid-row: 3;
   border-block-start: var(--ws-line);
   background: var(--e-surface);
 }
 
+/* Each part keeps its row whether or not the bars around it exist, so the body always takes the free height. */
 .ws-scroll {
+  grid-row: 2;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;

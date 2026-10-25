@@ -47,7 +47,7 @@ const short = computed(() => {
   position: relative;
   display: flex;
   flex-direction: column-reverse;
-  width: 1.75rem;
+  width: var(--evalbar, 1.5rem);
   overflow: hidden;
   border-radius: var(--e-radius-sm);
   background: #2a2420;

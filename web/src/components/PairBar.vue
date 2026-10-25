@@ -54,7 +54,7 @@ const parts = computed(() =>
 .pairs-bar {
   display: flex;
   gap: 2px;
-  height: 0.875rem;
+  height: 0.625rem;
   overflow: hidden;
   border-radius: var(--e-radius-sm);
   background: var(--e-surface-tint);

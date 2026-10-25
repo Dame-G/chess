@@ -29,6 +29,10 @@ const props = defineProps<{
   marker?: number;
   /** The x axis's name. */
   xLabel?: string;
+  /** A slim strip with no axes, legend or grid: a timeline. The part after the marker is dimmed, as unplayed. */
+  bare?: boolean;
+  /** With `bare`: dragging across the strip keeps selecting, not only a click. */
+  scrub?: boolean;
 }>();
 const emit = defineEmits<{ select: [index: number] }>();
 
@@ -57,42 +61,94 @@ function options(width: number): uPlot.Options {
   const axis = { stroke: ink, font, grid: { stroke: grid, width: 1 }, ticks: { show: false } };
   const refLines = props.lines ?? [];
   const markerColor = token("primary", "#36c");
+  const bare = props.bare === true;
   return {
     width,
     height: props.height ?? 220,
-    legend: { show: props.legend ?? true },
-    cursor: { y: false, points: { size: 6 } },
+    legend: { show: bare ? false : (props.legend ?? true) },
+    cursor: bare ? { show: false, y: false, drag: { x: false, y: false } } : { y: false, points: { size: 6 } },
+    padding: bare ? [2, 0, 2, 0] : undefined,
     scales: { x: { time: false }, ...(props.range ? { y: { range: props.range } } : {}) },
-    axes: [
-      { ...axis, label: props.xLabel, labelFont: font, labelSize: props.xLabel ? 18 : 0 },
-      { ...axis, size: 44 },
-    ],
+    axes: bare
+      ? [{ show: false }, { show: false }]
+      : [
+          { ...axis, label: props.xLabel, labelFont: font, labelSize: props.xLabel ? 18 : 0 },
+          { ...axis, size: 44 },
+        ],
     series: [
       { label: props.xLabel ?? "x" },
       ...props.series.map((s) => {
         const color = token(s.tone ?? "primary", "#36c");
-        return { label: s.label, stroke: color, width: 2, fill: s.fill ? alpha(color, 0.18) : undefined, fillTo: 0 };
+        return {
+          label: s.label,
+          stroke: color,
+          width: bare ? 1.5 : 2,
+          fill: s.fill ? alpha(color, 0.18) : undefined,
+          fillTo: 0,
+          spanGaps: bare,
+        };
       }),
       ...refLines.map((l) => ({ label: l.label, stroke: ink, width: 1, dash: [4, 4], points: { show: false } })),
     ],
     hooks: {
       ready: [
-        (u) =>
-          u.over.addEventListener("click", () => {
-            if (u.cursor.idx != null) emit("select", u.cursor.idx);
-          }),
+        (u) => {
+          if (!bare) {
+            u.over.addEventListener("click", () => {
+              if (u.cursor.idx != null) emit("select", u.cursor.idx);
+            });
+            return;
+          }
+          const at = (e: PointerEvent) => {
+            const left = e.clientX - u.over.getBoundingClientRect().left;
+            return Math.max(0, Math.min(props.x.length - 1, u.posToIdx(left)));
+          };
+          let down = false;
+          u.over.addEventListener("pointerdown", (e) => {
+            down = true;
+            u.over.setPointerCapture(e.pointerId);
+            emit("select", at(e));
+          });
+          u.over.addEventListener("pointermove", (e) => {
+            if (down && props.scrub) emit("select", at(e));
+          });
+          const up = () => (down = false);
+          u.over.addEventListener("pointerup", up);
+          u.over.addEventListener("pointercancel", up);
+        },
       ],
       draw: [
         (u) => {
+          const ctx = u.ctx;
+          const { left, top, width: w, height: h } = u.bbox;
+          if (bare) {
+            // The even line, under everything.
+            const mid = Math.round(u.valToPos(0, "y", true));
+            ctx.save();
+            ctx.strokeStyle = ink;
+            ctx.globalAlpha = 0.35;
+            ctx.lineWidth = devicePixelRatio;
+            ctx.beginPath();
+            ctx.moveTo(left, mid);
+            ctx.lineTo(left + w, mid);
+            ctx.stroke();
+            ctx.restore();
+          }
           if (props.marker == null || props.x[props.marker] == null) return;
           const x = Math.round(u.valToPos(props.x[props.marker]!, "x", true));
-          const ctx = u.ctx;
           ctx.save();
+          if (bare) {
+            // What is not played yet is dimmed.
+            ctx.globalAlpha = 0.55;
+            ctx.fillStyle = token("surface", "#fff");
+            ctx.fillRect(x, top, left + w - x, h);
+            ctx.globalAlpha = 1;
+          }
           ctx.strokeStyle = markerColor;
           ctx.lineWidth = 2 * devicePixelRatio;
           ctx.beginPath();
-          ctx.moveTo(x, u.bbox.top);
-          ctx.lineTo(x, u.bbox.top + u.bbox.height);
+          ctx.moveTo(x, top);
+          ctx.lineTo(x, top + h);
           ctx.stroke();
           ctx.restore();
         },
@@ -154,5 +210,6 @@ onBeforeUnmount(() => {
 
 .chart :deep(.u-over) {
   cursor: crosshair;
+  touch-action: none;
 }
 </style>

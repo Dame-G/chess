@@ -35,7 +35,7 @@ const sentence = computed(() => {
   <div v-if="b" class="gauge">
     <div class="gauge-labels">
       <span>Fails</span>
-      <Term of="llr" />
+      <Term of="llr">Evidence</Term>
       <span>Passes</span>
     </div>
     <div
@@ -58,7 +58,6 @@ const sentence = computed(() => {
       ></div>
       <div class="gauge-marker" :style="{ insetInlineStart: `${at * 100}%` }"></div>
     </div>
-    <p class="gauge-sentence">{{ sentence }}</p>
   </div>
 </template>
 
@@ -79,8 +78,8 @@ const sentence = computed(() => {
 
 .gauge-track {
   position: relative;
-  height: 0.875rem;
-  border-radius: 999px;
+  height: 0.625rem;
+  border-radius: var(--e-radius-sm);
   background: linear-gradient(
     90deg,
     color-mix(in oklab, var(--e-danger) 22%, var(--e-surface)),
@@ -100,9 +99,9 @@ const sentence = computed(() => {
 
 .gauge-fill {
   position: absolute;
-  top: 0.1875rem;
-  bottom: 0.1875rem;
-  border-radius: 999px;
+  top: 0.125rem;
+  bottom: 0.125rem;
+  border-radius: 1px;
   transition:
     width 0.5s ease,
     inset-inline-start 0.5s ease;
@@ -118,20 +117,13 @@ const sentence = computed(() => {
 
 .gauge-marker {
   position: absolute;
-  top: 50%;
-  width: 1.125rem;
-  height: 1.125rem;
-  border: 3px solid var(--e-surface);
-  border-radius: 50%;
+  top: -0.25rem;
+  bottom: -0.25rem;
+  width: 3px;
+  margin-inline-start: -1.5px;
+  border-radius: 1px;
   background: var(--e-ink);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 30%);
-  transform: translate(-50%, -50%);
   transition: inset-inline-start 0.5s ease;
-}
-
-.gauge-sentence {
-  margin: 0;
-  font: var(--e-type-small);
 }
 
 @media (prefers-reduced-motion: reduce) {

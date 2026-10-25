@@ -1,81 +1,85 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
+import { useQuery } from "@pinia/colada";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import {
-  PhArrowCounterClockwise,
   PhArrowsDownUp,
-  PhCaretDoubleLeft,
-  PhCaretDoubleRight,
   PhCaretLeft,
   PhCaretRight,
+  PhChartLine,
+  PhClipboardText,
+  PhClockCounterClockwise,
+  PhFlask,
+  PhPause,
   PhPlay,
-  PhUploadSimple,
+  PhSkipBack,
+  PhSkipForward,
+  PhSquaresFour,
 } from "@phosphor-icons/vue";
 import { useShortcuts } from "@eos-ui/vue";
+import { EBreadcrumb } from "@eos-ui/vue/components/EBreadcrumb";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ECopyButton } from "@eos-ui/vue/components/ECopyButton";
 import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
-import { EInline } from "@eos-ui/vue/components/EInline";
-import { EKbd } from "@eos-ui/vue/components/EKbd";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
-import { EPageHeader } from "@eos-ui/vue/components/EPageHeader";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESelect } from "@eos-ui/vue/components/ESelect";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
+import { EStamp } from "@eos-ui/vue/components/EStamp";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextarea } from "@eos-ui/vue/components/ETextarea";
 import ChessBoard from "../board/ChessBoard.vue";
-import { followCurrent } from "../board/follow";
+import EngineLines from "../board/EngineLines.vue";
 import EvalBar from "../board/EvalBar.vue";
+import MoveList from "../board/MoveList.vue";
+import Playlist from "../board/Playlist.vue";
 import LineChart from "../charts/LineChart.vue";
 import Term from "../components/Term.vue";
-import { play, readPosition, sanLine, sanMoves, toPgn, whitePawns, whiteScore } from "../board/position";
-import { useRunnerEvent } from "../api/events";
+import Workspace from "../components/Workspace.vue";
+import { readGame } from "../board/game";
+import { outcome, type Outcome } from "../board/playlist";
+import { play, readPosition, sanLine, sanMoves, toPgn } from "../board/position";
+import { useAnalysis, type Seen } from "../board/useAnalysis";
 import { api } from "../api/runner";
-import { defaultBuild, unwrap, useBuilds, useStatus } from "../api/queries";
-import type { components } from "../api/schema";
-import { speed } from "../format";
+import { defaultBuild, unwrap, useBuilds, useExperiment, useExperiments, useGames, useTest } from "../api/queries";
+import { ending, signed, speed, winChance } from "../format";
 import { stored } from "../stored";
-
-type Info = components["schemas"]["Info"];
 
 const route = useRoute();
 const router = useRouter();
 
-// The game on the board: where it starts, every move entered (including ones stepped back past), and how many are
-// played. Stepping back keeps the moves after; a different move replaces them.
-const start = ref(typeof route.query.fen === "string" ? route.query.fen : "startpos");
-const moves = ref<string[]>(
-  typeof route.query.moves === "string" && route.query.moves ? route.query.moves.split(",") : [],
-);
-const cursor = ref(moves.value.length);
+// ---------------------------------------------------------------------------------------------------------------------
+// What is on the board
+// ---------------------------------------------------------------------------------------------------------------------
+
+const isGame = computed(() => route.name === "game");
+const testId = computed(() => (isGame.value ? Number(route.params.test) : 0));
+const index = computed(() => (isGame.value ? Number(route.params.index) : -1));
+
+// The line on the board: where it starts, every move entered (including ones stepped back past), and how many are
+// played. Stepping back keeps the moves after; a different move replaces them. A game fills the same three.
+const start = ref("startpos");
+const moves = ref<string[]>([]);
+const cursor = ref(0);
 
 const position = computed(
   () => play({ fen: start.value, moves: moves.value.slice(0, cursor.value) }) ?? play({ fen: "startpos", moves: [] })!,
 );
 const sans = computed(() => sanMoves({ fen: start.value, moves: moves.value }));
 // Moves that are not legal from the start are dropped once, so the list and the board agree.
-watch(
-  sans,
-  (s) => {
-    if (s.length < moves.value.length) {
-      moves.value = moves.value.slice(0, s.length);
-      cursor.value = Math.min(cursor.value, s.length);
-    }
-  },
-  { immediate: true },
-);
+watch(sans, (s) => {
+  if (s.length < moves.value.length) {
+    moves.value = moves.value.slice(0, s.length);
+    cursor.value = Math.min(cursor.value, s.length);
+  }
+});
 
 function go(to: number) {
   cursor.value = Math.max(0, Math.min(moves.value.length, to));
-}
-function move(uci: string) {
-  if (moves.value[cursor.value] !== uci) moves.value = [...moves.value.slice(0, cursor.value), uci];
-  cursor.value++;
 }
 function reset(fen = "startpos", line: string[] = []) {
   start.value = fen;
@@ -83,21 +87,77 @@ function reset(fen = "startpos", line: string[] = []) {
   cursor.value = line.length;
 }
 
-// The address follows the board, so a position can be bookmarked or shared.
-watch([start, moves, cursor], () => {
-  const query: Record<string, string> = {};
-  if (start.value !== "startpos") query.fen = start.value;
-  if (cursor.value) query.moves = moves.value.slice(0, cursor.value).join(",");
-  if (build.value) query.build = build.value;
-  router.replace({ query });
+/** The free board, read from the address. */
+function readQuery() {
+  const fen = typeof route.query.fen === "string" ? route.query.fen : "startpos";
+  const line = typeof route.query.moves === "string" && route.query.moves ? route.query.moves.split(",") : [];
+  reset(fen, line);
+}
+if (!isGame.value) readQuery();
+watch(isGame, (g) => {
+  playing.value = false;
+  if (!g) readQuery();
 });
 
-const orientation = stored<"white" | "black">("analysis.orientation", "white");
+// A game from the runner.
+const gameQuery = useQuery({
+  key: () => ["game", testId.value, index.value],
+  enabled: () => isGame.value,
+  query: () =>
+    unwrap(
+      api.GET("/api/tests/{id}/games/{index}", {
+        params: { path: { id: testId.value, index: index.value } },
+        parseAs: "text",
+      }),
+    ),
+});
+const gameState = gameQuery.state;
+const game = computed(() => (isGame.value && gameState.value.data ? readGame(gameState.value.data) : undefined));
+const loading = computed(() => isGame.value && !game.value && gameState.value.status !== "error");
+
+const devWhite = computed(() => game.value?.headers.White === "dev");
+const freeOrientation = stored<"white" | "black">("board.orientation", "white");
+const gameOrientation = ref<"white" | "black">("white");
+const orientation = computed({
+  get: () => (isGame.value ? gameOrientation.value : freeOrientation.value),
+  set: (v) => (isGame.value ? (gameOrientation.value = v) : (freeOrientation.value = v)),
+});
 const flip = () => (orientation.value = orientation.value === "white" ? "black" : "white");
 
-// The engine: the newest build of main unless one is chosen.
+// A game comes in at its start (or at the move the address names, once), with the new version at the bottom.
+let wantedPly: number | null = typeof route.query.ply === "string" ? Number(route.query.ply) : null;
+watch(
+  game,
+  (g) => {
+    if (!g) return;
+    start.value = g.startFen;
+    moves.value = g.plies.map((p) => p.uci);
+    cursor.value = Math.max(0, Math.min(moves.value.length, wantedPly ?? 0));
+    wantedPly = null;
+    gameOrientation.value = g.headers.White === "dev" ? "white" : "black";
+  },
+  { immediate: true },
+);
+
+// The address follows the board, so a position can be bookmarked or shared.
+watch([start, moves, cursor, isGame], () => {
+  if (loading.value) return;
+  const query: Record<string, string> = {};
+  if (isGame.value) {
+    if (cursor.value) query.ply = String(cursor.value);
+  } else {
+    if (start.value !== "startpos") query.fen = start.value;
+    if (cursor.value) query.moves = moves.value.slice(0, cursor.value).join(",");
+  }
+  if (build.value && route.query.build) query.build = build.value;
+  void router.replace({ query });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The engine
+// ---------------------------------------------------------------------------------------------------------------------
+
 const { state: builds } = useBuilds();
-const { state: status } = useStatus();
 const build = ref(typeof route.query.build === "string" ? route.query.build : "");
 watch(
   () => builds.value.data,
@@ -107,6 +167,10 @@ watch(
   },
   { immediate: true },
 );
+// Only a build the person chose goes in the address; the default is not worth a parameter.
+watch(build, (b, before) => {
+  if (before && b !== before && builds.value.data) void router.replace({ query: { ...route.query, build: b } });
+});
 const buildOptions = computed(() =>
   (builds.value.data ?? []).map((b) => ({
     value: String(b.id),
@@ -114,96 +178,26 @@ const buildOptions = computed(() =>
     description: b.subject,
   })),
 );
+const noBuilds = computed(() => builds.value.status === "success" && builds.value.data.length === 0);
 
-const engineOn = stored("analysis.engine", true);
-const multipv = stored("analysis.lines", "3");
-
-// The live search: its session, and the newest report of each line.
-const session = ref<number | null>(null);
-const lines = ref<Info[]>([]);
-const error = ref("");
-let wanted = 0;
-
-useRunnerEvent("analysis.info", (data) => {
-  const { session: s, info } = data as { session: number; info: Info };
-  if (s !== session.value) return;
-  const next = [...lines.value];
-  next[info.multipv - 1] = info;
-  lines.value = next;
-  if (info.multipv === 1) remember(position.value.fen, info);
+// Free analysis keeps the engine on; a game opens with it off, so stepping through costs nothing until it is wanted.
+const freeEngine = stored("board.engine", true);
+const gameEngine = ref(false);
+const engineOn = computed({
+  get: () => (isGame.value ? gameEngine.value : freeEngine.value),
+  set: (v) => (isGame.value ? (gameEngine.value = v) : (freeEngine.value = v)),
 });
-useRunnerEvent("analysis.stopped", (data) => {
-  if ((data as { session: number }).session === session.value) session.value = null;
-});
+const multipv = stored("board.lines", "3");
 
-async function start_() {
-  const ticket = ++wanted;
-  error.value = "";
-  lines.value = [];
-  session.value = null;
-  try {
-    const threads = Math.max(1, Math.floor((status.value.data?.cpu.threads ?? 2) / 2));
-    const live = await unwrap(
-      api.POST("/api/analysis", {
-        body: {
-          build: build.value ? Number(build.value) : null,
-          fen: start.value,
-          moves: position.value.moves,
-          multipv: Number(multipv.value),
-          threads,
-          hash: 256,
-          limits: {},
-        },
-      }),
-    );
-    // A newer request may have started while this one was on its way.
-    if (ticket === wanted) session.value = live.session;
-  } catch (e) {
-    if (ticket === wanted) error.value = (e as Error).message;
-  }
-}
-
-async function stop() {
-  wanted++;
-  if (session.value === null) return;
-  session.value = null;
-  await api.DELETE("/api/analysis");
-}
-
-// Any change to what is analysed restarts the search, a moment later so stepping through moves does not flood it.
-let timer: ReturnType<typeof setTimeout> | undefined;
-watch(
-  [() => position.value.fen, build, multipv, engineOn],
-  () => {
-    clearTimeout(timer);
-    if (!engineOn.value || !build.value) {
-      stop();
-      return;
-    }
-    timer = setTimeout(start_, 120);
-  },
-  { immediate: true },
-);
-onBeforeUnmount(() => {
-  clearTimeout(timer);
-  stop();
-});
-
-// The best evaluation seen for each position, so the bar and the graph keep what the engine found.
-const evals = reactive(new Map<string, { pawns: number; text: string; depth: number }>());
-function remember(fen: string, info: Info) {
-  const turn = fen.split(" ")[1] === "b" ? "black" : "white";
-  const known = evals.get(fen);
-  if (known && known.depth > info.depth) return;
-  evals.set(fen, { pawns: whitePawns(info.score, turn), text: whiteScore(info.score, turn), depth: info.depth });
-}
-
-const current = computed(() => evals.get(position.value.fen));
+const playing = ref(false);
+// The engine rests while the moves play on their own.
+const searching = computed(() => engineOn.value && !playing.value && !loading.value);
+const { lines, error, evals } = useAnalysis({ start, position, build, multipv, active: searching });
 const best = computed(() => lines.value[0]);
-const shown = computed(() => lines.value.filter(Boolean));
 
 const shapes = computed<DrawShape[]>(() =>
-  shown.value
+  lines.value
+    .filter(Boolean)
     .map((l, i) => ({
       orig: l.pv[0]!.slice(0, 2) as Key,
       dest: l.pv[0]!.slice(2, 4) as Key,
@@ -213,142 +207,471 @@ const shapes = computed<DrawShape[]>(() =>
     .reverse(),
 );
 
-/** The position after each ply, for the graph. */
+// ---------------------------------------------------------------------------------------------------------------------
+// Evaluations: the engine's, and for a game what the players recorded
+// ---------------------------------------------------------------------------------------------------------------------
+
+const evalText = (e: number) => (Math.abs(e) >= 100 ? (e > 0 ? "#" : "#-") : signed(e));
+
+/** The move just played on the board, when it belongs to a game. */
+const played = computed(() => (game.value && cursor.value > 0 ? game.value.plies[cursor.value - 1] : undefined));
+
+/** The last recorded evaluation at or before the move on the board. */
+const recorded = computed<Seen | undefined>(() => {
+  const plies = game.value?.plies;
+  if (!plies) return undefined;
+  for (let i = Math.min(cursor.value, plies.length) - 1; i >= 0; i--) {
+    const p = plies[i]!;
+    if (p.eval !== null) return { pawns: p.eval, text: evalText(p.eval), depth: p.depth ?? 0 };
+  }
+  return undefined;
+});
+const live = computed(() => evals.get(position.value.fen));
+const shown = computed(() => (engineOn.value && live.value ? live.value : (recorded.value ?? live.value)));
+const fromEngine = computed(() => !!shown.value && shown.value === live.value && (engineOn.value || !recorded.value));
+
+/** Mover's name for the move on the board, in a game. */
+const mover = computed(() => {
+  if (!played.value) return "";
+  const white = (cursor.value - 1) % 2 === 0;
+  return white === devWhite.value ? "New version" : "Current version";
+});
+
+/** The position after each ply, for the timeline. */
 const fens = computed(() => {
-  const out: string[] = [];
-  for (let i = 0; i <= moves.value.length; i++)
+  const first = play({ fen: start.value, moves: [] })!.fen;
+  if (game.value) return [first, ...game.value.plies.map((p) => p.fen)];
+  const out = [first];
+  for (let i = 1; i <= moves.value.length; i++)
     out.push(play({ fen: start.value, moves: moves.value.slice(0, i) })!.fen);
   return out;
 });
-const graph = computed(() =>
-  fens.value.map((f) => {
+/** Pawns as a share of a win, so one big swing does not flatten the rest: -1 for Black winning, 1 for White. */
+const gauge = (pawns: number) => (winChance(pawns * 100) - 0.5) * 2;
+const timeline = computed(() => {
+  const plies = game.value?.plies;
+  const values = fens.value.map((f, i) => {
+    const r = i > 0 ? plies?.[i - 1]?.eval : null;
+    if (r !== null && r !== undefined) return gauge(r);
     const e = evals.get(f);
-    return e ? Math.max(-8, Math.min(8, e.pawns)) : null;
-  }),
-);
-
-/** Move pairs for the list: `1. e4 e5`. */
-const rows = computed(() => {
-  const offset = position.value && start.value !== "startpos" && start.value.split(" ")[1] === "b" ? 1 : 0;
-  const firstNumber = start.value === "startpos" ? 1 : Number(start.value.split(" ")[5] ?? 1);
-  const out: { number: number; plies: ({ san: string; ply: number } | null)[] }[] = [];
-  const all: ({ san: string; ply: number } | null)[] = [
-    ...Array(offset).fill(null),
-    ...sans.value.map((san, i) => ({ san, ply: i + 1 })),
-  ];
-  for (let i = 0; i < all.length; i += 2)
-    out.push({ number: firstNumber + i / 2, plies: [all[i] ?? null, all[i + 1] ?? null] });
-  return out;
+    return e ? gauge(e.pawns) : null;
+  });
+  // A single point has no line: the strip always spans two.
+  return {
+    x: values.length > 1 ? values.map((_, i) => i) : [0, 1],
+    values: values.length > 1 ? values : [values[0] ?? null, null],
+  };
 });
 
-function playLine(info: Info) {
-  if (info.pv[0]) move(info.pv[0]);
+// ---------------------------------------------------------------------------------------------------------------------
+// Moves, on the board and from the engine
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** A line played off the game becomes free analysis from the same position. */
+function fork(extra: string[]) {
+  const query: Record<string, string> = {};
+  if (start.value !== "startpos") query.fen = start.value;
+  const line = [...moves.value.slice(0, cursor.value), ...extra];
+  if (line.length) query.moves = line.join(",");
+  if (build.value) query.build = build.value;
+  void router.push({ path: "/board", query });
 }
 
-// Loading a FEN or a PGN.
+function playMoves(uci: string[]) {
+  if (isGame.value) {
+    if (uci.length === 1 && moves.value[cursor.value] === uci[0]) go(cursor.value + 1);
+    else fork(uci);
+    return;
+  }
+  for (const m of uci) {
+    if (moves.value[cursor.value] !== m) moves.value = [...moves.value.slice(0, cursor.value), m];
+    cursor.value++;
+  }
+}
+
+/** The move counter: `24. Nf3`, or `24… Nf3` for Black's. */
+const counter = computed(() => {
+  if (cursor.value === 0) return "Start";
+  const parts = start.value.split(" ");
+  const offset = start.value !== "startpos" && parts[1] === "b" ? 1 : 0;
+  const first = start.value === "startpos" ? 1 : Number(parts[5] ?? 1);
+  const ply = cursor.value - 1 + offset;
+  return `${first + Math.floor(ply / 2)}${ply % 2 === 0 ? "." : "…"} ${sans.value[cursor.value - 1] ?? ""}`;
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The playlist
+// ---------------------------------------------------------------------------------------------------------------------
+
+const { state: testState } = useTest(testId);
+const test = computed(() => testState.value.data?.test);
+const { state: experimentState } = useExperiment(() => test.value?.experiment ?? 0);
+const experiment = computed(() => experimentState.value.data?.experiment);
+const { state: gamesState } = useGames(testId);
+const games = computed(() => gamesState.value.data ?? []);
+
+const filter = ref<"all" | Outcome>("all");
+const listed = computed(() =>
+  filter.value === "all" ? games.value : games.value.filter((g) => outcome(g) === filter.value),
+);
+const nextGame = computed(() => listed.value.find((g) => g.index > index.value));
+const previousGame = computed(() => listed.value.findLast((g) => g.index < index.value));
+
+function openGame(i: number | undefined, replace = false) {
+  if (i === undefined) return;
+  const to = `/games/${testId.value}/${i}`;
+  void (replace ? router.replace(to) : router.push(to));
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Playing the moves
+// ---------------------------------------------------------------------------------------------------------------------
+
+const rate = stored("board.speed", "2");
+let timer: ReturnType<typeof setTimeout> | undefined;
+const atEnd = computed(() => cursor.value >= moves.value.length);
+
+function schedule() {
+  clearTimeout(timer);
+  if (!playing.value) return;
+  const wait = 1000 / Number(rate.value);
+  // A finished game rests a moment before the next one starts.
+  timer = setTimeout(step, atEnd.value && isGame.value ? Math.max(wait, 1500) : wait);
+}
+function step() {
+  if (!playing.value) return;
+  if (loading.value) return schedule();
+  if (!atEnd.value) go(cursor.value + 1);
+  else if (isGame.value && nextGame.value) openGame(nextGame.value.index, true);
+  else playing.value = false;
+  schedule();
+}
+function toggle() {
+  if (playing.value) {
+    playing.value = false;
+    return;
+  }
+  // Playing from the end starts the game again.
+  if (atEnd.value && !(isGame.value && nextGame.value)) go(0);
+  playing.value = true;
+}
+watch(playing, schedule);
+watch(rate, schedule);
+onBeforeUnmount(() => clearTimeout(timer));
+// A game that finished loading while playing carries on from its start.
+watch(game, () => {
+  if (playing.value) schedule();
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Starting points: paste, recent, the latest test
+// ---------------------------------------------------------------------------------------------------------------------
+
 const importOpen = ref(false);
 const importText = ref("");
 const importError = ref("");
+
 function load() {
   const line = readPosition(importText.value);
   if (!line) {
     importError.value = "That is not a FEN or a PGN with moves.";
     return;
   }
-  reset(line.fen, line.moves);
   importOpen.value = false;
   importText.value = "";
   importError.value = "";
+  if (isGame.value) {
+    const query: Record<string, string> = {};
+    if (line.fen !== "startpos") query.fen = line.fen;
+    if (line.moves.length) query.moves = line.moves.join(",");
+    void router.push({ path: "/board", query });
+  } else {
+    reset(line.fen, line.moves);
+    remember();
+  }
 }
 
-const moveList = ref<HTMLElement>();
-followCurrent(moveList, cursor);
+// The command palette sends `paste=1`; the dialog opens and the parameter goes.
+watch(
+  () => route.query.paste,
+  (p) => {
+    if (!p) return;
+    importOpen.value = true;
+    void router.replace({ query: { ...route.query, paste: undefined } });
+  },
+  { immediate: true },
+);
 
-const pgn = () => toPgn({ fen: start.value, moves: moves.value.slice(0, cursor.value) });
+interface Recent {
+  fen: string;
+  moves: string[];
+}
+const recent = stored<Recent[]>("board.recent", []);
+function remember() {
+  if (isGame.value || (start.value === "startpos" && !moves.value.length)) return;
+  const entry = { fen: start.value, moves: moves.value.slice(0, cursor.value) };
+  const key = (r: Recent) => `${r.fen}|${r.moves.join(",")}`;
+  recent.value = [entry, ...recent.value.filter((r) => key(r) !== key(entry))].slice(0, 10);
+}
+let remembering: ReturnType<typeof setTimeout> | undefined;
+watch([start, moves, cursor], () => {
+  clearTimeout(remembering);
+  remembering = setTimeout(remember, 2000);
+});
+onBeforeUnmount(() => {
+  clearTimeout(remembering);
+  remember();
+});
+function recentLabel(r: Recent) {
+  if (!r.moves.length) return r.fen.split(" ")[0]!;
+  return sanLine(r.fen, r.moves.slice(0, 6)) + (r.moves.length > 6 ? " …" : "");
+}
 
+const { state: experiments } = useExperiments();
+const newest = computed(() => experiments.value.data?.reduce((a, b) => (b.id > a.id ? b : a)));
+const { state: newestDetail } = useExperiment(() => newest.value?.id ?? 0);
+const latestTest = computed(() => newestDetail.value.data?.tests.findLast((t) => t.games > 0));
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Copying
+// ---------------------------------------------------------------------------------------------------------------------
+
+const pgn = () =>
+  isGame.value && gameState.value.data
+    ? gameState.value.data
+    : toPgn({ fen: start.value, moves: moves.value.slice(0, cursor.value) });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The result, from the new version's side
+// ---------------------------------------------------------------------------------------------------------------------
+
+const result = computed(() => {
+  const r = game.value?.headers.Result;
+  if (r === "1/2-1/2") return { label: "Drawn", tone: "neutral" } as const;
+  if (!r || r === "*") return { label: "Unfinished", tone: "neutral" } as const;
+  return (r === "1-0") === devWhite.value
+    ? ({ label: "New version won", tone: "success" } as const)
+    : ({ label: "New version lost", tone: "danger" } as const);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Keyboard
+// ---------------------------------------------------------------------------------------------------------------------
+
+// Arrows repeat when held, which `useShortcuts` does not.
 function onKey(e: KeyboardEvent) {
-  const target = e.target as HTMLElement | null;
-  if (target?.closest("input, textarea, [contenteditable], [role=dialog]")) return;
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target instanceof Element && e.target.closest("input, textarea, select, [contenteditable], [role=dialog]"))
+    return;
   if (e.key === "ArrowLeft") go(cursor.value - 1);
   else if (e.key === "ArrowRight") go(cursor.value + 1);
-  else if (e.key === "Home") go(0);
-  else if (e.key === "End") go(Infinity);
   else return;
   e.preventDefault();
 }
 onMounted(() => window.addEventListener("keydown", onKey));
 onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
-useShortcuts({ f: flip, e: () => (engineOn.value = !engineOn.value) });
+useShortcuts({
+  home: () => go(0),
+  end: () => go(Infinity),
+  space: toggle,
+  f: flip,
+  e: () => (engineOn.value = !engineOn.value),
+  n: () => openGame(nextGame.value?.index),
+  p: () => openGame(previousGame.value?.index),
+});
 
-const noBuilds = computed(() => builds.value.status === "success" && builds.value.data.length === 0);
+const speeds = [
+  { value: "0.5", label: "0.5×" },
+  { value: "1", label: "1×" },
+  { value: "2", label: "2×" },
+  { value: "4", label: "4×" },
+];
+const filters = [
+  { value: "all", label: "All" },
+  { value: "W", label: "Won" },
+  { value: "D", label: "Drawn" },
+  { value: "L", label: "Lost" },
+];
 </script>
 
 <template>
-  <div class="page">
-    <EPageHeader
-      title="Analysis"
-      description="Explore any position with the engine. Move pieces, step through a game or paste one in."
-    >
-      <template #actions>
-        <EButton variant="outline" :icon="PhUploadSimple" @click="importOpen = true">Paste a game</EButton>
-        <EButton variant="quiet" :icon="PhArrowCounterClockwise" @click="reset()">New board</EButton>
-      </template>
-    </EPageHeader>
+  <Workspace library-label="Games and positions" inspector-label="Engine and moves">
+    <!-- Library: a game's playlist, or the places a free board can start from. -->
+    <template #library-head>
+      <EBreadcrumb
+        v-if="isGame"
+        :link-component="RouterLink"
+        :items="[
+          { label: 'Lab', to: '/lab' },
+          ...(experiment ? [{ label: experiment.name, to: `/lab/${experiment.id}` }] : []),
+          { label: 'Games' },
+        ]"
+      />
+      <h2 v-else class="head-title">Positions</h2>
+    </template>
 
-    <div class="analysis">
-      <section class="board-col" aria-label="Board">
-        <div class="board-row">
-          <EvalBar :pawns="current?.pawns" :text="current?.text" :orientation="orientation" />
+    <template #library>
+      <div v-if="isGame" class="games">
+        <div class="games-bar">
+          <ESegmented v-model="filter" label="Show games" hide-label size="sm" :options="filters" />
+          <span class="count num">{{ listed.length.toLocaleString() }}</span>
+        </div>
+        <ESkeleton v-if="gamesState.status === 'pending'" :lines="6" label="Loading games" class="pad" />
+        <Playlist v-else :games="listed" :current="index" @open="openGame($event)" />
+      </div>
+
+      <div v-else class="starts">
+        <EButton variant="quiet" size="sm" block :icon="PhSquaresFour" class="start" @click="reset()">
+          Start position
+        </EButton>
+        <EButton variant="quiet" size="sm" block :icon="PhClipboardText" class="start" @click="importOpen = true">
+          Paste a game or FEN
+        </EButton>
+        <template v-if="latestTest">
+          <h3 class="section">Latest test</h3>
+          <EButton
+            variant="quiet"
+            size="sm"
+            block
+            :icon="PhFlask"
+            class="start"
+            @click="router.push(`/games/${latestTest.id}/0`)"
+          >
+            {{ newest?.name }}
+            <span class="aside num">{{ latestTest.games.toLocaleString() }}</span>
+          </EButton>
+        </template>
+        <template v-if="recent.length">
+          <h3 class="section">Recent</h3>
+          <EButton
+            v-for="(r, i) in recent"
+            :key="i"
+            variant="quiet"
+            size="sm"
+            block
+            :icon="PhClockCounterClockwise"
+            class="start recent"
+            @click="reset(r.fen, r.moves)"
+          >
+            <span class="recent-text num">{{ recentLabel(r) }}</span>
+          </EButton>
+        </template>
+      </div>
+    </template>
+
+    <!-- Stage: the eval bar beside the board, as large as the pane allows. -->
+    <div class="stage" :class="{ loading }">
+      <div class="fit">
+        <div class="rig">
+          <EvalBar :pawns="shown?.pawns" :text="shown?.text" :orientation="orientation" />
           <ChessBoard
             :position="position"
             :orientation="orientation"
             movable
-            :shapes="engineOn ? shapes : []"
-            @move="move"
+            :shapes="searching ? shapes : []"
+            @move="playMoves([$event])"
           />
         </div>
-        <div class="board-controls">
-          <EInline gap="tight">
-            <EIconButton :icon="PhCaretDoubleLeft" label="First move" tooltip :disabled="cursor === 0" @click="go(0)" />
-            <EIconButton :icon="PhCaretLeft" label="Back" tooltip :disabled="cursor === 0" @click="go(cursor - 1)" />
-            <EIconButton
-              :icon="PhCaretRight"
-              label="Forward"
-              tooltip
-              :disabled="cursor === moves.length"
-              @click="go(cursor + 1)"
-            />
-            <EIconButton
-              :icon="PhCaretDoubleRight"
-              label="Last move"
-              tooltip
-              :disabled="cursor === moves.length"
-              @click="go(Infinity)"
-            />
-          </EInline>
-          <p class="keys">
-            <EKbd size="sm">←</EKbd><EKbd size="sm">→</EKbd> step · <EKbd size="sm">F</EKbd> flip ·
-            <EKbd size="sm">E</EKbd> engine
+      </div>
+    </div>
+
+    <!-- Transport: VLC's row, with the eval graph as the timeline. -->
+    <template #stage-foot>
+      <div class="buttons">
+        <EIconButton
+          :icon="PhSkipBack"
+          label="First move (Home)"
+          tooltip
+          size="sm"
+          :disabled="cursor === 0"
+          @click="go(0)"
+        />
+        <EIconButton
+          :icon="PhCaretLeft"
+          label="Back (Left arrow)"
+          tooltip
+          size="sm"
+          :disabled="cursor === 0"
+          @click="go(cursor - 1)"
+        />
+        <EIconButton
+          :icon="playing ? PhPause : PhPlay"
+          :label="playing ? 'Pause (Space)' : 'Play (Space)'"
+          tooltip
+          variant="primary"
+          size="sm"
+          :disabled="!moves.length && !(isGame && nextGame)"
+          @click="toggle"
+        />
+        <EIconButton
+          :icon="PhCaretRight"
+          label="Forward (Right arrow)"
+          tooltip
+          size="sm"
+          :disabled="atEnd"
+          @click="go(cursor + 1)"
+        />
+        <EIconButton
+          :icon="PhSkipForward"
+          label="Last move (End)"
+          tooltip
+          size="sm"
+          :disabled="atEnd"
+          @click="go(Infinity)"
+        />
+      </div>
+      <div class="scrub">
+        <LineChart
+          label="Evaluation from White's side by move. Click or drag to seek."
+          bare
+          scrub
+          :x="timeline.x"
+          :series="[{ label: 'eval', values: timeline.values, fill: true }]"
+          :range="[-1, 1]"
+          :height="36"
+          :marker="cursor"
+          @select="go"
+        />
+      </div>
+      <span class="counter num" aria-live="off">
+        {{ counter }}
+        <span v-if="moves.length" class="of">/ {{ moves.length }}</span>
+      </span>
+      <ESegmented v-model="rate" label="Speed" hide-label size="sm" :options="speeds" class="rate" />
+      <EIconButton :icon="PhArrowsDownUp" label="Flip board (F)" tooltip size="sm" @click="flip" />
+    </template>
+
+    <!-- Inspector: the engine, then the moves, as on Lichess. -->
+    <template #inspector-head>
+      <ESwitch v-model="engineOn" label="Engine" />
+      <ESelect
+        v-if="buildOptions.length"
+        v-model="build"
+        label="Engine version"
+        hide-label
+        size="sm"
+        :options="buildOptions"
+        class="pick"
+      />
+    </template>
+
+    <template #inspector>
+      <div class="insp">
+        <header v-if="game" class="match">
+          <p class="who">
+            <span :class="['chip', devWhite ? 'chip--white' : 'chip--black']" aria-hidden="true"></span>
+            New version
+            <span class="vs">vs</span>
+            <span :class="['chip', devWhite ? 'chip--black' : 'chip--white']" aria-hidden="true"></span>
+            Current version
           </p>
-          <EIconButton :icon="PhArrowsDownUp" label="Flip board" tooltip @click="flip" />
-        </div>
-      </section>
+          <p class="how">
+            <EStamp size="sm" :tone="result.tone" :label="result.label" />
+            {{ ending(game.headers.Termination) }} after {{ Math.ceil(game.plies.length / 2) }} moves
+          </p>
+        </header>
 
-      <div class="side">
-        <section class="panel engine" aria-label="Engine">
-          <header class="panel-head">
-            <ESwitch v-model="engineOn" label="Engine" />
-            <ESelect
-              v-if="buildOptions.length"
-              v-model="build"
-              label="Engine version"
-              hide-label
-              size="sm"
-              :options="buildOptions"
-              class="engine-pick"
-            />
-          </header>
-
+        <section class="engine" aria-label="Engine">
           <EEmptyState v-if="noBuilds" title="No engine built yet" icon="info" size="sm" bare>
             Build Reckless once and it analyses here.
             <template #action>
@@ -358,340 +681,351 @@ const noBuilds = computed(() => builds.value.status === "success" && builds.valu
 
           <template v-else>
             <div class="hero">
-              <div class="hero-eval num">
-                <template v-if="current">{{ current.text }}</template>
-                <template v-else-if="engineOn">…</template>
+              <div class="big num" :class="{ dim: !shown }">
+                <template v-if="shown">{{ shown.text }}</template>
+                <template v-else-if="searching">…</template>
                 <template v-else>–</template>
               </div>
-              <div class="hero-text">
-                <p v-if="!engineOn" class="hero-best">Engine off</p>
-                <p v-else-if="best" class="hero-best">
-                  Best move
-                  <strong>{{ sanLine(position.fen, best.pv.slice(0, 1)).replace(/^\d+\.(\.\.)?\s*/, "") }}</strong>
+              <div class="facts num">
+                <p v-if="!engineOn">
+                  {{ shown ? "From the game" : "Engine off" }}
                 </p>
-                <p v-else class="hero-best">Thinking…</p>
-                <p v-if="best && engineOn" class="hero-meta num">
-                  <Term of="depth" inline>depth {{ best.depth }}/{{ best.seldepth }}</Term> ·
-                  {{ (best.nodes / 1e6).toFixed(1) }}M positions · {{ speed(best.nps) }}
+                <p v-else-if="playing">Paused while playing</p>
+                <p v-else-if="best">
+                  <Term of="depth" inline>Depth</Term> {{ best.depth }}/{{ best.seldepth }} · {{ speed(best.nps) }}
+                </p>
+                <p v-else-if="error" class="bad">{{ error }}</p>
+                <p v-else>Thinking…</p>
+                <p v-if="played && mover" class="played">
+                  {{ mover }}: <template v-if="fromEngine && recorded">{{ recorded.text }}, </template>
+                  <template v-if="played.depth !== null">depth {{ played.depth }}</template>
+                  <template v-if="played.time !== null">, {{ played.time.toFixed(2) }}s</template>
                 </p>
               </div>
+              <ESegmented
+                v-if="engineOn"
+                v-model="multipv"
+                label="Lines to show"
+                hide-label
+                size="sm"
+                :options="['1', '2', '3', '5']"
+                class="count-pick"
+              />
             </div>
-
-            <ENotice v-if="error" tone="danger" title="The engine could not start" :role="false">{{ error }}</ENotice>
-
-            <ol v-if="engineOn" class="lines" aria-label="Engine lines">
-              <li v-for="l in shown" :key="l.multipv" class="line">
-                <span class="pill num" :class="whitePawns(l.score, position.turn) >= 0 ? 'pill--white' : 'pill--black'">
-                  {{ whiteScore(l.score, position.turn) }}
-                </span>
-                <span class="line-moves">{{ sanLine(position.fen, l.pv.slice(0, 12)) }}</span>
-                <EIconButton :icon="PhPlay" size="sm" label="Play this move" tooltip @click="playLine(l)" />
-              </li>
-              <template v-if="!shown.length && !error">
-                <li v-for="i in Number(multipv)" :key="i" class="line"><ESkeleton text /></li>
-              </template>
-            </ol>
-
-            <ESegmented v-model="multipv" label="Lines to show" size="sm" :options="['1', '2', '3', '5']" />
+            <ENotice v-if="error && best" tone="danger" title="The engine could not start" :role="false">
+              {{ error }}
+            </ENotice>
+            <EngineLines
+              v-if="engineOn && !playing"
+              :position="position"
+              :lines="lines"
+              :count="Number(multipv)"
+              @play="playMoves"
+            />
           </template>
         </section>
 
-        <section class="panel" aria-label="Moves">
-          <header class="panel-head">
-            <h2 class="panel-title">Moves</h2>
-            <EInline gap="tight">
-              <ECopyButton :text="() => position.fen" label="Copy FEN" size="sm" />
-              <ECopyButton :text="pgn" label="Copy PGN" size="sm" />
-            </EInline>
-          </header>
-          <div ref="moveList" class="moves" role="list">
-            <EButton
-              role="listitem"
-              size="sm"
-              variant="quiet"
-              :aria-current="cursor === 0 ? 'step' : undefined"
-              class="move-start"
-              @click="go(0)"
-            >
-              Start
-            </EButton>
-            <template v-for="r in rows" :key="r.number">
-              <span class="move-number num" role="presentation">{{ r.number }}.</span>
-              <template v-for="(p, i) in r.plies" :key="i">
-                <EButton
-                  v-if="p"
-                  role="listitem"
-                  size="sm"
-                  variant="quiet"
-                  :aria-current="p.ply === cursor ? 'step' : undefined"
-                  :class="{ 'move-future': p.ply > cursor }"
-                  @click="go(p.ply)"
-                >
-                  {{ p.san }}
-                </EButton>
-                <span v-else class="move-gap">…</span>
-              </template>
-            </template>
-          </div>
-          <p v-if="!moves.length" class="quiet">Make a move on the board, or paste a game.</p>
+        <section class="moves" aria-label="Moves">
+          <MoveList :sans="sans" :cursor="cursor" :start="start" @go="go" />
         </section>
 
-        <section v-if="moves.length" class="panel" aria-label="Evaluation graph">
-          <h2 class="panel-title"><Term of="eval">Evaluation</Term> by move</h2>
-          <LineChart
-            label="Evaluation from White's side by move"
-            :x="fens.map((_, i) => i)"
-            :series="[{ label: 'eval', values: graph, fill: true }]"
-            :range="[-8, 8]"
-            :legend="false"
-            :height="120"
-            :marker="cursor"
-            @select="go"
-          />
-          <p class="quiet">Click to jump. Positions fill in as the engine looks at them.</p>
-        </section>
+        <footer class="tools">
+          <ECopyButton :text="() => position.fen" label="Copy FEN" size="sm" />
+          <ECopyButton :text="pgn" label="Copy PGN" size="sm" />
+          <EButton v-if="isGame" variant="quiet" size="sm" :icon="PhChartLine" @click="fork([])">
+            Analyse from here
+          </EButton>
+        </footer>
       </div>
-    </div>
+    </template>
+  </Workspace>
 
-    <EDialog
-      v-model:open="importOpen"
-      title="Paste a game or position"
-      description="A FEN, or a PGN from Lichess, Chess.com or anywhere."
-    >
-      <ETextarea
-        v-model="importText"
-        label="FEN or PGN"
-        :rows="6"
-        :error="importError || undefined"
-        placeholder="1. e4 e5 2. Nf3 Nc6 …"
-        data-autofocus
-      />
-      <template #actions>
-        <EButton @click="load">Load</EButton>
-        <EButton variant="quiet" @click="importOpen = false">Cancel</EButton>
-      </template>
-    </EDialog>
-  </div>
+  <EDialog
+    v-model:open="importOpen"
+    title="Paste a game or position"
+    description="A FEN, or a PGN from Lichess, Chess.com or anywhere."
+  >
+    <ETextarea
+      v-model="importText"
+      label="FEN or PGN"
+      :rows="6"
+      :error="importError || undefined"
+      placeholder="1. e4 e5 2. Nf3 Nc6 …"
+      data-autofocus
+    />
+    <template #actions>
+      <EButton @click="load">Load</EButton>
+      <EButton variant="quiet" @click="importOpen = false">Cancel</EButton>
+    </template>
+  </EDialog>
 </template>
 
 <style scoped>
-.page {
-  display: grid;
-  gap: var(--e-gap-section);
+/* Library */
+.head-title {
+  margin: 0;
+  font: var(--e-type-h6);
 }
 
-.analysis {
+.games {
   display: grid;
-
-  /* The board is as large as the window allows: never taller than the space under the header. */
-  --board: min(calc(100dvh - var(--e-header-height, 4rem) - 12rem), 46rem);
-
-  grid-template-columns: minmax(18rem, var(--board)) minmax(20rem, 1fr);
-  gap: var(--e-gap-loose);
-  align-items: start;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
 }
 
-/* The board is as large as the window allows: the full column, but never taller than the space under the header. */
-.board-col {
-  display: grid;
-  gap: var(--e-gap-snug);
-  min-width: 0;
-}
-
-.board-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--e-gap-snug);
-}
-
-.board-controls {
+.games-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--e-gap-base);
-  padding-inline-start: calc(1.75rem + var(--e-gap-snug));
+  gap: var(--e-gap-snug);
+  padding: var(--e-gap-tight) var(--e-pad-control-sm);
+  border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
 }
 
-.keys {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin: 0;
+.count {
   color: var(--e-muted);
   font: var(--e-type-small);
 }
 
-.side {
-  display: grid;
-  gap: var(--e-gap-base);
-  min-width: 0;
+.pad {
+  padding: var(--e-pad-control-sm);
 }
 
-.panel {
+.starts {
   display: grid;
-  gap: var(--e-gap-base);
-  padding: var(--e-pad-card);
-  border-radius: var(--e-radius-lg);
-  background: var(--e-surface);
-  box-shadow: var(--e-shadow-frame);
+  align-content: start;
+  padding-block: var(--e-gap-tight);
 }
 
-.panel-head {
+.section {
+  margin: var(--e-gap-snug) 0 0;
+  padding: var(--e-gap-tight) var(--e-pad-control-sm);
+  color: var(--e-muted);
+  font: var(--e-type-small);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.starts :deep(.e-btn) {
+  justify-content: flex-start;
+  border-radius: 0;
+  text-align: start;
+}
+
+.aside {
+  margin-inline-start: auto;
+  color: var(--e-muted);
+}
+
+.recent-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Stage: the board is the largest square the pane allows, with the eval bar beside it. */
+.stage {
+  display: grid;
+  min-height: 0;
+  padding: var(--e-gap-snug);
+  box-sizing: border-box;
+}
+
+.fit {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  container-type: size;
+}
+
+.rig {
+  --bar: var(--evalbar, 1.5rem);
+  --gap: var(--e-gap-snug);
+  --side: min(100cqh, calc(100cqw - var(--bar) - var(--gap)));
+
+  display: grid;
+  grid-template-columns: var(--bar) var(--side);
+  gap: var(--gap);
+  height: var(--side);
+  transition: opacity var(--e-motion-fast, 0.15s);
+}
+
+.loading .rig {
+  opacity: 0.5;
+}
+
+/* Transport */
+.buttons {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--e-gap-base);
+  gap: var(--e-gap-tight);
 }
 
-.panel-title {
-  margin: 0;
-  font: var(--e-type-h5);
+.scrub {
+  flex: 1 1 8rem;
+  min-width: 6rem;
 }
 
-.engine-pick {
+.counter {
+  min-width: 6rem;
+  font: 600 var(--e-text-sm) / 1 var(--e-font-mono);
+  text-align: end;
+  white-space: nowrap;
+}
+
+.of {
+  color: var(--e-muted);
+  font-weight: 400;
+}
+
+/* Inspector */
+.pick {
   flex: 1;
-  max-width: 16rem;
+  min-width: 8rem;
+}
+
+.insp {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+}
+
+.match {
+  display: grid;
+  grid-row: 1;
+  gap: var(--e-gap-tight);
+  padding: var(--e-gap-snug) var(--e-pad-control-sm);
+  border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
+}
+
+.match p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--e-gap-snug);
+  margin: 0;
+}
+
+.who {
+  font-weight: 600;
+}
+
+.vs,
+.how {
+  color: var(--e-muted);
+  font: var(--e-type-small);
+  font-weight: 400;
+}
+
+.chip {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--e-border-strong);
+}
+
+.chip--white {
+  background: #fffaf3;
+}
+
+.chip--black {
+  background: #2a2420;
+}
+
+.engine {
+  grid-row: 2;
+  border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
 }
 
 .hero {
   display: flex;
   align-items: center;
-  gap: var(--e-gap-loose);
-  padding-block: var(--e-gap-snug);
-  border-block: 1px solid var(--e-border);
-  border-color: color-mix(in oklab, var(--e-border) 40%, transparent);
+  gap: var(--e-gap-base);
+  padding: var(--e-gap-snug) var(--e-pad-control-sm);
 }
 
-.hero-eval {
-  min-width: 5.5rem;
+.big {
+  min-width: 4.5rem;
   font: 600 var(--e-text-3xl) / 1 var(--e-font-mono);
   letter-spacing: -0.03em;
 }
 
-.hero-text {
+.dim {
+  color: var(--e-muted);
+}
+
+.facts {
   display: grid;
-  gap: 0.25rem;
+  flex: 1;
+  gap: 0.125rem;
   min-width: 0;
-}
-
-.hero-best,
-.hero-meta {
-  margin: 0;
-}
-
-.hero-best strong {
-  color: var(--e-primary);
-  font: 600 var(--e-text-lg) / 1 var(--e-font-mono);
-}
-
-.hero-meta {
   color: var(--e-muted);
   font: var(--e-type-small);
 }
 
-.lines {
-  display: grid;
-  gap: var(--e-gap-tight);
+.facts p {
   margin: 0;
-  padding: 0;
-  list-style: none;
 }
 
-.line {
-  display: grid;
-  grid-template-columns: 4.25rem minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--e-gap-snug);
-  min-height: 2.25rem;
+.played {
+  color: var(--e-ink);
 }
 
-.pill {
-  padding: 0.2rem 0.4rem;
-  border-radius: var(--e-radius-sm);
-  font: 600 var(--e-text-sm) / 1.2 var(--e-font-mono);
-  text-align: center;
+.bad {
+  color: var(--e-danger);
 }
 
-.pill--white {
-  background: #f4ede2;
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%);
-  color: #2a2420;
-}
-
-.pill--black {
-  background: #2a2420;
-  color: #f4ede2;
-}
-
-.line-moves {
-  overflow: hidden;
-  font: var(--e-type-small);
-  font-family: var(--e-font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.count-pick {
+  flex: none;
 }
 
 .moves {
-  position: relative;
-  display: grid;
-  grid-template-columns: 2.5rem 1fr 1fr;
+  grid-row: 3;
+  min-height: 0;
+  border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
+}
+
+.tools {
+  grid-row: 4;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.125rem var(--e-gap-tight);
-  max-height: 16rem;
-  overflow-y: auto;
-  font-family: var(--e-font-mono);
-}
-
-.move-start {
-  grid-column: 1 / -1;
-  justify-self: start;
-}
-
-.move-number {
-  color: var(--e-muted);
-  font: var(--e-type-small);
-  text-align: end;
-}
-
-.move-gap {
-  padding-inline: var(--e-gap-snug);
-  color: var(--e-muted);
-}
-
-.moves :deep(.e-btn) {
-  justify-content: flex-start;
-  text-decoration: none;
-}
-
-/* The move on the board: the place tint, as eos marks where you are. */
-.moves :deep(.e-btn[aria-current]) {
-  background: var(--e-primary-soft);
-  color: var(--e-primary);
-  font-weight: 600;
-}
-
-.move-future {
-  opacity: 0.55;
-}
-
-.quiet {
-  margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
+  gap: var(--e-gap-tight);
+  padding: var(--e-gap-tight) var(--e-pad-control-sm);
 }
 
 @media (width < 64rem) {
-  .analysis {
-    grid-template-columns: minmax(0, 1fr);
+  .stage {
+    height: auto;
   }
 
-  .board-col {
-    width: min(100%, 40rem);
+  .fit {
+    display: block;
+    container-type: inline-size;
+  }
+
+  .rig {
+    --side: min(calc(100cqw - var(--bar) - var(--gap)), 75dvh);
+
     margin-inline: auto;
   }
 
-  .keys {
-    display: none;
+  .scrub {
+    flex-basis: 100%;
+    order: 2;
+  }
+
+  .counter {
+    margin-inline-start: auto;
+  }
+
+  .insp {
+    height: auto;
+  }
+
+  .moves {
+    max-height: 18rem;
   }
 }
 </style>

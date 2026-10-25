@@ -435,7 +435,8 @@ async fn match_stage(
     let t = tests::record(state, test, totals, sprt, true).await?;
     outcome?;
 
-    let est = t.estimate.map(|e| format!("{:+.2} ± {:.2} nElo", e.nelo, e.nelo_error)).unwrap_or_default();
+    let est =
+        t.estimate.map(|e| format!("{:+.1} ± {:.1} Elo ({:+.1} nElo)", e.elo, e.elo_error, e.nelo)).unwrap_or_default();
     let games = totals.pairs() * 2;
     let (passed, detail) = match (sprt, t.verdict) {
         (Some(s), Some(Verdict::Accepted)) => {

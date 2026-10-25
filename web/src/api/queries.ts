@@ -59,6 +59,7 @@ export const useTest = (id: MaybeRefOrGetter<number>) =>
 export const useGames = (id: MaybeRefOrGetter<number>) =>
   useQuery({
     key: () => ["games", toValue(id)],
+    enabled: () => toValue(id) > 0,
     query: () => unwrap(api.GET("/api/tests/{id}/games", { params: { path: { id: toValue(id) } } })),
   });
 
