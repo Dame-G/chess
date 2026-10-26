@@ -34,12 +34,14 @@ pub async fn list(
 
 /// Queues an experiment: a dev ref against a base ref, through the default funnel for its kind, the given stages,
 /// or a single match (`preset`).
-#[utoipa::path(post, path = "/api/experiments", operation_id = "create_experiment", tag = "experiments", request_body = NewExperiment, responses((status = 202, body = Experiment)))]
+#[utoipa::path(post, path = "/api/experiments", operation_id = "create_experiment", tag = "experiments", request_body = NewExperiment, responses((status = 202, body = Experiment), (status = 400)))]
 pub async fn create(
     State(state): State<Arc<AppState>>,
     Json(new): Json<NewExperiment>,
 ) -> Result<(StatusCode, Json<Experiment>), ApiError> {
-    let mut created = experiments::submit(&state, vec![new], None).await?;
+    let new = vec![new];
+    check(&new)?;
+    let mut created = experiments::submit(&state, new, None).await?;
     Ok((StatusCode::ACCEPTED, Json(created.remove(0))))
 }
 
@@ -51,12 +53,20 @@ pub struct NewBatch {
 }
 
 /// Queues several experiments under one name. They run in order.
-#[utoipa::path(post, path = "/api/batches", operation_id = "create_batch", tag = "experiments", request_body = NewBatch, responses((status = 202, body = Vec<Experiment>)))]
+#[utoipa::path(post, path = "/api/batches", operation_id = "create_batch", tag = "experiments", request_body = NewBatch, responses((status = 202, body = Vec<Experiment>), (status = 400)))]
 pub async fn batch(
     State(state): State<Arc<AppState>>,
     Json(b): Json<NewBatch>,
 ) -> Result<(StatusCode, Json<Vec<Experiment>>), ApiError> {
+    check(&b.experiments)?;
     Ok((StatusCode::ACCEPTED, Json(experiments::submit(&state, b.experiments, Some(b.name)).await?)))
+}
+
+fn check(new: &[NewExperiment]) -> Result<(), ApiError> {
+    match new.iter().any(|n| n.funnel().is_empty()) {
+        true => Err(ApiError::bad_request(experiments::NO_STAGES)),
+        false => Ok(()),
+    }
 }
 
 #[derive(Serialize, ToSchema)]
@@ -80,9 +90,9 @@ pub async fn get(State(state): State<Arc<AppState>>, Path(id): Path<i64>) -> Res
 }
 
 /// Cancels a queued experiment or stops a running one.
-#[utoipa::path(delete, path = "/api/experiments/{id}", operation_id = "cancel_experiment", tag = "experiments", responses((status = 200, body = Experiment)))]
+#[utoipa::path(delete, path = "/api/experiments/{id}", operation_id = "cancel_experiment", tag = "experiments", responses((status = 200, body = Experiment), (status = 404)))]
 pub async fn cancel(State(state): State<Arc<AppState>>, Path(id): Path<i64>) -> Result<Json<Experiment>, ApiError> {
-    Ok(Json(experiments::cancel(&state, id).await?))
+    experiments::cancel(&state, id).await?.map(Json).ok_or(ApiError::not_found("no such experiment"))
 }
 
 #[derive(Serialize, ToSchema)]
@@ -122,7 +132,7 @@ pub async fn games(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
 ) -> Result<Json<Vec<GameSummary>>, ApiError> {
-    let pgn = std::fs::read_to_string(tests::dir(&state, id).join("games.pgn")).unwrap_or_default();
+    let pgn = tokio::fs::read_to_string(tests::dir(&state, id).join("games.pgn")).await.unwrap_or_default();
     Ok(Json(split(&pgn).into_iter().enumerate().map(|(index, game)| summary(index, game)).collect()))
 }
 
@@ -132,7 +142,7 @@ pub async fn game(
     State(state): State<Arc<AppState>>,
     Path((id, index)): Path<(i64, usize)>,
 ) -> Result<String, ApiError> {
-    let pgn = std::fs::read_to_string(tests::dir(&state, id).join("games.pgn")).unwrap_or_default();
+    let pgn = tokio::fs::read_to_string(tests::dir(&state, id).join("games.pgn")).await.unwrap_or_default();
     split(&pgn).get(index).map(|g| (*g).to_owned()).ok_or(ApiError::not_found("no such game"))
 }
 

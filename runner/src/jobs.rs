@@ -7,7 +7,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
@@ -152,61 +152,86 @@ pub async fn submit(state: &Arc<AppState>, spec: JobSpec) -> Result<Job> {
     Ok(job)
 }
 
-/// Cancels a queued job, or stops a running one. A finished job is left as it is.
-pub async fn cancel(state: &Arc<AppState>, id: i64) -> Result<Job> {
-    let job = state.store.call(move |c| get(c, id)).await?;
-    let Some(job) = job else { bail!("no job {id}") };
-    match job.status {
-        JobStatus::Queued => {
-            let job = state.store.call(move |c| set_status(c, id, JobStatus::Cancelled)).await?;
-            announce(state, &job);
-            Ok(job)
-        }
-        JobStatus::Running => {
-            if let Some((running, token)) = &*state.queue.running.lock().unwrap()
-                && *running == id
-            {
-                token.cancel();
-            }
-            Ok(job)
-        }
-        _ => Ok(job),
+/// Cancels a queued job, or stops a running one. A finished job is left as it is. `None` when there is no such job.
+pub async fn cancel(state: &Arc<AppState>, id: i64) -> Result<Option<Job>> {
+    // Read and, when queued, cancelled in one call, so the worker cannot start it in between.
+    let (job, cancelled) = state
+        .store
+        .call(move |c| {
+            let cancelled = c.execute(
+                "UPDATE jobs SET status = 'cancelled', finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                 WHERE id = ?1 AND status = 'queued'",
+                [id],
+            )? > 0;
+            Ok((get(c, id)?, cancelled))
+        })
+        .await?;
+    let Some(job) = job else { return Ok(None) };
+    if cancelled {
+        announce(state, &job);
+    } else if job.status == JobStatus::Running
+        && let Some((running, token)) = &*state.queue.running.lock().unwrap()
+        && *running == id
+    {
+        token.cancel();
     }
+    Ok(Some(job))
 }
 
 fn announce(state: &AppState, job: &Job) {
     state.events.emit("job.updated", serde_json::to_value(job).unwrap());
 }
 
-/// Runs queued jobs one at a time, for as long as the runner runs. A job left running by a previous process failed.
+/// Work left running by a previous process failed: its job, and the experiment, test or tune it was running. A tune
+/// keeps every iteration, so one stopped this way can resume where it was.
+fn recover(c: &mut Connection) -> Result<()> {
+    let tx = c.transaction()?;
+    tx.execute("UPDATE jobs SET status = 'failed', error = 'the runner stopped' WHERE status = 'running'", [])?;
+    for table in ["experiments", "tunes"] {
+        tx.execute(
+            &format!(
+                "UPDATE {table} SET status = 'failed', summary = 'the runner stopped',
+                 finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE status = 'running'"
+            ),
+            [],
+        )?;
+    }
+    tx.execute("UPDATE experiments SET current = NULL WHERE status = 'failed' AND current IS NOT NULL", [])?;
+    tx.execute(
+        "UPDATE tests SET running = 0, finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE running = 1",
+        [],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Runs queued jobs one at a time, for as long as the runner runs.
 pub async fn worker(state: Arc<AppState>) {
-    let _ = state
-        .store
-        .call(|c| {
-            c.execute("UPDATE jobs SET status = 'failed', error = 'the runner stopped' WHERE status = 'running'", [])?;
-            // A tune keeps every iteration, so one stopped this way can resume where it was.
-            c.execute(
-                "UPDATE tunes SET status = 'failed', summary = 'the runner stopped',
-                 finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE status = 'running'",
-                [],
-            )?;
-            Ok(())
-        })
-        .await;
+    if let Err(e) = state.store.call(recover).await {
+        tracing::error!("job queue: {e:#}");
+    }
     std::fs::create_dir_all(state.config.data.join("jobs")).ok();
 
     loop {
+        let token = CancellationToken::new();
         let next = state
             .store
-            .call(|c| {
-                let id: Option<i64> = c
-                    .query_row("SELECT id FROM jobs WHERE status = 'queued' ORDER BY id LIMIT 1", [], |r| r.get(0))
-                    .optional()?;
-                id.map(|id| set_status(c, id, JobStatus::Running)).transpose()
+            .call({
+                let (state, token) = (state.clone(), token.clone());
+                move |c| {
+                    let id: Option<i64> = c
+                        .query_row("SELECT id FROM jobs WHERE status = 'queued' ORDER BY id LIMIT 1", [], |r| r.get(0))
+                        .optional()?;
+                    let Some(id) = id else { return Ok(None) };
+                    let job = set_status(c, id, JobStatus::Running)?;
+                    // Still holding the connection, so a cancel that reads the job as running also finds its token.
+                    *state.queue.running.lock().unwrap() = Some((id, token));
+                    Ok(Some(job))
+                }
             })
             .await;
         match next {
-            Ok(Some(job)) => run(&state, job).await,
+            Ok(Some(job)) => run(&state, job, token).await,
             Ok(None) => state.queue.wake.notified().await,
             Err(e) => {
                 tracing::error!("job queue: {e:#}");
@@ -216,10 +241,8 @@ pub async fn worker(state: Arc<AppState>) {
     }
 }
 
-async fn run(state: &Arc<AppState>, job: Job) {
+async fn run(state: &Arc<AppState>, job: Job, token: CancellationToken) {
     announce(state, &job);
-    let token = CancellationToken::new();
-    *state.queue.running.lock().unwrap() = Some((job.id, token.clone()));
 
     let file = Mutex::new(std::fs::File::create(log_path(state, job.id)).ok());
     let id = job.id;
@@ -296,5 +319,47 @@ async fn run(state: &Arc<AppState>, job: Job) {
     match finished {
         Ok(job) => announce(state, &job),
         Err(e) => tracing::error!("job {id}: {e:#}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn work_left_running_by_a_stopped_runner_fails() {
+        let store = crate::store::Store::memory().unwrap();
+        store
+            .call(|c| {
+                c.execute_batch(
+                    "INSERT INTO jobs (spec, status) VALUES ('{\"kind\":\"experiment\",\"id\":1}', 'running');
+                     INSERT INTO jobs (spec, status) VALUES ('{\"kind\":\"experiment\",\"id\":2}', 'queued');
+                     INSERT INTO builds (key, ref, commit_sha, subject, features, bench, nps)
+                     VALUES ('k', 'main', 'abc', 's', 'no-syzygy', 1, 1);
+                     INSERT INTO experiments (name, kind, base_ref, dev_ref, funnel, status, results, current, job_id)
+                     VALUES ('e', 'gainer', 'main', 'x', '[]', 'running', '[]', 'stc', 1);
+                     INSERT INTO experiments (name, kind, base_ref, dev_ref, funnel, status, results, job_id)
+                     VALUES ('f', 'gainer', 'main', 'y', '[]', 'queued', '[]', 2);
+                     INSERT INTO tests (experiment_id, stage, spec, base_build, dev_build, running, penta)
+                     VALUES (1, 'stc', '{}', 1, 1, 1, '[0,0,0,0,0]');",
+                )?;
+                recover(c)?;
+                let one = |sql: &str| -> rusqlite::Result<String> { c.query_row(sql, [], |r| r.get(0)) };
+                assert_eq!(one("SELECT status FROM jobs WHERE id = 1")?, "failed");
+                assert_eq!(one("SELECT status FROM jobs WHERE id = 2")?, "queued");
+                assert_eq!(
+                    one(
+                        "SELECT status || ' ' || summary || ' ' || ifnull(current, '-') FROM experiments WHERE id = 1"
+                    )?,
+                    "failed the runner stopped -"
+                );
+                assert_eq!(one("SELECT status FROM experiments WHERE id = 2")?, "queued");
+                assert_eq!(one("SELECT CAST(running AS TEXT) FROM tests")?, "0");
+                // A build the stopped experiment used can be deleted again.
+                assert_eq!(build::user(c, 1)?, None);
+                Ok(())
+            })
+            .await
+            .unwrap();
     }
 }

@@ -32,11 +32,11 @@ pub async fn get(State(state): State<Arc<AppState>>, Path(id): Path<i64>) -> Res
 /// A job's output so far, as plain text.
 #[utoipa::path(get, path = "/api/jobs/{id}/log", operation_id = "get_job_log", tag = "jobs", responses((status = 200, content_type = "text/plain", body = String), (status = 404)))]
 pub async fn log(State(state): State<Arc<AppState>>, Path(id): Path<i64>) -> Result<String, ApiError> {
-    std::fs::read_to_string(jobs::log_path(&state, id)).map_err(|_| ApiError::not_found("no log for this job"))
+    tokio::fs::read_to_string(jobs::log_path(&state, id)).await.map_err(|_| ApiError::not_found("no log for this job"))
 }
 
 /// Cancels a queued job or stops a running one.
 #[utoipa::path(delete, path = "/api/jobs/{id}", operation_id = "cancel_job", tag = "jobs", responses((status = 200, body = Job), (status = 404)))]
 pub async fn cancel(State(state): State<Arc<AppState>>, Path(id): Path<i64>) -> Result<Json<Job>, ApiError> {
-    Ok(Json(jobs::cancel(&state, id).await?))
+    jobs::cancel(&state, id).await?.map(Json).ok_or(ApiError::not_found("no such job"))
 }

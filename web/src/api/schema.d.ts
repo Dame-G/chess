@@ -2068,6 +2068,12 @@ export interface operations {
                     "application/json": components["schemas"]["Experiment"][];
                 };
             };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     list_branches: {
@@ -2315,6 +2321,12 @@ export interface operations {
                     "application/json": components["schemas"]["Experiment"];
                 };
             };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     get_experiment: {
@@ -2362,6 +2374,12 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Experiment"];
                 };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

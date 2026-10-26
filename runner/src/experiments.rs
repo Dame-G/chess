@@ -1,10 +1,7 @@
 //! Experiments: a change (dev ref) against a baseline (base ref), run through a funnel of stages. This is the unit
 //! the harness is built around: an agent submits experiments, alone or as a batch, waits, and reads the verdicts.
 
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -162,7 +159,7 @@ pub struct NewExperiment {
 }
 
 impl NewExperiment {
-    fn funnel(&self) -> Vec<Stage> {
+    pub fn funnel(&self) -> Vec<Stage> {
         let Some(preset) = self.preset else {
             return self.stages.clone().unwrap_or_else(|| funnel::default_funnel(self.kind, self.ltc));
         };
@@ -183,14 +180,17 @@ fn main() -> String {
     "main".into()
 }
 
+pub const NO_STAGES: &str = "an experiment needs at least one stage";
+
 /// Queues experiments: each gets a job, and the jobs run in order.
 pub async fn submit(state: &Arc<AppState>, new: Vec<NewExperiment>, batch: Option<String>) -> Result<Vec<Experiment>> {
+    // Checked before any is queued, so a bad entry does not leave half a batch behind.
+    if new.iter().any(|n| n.funnel().is_empty()) {
+        bail!(NO_STAGES);
+    }
     let mut out = Vec::new();
     for n in new {
         let funnel = n.funnel();
-        if funnel.is_empty() {
-            bail!("an experiment needs at least one stage");
-        }
         let batch = batch.clone();
         let id = state
             .store
@@ -225,15 +225,18 @@ pub async fn submit(state: &Arc<AppState>, new: Vec<NewExperiment>, batch: Optio
     Ok(out)
 }
 
-pub async fn cancel(state: &Arc<AppState>, id: i64) -> Result<Experiment> {
-    let experiment = state.store.call(move |c| get(c, id)).await?.context("no such experiment")?;
-    if let Some(job) = experiment.job {
-        jobs::cancel(state, job).await?;
+/// Cancels a queued experiment or stops a running one. `None` when there is no such experiment.
+pub async fn cancel(state: &Arc<AppState>, id: i64) -> Result<Option<Experiment>> {
+    let Some(experiment) = state.store.call(move |c| get(c, id)).await? else { return Ok(None) };
+    let job = match experiment.job {
+        Some(job) => jobs::cancel(state, job).await?,
+        None => None,
+    };
+    // A job that had not started ends the experiment here; a running one ends it as it stops.
+    if experiment.status == ExperimentStatus::Queued && job.is_none_or(|j| j.status == jobs::JobStatus::Cancelled) {
+        return finish(state, id, ExperimentStatus::Cancelled, "cancelled before it started").await.map(Some);
     }
-    if experiment.status == ExperimentStatus::Queued {
-        return finish(state, id, ExperimentStatus::Cancelled, "cancelled before it started").await;
-    }
-    Ok(experiment)
+    Ok(Some(experiment))
 }
 
 pub fn announce(state: &AppState, e: &Experiment) {
@@ -404,15 +407,21 @@ async fn match_stage(
     let concurrency = (state.machine.threads.saturating_sub(2) as u32 / spec.threads).max(1);
 
     let sprt = spec.sprt;
-    let latest = Arc::new(Mutex::new(Pentanomial::default()));
-    let progress = {
-        let latest = latest.clone();
+    // One task records progress in order, and the final record waits for it, so a late update never lands after it.
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Pentanomial>();
+    let writer = tokio::spawn({
         let state = state.clone();
-        move |p: Pentanomial| {
-            *latest.lock().unwrap() = p;
-            let state = state.clone();
-            tokio::spawn(async move { tests::record(&state, test, p, sprt, false).await });
+        async move {
+            let mut latest = Pentanomial::default();
+            while let Some(p) = rx.recv().await {
+                latest = p;
+                let _ = tests::record(&state, test, p, sprt, false).await;
+            }
+            latest
         }
+    });
+    let progress = move |p: Pentanomial| {
+        let _ = tx.send(p);
     };
     let outcome = fastchess::run(fastchess::Match {
         fastchess: &fastchess,
@@ -429,10 +438,11 @@ async fn match_stage(
         progress: &progress,
     })
     .await;
+    drop(progress);
 
-    let totals = match &outcome {
-        Ok(p) => *p,
-        Err(_) => *latest.lock().unwrap(),
+    let totals = match (&outcome, writer.await) {
+        (Ok(p), _) => *p,
+        (Err(_), latest) => latest.unwrap_or_default(),
     };
     let t = tests::record(state, test, totals, sprt, true).await?;
     outcome?;
