@@ -2,7 +2,7 @@
 //! opening and Lichess's evaluations where the game was analysed) become finished matches with `account: "me"`. Each
 //! Lichess game is stored once, and a run with no `since` carries on from the newest game imported before.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use shakmaty::{CastlingMode, Chess, EnPassantMode, Position, fen::Fen, san::San}
 use tokio_util::sync::CancellationToken;
 use utoipa::ToSchema;
 
-use super::super::{meta_get, meta_set, rules as bot_rules};
+use super::super::{client::CallError, meta_get, meta_set, rules as bot_rules};
 use crate::{
     api::AppState,
     engine::uci::Score,
@@ -217,6 +217,9 @@ fn other(side: Side) -> Side {
 /// How many games to store at once.
 const BATCH: usize = 100;
 
+/// How many times in a row a broken export stream is reopened before the import fails.
+const MAX_BREAKS: u32 = 5;
+
 /// The import job: streams the games, stores the new ones in batches, and moves the cursor to the newest.
 pub async fn run(
     state: &Arc<AppState>,
@@ -233,34 +236,70 @@ pub async fn run(
         Some(s) => Some(s),
         None => meta_get(state, SINCE_KEY).await?.and_then(|s| s.parse::<i64>().ok()).map(|s| s + 1),
     };
-    let mut path = format!(
+    let base = format!(
         "/api/games/user/{}?finished=true&moves=true&clocks=true&evals=true&opening=true&sort=dateDesc",
         account.username
     );
-    if let Some(s) = since {
-        path += &format!("&since={s}");
-    }
-    if let Some(max) = req.max {
-        path += &format!("&max={}", max.max(1));
-    }
+    // Newest first, so a stream that breaks resumes below the oldest game read so far.
+    let path_from = |until: Option<i64>, read: usize| {
+        let mut path = base.clone();
+        if let Some(s) = since {
+            path += &format!("&since={s}");
+        }
+        if let Some(u) = until {
+            path += &format!("&until={u}");
+        }
+        if let Some(max) = req.max {
+            path += &format!("&max={}", (max as usize).saturating_sub(read).max(1));
+        }
+        path
+    };
     log(&format!(
         "importing {}'s games{}",
         account.username,
         since.map(|s| format!(" since {}", iso(s))).unwrap_or_default()
     ));
-    let mut stream = client.stream(&path).await?;
+    let mut stream = client.stream(&path_from(None, 0)).await?;
     let (mut stored, mut skipped, mut other, mut seen) = (0usize, 0usize, 0usize, 0usize);
     let mut newest = since.map(|s| s - 1).unwrap_or(0);
+    let mut oldest: Option<i64> = None;
+    let mut breaks = 0u32;
     let mut batch = Vec::new();
     loop {
         let line = tokio::select! {
             _ = cancel.cancelled() => bail!("cancelled"),
-            line = stream.next() => line?,
+            line = stream.next() => line,
+        };
+        let line = match line {
+            Ok(line) => line,
+            // A long export (thousands of games with evals) can outlive the connection: store what was read and
+            // carry on below the oldest game, a few times, before giving up.
+            Err(e) if breaks < MAX_BREAKS && req.max.is_none_or(|m| seen < m as usize) => {
+                breaks += 1;
+                if !batch.is_empty() {
+                    let (s, k) = matches::import(state, std::mem::take(&mut batch)).await?;
+                    stored += s;
+                    skipped += k;
+                }
+                let limited = matches!(e.downcast_ref::<CallError>(), Some(CallError::RateLimited));
+                let wait = if limited { 61 } else { 5 * u64::from(breaks) };
+                log(&format!("{seen} games read, {stored} stored; the stream broke ({e:#}), going on in {wait} s"));
+                tokio::select! {
+                    _ = cancel.cancelled() => bail!("cancelled"),
+                    _ = tokio::time::sleep(Duration::from_secs(wait)) => {}
+                }
+                stream = client.stream(&path_from(oldest.map(|o| o - 1), seen)).await?;
+                continue;
+            }
+            Err(e) => return Err(e),
         };
         let done = line.is_none();
         if let Some(g) = line {
             seen += 1;
-            newest = newest.max(g["createdAt"].as_i64().unwrap_or(0));
+            breaks = 0;
+            let created = g["createdAt"].as_i64().unwrap_or(0);
+            newest = newest.max(created);
+            oldest = Some(oldest.map_or(created, |o| o.min(created)));
             match to_match(&g, &account.id) {
                 Ok(Some(m)) => batch.push(m),
                 Ok(None) => other += 1,
