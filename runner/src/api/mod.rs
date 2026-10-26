@@ -17,7 +17,7 @@ mod web;
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::{Router, http::HeaderValue, middleware};
 use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
@@ -115,8 +115,11 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
 }
 
 pub async fn serve(config: Config) -> Result<()> {
-    let store = Store::open(&config.data.join("runner.db"))?;
     let listen = config.listen;
+    // Bound first: a second runner started by mistake stops here, before it marks the first one's work as stopped or
+    // brings a second Lichess bot online.
+    let listener = tokio::net::TcpListener::bind(listen).await.with_context(|| format!("listen on {listen}"))?;
+    let store = Store::open(&config.data.join("runner.db"))?;
     let state = Arc::new(AppState::new(config, store, crate::lichess::engines()));
     crate::matches::recover(&state).await?;
     tokio::spawn(crate::jobs::worker(state.clone()));
@@ -140,9 +143,37 @@ pub async fn serve(config: Config) -> Result<()> {
     // Clients following the stream see restarts, and drop state that only lived in the old process.
     state.events.emit("runner.started", serde_json::json!({ "version": env!("CARGO_PKG_VERSION") }));
 
-    let listener = tokio::net::TcpListener::bind(listen).await?;
     tracing::info!("runner on http://{listen} (data in {})", state.config.data.display());
     tracing::info!("reckless checkout: {}", state.config.reckless.display());
-    axum::serve(listener, app).await?;
+    // Returning ends the runtime, which drops every task and with them every child process tree (see `proc`). Open
+    // event streams never end, so this does not wait for connections to close.
+    tokio::select! {
+        served = axum::serve(listener, app) => served?,
+        () = shutdown_signal() => {
+            tracing::info!("stopping");
+            // The signal handler now swallows a second Ctrl-C, so a shutdown that hangs still ends.
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_secs(10));
+                std::process::exit(1);
+            });
+        }
+    }
     Ok(())
+}
+
+/// Ctrl-C, or SIGTERM on Unix (systemd, `kill`).
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        match signal(SignalKind::terminate()) {
+            Ok(mut term) => tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = term.recv() => {}
+            },
+            Err(_) => drop(tokio::signal::ctrl_c().await),
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = tokio::signal::ctrl_c().await;
 }

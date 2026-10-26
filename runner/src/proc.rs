@@ -1,7 +1,14 @@
-//! Child processes that die with their parent and take their own children with them: a Job Object on Windows, a
-//! process group elsewhere. Cancelling a build or a match must not leave a compiler or an engine running.
+//! Child processes that take their own children with them: a Job Object on Windows, a process group elsewhere.
+//! Cancelling a build or a match must not leave a compiler or an engine running.
+//!
+//! Dropping a [`Child`] kills its whole tree. On Windows the Job Object also dies with the runner however it ends; a
+//! Unix process group does not, so `chess serve` stops on Ctrl-C or SIGTERM by returning, which drops every child.
 
-use std::{path::Path, process::Stdio};
+use std::{
+    ops::{Deref, DerefMut},
+    path::Path,
+    process::Stdio,
+};
 
 use anyhow::{Context, Result};
 use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop};
@@ -10,7 +17,30 @@ use tokio::{
     sync::mpsc,
 };
 
-pub type Child = Box<dyn ChildWrapper>;
+/// A running child process and its descendants, all killed when it is dropped.
+pub struct Child(Box<dyn ChildWrapper>);
+
+impl Deref for Child {
+    type Target = dyn ChildWrapper;
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
+    }
+}
+
+impl DerefMut for Child {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.as_mut()
+    }
+}
+
+impl Drop for Child {
+    /// `KillOnDrop` takes the whole Job Object on Windows but only the group's leader on Unix, which would leave rustc
+    /// running after a cancelled build and fastchess's engines after a cancelled test. Killing the group takes them
+    /// all; after the child has exited it does nothing.
+    fn drop(&mut self) {
+        let _ = self.0.start_kill();
+    }
+}
 
 pub struct Spawn<'a> {
     pub program: &'a Path,
@@ -36,7 +66,7 @@ pub fn spawn(s: Spawn) -> Result<Child> {
     #[cfg(unix)]
     cmd.wrap(process_wrap::tokio::ProcessGroup::leader());
     cmd.wrap(KillOnDrop);
-    cmd.spawn().with_context(|| format!("start {}", s.program.display()))
+    cmd.spawn().map(Child).with_context(|| format!("start {}", s.program.display()))
 }
 
 /// Every line the child writes, stdout and stderr interleaved as they arrive. The channel closes when both end.
@@ -62,15 +92,14 @@ fn forward(stream: impl AsyncRead + Unpin + Send + 'static, tx: mpsc::UnboundedS
     });
 }
 
-/// Runs a command to the end and returns its stdout, or an error with its output.
+/// Runs a command to the end and returns its stdout, or an error with its output. Dropped early, it kills the command.
 pub async fn output(program: &Path, args: &[&str], cwd: Option<&Path>) -> Result<String> {
-    let out = tokio::process::Command::new(program)
-        .args(args)
-        .current_dir(cwd.unwrap_or(Path::new(".")))
-        .stdin(Stdio::null())
-        .output()
-        .await
-        .with_context(|| format!("run {}", program.display()))?;
+    let mut cmd = tokio::process::Command::new(program);
+    cmd.args(args).stdin(Stdio::null()).kill_on_drop(true);
+    if let Some(cwd) = cwd {
+        cmd.current_dir(cwd);
+    }
+    let out = cmd.output().await.with_context(|| format!("run {}", program.display()))?;
     if !out.status.success() {
         anyhow::bail!(
             "{} {} failed: {}",
