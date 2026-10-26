@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, useId } from "vue";
+import "./review.css";
 
 const props = defineProps<{
   /** What the strip is for, for screen readers. */
@@ -12,6 +13,8 @@ const props = defineProps<{
   texts: (string | null)[];
   /** The position on the board, as an index into `values`. */
   cursor: number;
+  /** Where a move was judged: the colour class of its mark (`rv-blunder`) at each position, `null` for the rest. */
+  marks?: (string | null)[];
 }>();
 const emit = defineEmits<{ select: [index: number] }>();
 
@@ -63,6 +66,16 @@ const place = computed(() => {
     "--p": String(here.value / last.value),
     "--y": String(v === null || v === undefined ? 0.5 : y(v) / 100),
   };
+});
+/** The judged moves, as dots on the line: their place along the strip and down it. Few enough to be plain elements. */
+const dots = computed(() => {
+  const out: { i: number; tone: string; style: Record<string, string> }[] = [];
+  props.marks?.forEach((tone, i) => {
+    const v = props.values[i];
+    if (!tone || v === null || v === undefined) return;
+    out.push({ i, tone, style: { "--x": String(i / last.value), "--v": String(y(v) / 100) } });
+  });
+  return out;
 });
 const hasDot = computed(() => props.values[here.value] !== null && props.values[here.value] !== undefined);
 
@@ -237,6 +250,7 @@ function onKey(e: KeyboardEvent) {
       <!-- What is not played yet is dimmed. -->
       <div class="tl-ahead"></div>
       <div ref="guide" class="tl-guide"></div>
+      <span v-for="d in dots" :key="d.i" :class="['tl-mark', d.tone]" :style="d.style"></span>
     </div>
     <div class="tl-now" aria-hidden="true">
       <span class="tl-dot" :class="{ 'tl-dot--none': !hasDot }"></span>
@@ -384,6 +398,20 @@ function onKey(e: KeyboardEvent) {
 
 .tl-dot--none {
   opacity: 0;
+}
+
+/* A judged move: a dot in its colour on the line, ringed so it reads on either half. */
+.tl-mark {
+  position: absolute;
+  inset-block-start: calc(var(--v) * 100%);
+  inset-inline-start: calc(var(--x) * 100%);
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 50%;
+  background: var(--rv, var(--e-primary));
+  box-shadow: 0 0 0 1.5px var(--e-surface);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
 }
 
 /* A drag follows the pointer exactly: no easing to lag behind it. */

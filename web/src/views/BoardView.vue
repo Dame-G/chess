@@ -55,6 +55,9 @@ import Tablebase from "../board/Tablebase.vue";
 import Playlist from "../board/Playlist.vue";
 import PlayerStrip from "../board/PlayerStrip.vue";
 import PlayPanel from "../board/PlayPanel.vue";
+import ReviewMove from "../board/ReviewMove.vue";
+import ReviewStatus from "../board/ReviewStatus.vue";
+import ReviewSummary from "../board/ReviewSummary.vue";
 import Timeline from "../board/Timeline.vue";
 import Term from "../components/Term.vue";
 import Workspace from "../components/Workspace.vue";
@@ -62,6 +65,9 @@ import { readGame, type Game } from "../board/game";
 import { clockAt, movesText, sideScore, youSide, type Side } from "../board/matchText";
 import { isMine, useFairPlay, useMyGameActions, useMyLichessGames } from "../board/lichessMe";
 import { useMatch } from "../board/useMatch";
+import { useReview } from "../board/useReview";
+import { findPly, hasBetter, hint, isError, markOf, pawnsOf, reviewSeries, scoreText } from "../board/review";
+import type { Classification } from "../board/review";
 import { outcome, type Outcome } from "../board/playlist";
 import { play, sanLine, sanMoves, toPgn, whitePawns, whiteScore } from "../board/position";
 import { playMoveSound, soundOf } from "../board/sound";
@@ -295,12 +301,13 @@ watch(
       start.value = m.start_fen;
       moves.value = m.moves.map((mv) => mv.uci);
       attached.value = m.status === "running";
+      // A link to a move (`?ply=`) opens there, also when it arrives while another match is on the board.
+      const asked = typeof route.query.ply === "string" && route.query.ply !== "" ? Number(route.query.ply) : NaN;
+      const at = wantedPly ?? (Number.isFinite(asked) ? asked : null);
       cursor.value =
-        m.status === "running" || m.lichess
-          ? moves.value.length
-          : Math.max(0, Math.min(moves.value.length, wantedPly ?? 0));
-      if (m.status !== "running" && m.lichess && wantedPly !== null)
-        cursor.value = Math.max(0, Math.min(moves.value.length, wantedPly));
+        m.status === "running" || m.lichess ? moves.value.length : Math.max(0, Math.min(moves.value.length, at ?? 0));
+      if (m.status !== "running" && m.lichess && at !== null)
+        cursor.value = Math.max(0, Math.min(moves.value.length, at));
       wantedPly = null;
       gameOrientation.value = youSide(m) ?? m.lichess?.our_side ?? "white";
     } else if (m.moves.length > moves.value.length) {
@@ -474,6 +481,24 @@ watch(wanted, (next) => {
 onBeforeUnmount(() => clearTimeout(settling));
 
 // ---------------------------------------------------------------------------------------------------------------------
+// The review of a finished game: every move judged by a build at a fixed budget
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** A finished game with moves can be reviewed; one on the board, or one of yours still on at Lichess, cannot. */
+const reviewable = computed(
+  () => isMatch.value && !!matchData.value && !matchLive.value && matchData.value.moves.length > 0 && !loading.value,
+);
+/** Nothing of a review is read or shown while a game of yours is on at Lichess. */
+const reviewOn = computed(() => reviewable.value && lockKnown.value && !fairPlay.value);
+const reviewing = useReview(matchId, reviewOn);
+const reviewData = computed(() => (reviewOn.value ? reviewing.review.value : null));
+const reviewPlies = computed(() => reviewData.value?.plies ?? []);
+/** What the list marks and says for each move, by ply. */
+const reviewMarks = computed(() => reviewPlies.value.map((p) => p.classification));
+// Only moves with a mark carry the line: the rest would repeat "Best move" down the whole list.
+const reviewHints = computed(() => reviewPlies.value.map((p) => (markOf(p.classification).tone ? hint(p) : "")));
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Evaluations: the engine's, and for a game what the players recorded
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -484,6 +509,8 @@ const played = computed(() => (game.value && cursor.value > 0 ? game.value.plies
 
 /** The last recorded evaluation at or before the move on the board. */
 const recorded = computed<Seen | undefined>(() => {
+  const r = reviewPlies.value[Math.min(cursor.value, reviewPlies.value.length) - 1];
+  if (r) return { pawns: pawnsOf(r.eval_after, r.side), text: scoreText(r.eval_after, r.side), depth: r.depth };
   const plies = game.value?.plies;
   if (!plies) return undefined;
   for (let i = Math.min(cursor.value, plies.length) - 1; i >= 0; i--) {
@@ -544,6 +571,15 @@ const fens = computed(() => {
 const gauge = (pawns: number) => (winChance(pawns * 100) - 0.5) * 2;
 /** What the timeline shows at each position: the recorded evaluation, else the engine's. */
 const timeline = computed(() => {
+  // A review searched every position to one depth: its scores replace the players' own, which differ from move to move.
+  if (reviewPlies.value.length) {
+    const r = reviewSeries(reviewPlies.value, gauge);
+    const n = fens.value.length;
+    return {
+      values: Array.from({ length: n }, (_, i) => r.values[i] ?? null),
+      texts: Array.from({ length: n }, (_, i) => r.texts[i] ?? null),
+    };
+  }
   const plies = game.value?.plies;
   const values: (number | null)[] = [];
   const texts: (string | null)[] = [];
@@ -596,6 +632,82 @@ function playMoves(uci: string[]) {
 
 /** The move counter: `24. Nf3`, or `24… Nf3` for Black's. */
 const counter = computed(() => plyLabels.value[cursor.value] ?? "Start");
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The review, on the board: the move's judgement, the engine's better move, and walking the mistakes
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** The side whose mistakes the walk stops at: yours, or our bot's. In a game of two engines, both sides'. */
+const walker = computed<Side | undefined>(() => {
+  const m = matchData.value;
+  return m ? (youSide(m) ?? m.lichess?.our_side) : undefined;
+});
+const walks = (p: { side: Side; classification: Classification }) =>
+  isError(p.classification) && (!walker.value || p.side === walker.value);
+const walkable = computed(() => reviewPlies.value.some(walks));
+/** The move whose better move is drawn, on the position before it. */
+const revealed = ref(0);
+watch(matchId, () => (revealed.value = 0));
+/** Whether the board is on the position before the move whose better move is shown. */
+const peeking = computed(() => revealed.value === cursor.value + 1);
+/** The move the card is about: the one on the board, or while its better move is shown, the one the board is about to make. */
+const thisPly = computed(() => reviewPlies.value[peeking.value ? cursor.value : cursor.value - 1]);
+/** The engine's line from the position before the move, when it had a better one. */
+const thisBest = computed(() => {
+  const p = thisPly.value;
+  return p && hasBetter(p) ? sanLine(fens.value[p.ply - 1] ?? "startpos", p.best_pv) : "";
+});
+const reviewArrow = computed<DrawShape[]>(() => {
+  const p = peeking.value ? reviewPlies.value[cursor.value] : undefined;
+  if (!p || !hasBetter(p)) return [];
+  return [{ orig: p.best_uci.slice(0, 2) as Key, dest: p.best_uci.slice(2, 4) as Key, brush: "review" }];
+});
+const boardShapes = computed(() =>
+  reviewArrow.value.length ? reviewArrow.value : arrowsVisible.value ? shapes.value : [],
+);
+/** A dot on the graph for each move worth a look. */
+const timelineMarks = computed(() => [
+  null,
+  ...reviewPlies.value.map((p) => {
+    const tone = markOf(p.classification).tone;
+    return tone ? `rv-${tone}` : null;
+  }),
+]);
+/** Steps to the position before the move and draws the better one there; again, back to the move. */
+function showBest() {
+  const p = thisPly.value;
+  if (!p) return;
+  if (peeking.value) return go(p.ply);
+  revealed.value = p.ply;
+  go(p.ply - 1);
+}
+function playBest() {
+  const p = thisPly.value;
+  if (!p) return;
+  freeBoard(start.value, [...moves.value.slice(0, p.ply - 1), ...p.best_pv], {
+    ply: String(p.ply),
+    ...(build.value && { build: build.value }),
+  });
+}
+function nextMistake(back = false) {
+  const at = back && cursor.value === 0 ? reviewPlies.value.length + 1 : cursor.value;
+  const ply = findPly(reviewPlies.value, at, walks, back);
+  if (ply !== undefined) go(ply);
+}
+/** A count in the summary: the next move of that side with that judgement, after the one on the board. */
+function jumpTo(side: Side, tone: Classification) {
+  const ply = findPly(reviewPlies.value, cursor.value, (p) => p.side === side && p.classification === tone);
+  if (ply !== undefined) go(ply);
+}
+/** Who a side is in the summary: you, in your own game. */
+function reviewName(side: Side) {
+  const m = matchData.value;
+  if (!m) return side === "white" ? "White" : "Black";
+  if (mine.value && walker.value === side) return "You";
+  const p = m[side];
+  return m.lichess && p.build != null ? `Dameless (${p.name})` : p.name;
+}
+const reviewNames = computed(() => ({ white: reviewName("white"), black: reviewName("black") }));
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The playlist
@@ -1075,6 +1187,7 @@ function onKey(e: KeyboardEvent) {
   else if (e.key === "ArrowRight") go(cursor.value + 1);
   else if (e.key === "ArrowUp") go(0);
   else if (e.key === "ArrowDown") go(Infinity);
+  else if (e.key.toLowerCase() === "x" && walkable.value) nextMistake(e.shiftKey);
   else return;
   e.preventDefault();
 }
@@ -1139,7 +1252,7 @@ const filters = [
           :orientation="orientation"
           :movable="humanLive ? attached : !matchLive"
           :premove="humanLive ? humanSide : undefined"
-          :shapes="arrowsVisible ? shapes : []"
+          :shapes="boardShapes"
           class="rig-board"
           @move="onBoardMove"
         />
@@ -1211,6 +1324,7 @@ const filters = [
         :texts="timeline.texts"
         :moves="plyLabels"
         :cursor="cursor"
+        :marks="timelineMarks"
         @select="go"
       />
       <span class="counter num" aria-live="off">
@@ -1365,6 +1479,37 @@ const filters = [
 
               <FairPlayNote v-if="fairPlay && !setup" />
 
+              <template v-if="reviewable && !setup && !(mine && matchLive)">
+                <template v-if="reviewData">
+                  <ReviewSummary
+                    :white="reviewData.summary.white"
+                    :black="reviewData.summary.black"
+                    :names="reviewNames"
+                    @jump="jumpTo"
+                  />
+                  <ReviewMove
+                    :ply="thisPly"
+                    :label="plyLabels[thisPly?.ply ?? 0] ?? counter"
+                    :best="thisBest"
+                    :shown="peeking"
+                    :walk="walkable"
+                    @show="showBest"
+                    @play="playBest"
+                    @next="nextMistake"
+                  />
+                </template>
+                <ReviewStatus
+                  v-else
+                  :loading="reviewing.loading.value || !lockKnown"
+                  :busy="reviewing.busy.value"
+                  :paused="reviewing.paused.value"
+                  :progress="reviewing.progress.value"
+                  :locked="fairPlay"
+                  :error="reviewing.error.value"
+                  @start="reviewing.start"
+                />
+              </template>
+
               <GameSetup v-if="setup" :mode="setup" :fen="start" :moves="moves.slice(0, cursor)" />
 
               <section
@@ -1436,7 +1581,16 @@ const filters = [
               </section>
 
               <section class="pane-moves" aria-label="Moves">
-                <MoveList :free="!inGame" :sans="sans" :cursor="cursor" :start="start" :loading="loading" @go="go" />
+                <MoveList
+                  :free="!inGame"
+                  :sans="sans"
+                  :cursor="cursor"
+                  :start="start"
+                  :loading="loading"
+                  :marks="reviewMarks"
+                  :hints="reviewHints"
+                  @go="go"
+                />
               </section>
             </div>
 
@@ -1499,6 +1653,7 @@ const filters = [
             :matches="matchList"
             :loading="matchesState.status === 'pending'"
             :current="matchId || undefined"
+            :locked="fairPlay"
             @open="openMatch"
           />
         </template>

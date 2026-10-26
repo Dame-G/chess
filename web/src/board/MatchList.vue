@@ -5,8 +5,10 @@ import { gameClock } from "../lichess";
 import { isMine } from "./lichessMe";
 import { matchTimeText, movesText, sideScore, youSide, type MatchSummary, type Side } from "./matchText";
 
-defineProps<{
+const props = defineProps<{
   matches: MatchSummary[];
+  /** A game of yours is on at Lichess: no analysis shows, a review's accuracy included. */
+  locked?: boolean;
   /** The match on the board. */
   current?: number;
 }>();
@@ -16,6 +18,15 @@ const emit = defineEmits<{ open: [id: number] }>();
 const detail = (m: MatchSummary) => {
   const clock = m.lichess ? `Lichess · ${gameClock(m)}` : matchTimeText(m.time);
   return m.status === "running" ? clock : `${clock} · ${movesText(m.plies)}`;
+};
+/** Each side's accuracy where the game has been reviewed: ours first in a game with a side of ours, else White's and Black's. */
+const accuracy = (m: MatchSummary): string => {
+  const r = m.review;
+  if (props.locked || !r || (r.white.accuracy == null && r.black.accuracy == null)) return "";
+  const text = (side: Side) => (r[side].accuracy == null ? "–" : r[side].accuracy!.toFixed(0));
+  const mine = ours(m);
+  const other: Side = mine === "black" ? "white" : "black";
+  return mine ? `Accuracy ${text(mine)} v ${text(other)}` : `Accuracy ${text("white")} v ${text("black")}`;
 };
 
 /** The side of ours in a game with a person or a bot on the other side: you, or the build that plays on Lichess. */
@@ -70,6 +81,7 @@ const won = (m: MatchSummary, side: "white" | "black") =>
           <span :class="['n', won(m, 'black')]">{{ nameOf(m, "black") }}</span>
         </span>
         <span class="tc num">{{ detail(m) }}</span>
+        <span v-if="accuracy(m)" class="tc acc num">{{ accuracy(m) }}</span>
       </span>
       <span v-if="m.status === 'running'" class="res res--live num"
         ><span class="dot" aria-hidden="true"></span>Live</span

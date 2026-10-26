@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { followCurrent } from "./follow";
 import MoveRow from "./MoveRow.vue";
+import type { Classification } from "./review";
 
 const props = defineProps<{
   /** The moves in SAN, in order. */
@@ -15,6 +16,9 @@ const props = defineProps<{
   loading?: boolean;
   /** The line is yours to make, on the free board: the empty list says how to start one. */
   free?: boolean;
+  /** The review's judgement of each move and the line to show for it, by ply (index 0 is ply 1). */
+  marks?: (Classification | null)[];
+  hints?: string[];
 }>();
 const emit = defineEmits<{ go: [ply: number] }>();
 
@@ -63,6 +67,10 @@ followCurrent(list, () => props.cursor);
       :fut-b="r.pb > cursor"
       :stop-a="r.pa === stop"
       :stop-b="r.pb === stop"
+      :ma="marks?.[r.pa - 1]"
+      :mb="marks?.[r.pb - 1]"
+      :ha="hints?.[r.pa - 1]"
+      :hb="hints?.[r.pb - 1]"
       @go="emit('go', $event)"
     />
     <ESkeleton v-if="loading && !sans.length" :lines="8" label="Loading moves" class="none" />

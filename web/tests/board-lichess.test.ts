@@ -24,9 +24,13 @@ vi.mock("uplot", () => ({
 }));
 vi.mock("uplot/dist/uPlot.min.css", () => ({}));
 
+// The first test pulls in the whole app.
+vi.setConfig({ testTimeout: 30_000 });
+
 const fixture = (name: string) => readFileSync(join(process.cwd(), "tests", "fixtures", name), "utf8");
-const json = (body: unknown) =>
+const json = (body: unknown, status = 200) =>
   new Response(typeof body === "string" ? body : JSON.stringify(body), {
+    status,
     headers: { "content-type": "application/json" },
   });
 

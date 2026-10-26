@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { EButton } from "@eos-ui/vue/components/EButton";
+import ReviewGlyph from "./ReviewGlyph.vue";
+import type { Classification } from "./review";
 
 /**
  * One line of the move list: the number and up to two moves. Its props are plain values, so a step on the board only
@@ -21,6 +23,11 @@ defineProps<{
   /** Whether each move is the list's one tab stop: the others are reached with the arrow keys, which step the board. */
   stopA: boolean;
   stopB: boolean;
+  /** What the review judged each move, and the line it has to say about it; nothing without a review. */
+  ma?: Classification | null;
+  mb?: Classification | null;
+  ha?: string;
+  hb?: string;
 }>();
 const emit = defineEmits<{ go: [ply: number] }>();
 </script>
@@ -37,9 +44,10 @@ const emit = defineEmits<{ go: [ply: number] }>();
     :aria-current="curA ? 'step' : undefined"
     :class="{ future: futA }"
     :data-ply="pa"
+    :title="ha || undefined"
     @click="emit('go', pa)"
   >
-    {{ a }}
+    {{ a }}<ReviewGlyph :of="ma" />
   </EButton>
   <span v-else class="gap">…</span>
   <EButton
@@ -52,9 +60,10 @@ const emit = defineEmits<{ go: [ply: number] }>();
     :aria-current="curB ? 'step' : undefined"
     :class="{ future: futB }"
     :data-ply="pb"
+    :title="hb || undefined"
     @click="emit('go', pb)"
   >
-    {{ b }}
+    {{ b }}<ReviewGlyph :of="mb" />
   </EButton>
   <span v-else class="gap" aria-hidden="true"></span>
 </template>
@@ -87,6 +96,13 @@ const emit = defineEmits<{ go: [ply: number] }>();
   background: var(--e-primary);
   color: var(--e-on-primary);
   font-weight: 700;
+}
+
+/* On the current move's tint the glyph sits on a chip of the surface, so its colour still reads. */
+.mv[aria-current] :deep(.gl) {
+  padding-inline: 0.25rem;
+  border-radius: var(--e-radius-sm);
+  background: var(--e-surface);
 }
 
 .mv:focus-visible {

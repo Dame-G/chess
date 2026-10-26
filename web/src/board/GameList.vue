@@ -13,6 +13,8 @@ const props = defineProps<{
   loading?: boolean;
   /** The match on the board. */
   current?: number;
+  /** A game of yours is on at Lichess: the rows show nothing of any review. */
+  locked?: boolean;
 }>();
 const emit = defineEmits<{ open: [id: number] }>();
 
@@ -52,7 +54,7 @@ const shown = computed(() => {
     <EEmptyState v-else-if="!shown.length" title="No games yet" icon="info" size="sm" bare class="pad">
       Games you play or watch are kept here to replay.
     </EEmptyState>
-    <MatchList v-else :matches="shown" :current="current" @open="emit('open', $event)" />
+    <MatchList v-else :matches="shown" :current="current" :locked="locked" @open="emit('open', $event)" />
   </div>
 </template>
 

@@ -105,6 +105,7 @@ onMounted(() => {
         red: { key: "r", color: "#882020", opacity: 1, lineWidth: 10 },
         blue: { key: "b", color: "#003088", opacity: 1, lineWidth: 10 },
         yellow: { key: "y", color: "#e68f00", opacity: 1, lineWidth: 10 },
+        review: { key: "rv", color: "#148275", opacity: 0.9, lineWidth: 12 },
         engineWhite: { key: "ew", color: "#c8772e", opacity: 0.85, lineWidth: 10 },
         engineBlack: { key: "eb", color: "#2a2420", opacity: 0.8, lineWidth: 10 },
       },
