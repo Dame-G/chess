@@ -50,6 +50,19 @@ const sentence = computed(() => {
 });
 const pending = computed(() => seek.value.pending ?? undefined);
 
+/** Lichess allows a bot 100 games against other bots in a rolling day; people are unlimited. */
+const BOT_GAMES_PER_DAY = 100;
+const quota = computed(() => {
+  const n = props.status.bot_games_today;
+  if (n === undefined) return "";
+  const until = props.status.bot_limit_until;
+  if (until) {
+    const at = new Date(until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return `No more games against bots until ${at}: Lichess allows ${BOT_GAMES_PER_DAY} a day. People can still challenge it.`;
+  }
+  return `${n} of ${BOT_GAMES_PER_DAY} games against bots today`;
+});
+
 // ---- What it looks for: kept a moment after the last change, like the rest of the settings.
 /** The search settings, with the defaults for a runner too old to send them. */
 const seekOf = (s: LichessStatus["settings"]) => ({
@@ -151,6 +164,8 @@ onBeforeUnmount(() => {
       <ELink :href="pending.url" external>View on Lichess</ELink>
     </p>
 
+    <p v-if="quota" class="quota num">{{ quota }}</p>
+
     <ENotice v-if="error" tone="danger" title="That did not work" :role="false">{{ error }}</ENotice>
 
     <ECheckboxGroup
@@ -170,6 +185,12 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.quota {
+  margin: 0;
+  color: var(--e-muted);
+  font: var(--e-type-small);
+}
+
 .seek {
   display: grid;
   gap: var(--e-gap-base);
