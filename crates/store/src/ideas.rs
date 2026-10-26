@@ -223,6 +223,15 @@ impl Store {
         .await
     }
 
+    /// Clears an idea's verdict and end, when it is resumed.
+    pub async fn clear_idea_end(&self, id: IdeaId) -> Result<(), Error> {
+        self.write(move |tx| {
+            let n = tx.execute("UPDATE ideas SET verdict = NULL, ended_at = NULL WHERE id = ?1", [id.0])?;
+            if n == 0 { Err(Error::not_found(format!("No idea {id}")).into()) } else { Ok(()) }
+        })
+        .await
+    }
+
     /// Adds a trial after the idea's others; returns it, waiting, with no games.
     pub async fn insert_trial(&self, idea: IdeaId, t: NewTrial) -> Result<Trial, Error> {
         self.write(move |tx| {
@@ -427,6 +436,11 @@ mod tests {
             .unwrap();
         assert_eq!((updated.status, updated.verdict.as_deref()), (IdeaStatus::Kept, Some("Kept")));
         assert_eq!(updated.title, "Deeper LMR");
+        store.update_idea(i.id, IdeaUpdate { ended_at: Some(now()), ..Default::default() }).await.unwrap();
+        store.clear_idea_end(i.id).await.unwrap();
+        let cleared = store.idea(i.id).await.unwrap().unwrap();
+        assert_eq!((cleared.verdict, cleared.ended_at), (None, None));
+        assert_eq!(store.clear_idea_end(IdeaId(99)).await.unwrap_err().status(), 404);
 
         // Trial games are counted and listed by trial.
         let mut g = local(PlayerKey::Dameless, PlayerKey::Dameless, 0);

@@ -201,6 +201,12 @@ impl WorkContext {
         }
     }
 
+    /// Whether the scheduler has asked the item to pause, without waiting: work that keeps several units in flight (a
+    /// tune's workers) stops starting new ones, lets those running finish, then calls [`WorkContext::safe_point`].
+    pub fn pause_asked(&self) -> bool {
+        matches!(*self.control.borrow(), Control::Pause { .. })
+    }
+
     /// The error an executor returns after noticing [`WorkContext::cancel`]; the scheduler records the item as stopped.
     pub fn stopped(&self) -> Error {
         Error::Conflict(STOPPED.to_owned())
