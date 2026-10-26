@@ -91,16 +91,19 @@ fn extract(archive: &Path, member: &str, out: &Path) -> Result<()> {
     let partial = out.with_extension("partial");
     let mut dest = std::fs::File::create(&partial)?;
     let file = std::fs::File::open(archive)?;
-    if archive.to_string_lossy().contains(".zip") || zip_magic(archive) {
+    if zip_magic(archive) {
         let mut zip = zip::ZipArchive::new(file)?;
         let mut entry = zip.by_name(member).with_context(|| format!("{member} is not in the archive"))?;
         std::io::copy(&mut entry, &mut dest)?;
     } else {
         let mut tar = tar::Archive::new(file);
+        // Taken by its file name wherever it sits (`./` or not), since the Linux archive's layout was never checked
+        // on the Windows machine this was written on.
+        let name = Path::new(member).file_name();
         let mut entry = tar
             .entries()?
             .filter_map(Result::ok)
-            .find(|e| e.path().is_ok_and(|p| p.to_string_lossy() == member))
+            .find(|e| e.header().entry_type().is_file() && e.path().is_ok_and(|p| p.file_name() == name))
             .with_context(|| format!("{member} is not in the archive"))?;
         std::io::copy(&mut entry, &mut dest)?;
     }
@@ -119,4 +122,33 @@ fn zip_magic(path: &Path) -> bool {
     use std::io::Read;
     let mut magic = [0u8; 4];
     std::fs::File::open(path).and_then(|mut f| f.read_exact(&mut magic)).is_ok() && magic == *b"PK\x03\x04"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn takes_a_member_out_of_a_tar_wherever_it_sits() {
+        let dir = std::env::temp_dir().join(format!("chess-tools-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let archive = dir.join("fastchess.download");
+        let mut tar = tar::Builder::new(std::fs::File::create(&archive).unwrap());
+        for (path, body) in
+            [("./fastchess-linux-x86-64/LICENSE", "license"), ("./fastchess-linux-x86-64/fastchess", "binary")]
+        {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(body.len() as u64);
+            header.set_mode(0o755);
+            header.set_cksum();
+            tar.append_data(&mut header, path, body.as_bytes()).unwrap();
+        }
+        tar.finish().unwrap();
+        drop(tar);
+        let out = dir.join("fastchess-1.8.2");
+        extract(&archive, "fastchess-linux-x86-64/fastchess", &out).unwrap();
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "binary");
+        assert!(!archive.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

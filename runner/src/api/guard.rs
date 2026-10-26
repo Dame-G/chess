@@ -44,9 +44,15 @@ fn check(state: &AppState, headers: &HeaderMap) -> Result<(), (StatusCode, &'sta
     }
 }
 
+/// A loopback name, with or without a port: `127.0.0.1:7878`, `localhost`, `[::1]`.
 fn is_loopback_host(host: &str) -> bool {
-    let name = host.rsplit_once(':').map_or(host, |(name, _)| name);
-    matches!(name, "127.0.0.1" | "localhost" | "[::1]")
+    // The last colon starts the port, unless it is inside an IPv6 address's brackets.
+    let (name, port) = match host.rfind(':') {
+        Some(i) if !host[i..].contains(']') => (&host[..i], Some(&host[i + 1..])),
+        _ => (host, None),
+    };
+    let port_ok = port.is_none_or(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()));
+    port_ok && matches!(name, "127.0.0.1" | "localhost" | "[::1]")
 }
 
 #[cfg(test)]
@@ -60,5 +66,7 @@ mod tests {
         assert!(is_loopback_host("[::1]:7878"));
         assert!(!is_loopback_host("evil.example:7878"));
         assert!(!is_loopback_host("127.0.0.1.evil.example"));
+        assert!(is_loopback_host("[::1]") && is_loopback_host("localhost"));
+        assert!(!is_loopback_host("localhost:") && !is_loopback_host("[::2]:7878"));
     }
 }

@@ -115,24 +115,9 @@ pub enum Kind {
 /// hundred game pairs and lets anything plausibly neutral or better through, which a gainer SPRT with wide bounds
 /// would not (it would reject most real but small gains). The confirmation is what decides.
 pub fn default_funnel(kind: Kind, ltc: bool) -> Vec<Stage> {
-    let m = |name: &str, preset: Preset, sprt| Stage::Match { name: name.into(), spec: preset.spec(Some(sprt), None) };
-    let screen = m("screen", Preset::Vstc, bounds(-5.0, 0.0));
     match kind {
-        Kind::Gainer => {
-            let mut stages = vec![Stage::Bench { functional: true }, screen, m("stc", Preset::Stc, bounds(0.0, 3.0))];
-            if ltc {
-                stages.push(m("ltc", Preset::Ltc, bounds(0.0, 3.0)));
-            }
-            stages
-        }
-        Kind::Nonregression => {
-            let mut stages =
-                vec![Stage::Bench { functional: true }, screen, m("stc", Preset::Stc, bounds(-2.75, 0.25))];
-            if ltc {
-                stages.push(m("ltc", Preset::Ltc, bounds(-2.75, 0.25)));
-            }
-            stages
-        }
+        Kind::Gainer => functional(bounds(0.0, 3.0), ltc),
+        Kind::Nonregression => functional(bounds(-2.75, 0.25), ltc),
         Kind::Nonfunctional => vec![Stage::Bench { functional: false }, Stage::Speed { runs: 5 }],
     }
 }
@@ -140,14 +125,19 @@ pub fn default_funnel(kind: Kind, ltc: bool) -> Vec<Stage> {
 /// The confirmation of an SPSA result, as Reckless confirms its tunes: bench must change, the usual screen, then STC at
 /// [0, 4] (and LTC at [0, 4] with `ltc`).
 pub fn tuned_funnel(ltc: bool) -> Vec<Stage> {
+    functional(bounds(0.0, 4.0), ltc)
+}
+
+/// A change to search: bench must change, then the screen, then STC (and LTC with `ltc`) at `confirm`.
+fn functional(confirm: Sprt, ltc: bool) -> Vec<Stage> {
     let m = |name: &str, preset: Preset, sprt| Stage::Match { name: name.into(), spec: preset.spec(Some(sprt), None) };
     let mut stages = vec![
         Stage::Bench { functional: true },
         m("screen", Preset::Vstc, bounds(-5.0, 0.0)),
-        m("stc", Preset::Stc, bounds(0.0, 4.0)),
+        m("stc", Preset::Stc, confirm),
     ];
     if ltc {
-        stages.push(m("ltc", Preset::Ltc, bounds(0.0, 4.0)));
+        stages.push(m("ltc", Preset::Ltc, confirm));
     }
     stages
 }

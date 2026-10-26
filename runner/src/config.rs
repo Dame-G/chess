@@ -24,6 +24,8 @@ impl Config {
     pub fn load(data: PathBuf, reckless: PathBuf, listen: String, lichess_url: String) -> Result<Self> {
         std::fs::create_dir_all(&data).with_context(|| format!("create data directory {}", data.display()))?;
         let listen = listen.parse().with_context(|| format!("parse listen address {listen}"))?;
+        // Absolute, because builds and matches run in other working directories: cargo in the build worktree.
+        let data = std::path::absolute(&data).unwrap_or(data);
         let reckless = std::path::absolute(&reckless).unwrap_or(reckless);
         let token = load_or_create_token(&data)?;
         Ok(Self { data, reckless, listen, token, lichess_url })
@@ -55,6 +57,24 @@ fn load_or_create_token(data: &Path) -> Result<String> {
     let mut bytes = [0u8; 24];
     getrandom::fill(&mut bytes).map_err(|e| anyhow::anyhow!("generate token: {e}"))?;
     let token: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-    std::fs::write(&path, &token).with_context(|| format!("write {}", path.display()))?;
+    write_private(&path, &token).with_context(|| format!("write {}", path.display()))?;
     Ok(token)
+}
+
+/// Writes a secret where only this user can read it: mode 0600 on Unix. On Windows the per-user data folder is
+/// already private to the user.
+pub fn write_private(path: &Path, contents: &str) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::{
+            io::Write,
+            os::unix::fs::{OpenOptionsExt, PermissionsExt},
+        };
+        let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path)?;
+        // A file that was already there keeps its mode on open, so it is set again.
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        f.write_all(contents.as_bytes())
+    }
+    #[cfg(not(unix))]
+    std::fs::write(path, contents)
 }

@@ -108,7 +108,6 @@ pub async fn run(m: Match<'_>) -> Result<Pentanomial> {
     let args = args(&m);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     (m.log)(&format!("fastchess {}", args.join(" ")));
-    // The working directory stays the runner's, so relative paths (a relative data directory) mean the same to it.
     let mut child = proc::spawn(proc::Spawn { program: m.fastchess, args: &refs, cwd: None, env: &[], stdin: false })?;
     let mut lines = proc::lines(&mut child);
     let mut totals = Pentanomial::default();
