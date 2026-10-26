@@ -405,6 +405,7 @@ dependencies = [
  "getrandom 0.4.3",
  "serde",
  "serde_json",
+ "sysinfo",
  "tempfile",
  "tokio",
  "tokio-util",

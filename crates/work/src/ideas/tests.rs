@@ -47,6 +47,7 @@ fn request(title: &str, kind: IdeaKind, branch: &str) -> NewIdeaRequest {
         long: false,
         tune: None,
         custom: None,
+        fix_bench: false,
     }
 }
 
@@ -381,4 +382,95 @@ async fn a_stopped_tune_resumes_from_its_last_step() {
     assert_eq!(done.status, IdeaStatus::Kept, "{:?}", done.verdict);
     let steps = lab.hub.store.tune_steps(idea.id).await.unwrap();
     assert_eq!(steps.iter().map(|s| s.iteration).collect::<Vec<_>>(), (1..=30).collect::<Vec<_>>());
+}
+
+#[tokio::test]
+async fn a_branch_without_a_bench_line_is_refused_then_fixed_on_request() {
+    let lab = lab(2).await;
+    let sha = lab.repo.commit_without_bench("no-bench", "main", &[("src/search.rs", "fn search() { lmr(); }\n")]);
+    let check = lab.ideas.check_branch("no-bench").await.unwrap();
+    assert_eq!((check.status, check.commit.as_str(), check.bench_line), (BenchLineStatus::Missing, sha.as_str(), None));
+
+    // Creating the idea is refused before anything is queued.
+    let e = lab.ideas.create(request("No bench", IdeaKind::Gain, "no-bench")).await.unwrap_err();
+    assert_eq!(e.code(), dameless_core::ErrorCode::Conflict);
+    assert!(e.message().contains("has no Bench: line"), "{}", e.message());
+    assert!(lab.ideas.list(IdeaFilter::default()).await.unwrap().is_empty());
+    // A custom test has no fingerprint stage, so it is not held up.
+    let custom = NewIdeaRequest {
+        custom: Some(CustomTrial { preset: Preset::Vstc, bounds: None, pairs: Some(8) }),
+        ..request("Test", IdeaKind::Gain, "no-bench")
+    };
+    lab.ideas.check(&custom).await.unwrap();
+
+    // With fix_bench, the tip is built, reworded with its bench, and the idea runs on it.
+    lab.fake.rounds(WINS);
+    let tree = lab.repo.git(&["rev-parse", "no-bench^{tree}"]);
+    let idea =
+        lab.ideas.create(NewIdeaRequest { fix_bench: true, ..request("No bench", IdeaKind::Gain, "no-bench") }).await;
+    let idea = idea.unwrap();
+    let tip = lab.repo.git(&["rev-parse", "no-bench"]);
+    assert_ne!(tip, sha);
+    assert_eq!(lab.repo.git(&["rev-parse", "no-bench^{tree}"]), tree, "only the message changed");
+    assert_eq!(lab.repo.git(&["rev-parse", "no-bench^"]), lab.repo.git(&["rev-parse", "main"]));
+    let message = lab.repo.git(&["log", "-1", "--format=%B", "no-bench"]);
+    assert!(message.starts_with("no-bench: change\n\nWhy it helps."), "{message}");
+    let fixed = lab.ideas.check_branch("no-bench").await.unwrap();
+    assert_eq!(fixed.status, BenchLineStatus::Ok);
+    assert_eq!(fixed.bench_line, fixed.measured);
+    assert_eq!(dameless_engine::git::bench_line(&message), fixed.measured);
+    let idea = ended(&lab, idea.id).await;
+    assert_eq!(idea.status, IdeaStatus::Kept, "{:?}", idea.verdict);
+    // The reworded commit reused the build of the old one: one build of the branch, one of main.
+    assert_eq!(lab.fake.builds.load(Ordering::SeqCst), 2);
+    // The user's checkout is untouched.
+    assert_eq!(lab.repo.git(&["symbolic-ref", "--short", "HEAD"]), "main");
+    assert_eq!(lab.repo.git(&["status", "--porcelain"]), "");
+}
+
+#[tokio::test]
+async fn a_stale_bench_line_is_found_once_built_and_fixed() {
+    let lab = lab(2).await;
+    lab.repo.commit("stale", "main", &[("src/search.rs", "fn search() { nmp(); }\n")], Some(123));
+    let check = lab.ideas.check_branch("stale").await.unwrap();
+    assert_eq!((check.status, check.bench_line, check.measured), (BenchLineStatus::Unbuilt, Some(123), None));
+    // Unbuilt is not refused: only a build could tell, and the fingerprint will.
+    lab.ideas.check(&request("Stale", IdeaKind::Gain, "stale")).await.unwrap();
+
+    lab.ideas.versions().binary(&VersionRef::Name("stale".into()), &[]).await.unwrap();
+    let check = lab.ideas.check_branch("stale").await.unwrap();
+    assert_eq!(check.status, BenchLineStatus::Stale);
+    let measured = check.measured.unwrap();
+    assert_ne!(measured, 123);
+    assert!(check.detail.contains("says Bench: 123"), "{}", check.detail);
+    let e = lab.ideas.create(request("Stale", IdeaKind::Gain, "stale")).await.unwrap_err();
+    assert_eq!(e.code(), dameless_core::ErrorCode::Conflict);
+    assert!(e.message().contains("stale"));
+
+    let fixed = lab.ideas.fix_bench_line("stale", Some(&check.commit)).await.unwrap();
+    assert_eq!((fixed.status, fixed.bench_line, fixed.measured), (BenchLineStatus::Ok, Some(measured), Some(measured)));
+    assert_ne!(fixed.commit, check.commit);
+    let message = lab.repo.git(&["log", "-1", "--format=%B", "stale"]);
+    assert_eq!(message.matches("Bench:").count(), 1, "{message}");
+    // The version follows the reworded tip, with its bench.
+    let v = lab.ideas.versions().resolve(&VersionRef::Name("stale".into())).await.unwrap();
+    assert_eq!((v.commit.as_str(), v.bench), (fixed.commit.as_str(), Some(measured)));
+    // Fixing again changes nothing.
+    assert_eq!(lab.ideas.fix_bench_line("stale", None).await.unwrap().commit, fixed.commit);
+}
+
+#[tokio::test]
+async fn a_branch_that_moved_is_not_reworded() {
+    let lab = lab(2).await;
+    let first = lab.repo.commit_without_bench("moving", "main", &[("src/search.rs", "fn search() { a(); }\n")]);
+    let check = lab.ideas.check_branch("moving").await.unwrap();
+    assert_eq!(check.commit, first);
+    let second = lab.repo.commit_without_bench("moving", "moving", &[("src/search.rs", "fn search() { b(); }\n")]);
+    let e = lab.ideas.fix_bench_line("moving", Some(&check.commit)).await.unwrap_err();
+    assert_eq!(e.code(), dameless_core::ErrorCode::Conflict);
+    assert!(e.message().contains("moved"), "{}", e.message());
+    assert_eq!(lab.repo.git(&["rev-parse", "moving"]), second, "nothing was reworded");
+    // main and upstream's branches are never reworded.
+    assert_eq!(lab.ideas.fix_bench_line("main", None).await.unwrap_err().code(), dameless_core::ErrorCode::BadRequest);
+    assert_eq!(lab.ideas.fix_bench_line("nope", None).await.unwrap_err().code(), dameless_core::ErrorCode::NotFound);
 }

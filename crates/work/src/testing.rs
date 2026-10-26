@@ -61,6 +61,26 @@ impl TestRepo {
         sha
     }
 
+    /// Commits `files` on `branch` (made from `from` when new) with a message that has no `Bench:` line. Returns the
+    /// sha.
+    pub fn commit_without_bench(&self, branch: &str, from: &str, files: &[(&str, &str)]) -> String {
+        if self.git(&["branch", "--list", branch]).is_empty() {
+            self.git(&["branch", branch, from]);
+        }
+        let current = self.git(&["symbolic-ref", "--short", "HEAD"]);
+        self.git(&["checkout", "-q", branch]);
+        for (path, contents) in files {
+            let p = self.path().join(path);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, contents).unwrap();
+            self.git(&["add", path]);
+        }
+        self.git(&["commit", "-q", "-m", &format!("{branch}: change\n\nWhy it helps.")]);
+        let sha = self.git(&["rev-parse", "HEAD"]);
+        self.git(&["checkout", "-q", &current]);
+        sha
+    }
+
     /// The files the fake bench depends on, as checked out now.
     fn tree_text(&self) -> String {
         FINGERPRINTED
@@ -163,6 +183,11 @@ pub struct Fake {
     pub round_delay: Mutex<Duration>,
     pub build_delay: Mutex<Duration>,
     pub missing_tools: std::sync::atomic::AtomicBool,
+    /// Rounds report this many times the pairs asked (the PGN still holds the pairs asked), so an SPRT between
+    /// near-identical engines decides in a few rounds. Zero counts as one.
+    pub pair_scale: std::sync::atomic::AtomicU32,
+    /// The installed fastchess's file name, when not the default `fastchess` (a test of a tool upgrade).
+    pub fastchess_name: Mutex<Option<String>>,
 }
 
 impl Fake {
@@ -285,7 +310,8 @@ impl Toolchain for Fake {
             _ = cancel.cancelled() => return Err(dameless_engine::Cancelled.into()),
         }
         let Some(weights) = *self.default_round.lock().unwrap() else { bail!("no rounds set") };
-        let penta = spread(round.pairs, weights);
+        let scale = self.pair_scale.load(Ordering::SeqCst).max(1);
+        let penta = spread(round.pairs * scale, weights);
         let [ll, ld, dd, wd, ww] = penta;
         let totals = Totals { penta, wins: wd + 2 * ww, draws: ld + 2 * dd + wd, losses: 2 * ll + ld };
         self.played.lock().unwrap().push(Played {
@@ -305,7 +331,69 @@ impl Toolchain for Fake {
         if self.missing_tools.load(Ordering::SeqCst) {
             Installed { fastchess: None, book: None }
         } else {
-            Installed { fastchess: Some(dir.join("fastchess")), book: Some(dir.join("book.epd")) }
+            let name = self.fastchess_name.lock().unwrap().clone().unwrap_or_else(|| "fastchess".into());
+            Installed { fastchess: Some(dir.join(name)), book: Some(dir.join("book.epd")) }
         }
+    }
+}
+
+/// A machine for health and harness tests: whatever the test sets, and a count of the slow probes asked.
+pub struct FakeProbes {
+    pub machine: Mutex<dameless_core::harness::Machine>,
+    pub clang: Mutex<Option<String>>,
+    pub cuda: Mutex<crate::health::Cuda>,
+    pub gpu: Mutex<Option<crate::health::Gpu>>,
+    pub disk: Mutex<Option<crate::health::DiskSpace>>,
+    pub slow_calls: AtomicUsize,
+}
+
+impl FakeProbes {
+    /// A healthy machine: clang, CUDA, a GPU and 500 GB free.
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            machine: Mutex::new(dameless_core::harness::Machine {
+                cpu: "Test CPU @ 3.80GHz".into(),
+                cores: 8,
+                os: "Windows 11".into(),
+            }),
+            clang: Mutex::new(Some("clang version 18.1.8".into())),
+            cuda: Mutex::new(crate::health::Cuda {
+                path: Some("C:/CUDA/v12.4".into()),
+                nvcc: Some("Cuda compilation tools, release 12.4, V12.4.131".into()),
+            }),
+            gpu: Mutex::new(Some(crate::health::Gpu {
+                name: "NVIDIA GeForce RTX 3080".into(),
+                memory_mb: Some(10240),
+            })),
+            disk: Mutex::new(Some(crate::health::DiskSpace {
+                free_bytes: 500_000_000_000,
+                total_bytes: 1_000_000_000_000,
+            })),
+            slow_calls: AtomicUsize::new(0),
+        })
+    }
+}
+
+#[async_trait]
+impl crate::health::Probes for FakeProbes {
+    fn machine(&self) -> dameless_core::harness::Machine {
+        self.machine.lock().unwrap().clone()
+    }
+
+    async fn clang(&self) -> Option<String> {
+        self.slow_calls.fetch_add(1, Ordering::SeqCst);
+        self.clang.lock().unwrap().clone()
+    }
+
+    async fn cuda(&self) -> crate::health::Cuda {
+        self.cuda.lock().unwrap().clone()
+    }
+
+    async fn gpu(&self) -> Option<crate::health::Gpu> {
+        self.gpu.lock().unwrap().clone()
+    }
+
+    fn disk(&self, _path: &Path) -> Option<crate::health::DiskSpace> {
+        *self.disk.lock().unwrap()
     }
 }

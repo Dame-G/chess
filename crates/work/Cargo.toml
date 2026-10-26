@@ -14,6 +14,7 @@ dameless-engine.workspace = true
 dameless-hub.workspace = true
 dameless-store.workspace = true
 futures.workspace = true
+sysinfo.workspace = true
 getrandom.workspace = true
 serde.workspace = true
 serde_json.workspace = true

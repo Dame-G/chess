@@ -32,10 +32,12 @@ use crate::{
     versions::{VersionRef, Versions},
 };
 
+mod bench;
 pub mod promote;
 mod trial;
 mod tune;
 
+pub use bench::{BenchLineStatus, BranchCheck, FixBenchRequest};
 pub use promote::PromoteWork;
 
 /// `POST /api/ideas`: an idea to try.
@@ -67,6 +69,11 @@ pub struct NewIdeaRequest {
     /// One trial with any preset and bounds or a fixed number of pairs, instead of the funnel.
     #[serde(default)]
     pub custom: Option<CustomTrial>,
+    /// When the branch's tip has no `Bench:` line or a stale one, build it and reword the tip with the measured bench
+    /// before creating the idea (this changes the fork's branch locally). Without it, such a branch is refused with a
+    /// 409, since the fingerprint stage would fail on it.
+    #[serde(default)]
+    pub fix_bench: bool,
 }
 
 fn gain() -> IdeaKind {
@@ -102,6 +109,9 @@ pub struct IdeaSpec {
     pub tune: Option<TuneSpec>,
     #[serde(default)]
     pub custom: Option<CustomTrial>,
+    /// Set on a harness check: what it is checking, and that every trial runs whatever the one before showed.
+    #[serde(default)]
+    pub harness: Option<crate::harness::HarnessRun>,
 }
 
 /// What a `Trial` or `Tune` work item runs: one trial of an idea.
@@ -157,7 +167,7 @@ impl Ideas {
         self.inner.versions.scheduler()
     }
 
-    fn hub(&self) -> &Arc<Hub> {
+    pub(crate) fn hub(&self) -> &Arc<Hub> {
         self.inner.versions.hub()
     }
 
@@ -187,12 +197,41 @@ impl Ideas {
         {
             return Err(Error::bad_request("A tune needs at least one iteration of at least one pair"));
         }
+        if let Some(check) = self.bench_problem(req).await?
+            && !req.fix_bench
+        {
+            return Err(Error::conflict(format!(
+                "{}. The fingerprint stage would fail on it: let the app fix the line (fix_bench), or amend the commit",
+                check.detail
+            )));
+        }
+        Ok(())
+    }
+
+    /// The branch's `Bench:` problem, for an idea whose funnel fingerprints its branch (a tune's branch is written by
+    /// SPSA, and a custom test has no fingerprint stage).
+    async fn bench_problem(&self, req: &NewIdeaRequest) -> Result<Option<BranchCheck>, Error> {
+        if req.custom.is_some() || req.kind == IdeaKind::Tune {
+            return Ok(None);
+        }
+        let check = self.check_branch(&req.branch).await?;
+        Ok(check.blocks().then_some(check))
+    }
+
+    /// Fixes the branch's `Bench:` line first when the request asks for it and the line needs it.
+    async fn fix_if_asked(&self, req: &NewIdeaRequest) -> Result<(), Error> {
+        if req.fix_bench
+            && let Some(check) = self.bench_problem(req).await?
+        {
+            self.fix_bench_line(&req.branch, Some(&check.commit)).await?;
+        }
         Ok(())
     }
 
     /// Stores an idea with its trials and queues its first trial.
     pub async fn create(&self, req: NewIdeaRequest) -> Result<Idea, Error> {
         self.check(&req).await?;
+        self.fix_if_asked(&req).await?;
         self.insert(req).await
     }
 
@@ -206,21 +245,28 @@ impl Ideas {
             if !req.tag.trim().is_empty() && !i.tags.contains(&req.tag) {
                 i.tags.push(req.tag.clone());
             }
+            self.fix_if_asked(&i).await?;
             out.push(self.insert(i).await?);
         }
         Ok(out)
     }
 
     async fn insert(&self, req: NewIdeaRequest) -> Result<Idea, Error> {
-        let store = &self.hub().store;
-        let base =
-            self.versions().resolve(&req.base.as_deref().map_or(VersionRef::Champion, VersionRef::parse)).await?;
         let tune = (req.kind == IdeaKind::Tune && req.custom.is_none()).then(|| req.tune.clone().unwrap_or_default());
         let plan = match req.custom {
             Some(c) => funnel::custom(c.preset, c.bounds, c.pairs),
             None => funnel::funnel(req.kind, req.long),
         };
-        let spec = IdeaSpec { funnel: plan.clone(), long: req.long, tune, custom: req.custom };
+        let spec = IdeaSpec { funnel: plan, long: req.long, tune, custom: req.custom, harness: None };
+        self.insert_spec(req, spec).await
+    }
+
+    /// Stores an idea run by `spec` (its funnel and settings) with its trials, and queues its first trial.
+    pub(crate) async fn insert_spec(&self, req: NewIdeaRequest, spec: IdeaSpec) -> Result<Idea, Error> {
+        let store = &self.hub().store;
+        let base =
+            self.versions().resolve(&req.base.as_deref().map_or(VersionRef::Champion, VersionRef::parse)).await?;
+        let plan = spec.funnel.clone();
         let branch = req.branch.trim().to_owned();
         let idea = store
             .insert_idea(NewIdea {
@@ -364,6 +410,9 @@ impl Ideas {
         if idea.status != IdeaStatus::Kept {
             return Err(Error::conflict(format!("Only a kept idea can be promoted; idea {id} is {:?}", idea.status)));
         }
+        if self.spec(id).await?.harness.is_some() {
+            return Err(Error::conflict("A harness check is not a change to promote"));
+        }
         self.scheduler()
             .submit(NewWork {
                 kind: WorkKind::Promote,
@@ -375,7 +424,7 @@ impl Ideas {
             .await
     }
 
-    async fn emit_idea(&self, id: IdeaId) -> Result<Idea, Error> {
+    pub(crate) async fn emit_idea(&self, id: IdeaId) -> Result<Idea, Error> {
         let idea = self.get(id).await?;
         self.hub().bus.emit(Payload::IdeaUpserted(Box::new(idea.clone())));
         Ok(idea)
@@ -408,6 +457,14 @@ impl Ideas {
     /// After trial `index` ended: the next trial, or the idea's end.
     async fn advance(&self, id: IdeaId, index: usize) -> Result<(), Error> {
         let spec = self.spec(id).await?;
+        if let Some(run) = &spec.harness {
+            // A harness check runs every trial, then judges them together.
+            if index + 1 < spec.funnel.len() {
+                self.queue_trial(id, index + 1).await?;
+                return Ok(());
+            }
+            return crate::harness::finish(self, id, run).await;
+        }
         let trials = self.hub().store.trials(id).await?;
         let passed = trials.get(index).is_some_and(|t| t.status == TrialStatus::Passed);
         match funnel::next(&spec.funnel, index, passed) {

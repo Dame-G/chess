@@ -9,6 +9,7 @@ pub mod drills;
 pub mod error;
 pub mod events;
 pub mod game;
+pub mod harness;
 pub mod ideas;
 pub mod ids;
 pub mod levels;
