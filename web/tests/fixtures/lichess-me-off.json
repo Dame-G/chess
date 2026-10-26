@@ -1,11 +1,13 @@
 {
   "configured": false,
-  "challenges": { "incoming": [], "outgoing": [] },
-  "elsewhere": [],
-  "fair_play_lock": false,
-  "missing_scopes": [],
-  "playing": [],
+  "account": null,
   "scopes": [],
-  "seek": { "seeking": null },
-  "state": "off"
+  "missing_scopes": [],
+  "state": "off",
+  "error": null,
+  "playing": [],
+  "elsewhere": [],
+  "challenges": { "incoming": [], "outgoing": [] },
+  "seek": { "seeking": null, "note": null },
+  "fair_play_lock": false
 }

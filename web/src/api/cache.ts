@@ -24,9 +24,11 @@ export function applyRunnerEvent(cache: RunnerCache, { kind, data }: RunnerEvent
       break;
     case "job.updated": {
       refetch(["jobs"]);
-      const { status } = data as Pick<Job, "status">;
+      const { status, spec } = data as Pick<Job, "status"> & { spec?: { kind?: string } };
       // A finished job may have made a build, a branch (an applied tune) or a verdict.
       if (status === "done") refetch(["builds"], ["branches"], ["versions"]);
+      // An import made matches.
+      if (status === "done" && spec?.kind === "lichess_import") refetch(["matches"]);
       else if (status === "failed") refetch(["versions"]);
       break;
     }
@@ -66,6 +68,19 @@ export function applyRunnerEvent(cache: RunnerCache, { kind, data }: RunnerEvent
     case "lichess.status":
       cache.setQueryData(["lichess"], data);
       break;
+    // Your own account: the status carries the challenges and the seek, so a challenge event only has to refetch it.
+    case "lichess.me.status":
+      cache.setQueryData(["lichess-me"], data);
+      break;
+    case "lichess.me.challenge":
+      refetch(["lichess-me"]);
+      break;
+    case "lichess.me.fair_play": {
+      const me = cache.getQueryData(["lichess-me"]) as { fair_play_lock: boolean } | undefined;
+      if (me) cache.setQueryData(["lichess-me"], { ...me, fair_play_lock: (data as { locked: boolean }).locked });
+      else refetch(["lichess-me"]);
+      break;
+    }
   }
 }
 

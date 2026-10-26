@@ -38,6 +38,12 @@ describe("applyRunnerEvent", () => {
     ["job.log", { id: 4, line: "x" }, []],
     ["analysis.info", { session: 1 }, []],
     ["lichess.challenge", { id: "c" }, []],
+    ["lichess.me.challenge", { event: "created" }, ['["lichess-me"]']],
+    [
+      "job.updated",
+      { id: 5, status: "done", spec: { kind: "lichess_import" } },
+      ['["jobs"]', '["builds"]', '["branches"]', '["versions"]', '["matches"]'],
+    ],
   ])("%s %j refetches %j", (kind, data, keys) => {
     expect(after(kind, data).refetched).toEqual(keys);
   });
@@ -47,6 +53,22 @@ describe("applyRunnerEvent", () => {
     const c = after("lichess.status", status);
     expect(c.store.get('["lichess"]')).toBe(status);
     expect(c.refetched).toEqual([]);
+  });
+
+  it("takes your Lichess status and fair-play lock as they come", () => {
+    const status = { configured: true, fair_play_lock: false };
+    const c = after("lichess.me.status", status);
+    expect(c.store.get('["lichess-me"]')).toBe(status);
+    expect(c.refetched).toEqual([]);
+
+    const locked = after("lichess.me.fair_play", { locked: true }, { '["lichess-me"]': status });
+    expect(locked.store.get('["lichess-me"]')).toEqual({ configured: true, fair_play_lock: true });
+    expect(after("lichess.me.fair_play", { locked: true }).refetched).toEqual(['["lichess-me"]']);
+  });
+
+  it("refreshes every games list, yours and the bot's, when a match starts or ends", () => {
+    expect(after("match.started", { id: 8, match: { lichess: { account: "me" } } }).refetched).toEqual(['["matches"]']);
+    expect(after("match.ended", { id: 8 }).refetched).toEqual(['["matches"]']);
   });
 
   it("refreshes versions when a tune changes state, and patches its iteration as it runs", () => {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch, watchEffect } from "vue";
+import { computed, h, onUnmounted, ref, watch, watchEffect } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import { useQueryCache } from "@pinia/colada";
 import {
@@ -31,13 +31,22 @@ import { EKbd } from "@eos-ui/vue/components/EKbd";
 import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENavList } from "@eos-ui/vue/components/ENavList";
 import { EToastProvider } from "@eos-ui/vue/components/EToastProvider";
-import { dispatch, followEvents } from "./api/events";
+import { dispatch, followEvents, useRunnerEvent } from "./api/events";
 import { applyRunnerEvent } from "./api/cache";
-import { useExperiments, useTunes, useVersions, versionPath } from "./api/queries";
+import { api } from "./api/runner";
+import {
+  unwrap,
+  useExperiments,
+  useLichessGames,
+  useLichessMe,
+  useTunes,
+  useVersions,
+  versionPath,
+} from "./api/queries";
 import { useActivity } from "./activity";
 import { ago, verdict } from "./format";
 import { statusWord } from "./components/tune/tune";
-import { recordChallenge } from "./lichess";
+import { challengeLine, liveGame, recordChallenge, type MeChallenge, type MeStatus } from "./lichess";
 import { stored } from "./stored";
 import Logo from "./components/Logo.vue";
 import RunnerDrawer from "./components/RunnerDrawer.vue";
@@ -175,6 +184,13 @@ const commands = computed<CommandItem[]>(() => {
     },
     { id: "go:/lichess", label: "Open Lichess", group: "Go to", icon: PhCrown, keywords: ["bot", "online", "play"] },
     {
+      id: "go:/lichess",
+      label: "Play on Lichess",
+      group: "Do",
+      icon: PhCrown,
+      keywords: ["find a game", "seek", "challenge", "rapid", "friend", "stockfish"],
+    },
+    {
       id: "go:/improve?new=test",
       label: "Test a change",
       group: "Do",
@@ -204,7 +220,7 @@ const commands = computed<CommandItem[]>(() => {
       keywords: ["engine", "play", "versus", "live"],
     },
     {
-      id: "go:/lichess?challenge=1",
+      id: "go:/lichess?as=bot&challenge=1",
       label: "Challenge a bot",
       group: "Do",
       icon: PhCrown,
@@ -246,6 +262,61 @@ function run(item: CommandItem) {
   else if (item.id.startsWith("theme:")) choice.value = item.id.slice(6) as Choice;
   else if (item.id.startsWith("go:")) void router.push(item.id.slice(3));
 }
+
+// ---- Your own Lichess games: a game that starts opens on the board, or says so wherever you are.
+const { state: me } = useLichessMe();
+const { state: myGames } = useLichessGames("me");
+const live = computed(() => liveGame(me.value.data, myGames.value.data));
+const locked = computed(() => me.value.data?.fair_play_lock === true);
+
+async function announce(id: number) {
+  if (route.path === `/matches/${id}`) return;
+  if (route.path === "/lichess") {
+    await router.push(`/matches/${id}`);
+    return;
+  }
+  let against = "";
+  try {
+    const m = await unwrap(api.GET("/api/matches/{id}", { params: { path: { id } } }));
+    against = m.lichess?.our_side === "black" ? m.white.name : m.black.name;
+  } catch {}
+  toast.show({
+    key: `lichess-game-${id}`,
+    title: against ? `Your game against ${against} has started` : "Your game has started",
+    tone: "success",
+    action: h(
+      EButton,
+      { size: "sm", variant: "outline", onClick: () => void router.push(`/matches/${id}`) },
+      () => "Open",
+    ),
+  });
+}
+watch(
+  () => me.value.data?.playing,
+  (now, before) => {
+    // The first answer is how things stand, not a game that started.
+    if (!now || !before) return;
+    for (const id of now) if (!before.includes(id)) void announce(id);
+  },
+);
+
+useRunnerEvent("lichess.me.challenge", (data) => {
+  const { challenge: c, event } = data as { challenge: MeChallenge; event: string };
+  if (event !== "created" || c.direction !== "incoming" || route.path === "/lichess") return;
+  const accept = () =>
+    void unwrap(api.POST("/api/lichess/me/challenges/{id}/accept", { params: { path: { id: c.id } } })).then(
+      (next: MeStatus) => cache.setQueryData(["lichess-me"], next),
+      (e: Error) => toast.show({ title: "Could not accept", message: e.message, tone: "danger" }),
+    );
+  toast.show({
+    key: `lichess-challenge-${c.id}`,
+    title: `${c.opponent.name} challenges you`,
+    message: challengeLine(c),
+    action: c.playable
+      ? h(EButton, { size: "sm", onClick: accept }, () => "Accept")
+      : h(EButton, { size: "sm", variant: "outline", href: c.url, external: true }, () => "Accept on Lichess"),
+  });
+});
 
 // One live stream for the whole app: the cache follows it, then whatever listens for an event kind gets it.
 const cache = useQueryCache();
@@ -309,6 +380,16 @@ onUnmounted(stop);
             <span v-if="queued" class="status-queue">{{ queued }} queued</span>
             <PhCaretUp class="status-caret" aria-hidden="true" />
           </EButton>
+          <span v-if="live || locked" class="status-live">
+            <ELink v-if="live?.id" :link-component="RouterLink" :to="`/matches/${live.id}`">
+              Playing on Lichess<template v-if="live.opponent"> · vs {{ live.opponent }}</template>
+            </ELink>
+            <ELink v-else-if="live?.url" :href="live.url" external>Playing on Lichess</ELink>
+            <span v-if="locked" class="status-lock" title="Analysis is off while you're playing on Lichess">
+              <template v-if="live">Analysis is off</template>
+              <template v-else>Analysis is off while you're playing on Lichess</template>
+            </span>
+          </span>
           <span class="status-end">
             <EButton
               variant="quiet"
@@ -571,6 +652,22 @@ onUnmounted(stop);
 
 .status-runner--offline .status-dot {
   background: var(--e-danger);
+}
+
+.status-live {
+  display: flex;
+  align-items: center;
+  gap: var(--e-gap-base);
+  min-inline-size: 0;
+  overflow: hidden;
+  font-family: var(--e-font-mono);
+  white-space: nowrap;
+}
+
+.status-lock {
+  overflow: hidden;
+  color: var(--e-muted);
+  text-overflow: ellipsis;
 }
 
 .status-end {

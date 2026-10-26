@@ -7,7 +7,7 @@ import { ago } from "../../format";
 import { gameClock, opponentOf, oursOf, oursText, speedName } from "../../lichess";
 import type { MatchSummary } from "../../board/matchText";
 
-const props = defineProps<{ games: MatchSummary[] }>();
+const props = defineProps<{ games: MatchSummary[]; showAccount?: boolean }>();
 const emit = defineEmits<{ open: [id: number] }>();
 
 // A game being played is first.
@@ -33,7 +33,8 @@ const rows = computed(() =>
         <span class="what">
           <OpponentName v-bind="opponentOf(m).player" />
           <span class="meta num">
-            As {{ opponentOf(m).side === "white" ? "white" : "black" }} · {{ speedName(m.lichess!.speed) }}
+            {{ showAccount ? (m.lichess!.account === "me" ? "You" : "Bot") + " · " : "" }}As
+            {{ opponentOf(m).side === "white" ? "white" : "black" }} · {{ speedName(m.lichess!.speed) }}
             {{ gameClock(m) }} · {{ m.lichess!.rated ? "rated" : "casual" }} · {{ ago(m.created_at) }}
           </span>
         </span>

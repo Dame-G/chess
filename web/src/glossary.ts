@@ -56,6 +56,10 @@ export const glossary = {
     term: "SPSA",
     text: "A way to tune many constants at once: each round tries two slightly different copies of the engine against each other and moves every constant a little towards the winner.",
   },
+  lichessSpeed: {
+    term: "Lichess speed",
+    text: "Lichess calls a game by its expected length, the first clock plus 40 moves of increment: under 3 minutes is bullet, under 8 blitz, under 25 rapid, and longer classical. Apps may only start rapid or slower games from a seek, and blitz from a challenge.",
+  },
   build: {
     term: "Build",
     text: "A compiled engine from one commit of a version (a branch). Each is built once and kept.",

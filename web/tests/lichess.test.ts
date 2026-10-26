@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { clockLabel, declineText, oursOf, speedOf } from "../src/lichess";
+import {
+  challengeLine,
+  clockAllowed,
+  clockLabel,
+  declineText,
+  liveGame,
+  meClockOptions,
+  oursOf,
+  personalTokenUrl,
+  ratingList,
+  speedOf,
+} from "../src/lichess";
 
 describe("lichess text", () => {
   it("writes clocks in minutes like Lichess", () => {
@@ -35,5 +46,44 @@ describe("lichess text", () => {
     expect(game("1-0", "finished", "black")).toBe("lost");
     expect(game("1/2-1/2", "finished", "black")).toBe("drew");
     expect(game("*", "running", "black")).toBe("live");
+  });
+
+  it("offers only clocks the Board API allows", () => {
+    expect(meClockOptions("seek").every((c) => clockAllowed("seek", c.value))).toBe(true);
+    expect(meClockOptions("challenge").every((c) => clockAllowed("challenge", c.value))).toBe(true);
+    // 5+3 is 7 minutes estimated: blitz, so a challenge but not a seek.
+    expect(clockAllowed("seek", "5+3")).toBe(false);
+    expect(clockAllowed("challenge", "5+3")).toBe(true);
+    expect(clockAllowed("challenge", "1+0")).toBe(false);
+    expect(clockAllowed("seek", "10+0")).toBe(true);
+  });
+
+  it("links to a token form with the scopes ticked", () => {
+    expect(personalTokenUrl).toContain("scopes[]=board:play");
+    expect(personalTokenUrl).toContain("scopes[]=challenge:read");
+    expect(personalTokenUrl).toContain("scopes[]=challenge:write");
+  });
+
+  it("lists the ratings a person has and writes a challenge", () => {
+    expect(ratingList({ blitz: 1600, bullet: 1500, rapid: null })).toEqual([
+      { speed: "bullet", rating: 1500 },
+      { speed: "blitz", rating: 1600 },
+    ]);
+    expect(challengeLine({ clock: { initial: 300, increment: 3 }, rated: true })).toBe("5+3 rated");
+    expect(challengeLine({ clock: null, days: 3, rated: false })).toBe("3 days casual");
+  });
+
+  it("finds the game being played, here or on lichess.org", () => {
+    const game = {
+      id: 4,
+      white: { name: "me", commit: "" },
+      black: { name: "Alpha", commit: "" },
+      result: "*",
+      status: "running",
+      lichess: { our_side: "white" },
+    };
+    expect(liveGame({ playing: [4], elsewhere: [] }, [game as never])).toEqual({ id: 4, opponent: "Alpha" });
+    expect(liveGame({ playing: [], elsewhere: [{ id: "x", speed: "bullet", url: "u" }] }, [])).toEqual({ url: "u" });
+    expect(liveGame({ playing: [], elsewhere: [] }, [])).toBeUndefined();
   });
 });

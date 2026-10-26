@@ -56,7 +56,7 @@ function runner(input: RequestInfo | URL): Promise<Response> {
     [/^\/api\/matches\/4$/, () => json("match-4.json")],
     [/^\/api\/lichess$/, () => json(lichess)],
     [/^\/api\/lichess\/bots$/, () => json("bots.json")],
-    [/^\/api\/lichess\/me$/, () => json("lichess-me-off.json")],
+    [/^\/api\/lichess\/me$/, () => json(lichessMe)],
   ];
   const hit = routes.find(([pattern]) => pattern.test(path));
   if (!hit) missing.push(`${path}`);
@@ -65,9 +65,11 @@ function runner(input: RequestInfo | URL): Promise<Response> {
 
 /** Which state the Lichess bot is in for the page under test. */
 let lichess = "lichess-off.json";
+/** And your own account. */
+let lichessMe = "lichess-me-off.json";
 
 const fen = encodeURIComponent("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-const routes: [string, string, string?][] = [
+const routes: [string, string, string?, string?][] = [
   ["/", "Open the board"],
   ["/board", "New"],
   [`/board?fen=${fen}&moves=e2e4`, "1. e4"],
@@ -94,12 +96,20 @@ const routes: [string, string, string?][] = [
   ["/versions/4", "Disable null move pruning"],
   ["/engines", "Show hidden and upstream"],
   ["/engines/4", "Disable null move pruning"],
-  ["/lichess", "Create the token"],
-  ["/lichess", "is not a bot account yet", "lichess-person.json"],
-  ["/lichess", "Stockfish-Bot", "lichess-connected.json"],
-  ["/lichess", "Playing a game", "lichess-connected.json"],
-  ["/lichess", "Challenged Alpha-Bot (1950) to 3+2 rated.", "lichess-seeking.json"],
-  ["/lichess", "Find a game", "lichess-connected.json"],
+  ["/lichess", "Log in with Lichess"],
+  ["/lichess?lichess=error&message=Denied", "Denied"],
+  ["/lichess", "Magnus-Fan", "lichess-connected.json", "lichess-me.json"],
+  ["/lichess", "Accept on Lichess", "lichess-connected.json", "lichess-me.json"],
+  ["/lichess", "Lichess only allows rapid and slower", "lichess-connected.json", "lichess-me.json"],
+  ["/lichess", "challenge:write", "lichess-connected.json", "lichess-me.json"],
+  ["/lichess", "Playing on Lichess · vs Stockfish-Bot", "lichess-connected.json", "lichess-me-playing.json"],
+  ["/board", "Analysis is off", "lichess-connected.json", "lichess-me-playing.json"],
+  ["/lichess?as=bot", "Create the token"],
+  ["/lichess?as=bot", "is not a bot account yet", "lichess-person.json"],
+  ["/lichess?as=bot", "Stockfish-Bot", "lichess-connected.json"],
+  ["/lichess?as=bot", "Playing a game", "lichess-connected.json"],
+  ["/lichess?as=bot", "Challenged Alpha-Bot (1950) to 3+2 rated.", "lichess-seeking.json"],
+  ["/lichess?as=bot", "Find a game", "lichess-connected.json"],
   ["/matches/2", "Black resigned", "lichess-connected.json"],
   ["/matches/2", "View on Lichess", "lichess-connected.json"],
 ];
@@ -129,8 +139,9 @@ describe("routes", () => {
   it.each(routes)(
     "%s renders its content without errors or warnings",
     { timeout: 30_000 },
-    async (path, shows, bot) => {
+    async (path, shows, bot, me) => {
       lichess = bot ?? "lichess-off.json";
+      lichessMe = me ?? "lichess-me-off.json";
       problems.length = 0;
       missing.length = 0;
       const { default: App } = await import("../src/App.vue");

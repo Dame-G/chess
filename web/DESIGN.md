@@ -43,7 +43,11 @@ Selection lives in the URL (`/improve/experiments/3`, `/versions/test%2Fno-nmp`)
   - **Library:** `main` first as the baseline, then the fork's branches newest first, each with its verdict against main, a tune badge and a Lichess mark. Hidden and upstream versions sit behind one toggle. The header menu frees disk space (a dry run first).
   - **Stage:** a verdict in plain words and the next step as the one filled button (Test it; once passed and built, Put it on Lichess), then the other actions that apply (Tune it, Watch it play, Play it, Build now; those that need a build appear only once built), then its builds with per-build Delete. The menu analyses with it, hides it or deletes the branch (typed confirmation).
   - **Inspector:** the speed of each version's newest build, and what the fingerprint means.
-- **Lichess `/lichess`** is the bot account: connection, settings (build, challenges accepted), finding games, the log of challenges and the games played.
+- **Lichess `/lichess`** is where the engine meets Lichess, as two identities chosen by a switch at the head of the stage: **You** (default) and **Your bot** (`?as=bot`). The library, on the left, lists the games of both, filtered All / Yours / Bot.
+  - **You, logged out:** one filled button, "Log in with Lichess" (PKCE; the browser returns with `?lichess=connected` or `?lichess=error&message=`, which the page reads and cleans from the address). "Use a personal token instead" sits quietly below with the three scopes and a link to Lichess's token form with them ticked.
+  - **You, logged in:** the account (title, ratings per speed, one sentence of state and activity), then Play: a switch between "Find a game" (a seek: rapid and slower only, a clock, colour, rated, an optional rating range; while looking it shows "Looking for an opponent…" and Cancel) and "Challenge" (a friend, Lichess's Stockfish at level 1 to 8, or My bot; blitz is allowed here). One line explains why a seek has no bullet or blitz. The inspector lists challenges (Accept, Decline, Cancel; a challenge the Board API cannot play says "Accept on Lichess") and imports your history ("Import my games", then "Fetch new games"). Log out asks first.
+  - **Your bot:** connection (the Online switch), finding games, settings (build, challenges accepted), and the log of challenges. Nothing here acts on the other identity.
+  - **Anywhere in the app** (`App.vue`): a game of yours that starts opens on the board when you are on Lichess, and otherwise offers it in a toast ("Your game against X has started", Open). While one is live the status bar says "Playing on Lichess · vs X" (a link to it) and, when the fair-play lock is on, "Analysis is off". An incoming challenge toasts with Accept unless you are on the Lichess page.
 
 ## Words
 
@@ -54,7 +58,9 @@ One vocabulary across every screen, the command palette and the docs. Use these,
 - **Verdicts:** Passed, Rejected, Stopped, Running, Queued. Nothing else ("Stronger", "Not stronger", "Waiting", "Testing").
 - **Actions:** "Test a change" and "Tune numbers" (not "New test", "New tune"). "Watch two versions play", "Improve the engine".
 - **Test stages:** Quick screen (4+0.04), Short games (8+0.08), Long games (40+0.4).
-- **Clocks:** written `3+2`, minutes plus seconds a move. Bullet, Blitz and Rapid mean Lichess's speeds only.
+- **Clocks:** written `3+2`, minutes plus seconds a move. Bullet, Blitz, Rapid and Classical mean Lichess's speeds only (initial + 40 × increment; the `lichessSpeed` glossary entry).
+- **Lichess identities:** "You" is the person's own account, "Your bot" the BOT account. "Find a game" is a seek in the lobby; "Challenge" names an opponent. Never "player" or "human account".
+- **Fair play:** "Analysis is off while you're playing on Lichess". The lock is stated once, in the status bar; the board explains it where analysis would be.
 - **Links:** a control that goes to another page is a link (middle-click and copy-link work), never a button that navigates.
 
 ## Look

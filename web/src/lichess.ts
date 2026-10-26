@@ -7,6 +7,9 @@ export type LichessSettings = components["schemas"]["Settings"];
 export type Speed = components["schemas"]["Speed"];
 export type SeekState = components["schemas"]["SeekStatus"];
 export type SeekMode = components["schemas"]["SeekMode"];
+export type MeStatus = components["schemas"]["MeStatus"];
+export type MeChallenge = components["schemas"]["ChallengeInfo"];
+export type Ratings = components["schemas"]["Ratings"];
 
 type Gameish = Pick<MatchSummary, "white" | "black" | "lichess" | "result" | "status">;
 
@@ -132,4 +135,62 @@ export function recordChallenge(data: unknown) {
 /** The other player of a challenge: who sent it, or who we sent it to. */
 export function challengeWho(c: ChallengeEvent): ChallengeUser | undefined {
   return (c.direction === "incoming" ? c.from : c.to) ?? undefined;
+}
+
+// ---- Your own account (Board API): what Lichess allows apps to start.
+
+/** Lichess's estimate of a game's length: initial + 40 increments, in seconds. */
+const estimated = (seconds: number, increment: number) => seconds + 40 * increment;
+
+/** A seek must be rapid or slower (8 minutes estimated), a challenge may be blitz (3 minutes). */
+const SEEK_MIN = 480;
+const CHALLENGE_MIN = 180;
+
+const seekClocks = ["10+0", "10+5", "15+10", "30+0", "30+20"];
+const challengeClocks = ["3+0", "3+2", "5+0", "5+3", "10+0", "10+5", "15+10", "30+0", "30+20"];
+
+/** The clocks to pick from for a seek or a challenge, shortest first, each allowed by the Board API. */
+export function meClockOptions(kind: "seek" | "challenge"): { value: string; label: string }[] {
+  return (kind === "seek" ? seekClocks : challengeClocks).map((c) => ({ value: c, label: c }));
+}
+
+/** Whether Lichess lets an app start this clock as a seek or a challenge. */
+export function clockAllowed(kind: "seek" | "challenge", clock: string): boolean {
+  const { initial, increment } = parseClock(clock);
+  return estimated(initial, increment) >= (kind === "seek" ? SEEK_MIN : CHALLENGE_MIN);
+}
+
+export const tokenScopes = ["board:play", "challenge:read", "challenge:write"] as const;
+
+/** Lichess's token form with the scopes Dameless needs already ticked. */
+export const personalTokenUrl = `https://lichess.org/account/oauth/token/create?${tokenScopes
+  .map((s) => `scopes[]=${s}`)
+  .join("&")}&description=Dameless`;
+
+/** The ratings a person has, in Lichess's order; speeds never played are left out. */
+export function ratingList(ratings: Ratings | undefined): { speed: Speed; rating: number }[] {
+  return (["bullet", "blitz", "rapid", "classical"] as const).flatMap((speed) => {
+    const rating = ratings?.[speed];
+    return rating ? [{ speed, rating }] : [];
+  });
+}
+
+/** `5+3 rated`: how a challenge reads in a sentence. */
+export function challengeLine(c: Pick<MeChallenge, "clock" | "rated" | "days">): string {
+  const clock = c.clock ? clockLabel(c.clock.initial, c.clock.increment) : c.days ? `${c.days} days` : "";
+  return [clock, c.rated ? "rated" : "casual"].filter(Boolean).join(" ");
+}
+
+/** The game you are playing now, for the status bar: here (a match) or on lichess.org (not playable here). */
+export function liveGame(
+  me: Pick<MeStatus, "playing" | "elsewhere"> | undefined,
+  games: readonly (Gameish & { id: number })[] | undefined,
+): { id?: number; url?: string; opponent?: string } | undefined {
+  const id = me?.playing[0];
+  if (id !== undefined) {
+    const m = games?.find((g) => g.id === id);
+    return { id, opponent: m ? opponentOf(m).player.name : undefined };
+  }
+  const away = me?.elsewhere[0];
+  return away ? { url: away.url } : undefined;
 }

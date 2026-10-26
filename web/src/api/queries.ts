@@ -91,12 +91,22 @@ export const useMatches = () =>
 export const useLichess = () =>
   useQuery({ key: ["lichess"], query: () => unwrap(api.GET("/api/lichess")), refetchOnWindowFocus: true });
 
-/** The bot's recent Lichess games, newest first. Shares the `matches` key prefix, so match events refresh it. */
-export const useLichessGames = () =>
+export type GameFilter = "all" | "me" | "bot";
+
+/** Recent Lichess games, newest first: yours, the bot's, or both. Shares the `matches` key prefix, so match events refresh it. */
+export const useLichessGames = (filter: MaybeRefOrGetter<GameFilter> = "all") =>
   useQuery({
-    key: ["matches", "lichess"],
-    query: () => unwrap(api.GET("/api/matches", { params: { query: { limit: 30, source: "lichess" } } })),
+    key: () => ["matches", "lichess", toValue(filter)],
+    query: () => {
+      const f = toValue(filter);
+      const account = f === "all" ? undefined : f;
+      return unwrap(api.GET("/api/matches", { params: { query: { limit: 30, source: "lichess", account } } }));
+    },
   });
+
+/** Your own Lichess account: login, ratings, games, challenges, seek and the fair-play lock. Events keep it current. */
+export const useLichessMe = () =>
+  useQuery({ key: ["lichess-me"], query: () => unwrap(api.GET("/api/lichess/me")), refetchOnWindowFocus: true });
 
 /** Bots online on Lichess now, when asked for (the bot has to be online to ask). */
 export const useLichessBots = (enabled: MaybeRefOrGetter<boolean>) =>
