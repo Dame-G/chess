@@ -35,7 +35,7 @@ watch(
 
 const plain = computed(
   () =>
-    `The ${props.tune.params.length} values after iteration ${props.tune.iteration} are rounded and written into a new branch, which is built and benched.`,
+    `The ${props.tune.params.length} values after iteration ${props.tune.iteration} are rounded and written into a new branch, which is then built.`,
 );
 
 async function submit() {
@@ -76,7 +76,7 @@ async function submit() {
       <ESwitch
         v-model="experiment"
         label="Test it against main"
-        hint="Queues an experiment that the branch must pass at [0, 4] before the change is trusted."
+        hint="Queues a test the branch must pass before the change is trusted."
       />
       <BranchPicker v-if="experiment" v-model="base" label="Compare with" allow-ref required hint="Usually main." />
       <ESwitch v-if="experiment" v-model="ltc" label="Confirm with long games too" hint="A few more hours." />

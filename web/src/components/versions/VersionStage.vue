@@ -180,22 +180,17 @@ const primary = computed(() => {
           Test it
         </EButton>
         <EButton v-if="version.tunables" variant="outline" :icon="PhSlidersHorizontal" @click="tune">Tune it</EButton>
-        <EButton v-if="!version.is_main" variant="outline" :icon="PhSword" :disabled="!built" @click="watchIt">
+        <EButton v-if="!version.is_main && built" variant="outline" :icon="PhSword" @click="watchIt">
           Watch it play
         </EButton>
-        <EButton
-          :variant="primary === 'play' ? 'primary' : 'outline'"
-          :icon="PhUser"
-          :disabled="!built"
-          @click="playIt"
-        >
+        <EButton v-if="built" :variant="primary === 'play' ? 'primary' : 'outline'" :icon="PhUser" @click="playIt">
           Play it
         </EButton>
         <EButton
-          v-if="!version.on_lichess"
+          v-if="built && !version.on_lichess"
           :variant="primary === 'lichess' ? 'primary' : 'outline'"
           :icon="PhCrown"
-          :disabled="!built || !bot?.configured"
+          :disabled="!bot?.configured"
           @click="asking = true"
         >
           Put it on Lichess
@@ -211,8 +206,7 @@ const primary = computed(() => {
         </EButton>
       </div>
       <p v-if="!built && !building" class="note">
-        Not built yet. A build is the compiled engine; it is needed to play it or put it on Lichess. A test builds it by
-        itself.
+        Not built yet. Build it to play it, watch it play or put it on Lichess. A test builds it by itself.
       </p>
     </section>
 

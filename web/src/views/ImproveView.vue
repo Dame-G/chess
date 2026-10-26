@@ -21,6 +21,8 @@ import GameList from "../components/lab/GameList.vue";
 import { defaultStage } from "../components/lab/lab";
 import HowItWorks from "../components/improve/HowItWorks.vue";
 import ImproveRows from "../components/improve/ImproveRows.vue";
+import LibraryHead from "../components/improve/LibraryHead.vue";
+import { stepTarget, toLibrary } from "../components/improve/libraryNav";
 import NewWork from "../components/improve/NewWork.vue";
 import {
   applyJobOf,
@@ -110,14 +112,6 @@ function clear() {
   search.value = "";
   show.value = "all";
   batch.value = "";
-}
-
-/** Below 75rem the library sits under the stage: this brings it into view. */
-function toLibrary() {
-  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  document
-    .querySelector("aside[aria-label='Library']")
-    ?.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
 }
 
 // ---- A test on the stage
@@ -222,14 +216,9 @@ watch(
 );
 
 function step(delta: number, event: KeyboardEvent) {
-  const target = event.target instanceof Element ? event.target : null;
-  if (target?.closest("input, textarea, select, [role=radio], [role=combobox], [role=listbox], [role=dialog]")) return;
-  const list = shown.value;
-  if (!list.length) return;
-  event.preventDefault();
-  const at = list.findIndex((i) => keyOf(i) === current.value);
-  const next = list[Math.min(list.length - 1, Math.max(0, at < 0 ? 0 : at + delta))]!;
-  void router.replace({ path: pathOf(next.kind, next.id), query: keep() });
+  const at = shown.value.findIndex((i) => keyOf(i) === current.value);
+  const next = stepTarget(shown.value, at, delta, event);
+  if (next) void router.replace({ path: pathOf(next.kind, next.id), query: keep() });
 }
 useShortcuts(
   { arrowdown: (e) => step(1, e), arrowup: (e) => step(-1, e) },
@@ -242,11 +231,10 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
 <template>
   <Workspace library-label="Library" :inspector-label="kind === 'tune' ? 'Iterations' : 'Games'">
     <template #library-head>
-      <div class="lib-head">
-        <div class="lib-top">
-          <h1 class="lib-title">Improve</h1>
-          <EButton size="sm" :icon="PhPlus" @click="creating = true">New</EButton>
-        </div>
+      <LibraryHead title="Improve">
+        <template #action>
+          <EButton size="sm" :icon="PhPlus" @click="creating = true">Test a change</EButton>
+        </template>
         <ESearchBar v-model="search" label="Search" placeholder="Search" size="sm" hide-action />
         <ESegmented
           v-model="show"
@@ -269,13 +257,13 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
           placeholder="All batches"
           clearable
         />
-      </div>
+      </LibraryHead>
     </template>
 
     <template #library>
       <ESkeleton v-if="loading && !everything.length" :lines="5" label="Loading" />
       <EEmptyState v-else-if="!everything.length" bare size="sm" title="Nothing tried yet">
-        Press New to test a change or tune the engine.
+        Test a change to start. Tuning the engine's numbers is in the same dialog.
       </EEmptyState>
       <EEmptyState v-else-if="!rows.length" bare size="sm" title="Nothing matches">
         Try another word, or a different filter.
@@ -294,7 +282,9 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
     <template v-if="staged" #stage-head>
       <h2 class="title">{{ title }}</h2>
       <span class="grow"></span>
-      <EButton class="to-library" variant="quiet" size="sm" :icon="PhList" @click="toLibrary">Library</EButton>
+      <EButton class="to-library" variant="quiet" size="sm" :icon="PhList" @click="toLibrary('Library')"
+        >Library</EButton
+      >
       <template v-if="experiment">
         <EButton v-if="testActive" variant="outline" size="sm" :icon="PhStop" :loading="busy" @click="stopTest">
           Stop
@@ -338,9 +328,9 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
     <ESkeleton v-else-if="current || loading" class="pad" :lines="6" label="Loading" />
     <div v-else class="empty">
       <EEmptyState title="Nothing tried yet" icon="info">
-        Improving the engine is a loop. Start it with the button below.
+        Improving the engine is a loop: change it, test it, keep what wins.
         <template #action>
-          <EButton :icon="PhPlus" @click="creating = true">New</EButton>
+          <EButton :icon="PhPlus" @click="creating = true">Test a change</EButton>
         </template>
       </EEmptyState>
       <HowItWorks />
@@ -384,23 +374,6 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
 </template>
 
 <style scoped>
-.lib-head {
-  display: grid;
-  flex: 1;
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
-  gap: var(--e-gap-base);
-  padding-block: var(--e-gap-snug);
-}
-
-.lib-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--e-gap-snug);
-}
-
-.lib-title,
 .title,
 .ins-title {
   margin: 0;

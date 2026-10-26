@@ -4,44 +4,46 @@ Dameless is a workbench for one chess engine: look at positions with it, change 
 
 ## The shell (`App.vue`)
 
-- **Header:** logo, five places (Board, Lab, Engines, Tune, Lichess) and Search (`Ctrl K`, an `ECommandPalette` listing places, actions, experiments and engines).
+- **Header:** logo, four places (Board, Improve, Versions, Lichess) and Search (`Ctrl K`, an `ECommandPalette` listing places, actions, experiments and versions).
 - **Status bar** (the `EAppFooter`): what the runner is doing, live, in mono. Clicking it opens the runner drawer. This is the only place runner status appears. Don't repeat it on a page.
 - **Workspace routes** (`meta.workspace`) lock to the window (`100dvh`). Nothing outside the panes scrolls. The home page is a cover and scrolls normally.
 
+## The loop
+
+The app exists to run one loop, and each place is one step of it:
+
+1. **Make a branch.** A change to the engine, as a branch in the fork (Claude or the user writes it).
+2. **Test it** (Improve). The branch plays against main through a funnel of stages until the evidence is clear.
+3. **Read the verdict** (Versions, Improve). Each version shows passed, rejected or untested against main.
+4. **Tune it** (Improve). A tune adjusts the search constants by SPSA and writes them to a new branch, which goes back to step 2.
+5. **Use it.** Merge a passing branch into main in the Reckless repo, or put it on Lichess from Versions. Watch it or play it on the Board first.
+
 ## The workspace (`components/Workspace.vue`)
 
-Every place has the same three panes, flat and divided by hairlines:
+Improve and Versions have the same three panes, flat and divided by hairlines:
 
-| Pane                                                     | Role                                                                                                                                    | Width                   |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| Library (left, `library`, `library-head`)                | What you pick from: experiments, games, builds, positions. Dense rows, keyboard-navigable, the selected row marked with `aria-current`. | `--ws-library`, 18rem   |
-| Stage (centre, default slot, `stage-head`, `stage-foot`) | What you are looking at: the board, an experiment, a build.                                                                             | the rest                |
-| Inspector (right, `inspector`, `inspector-head`)         | What you read about it: engine lines, moves, stats.                                                                                     | `--ws-inspector`, 24rem |
+| Pane                                                     | Role                                                                                                                       | Width                   |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| Library (left, `library`, `library-head`)                | What you pick from: tests and tunes, versions. Dense rows, keyboard-navigable (arrow keys), the chosen row `aria-current`. | `--ws-library`, 18rem   |
+| Stage (centre, default slot, `stage-head`, `stage-foot`) | What you are looking at: a test, a tune, a version.                                                                        | the rest                |
+| Inspector (right, `inspector`, `inspector-head`)         | What you read about it: a test's games, a tune's iterations, build speeds.                                                 | `--ws-inspector`, 24rem |
 
-Selection lives in the URL (`/lab/3`, `/engines/2`, `/games/7/12`), so every view can be linked, and Back works. Below 64rem the panes stack in this order: stage, inspector, library.
+Selection lives in the URL (`/improve/experiments/3`, `/versions/test%2Fno-nmp`), so every view can be linked, and Back works. Below 75rem the panes stack in this order: stage, inspector, library, and a "Library" button in the stage head scrolls to the list. The library head is `improve/LibraryHead.vue`; arrow-key stepping is `improve/libraryNav.ts`.
 
 ## Places
 
-- **Home `/`** is a cover, like eos.dame.gg's home page: a full-window animated chequer field, the wordmark, one line of tagline, a filled button and one outline button. Nothing else: no metrics, no lists.
-- **Board `/board`, `/games/:test/:index`** is the player:
-  - **Stage:** eval bar and board.
-  - **Transport** (`stage-foot`): first, back, play/pause (auto-advance), forward, last; a scrubber that is the eval graph; the move counter; speed.
-  - **Inspector:** the engine (eval, best move, lines) above the move list, as on Lichess.
-  - **Library:** for a game, its test's games as a playlist (next game when one ends). For free analysis, the start position, paste, and recent positions.
-  - Query parameters: `fen`, `moves`, `build`, `paste=1`.
-- **Lab `/lab`, `/lab/:id`**:
-  - **Library:** experiments, with a filter and search; "Test an idea" is the one filled button.
-  - **Stage:** the chosen experiment, with a verdict sentence, the funnel, the live test with gauge, Elo and the LLR chart.
-  - **Inspector:** that test's games, opening `/games/...`.
-  - `?new=1` opens the new-experiment dialog.
-- **Tune `/tune`, `/tune/:id`** is where the engine tunes its own search constants (SPSA):
-  - **Library:** tunes, the live one first, with its iteration progress; "New tune" is the one filled button (`?new=1` opens it).
-  - **Stage:** a sentence on where the tune stands, a trajectory chart (every parameter as a share of its own range; point at a line to read its real value, pick one in the table to highlight it) and the parameter table. Actions in the bar: Stop (confirmed), Resume, Apply (a dialog: branch, experiment, LTC, push; the result links to the lab).
-  - **Inspector:** the tune's settings and its recent iterations.
-- **Versions `/versions`, `/versions/:name`** (a name with a slash is one encoded segment; an old build number redirects to its branch):
-  - **Library:** one row per version, `main` first as the reference, with its verdict against main, tune badge and a Lichess mark. Hidden and upstream versions sit behind one toggle. The header menu frees disk space (a dry run first).
-  - **Stage:** the version's verdict and quick actions (Test it, Tune it, Watch it play, Play it, Put it on Lichess, Build now), then its builds as a detail with per-build Delete. The menu hides or deletes the branch (typed confirmation).
-  - **Inspector:** speed of each version's newest build, and what the fingerprint means.
+- **Home `/`** is a cover, like eos.dame.gg's home page: a full-window animated chequer field, the wordmark, one line of tagline, a filled button and one outline button. Nothing else.
+- **Board `/board`, `/matches/:id`, `/games/:test/:index`** is the player: one board with an eval bar, a transport (first, back, play, forward, last; a scrubber that is the eval graph; speed) and a right panel with Moves and Games tabs. Modes: Analyse (live multipv), Play (you against a build, with clocks, takeback and draw offer) and Engines (two builds live). The New menu starts from the start position, a pasted PGN/FEN, the latest test games or a recent position.
+- **Improve `/improve`, `/improve/experiments/:id`, `/improve/tunes/:id`** holds everything being tried, newest first with live ones on top:
+  - **Library:** tests and tunes in one list, filtered by All / Tests / Tunes, a search and batches. "Test a change" is the one filled button; its dialog also starts a tune (`?new=test&dev=<branch>`, `?new=tune&branch=<branch>`). "How it works" explains the loop.
+  - **Stage (a test):** a verdict sentence, the funnel as tabs (fingerprint, quick screen, short games, long games) and the evidence of the chosen stage: gauge, Elo, game pairs, the evidence chart. Stop is in the head.
+  - **Stage (a tune):** where it stands in a sentence, the trajectory chart and parameter table. Stop (confirmed), Resume and Apply (a dialog: branch, test against main, long games, push) are in the head.
+  - **Inspector:** the test's games (each opens `/games/...`) or the tune's recent iterations.
+- **Versions `/versions`, `/versions/:name`** (a name with a slash is one encoded segment; an old build number redirects to its branch) is one row per branch:
+  - **Library:** `main` first as the reference, then the fork's branches newest first, each with its verdict against main, a tune badge and a Lichess mark. Hidden and upstream versions sit behind one toggle. The header menu frees disk space (a dry run first).
+  - **Stage:** a verdict in plain words and the next step as the one filled button (Test it; once passed and built, Put it on Lichess), then the other actions that apply (Tune it, Watch it play, Play it, Build now; those that need a build appear only once built), then its builds with per-build Delete. The menu analyses with it, hides it or deletes the branch (typed confirmation).
+  - **Inspector:** the speed of each version's newest build, and what the fingerprint means.
+- **Lichess `/lichess`** is the bot account: connection, settings (build, challenges accepted), finding games, the log of challenges and the games played.
 
 ## Look
 

@@ -21,6 +21,8 @@ import Term from "../components/Term.vue";
 import DeleteVersion from "../components/versions/DeleteVersion.vue";
 import FreeSpace from "../components/versions/FreeSpace.vue";
 import SpeedBars from "../components/versions/SpeedBars.vue";
+import LibraryHead from "../components/improve/LibraryHead.vue";
+import { stepTarget, toLibrary } from "../components/improve/libraryNav";
 import VersionRows from "../components/versions/VersionRows.vue";
 import VersionStage from "../components/versions/VersionStage.vue";
 import { deletable, libraryOf, liveBuilds, resolveVersion, sortVersions } from "../components/versions/versions";
@@ -70,14 +72,9 @@ watch(
 );
 
 function step(delta: number, event: KeyboardEvent) {
-  const target = event.target instanceof Element ? event.target : null;
-  if (target?.closest("input, textarea, select, [role=radio], [role=combobox], [role=listbox], [role=dialog]")) return;
-  const list = shown.value;
-  if (!list.length) return;
-  event.preventDefault();
-  const at = list.findIndex((v) => v.name === current.value?.name);
-  const next = list[Math.min(list.length - 1, Math.max(0, at < 0 ? 0 : at + delta))]!;
-  void router.replace({ path: versionPath(next.name), query: route.query });
+  const at = shown.value.findIndex((v) => v.name === current.value?.name);
+  const next = stepTarget(shown.value, at, delta, event);
+  if (next) void router.replace({ path: versionPath(next.name), query: route.query });
 }
 const freeing = ref(false);
 const deleting = ref(false);
@@ -87,14 +84,6 @@ useShortcuts(
   { arrowdown: (e) => step(1, e), arrowup: (e) => step(-1, e) },
   { enabled: () => !dialogs.value, preventDefault: false },
 );
-
-/** Below 75rem the library sits under the stage: this brings it into view. */
-function toLibrary() {
-  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  document
-    .querySelector("aside[aria-label='Versions']")
-    ?.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
-}
 
 // ---- Tidying
 
@@ -163,18 +152,17 @@ const fingerprint = computed(() => {
 <template>
   <Workspace library-label="Versions" inspector-label="Speed">
     <template #library-head>
-      <div class="lib-head">
-        <div class="lib-top">
-          <h1 class="lib-title">Versions</h1>
+      <LibraryHead title="Versions">
+        <template #action>
           <EMenu label="Library options" :items="libraryMenu" align="end">
             <template #trigger>
               <EIconButton :icon="PhDotsThree" label="Library options" size="sm" />
             </template>
           </EMenu>
-        </div>
+        </template>
         <ESearchBar v-model="search" label="Search versions" placeholder="Search" size="sm" hide-action />
         <ECheckbox v-if="hiddenCount" v-model="showHidden" :label="`Show hidden and upstream (${hiddenCount})`" />
-      </div>
+      </LibraryHead>
     </template>
 
     <template #library>
@@ -199,7 +187,9 @@ const fingerprint = computed(() => {
     <template v-if="current" #stage-head>
       <h2 class="title">{{ current.name }}</h2>
       <span class="grow"></span>
-      <EButton class="to-library" variant="quiet" size="sm" :icon="PhList" @click="toLibrary">Library</EButton>
+      <EButton class="to-library" variant="quiet" size="sm" :icon="PhList" @click="toLibrary('Versions')"
+        >Library</EButton
+      >
       <EMenu v-if="stageMenu.length" label="More about this version" :items="stageMenu" align="end">
         <template #trigger>
           <EIconButton :icon="PhDotsThree" label="More about this version" size="sm" />
@@ -260,23 +250,6 @@ const fingerprint = computed(() => {
 </template>
 
 <style scoped>
-.lib-head {
-  display: grid;
-  flex: 1;
-  grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
-  gap: var(--e-gap-base);
-  padding-block: var(--e-gap-snug);
-}
-
-.lib-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--e-gap-snug);
-}
-
-.lib-title,
 .title,
 .ins-title {
   margin: 0;
