@@ -2005,6 +2005,20 @@ export interface operations {
                     "application/json": components["schemas"]["AnalysisResult"];
                 };
             };
+            /** @description No such build */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The build was deleted, or there are no builds yet */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     start_analysis: {
@@ -2027,6 +2041,20 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["LiveSession"];
                 };
+            };
+            /** @description No such build */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The build was deleted, or there are no builds yet */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

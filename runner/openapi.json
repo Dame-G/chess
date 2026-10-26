@@ -36,6 +36,12 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "No such build"
+          },
+          "409": {
+            "description": "The build was deleted, or there are no builds yet"
           }
         }
       }
@@ -66,6 +72,12 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "No such build"
+          },
+          "409": {
+            "description": "The build was deleted, or there are no builds yet"
           }
         }
       },

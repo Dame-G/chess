@@ -6,7 +6,7 @@ use super::{ApiError, AppState};
 use crate::analysis::{self, AnalysisRequest, AnalysisResult, LiveSession};
 
 /// Searches a position to a limit (depth 20 when none is given) and answers with the best move and lines.
-#[utoipa::path(post, path = "/api/analyse", operation_id = "analyse", tag = "analysis", request_body = AnalysisRequest, responses((status = 200, body = AnalysisResult)))]
+#[utoipa::path(post, path = "/api/analyse", operation_id = "analyse", tag = "analysis", request_body = AnalysisRequest, responses((status = 200, body = AnalysisResult), (status = 404, description = "No such build"), (status = 409, description = "The build was deleted, or there are no builds yet")))]
 pub async fn analyse(
     State(state): State<Arc<AppState>>,
     Json(req): Json<AnalysisRequest>,
@@ -15,7 +15,7 @@ pub async fn analyse(
 }
 
 /// Starts a live search, replacing any other. Reports arrive as `analysis.info` events until it is stopped.
-#[utoipa::path(post, path = "/api/analysis", operation_id = "start_analysis", tag = "analysis", request_body = AnalysisRequest, responses((status = 200, body = LiveSession)))]
+#[utoipa::path(post, path = "/api/analysis", operation_id = "start_analysis", tag = "analysis", request_body = AnalysisRequest, responses((status = 200, body = LiveSession), (status = 404, description = "No such build"), (status = 409, description = "The build was deleted, or there are no builds yet")))]
 pub async fn start(
     State(state): State<Arc<AppState>>,
     Json(req): Json<AnalysisRequest>,

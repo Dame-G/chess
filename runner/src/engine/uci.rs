@@ -1,6 +1,6 @@
 //! Talking to an engine over UCI.
 
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -8,6 +8,13 @@ use tokio::{io::AsyncWriteExt, sync::mpsc};
 use utoipa::ToSchema;
 
 use crate::proc;
+
+/// How long an engine has to answer `uci`. Reckless answers at once; one that does not is broken or not an engine.
+const UCIOK_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long an engine has to answer `isready`. Longer than for `uciok`, since a large `Hash` is allocated and cleared
+/// before it answers.
+const READYOK_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A search score from the side to move's point of view.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -108,20 +115,33 @@ pub struct Engine {
 }
 
 impl Engine {
+    /// Starts the engine and waits for `uciok`. An engine that does not answer within [`UCIOK_TIMEOUT`] fails the call
+    /// and is killed (dropped).
     pub async fn start(path: &Path) -> Result<Self> {
-        let mut child = proc::spawn(proc::Spawn { program: path, args: &[], cwd: None, env: &[], stdin: true })?;
+        Self::start_command(path, &[], UCIOK_TIMEOUT).await
+    }
+
+    async fn start_command(program: &Path, args: &[&str], timeout: Duration) -> Result<Self> {
+        let mut child = proc::spawn(proc::Spawn { program, args, cwd: None, env: &[], stdin: true })?;
         let lines = proc::lines(&mut child);
         let mut engine = Self { child, lines, name: String::new() };
         engine.send("uci").await?;
-        while let Some(line) = engine.lines.recv().await {
-            if let Some(name) = line.strip_prefix("id name ") {
-                engine.name = name.to_owned();
+        let handshake = async {
+            while let Some(line) = engine.lines.recv().await {
+                if let Some(name) = line.strip_prefix("id name ") {
+                    engine.name = name.to_owned();
+                }
+                if line == "uciok" {
+                    return Ok(());
+                }
             }
-            if line == "uciok" {
-                return Ok(engine);
-            }
+            bail!("{} exited before uciok", program.display())
+        };
+        match tokio::time::timeout(timeout, handshake).await {
+            Ok(Ok(())) => Ok(engine),
+            Ok(Err(e)) => Err(e),
+            Err(_) => bail!("{} sent no uciok within {} s", program.display(), timeout.as_secs_f64()),
         }
-        bail!("{} exited before uciok", path.display())
     }
 
     /// Sends one command. A line break inside it (from a FEN or a move in a request) would smuggle in another, so it is
@@ -140,14 +160,21 @@ impl Engine {
         self.send(&format!("setoption name {name} value {value}")).await
     }
 
+    /// `isready`, waiting for `readyok`. An engine that does not answer within [`READYOK_TIMEOUT`] fails the call; the
+    /// caller drops it, which kills it.
     pub async fn ready(&mut self) -> Result<()> {
         self.send("isready").await?;
-        while let Some(line) = self.lines.recv().await {
-            if line == "readyok" {
-                return Ok(());
+        let answer = async {
+            while let Some(line) = self.lines.recv().await {
+                if line == "readyok" {
+                    return Ok(());
+                }
             }
-        }
-        bail!("engine exited before readyok")
+            bail!("engine exited before readyok")
+        };
+        tokio::time::timeout(READYOK_TIMEOUT, answer)
+            .await
+            .unwrap_or_else(|_| bail!("engine sent no readyok within {} s", READYOK_TIMEOUT.as_secs()))
     }
 
     /// Sets the position (a FEN, or `startpos`) and starts a search. Read its output with [`Engine::next`].
@@ -206,5 +233,19 @@ mod tests {
     fn builds_go_commands() {
         assert_eq!(Limits::default().go(), "go infinite");
         assert_eq!(Limits { depth: Some(12), ..Default::default() }.go(), "go depth 12");
+    }
+
+    /// A program that runs and never says `uciok`: the start fails within the timeout and the program is killed.
+    #[tokio::test]
+    async fn an_engine_that_never_answers_fails_to_start() {
+        #[cfg(windows)]
+        let (program, args) = ("ping", ["-n", "30", "127.0.0.1"]);
+        #[cfg(not(windows))]
+        let (program, args) = ("sleep", ["60"]);
+        let started = std::time::Instant::now();
+        let result = Engine::start_command(Path::new(program), &args, Duration::from_millis(500)).await;
+        let error = result.err().expect("no uciok, no engine").to_string();
+        assert!(error.contains("no uciok"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(10));
     }
 }
