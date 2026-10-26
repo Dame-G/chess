@@ -5,7 +5,7 @@ import { EButton } from "@eos-ui/vue/components/EButton";
 import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { EStamp } from "@eos-ui/vue/components/EStamp";
 import { gameClock, speedName } from "../lichess";
-import { matchTimeText, outcomeText, type Match } from "./matchText";
+import { matchTimeText, movesText, outcomeText, type Match } from "./matchText";
 
 const props = defineProps<{
   match: Match;
@@ -27,13 +27,10 @@ function resign() {
 const early = computed(() => props.match.moves.length < 2);
 
 const running = computed(() => props.match.status === "running");
-const moves = computed(() => Math.ceil(props.match.moves.length / 2));
-const stamp = computed(() => {
-  if (running.value) return { label: props.attached ? "Live" : "Behind", tone: "info" } as const;
-  if (props.match.status === "aborted")
-    return { label: lichess.value ? "Aborted" : "Stopped", tone: "neutral" } as const;
-  return { label: "Final", tone: "neutral" } as const;
-});
+/** Only a game still on has a badge: once it is over the sentence says how it ended. */
+const stamp = computed(() =>
+  running.value ? ({ label: props.attached ? "Live" : "Behind", tone: "info" } as const) : null,
+);
 /** Live, the stamp says it all; behind the latest move it says what the board is showing. */
 const sentence = computed(() => {
   if (lichess.value && !running.value) return outcomeText(props.match);
@@ -45,7 +42,7 @@ const facts = computed(() => {
   const m = props.match;
   const l = m.lichess;
   const parts = l ? [`${speedName(l.speed)} ${gameClock(m)}`, l.rated ? "rated" : "casual"] : [matchTimeText(m.time)];
-  parts.push(`${moves.value} move${moves.value === 1 ? "" : "s"}`);
+  parts.push(movesText(m.moves.length));
   if (m.book) parts.push("book opening");
   return parts.join(" · ");
 });
@@ -54,7 +51,7 @@ const facts = computed(() => {
 <template>
   <header class="status">
     <p class="line">
-      <EStamp size="sm" :tone="stamp.tone" :label="stamp.label" />
+      <EStamp v-if="stamp" size="sm" :tone="stamp.tone" :label="stamp.label" />
       <strong v-if="sentence" class="sentence" aria-live="polite">{{ sentence }}</strong>
       <span v-else class="facts num">{{ facts }}</span>
     </p>

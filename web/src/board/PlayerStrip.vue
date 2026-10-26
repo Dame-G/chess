@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { EStamp } from "@eos-ui/vue/components/EStamp";
 import { clockText, type Side } from "./matchText";
 
 const props = defineProps<{
@@ -67,14 +68,22 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
       <span class="name">{{ name }}</span>
       <span class="commit num">{{ detail }}</span>
     </span>
-    <span
+    <EStamp
       v-if="score"
-      class="score num"
-      :aria-label="`Scored ${score}`"
+      size="sm"
+      class="score"
+      :tone="score === '1' ? 'success' : 'neutral'"
+      :label="score"
       :title="score === '1' ? 'Won' : score === '0' ? 'Lost' : 'Drew'"
-      >{{ score }}</span
-    >
-    <span ref="clock" class="clock num" :class="{ 'clock--idle': ms === null }" role="timer"></span>
+      :aria-label="`Scored ${score}`"
+    />
+    <span
+      ref="clock"
+      class="clock num"
+      :class="{ 'clock--idle': ms === null }"
+      :title="ms === null ? 'Time of its last move' : undefined"
+      :role="ms === null ? undefined : 'timer'"
+    ></span>
   </div>
 </template>
 
@@ -148,13 +157,13 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
 
 .score {
   flex: none;
-  font-weight: 700;
 }
 
 /* Big, mono and tabular: the digits never shift as they change. */
 .clock {
   flex: none;
   min-width: 5.5ch;
+  margin-inline-start: var(--e-gap-snug);
   font: 600 var(--e-text-2xl) / 1 var(--e-font-mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;

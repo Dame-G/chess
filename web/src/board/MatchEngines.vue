@@ -44,11 +44,7 @@ defineProps<{ rows: EngineRow[] }>();
 </template>
 
 <style scoped>
-/* The two engines' colours: the same hues as their arrows on the board. */
 .engines {
-  --eng-white: #3d7fd6;
-  --eng-black: #d9822b;
-
   display: grid;
 }
 
@@ -57,19 +53,15 @@ defineProps<{ rows: EngineRow[] }>();
   gap: var(--e-gap-tight);
   padding: var(--e-gap-snug) var(--ws-pad);
   border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
-  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* The engine on the move: the cognac edge the player strips use. */
+.eng--on {
+  box-shadow: inset 3px 0 0 var(--e-primary);
 }
 
 .eng:last-child {
   border-block-end: 0;
-}
-
-.eng--white {
-  --accent: var(--eng-white);
-}
-
-.eng--black {
-  --accent: var(--eng-black);
 }
 
 .head {
@@ -80,12 +72,21 @@ defineProps<{ rows: EngineRow[] }>();
   font: var(--e-type-small);
 }
 
+/* The colour it plays, as a piece: the same chips as the players' strips. */
 .swatch {
   flex: none;
-  width: 0.625rem;
-  height: 0.625rem;
-  border-radius: 2px;
-  background: var(--accent);
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--e-border-strong);
+}
+
+.eng--white .swatch {
+  background: #fffaf3;
+}
+
+.eng--black .swatch {
+  background: #2a2420;
 }
 
 .side {
@@ -101,7 +102,7 @@ defineProps<{ rows: EngineRow[] }>();
 
 .state {
   margin-inline-start: auto;
-  color: var(--accent);
+  color: var(--e-primary);
   font-weight: 600;
 }
 

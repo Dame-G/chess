@@ -6,7 +6,7 @@ import { EButton } from "@eos-ui/vue/components/EButton";
 import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { ESpinner } from "@eos-ui/vue/components/ESpinner";
 import { EStamp } from "@eos-ui/vue/components/EStamp";
-import { matchTimeText, youOutcome, youSide, type Match } from "./matchText";
+import { matchTimeText, movesText, youOutcome, youSide, type Match } from "./matchText";
 
 const props = defineProps<{
   match: Match;
@@ -24,7 +24,6 @@ const emit = defineEmits<{
   analyse: [];
   rematch: [];
   swap: [];
-  fresh: [];
 }>();
 
 const me = computed(() => youSide(props.match)!);
@@ -34,10 +33,10 @@ const myTurn = computed(() => running.value && props.match.turn === me.value);
 const timed = computed(() => props.match.time.type === "clock");
 const plies = computed(() => props.match.moves.length);
 
-const stamp = computed(() => {
-  if (running.value) return myTurn.value ? ({ label: "Your move", tone: "success" } as const) : null;
-  return { label: props.match.status === "aborted" ? "Cancelled" : "Final", tone: "neutral" } as const;
-});
+/** Only your turn has a badge: once the game is over the sentence says how it ended. */
+const stamp = computed(() =>
+  running.value && myTurn.value ? ({ label: "Your move", tone: "success" } as const) : null,
+);
 const sentence = computed(() => (running.value ? "" : youOutcome(props.match)));
 /** The clock as you chose it, in minutes and seconds: `5+3`. */
 const timeText = computed(() => {
@@ -45,9 +44,8 @@ const timeText = computed(() => {
   return t.type === "clock" ? `${t.seconds / 60}+${t.increment}` : matchTimeText(t);
 });
 const facts = computed(() => {
-  const moves = Math.ceil(plies.value / 2);
   return [`You · ${me.value}`, `${them.value.name} ${them.value.commit}`.trim(), timeText.value]
-    .concat(moves ? [`${moves} move${moves === 1 ? "" : "s"}`] : [])
+    .concat(plies.value ? [movesText(plies.value)] : [])
     .join(" · ");
 });
 
@@ -64,7 +62,7 @@ function resign() {
   <header class="play">
     <p class="line">
       <EStamp v-if="stamp" size="sm" :tone="stamp.tone" :label="stamp.label" />
-      <span v-else class="wait" aria-live="polite">
+      <span v-else-if="running" class="wait" aria-live="polite">
         <ESpinner size="sm" :label="`${them.name} is thinking`" silent />
       </span>
       <strong v-if="sentence" class="sentence" aria-live="polite">{{ sentence }}</strong>
@@ -110,7 +108,6 @@ function resign() {
         Rematch
       </EButton>
       <EButton variant="outline" size="sm" :icon="PhSwap" :loading="busy" @click="emit('swap')"> Swap colours </EButton>
-      <EButton variant="quiet" size="sm" @click="emit('fresh')">New game</EButton>
     </div>
   </header>
   <EDialog
