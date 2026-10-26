@@ -24,6 +24,7 @@ pub mod score;
 pub mod spsa;
 pub mod stats;
 pub mod time;
+pub mod training;
 pub mod version;
 pub mod work;
 
@@ -80,6 +81,11 @@ mod schema_tests {
         drills::HitRatePoint,
         repertoire::Repertoire,
         progress::Progress,
+        training::Net,
+        training::Dataset,
+        training::TrainSpec,
+        training::TrainStep,
+        events::TrainProgress,
     )))]
     struct Doc;
 

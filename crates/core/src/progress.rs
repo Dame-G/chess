@@ -167,6 +167,7 @@ mod tests {
 
     fn v(id: i64, line: Line, elo: Option<Estimate>) -> Version {
         Version {
+            net: None,
             id: VersionId(id),
             name: match line {
                 Line::Champion { number } => Line::champion_name(number),

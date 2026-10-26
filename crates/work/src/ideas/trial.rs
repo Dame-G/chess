@@ -80,6 +80,7 @@ impl Executor for TrialExecutor {
                 self.games(&cx, &idea, &mut trial, &sides, preset, bounds, pairs).await?
             }
             StageRule::Tune => return Err(Error::internal("a tune stage runs as tune work")),
+            StageRule::Train => return Err(Error::internal("a training stage runs as train work")),
         };
         cx.log(format!("{}: {}", if verdict.passed { "Passed" } else { "Failed" }, verdict.detail));
         trial.status = if verdict.passed { TrialStatus::Passed } else { TrialStatus::Failed };

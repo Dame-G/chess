@@ -298,6 +298,7 @@ impl TuneExecutor {
                 line: Line::Idea { idea: idea.id },
                 parent: Some(idea.base),
                 bench: commit.bench,
+                net: None,
             })
             .await?;
         let (build, _) = versions.binary_of(&version, &[]).await?;
@@ -318,6 +319,7 @@ impl TuneExecutor {
                 line: Line::Idea { idea: idea.id },
                 parent: Some(idea.base),
                 bench: Some(bench),
+                net: None,
             })
             .await?;
         versions.hub().bus.emit(Payload::VersionUpserted(Box::new(version.clone())));

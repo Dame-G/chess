@@ -3,6 +3,7 @@
 
 use dameless_core::{
     BuildId, Error, VersionId,
+    training::NetId,
     version::{Build, BuildStatus, Estimate, Line, Version},
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -18,11 +19,13 @@ pub struct NewVersion {
     pub line: Line,
     pub parent: Option<VersionId>,
     pub bench: Option<u64>,
+    /// The net its builds embed; none for the commit's own.
+    pub net: Option<NetId>,
 }
 
 impl NewVersion {
     pub fn new(name: impl Into<String>, commit: impl Into<String>, line: Line) -> Self {
-        Self { name: name.into(), commit: commit.into(), branch: None, line, parent: None, bench: None }
+        Self { name: name.into(), commit: commit.into(), branch: None, line, parent: None, bench: None, net: None }
     }
 }
 
@@ -32,6 +35,8 @@ pub struct NewBuild {
     pub version: VersionId,
     pub commit: String,
     pub features: Vec<String>,
+    /// The net it embeds, when not the commit's own.
+    pub net: Option<NetId>,
     pub path: String,
     pub status: BuildStatus,
     pub log_path: Option<String>,
@@ -54,7 +59,7 @@ fn features_key(features: &[String]) -> String {
     f.join(",")
 }
 
-const VERSION: &str = "SELECT id, name, commit_sha, branch, line, parent, bench, elo, created_at FROM versions";
+const VERSION: &str = "SELECT id, name, commit_sha, branch, line, parent, bench, elo, created_at, net FROM versions";
 
 fn version_from_row(row: &Row<'_>) -> DbResult<Version> {
     Ok(Version {
@@ -66,6 +71,7 @@ fn version_from_row(row: &Row<'_>) -> DbResult<Version> {
         parent: row.get::<_, Option<i64>>(5)?.map(VersionId),
         bench: row.get::<_, Option<i64>>(6)?.map(|b| b as u64),
         elo: from_opt_json(row.get(7)?)?,
+        net: row.get::<_, Option<i64>>(9)?.map(NetId),
         created_at: dameless_core::Timestamp(row.get(8)?),
     })
 }
@@ -80,7 +86,7 @@ fn versions_where(conn: &Connection, clause: &str, args: impl rusqlite::Params) 
     Ok(out)
 }
 
-const BUILD: &str = "SELECT id, version, features, bench, nps, path, status, deleted_at FROM builds";
+const BUILD: &str = "SELECT id, version, features, bench, nps, path, status, deleted_at, net FROM builds";
 
 fn build_from_row(row: &Row<'_>) -> DbResult<Build> {
     let features: String = row.get(2)?;
@@ -89,6 +95,7 @@ fn build_from_row(row: &Row<'_>) -> DbResult<Build> {
         id: BuildId(row.get(0)?),
         version: VersionId(row.get(1)?),
         features: features.split(',').filter(|f| !f.is_empty()).map(str::to_owned).collect(),
+        net: row.get::<_, Option<i64>>(8)?.map(NetId),
         bench: row.get::<_, Option<i64>>(3)?.map(|b| b as u64),
         nps: row.get::<_, Option<i64>>(4)?.map(|b| b as u64),
         path: row.get(5)?,
@@ -116,11 +123,11 @@ impl Store {
                 _ => None,
             };
             tx.execute(
-                "INSERT INTO versions (name, commit_sha, branch, line, line_kind, champion, parent, bench, created_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+                "INSERT INTO versions (name, commit_sha, branch, line, line_kind, champion, parent, bench, created_at, net) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
                  ON CONFLICT (name) DO UPDATE SET commit_sha = excluded.commit_sha, branch = excluded.branch, \
                  line = excluded.line, line_kind = excluded.line_kind, champion = excluded.champion, \
-                 parent = excluded.parent, bench = excluded.bench",
+                 parent = excluded.parent, bench = excluded.bench, net = excluded.net",
                 params![
                     v.name,
                     v.commit,
@@ -131,6 +138,7 @@ impl Store {
                     v.parent.map(|p| p.0),
                     v.bench.map(|b| b as i64),
                     now().as_str(),
+                    v.net.map(|n| n.0),
                 ],
             )?;
             versions_where(tx, "WHERE name = ?1", [&v.name])?
@@ -190,8 +198,8 @@ impl Store {
     pub async fn insert_build(&self, b: NewBuild) -> Result<Build, Error> {
         self.write(move |tx| {
             tx.execute(
-                "INSERT INTO builds (version, commit_sha, features, path, status, log_path, created_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO builds (version, commit_sha, features, path, status, log_path, created_at, net) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     b.version.0,
                     b.commit,
@@ -199,7 +207,8 @@ impl Store {
                     b.path,
                     word(&b.status),
                     b.log_path,
-                    now().as_str()
+                    now().as_str(),
+                    b.net.map(|n| n.0)
                 ],
             )?;
             let id = tx.last_insert_rowid();
@@ -250,15 +259,26 @@ impl Store {
         self.read(move |conn| builds_where(conn, "WHERE version = ?1 ORDER BY id DESC", [version.0])).await
     }
 
-    /// The cache: the newest ready, not deleted build of a commit with exactly these features.
+    /// The cache: the newest ready, not deleted build of a commit with exactly these features and the commit's own
+    /// net.
     pub async fn cached_build(&self, commit: &str, features: &[String]) -> Result<Option<Build>, Error> {
+        self.cached_build_with_net(commit, features, None).await
+    }
+
+    /// The cache, keyed by (commit, features, net): `None` is the commit's own net.
+    pub async fn cached_build_with_net(
+        &self,
+        commit: &str,
+        features: &[String],
+        net: Option<NetId>,
+    ) -> Result<Option<Build>, Error> {
         let (commit, features) = (commit.to_owned(), features_key(features));
         self.read(move |conn| {
             Ok(builds_where(
                 conn,
-                "WHERE commit_sha = ?1 AND features = ?2 AND status = 'ready' AND deleted_at IS NULL \
+                "WHERE commit_sha = ?1 AND features = ?2 AND net IS ?3 AND status = 'ready' AND deleted_at IS NULL \
                  ORDER BY id DESC LIMIT 1",
-                params![commit, features],
+                params![commit, features, net.map(|n| n.0)],
             )?
             .pop())
         })
@@ -321,6 +341,7 @@ mod tests {
             version: v.id,
             commit: "aaa".into(),
             features: features.iter().map(|s| s.to_string()).collect(),
+            net: None,
             path: "builds/aaa".into(),
             status: BuildStatus::Building,
             log_path: Some("logs/build.log".into()),

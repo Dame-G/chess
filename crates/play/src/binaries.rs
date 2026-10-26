@@ -76,6 +76,7 @@ impl FixedBinaries {
             parent: None,
             bench: None,
             elo: None,
+            net: None,
             created_at: Timestamp::from_unix_ms(0),
         };
         let binary = EngineBinary {

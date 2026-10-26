@@ -16,6 +16,7 @@ use crate::{
     lichess::{ChallengeEvent, ConnectionStatus},
     score::Score,
     stats::Pentanomial,
+    training::{Dataset, Net},
     version::{Estimate, Llr, Version},
     work::Work,
 };
@@ -86,10 +87,19 @@ pub enum EventKind {
     /// [`LevelsUpdated`].
     #[serde(rename = "levels.updated")]
     LevelsUpdated,
+    /// [`TrainProgress`], at most once a second.
+    #[serde(rename = "train.progress")]
+    TrainProgress,
+    /// [`Dataset`].
+    #[serde(rename = "dataset.upserted")]
+    DatasetUpserted,
+    /// [`Net`].
+    #[serde(rename = "net.upserted")]
+    NetUpserted,
 }
 
 impl EventKind {
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 24] = [
         Self::GameUpserted,
         Self::GameMoved,
         Self::GameUndone,
@@ -111,6 +121,9 @@ impl EventKind {
         Self::DrillAnswered,
         Self::DrillDeleted,
         Self::LevelsUpdated,
+        Self::TrainProgress,
+        Self::DatasetUpserted,
+        Self::NetUpserted,
     ];
 
     /// The name on the wire: `game.upserted`.
@@ -137,6 +150,9 @@ impl EventKind {
             Self::DrillAnswered => "drill.answered",
             Self::DrillDeleted => "drill.deleted",
             Self::LevelsUpdated => "levels.updated",
+            Self::TrainProgress => "train.progress",
+            Self::DatasetUpserted => "dataset.upserted",
+            Self::NetUpserted => "net.upserted",
         }
     }
 
@@ -183,6 +199,8 @@ pub enum Topic {
     Policy,
     /// One live evaluation session.
     Eval(String),
+    /// Nets and datasets.
+    Training,
 }
 
 impl Topic {
@@ -215,6 +233,7 @@ impl fmt::Display for Topic {
             Self::Versions => f.write_str("versions"),
             Self::Policy => f.write_str("policy"),
             Self::Eval(session) => write!(f, "eval:{session}"),
+            Self::Training => f.write_str("training"),
         }
     }
 }
@@ -350,6 +369,23 @@ pub struct LevelsUpdated {
     pub updated_at: Timestamp,
 }
 
+/// `train.progress`: a training run's latest reading (throttled to one a second). Published on `idea:<id>` when the
+/// run is a net idea's, else on `work`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct TrainProgress {
+    pub work: WorkId,
+    pub idea: Option<IdeaId>,
+    pub superbatch: u32,
+    pub superbatches: u32,
+    pub batch: u32,
+    pub batches_per_superbatch: u32,
+    pub loss: f64,
+    pub lr: f64,
+    pub positions_per_sec: f64,
+    pub grad_norm: Option<f64>,
+    pub elapsed_seconds: f64,
+}
+
 /// Every payload, typed, for building events without mixing kinds and payloads up.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Payload {
@@ -374,6 +410,9 @@ pub enum Payload {
     DrillAnswered(DrillAnswered),
     DrillDeleted(DrillDeleted),
     LevelsUpdated(LevelsUpdated),
+    TrainProgress(TrainProgress),
+    DatasetUpserted(Box<Dataset>),
+    NetUpserted(Box<Net>),
 }
 
 impl Payload {
@@ -400,6 +439,9 @@ impl Payload {
             Self::DrillAnswered(_) => EventKind::DrillAnswered,
             Self::DrillDeleted(_) => EventKind::DrillDeleted,
             Self::LevelsUpdated(_) => EventKind::LevelsUpdated,
+            Self::TrainProgress(_) => EventKind::TrainProgress,
+            Self::DatasetUpserted(_) => EventKind::DatasetUpserted,
+            Self::NetUpserted(_) => EventKind::NetUpserted,
         }
     }
 
@@ -424,6 +466,8 @@ impl Payload {
             Self::EvalInfo(p) => Topic::Eval(p.session.clone()),
             Self::DrillUpserted(_) | Self::DrillAnswered(_) | Self::DrillDeleted(_) => Topic::Player(PlayerKey::You),
             Self::LevelsUpdated(_) => Topic::Player(PlayerKey::Dameless),
+            Self::TrainProgress(p) => p.idea.map_or(Topic::Work, Topic::Idea),
+            Self::DatasetUpserted(_) | Self::NetUpserted(_) => Topic::Training,
         }
     }
 
@@ -451,6 +495,9 @@ impl Payload {
             Self::DrillAnswered(p) => serde_json::to_value(p),
             Self::DrillDeleted(p) => serde_json::to_value(p),
             Self::LevelsUpdated(p) => serde_json::to_value(p),
+            Self::TrainProgress(p) => serde_json::to_value(p),
+            Self::DatasetUpserted(p) => serde_json::to_value(p),
+            Self::NetUpserted(p) => serde_json::to_value(p),
         };
         // Every payload is plain data with string keys and finite numbers, which always serializes.
         v.unwrap_or(serde_json::Value::Null)

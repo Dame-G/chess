@@ -26,6 +26,7 @@ use async_trait::async_trait;
 use dameless_core::{
     BuildId, Error, IdeaId, VersionId,
     events::Payload,
+    training::NetId,
     version::{Build, BuildStatus, Estimate, Line, Version},
     work::{Priority, Subject, WorkKind, WorkStatus},
 };
@@ -77,6 +78,9 @@ pub struct BuildWork {
     pub version: VersionId,
     pub commit: String,
     pub features: Vec<String>,
+    /// The net to embed; none for the commit's own.
+    #[serde(default)]
+    pub net: Option<NetId>,
 }
 
 /// What pruning removes.
@@ -270,7 +274,8 @@ impl Versions {
                         branch: v.branch.clone(),
                         line: v.line,
                         parent: v.parent,
-                        bench: c.bench,
+                        bench: if v.net.is_some() { None } else { c.bench },
+                        net: v.net,
                     })
                     .await?;
                 self.emit(&moved);
@@ -299,14 +304,20 @@ impl Versions {
                 line: if upstream { Line::Upstream } else { Line::Other },
                 parent,
                 bench: commit.bench,
+                net: None,
             })
             .await?;
         self.emit(&v);
         Ok(v)
     }
 
-    /// Records an idea's branch as its version (or moves it to the branch's tip).
+    /// Records an idea's branch as its version (or moves it to the branch's tip). It embeds its parent's net, so an
+    /// idea on a champion that is code plus a trained net is tested with that net.
     pub async fn idea_version(&self, branch: &str, idea: IdeaId, parent: Option<VersionId>) -> Result<Version, Error> {
+        let net = match parent {
+            Some(p) => self.inner.hub.store.version(p).await?.and_then(|v| v.net),
+            None => None,
+        };
         let commit = self
             .inner
             .repo
@@ -323,7 +334,9 @@ impl Versions {
                 branch: Some(branch.to_owned()),
                 line: Line::Idea { idea },
                 parent,
-                bench: commit.bench,
+                // A Bench: line is measured with the commit's own net: it says nothing of a build with another.
+                bench: if net.is_some() { None } else { commit.bench },
+                net,
             })
             .await?;
         self.emit(&v);
@@ -354,8 +367,10 @@ impl Versions {
                 commit: tip.sha,
                 branch: Some(MAIN.to_owned()),
                 line: Line::Champion { number },
+                // The champion's net carries over to new code.
+                net: current.as_ref().and_then(|c| c.net),
+                bench: if current.as_ref().is_some_and(|c| c.net.is_some()) { None } else { tip.bench },
                 parent: current.map(|c| c.id),
-                bench: tip.bench,
             })
             .await?;
         self.emit(&v);
@@ -380,8 +395,9 @@ impl Versions {
                 commit: commit.to_owned(),
                 branch: Some(MAIN.to_owned()),
                 line: Line::Champion { number },
+                net: current.as_ref().and_then(|c| c.net),
+                bench: if current.as_ref().is_some_and(|c| c.net.is_some()) { None } else { bench },
                 parent: current.map(|c| c.id),
-                bench,
             })
             .await?;
         store.set_version_elo(v.id, elo).await?;
@@ -440,6 +456,7 @@ impl Versions {
                                 version: version.id,
                                 commit: version.commit.clone(),
                                 features: features.clone(),
+                                net: None,
                             })
                             .map_err(|e| Error::internal(e.to_string()))?,
                         })
@@ -476,6 +493,7 @@ impl Versions {
                 version,
                 commit: commit.to_owned(),
                 features: build.features.clone(),
+                net: build.net,
                 path: build.path.clone(),
                 status: BuildStatus::Building,
                 log_path: None,
@@ -592,6 +610,7 @@ impl Executor for BuildExecutor {
                 version: version.id,
                 commit: spec.commit.clone(),
                 features: spec.features.clone(),
+                net: spec.net,
                 path: binary.display().to_string(),
                 status: BuildStatus::Building,
                 log_path: Some(hub.config.work_log_path(cx.id).display().to_string()),

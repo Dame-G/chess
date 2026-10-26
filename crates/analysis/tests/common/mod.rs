@@ -55,6 +55,7 @@ impl Binaries for FakeBinaries {
             id: BuildId(1),
             version: v.id,
             features: features.iter().map(|f| (*f).to_owned()).collect(),
+            net: None,
             bench: None,
             nps: None,
             path: self.path.display().to_string(),

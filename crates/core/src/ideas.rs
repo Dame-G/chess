@@ -29,6 +29,8 @@ pub enum IdeaKind {
     Speed,
     /// SPSA moves the search constants, and the result is confirmed like a gain.
     Tune,
+    /// A trained network: a run makes the net, the champion's code with it is tested like a gain.
+    Net,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
@@ -108,6 +110,8 @@ pub enum Stage {
     Confirm,
     /// A single trial with any preset and bounds, or a fixed number of pairs.
     Custom,
+    /// A training run that makes a net (a `net` idea's first stage).
+    Train,
 }
 
 impl Stage {
@@ -122,6 +126,7 @@ impl Stage {
             Self::Tune => "tune",
             Self::Confirm => "confirmation",
             Self::Custom => "test",
+            Self::Train => "training",
         }
     }
 }
@@ -335,6 +340,9 @@ pub enum StageRule {
     },
     /// SPSA writes the change; it passes when its iterations are done and the values are written.
     Tune,
+    /// A training run makes a net; it passes when the net is registered and the idea's version (the champion's code
+    /// with it) is recorded.
+    Train,
 }
 
 /// One stage of a funnel.
@@ -362,6 +370,7 @@ impl StagePlan {
 /// | neutral | fingerprint (must change) → screen → short STC [-2.75, 0.25] → long LTC [-2.75, 0.25]    |
 /// | speed   | fingerprint (must match) → speed (5 paired runs)                                         |
 /// | tune    | tune → fingerprint (must change) → screen → confirm STC [0, 4] → long LTC [0, 4]         |
+/// | net     | train → fingerprint (must change) → screen → short STC [0, 3] → long LTC [0, 3]          |
 pub fn funnel(kind: IdeaKind, long: bool) -> Vec<StagePlan> {
     let functional = |decide: Stage, bounds: [f64; 2]| {
         let mut stages = vec![
@@ -384,6 +393,11 @@ pub fn funnel(kind: IdeaKind, long: bool) -> Vec<StagePlan> {
         IdeaKind::Tune => {
             let mut stages = vec![StagePlan { stage: Stage::Tune, rule: StageRule::Tune }];
             stages.extend(functional(Stage::Confirm, TUNE_BOUNDS));
+            stages
+        }
+        IdeaKind::Net => {
+            let mut stages = vec![StagePlan { stage: Stage::Train, rule: StageRule::Train }];
+            stages.extend(functional(Stage::Short, GAIN_BOUNDS));
             stages
         }
     }
@@ -556,6 +570,14 @@ mod tests {
         assert_eq!(neutral[0].rule, StageRule::Fingerprint { rule: FingerprintRule::MustChange });
         assert_eq!(neutral[1].rule, StageRule::Games { preset: Preset::Vstc, bounds: Some([-5.0, 0.0]), pairs: None });
         assert_eq!(neutral[2].rule, StageRule::Games { preset: Preset::Stc, bounds: Some([-2.75, 0.25]), pairs: None });
+        assert_eq!(
+            stages(&funnel(IdeaKind::Net, true)),
+            [Stage::Train, Stage::Fingerprint, Stage::Screen, Stage::Short, Stage::Long]
+        );
+        let net = funnel(IdeaKind::Net, false);
+        assert_eq!(net[3].rule, StageRule::Games { preset: Preset::Stc, bounds: Some([0.0, 3.0]), pairs: None });
+        assert_eq!(next(&net, 0, true), Next::Run(1));
+        assert_eq!(next(&net, 3, true), Next::Kept);
         let tune = funnel(IdeaKind::Tune, true);
         assert_eq!(tune[4].rule, StageRule::Games { preset: Preset::Ltc, bounds: Some([0.0, 4.0]), pairs: None });
         assert_eq!(funnel(IdeaKind::Speed, false)[0].rule, StageRule::Fingerprint { rule: FingerprintRule::MustMatch });

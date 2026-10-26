@@ -16,12 +16,19 @@ pub enum WorkKind {
     Promote,
     /// Games between Dameless's levels, to fit their ratings.
     Calibrate,
+    /// Self-play training data with Reckless's `datagen` branch.
+    Datagen,
+    /// A training run: bullet on the GPU, a few cores for its data loader.
+    Train,
+    /// Downloading a shard of training data (with your go-ahead) and converting it.
+    DatasetImport,
 }
 
 impl WorkKind {
-    /// Whether it needs cores from the ledger. Imports use the network only and run at once.
+    /// Whether it needs cores from the ledger. Imports use the network only and run at once (a dataset import's
+    /// conversion is short and single-threaded).
     pub fn uses_cores(self) -> bool {
-        !matches!(self, Self::Import)
+        !matches!(self, Self::Import | Self::DatasetImport)
     }
 }
 

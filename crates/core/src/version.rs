@@ -3,7 +3,10 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::ids::{BuildId, IdeaId, Timestamp, VersionId};
+use crate::{
+    ids::{BuildId, IdeaId, Timestamp, VersionId},
+    training::NetId,
+};
 
 /// One commit of Dameless that matters: the champion line, an idea's change, an upstream tip.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -21,6 +24,10 @@ pub struct Version {
     pub bench: Option<u64>,
     /// Elo against its parent, from the deciding trial.
     pub elo: Option<Estimate>,
+    /// The net its builds embed; none for the commit's own (the file its build script names). A version of the
+    /// champion's code with a trained net is named `v14 + net-3`, and a champion can be code plus a net.
+    #[serde(default)]
+    pub net: Option<NetId>,
     pub created_at: Timestamp,
 }
 
@@ -45,13 +52,16 @@ impl Line {
     }
 }
 
-/// A binary of a version: a cache keyed by commit and cargo features, shown in diagnostics only.
+/// A binary of a version: a cache keyed by commit, cargo features and net, shown in diagnostics only.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Build {
     pub id: BuildId,
     pub version: VersionId,
     /// Cargo features it was built with, such as `spsa`.
     pub features: Vec<String>,
+    /// The net it embeds, when not the commit's own.
+    #[serde(default)]
+    pub net: Option<NetId>,
     /// What its `bench` measured: must equal the commit's `Bench:` line.
     pub bench: Option<u64>,
     /// Nodes per second of a single `bench`.

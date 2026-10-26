@@ -83,7 +83,10 @@ fn lane(kind: WorkKind) -> Option<u8> {
         WorkKind::Trial | WorkKind::Tune | WorkKind::Calibrate => Some(1),
         WorkKind::Review => Some(2),
         WorkKind::Promote => Some(3),
-        WorkKind::Import => None,
+        WorkKind::Datagen => Some(4),
+        // The GPU's lane: one run at a time.
+        WorkKind::Train => Some(5),
+        WorkKind::Import | WorkKind::DatasetImport => None,
     }
 }
 

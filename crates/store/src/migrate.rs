@@ -8,8 +8,11 @@ use rusqlite::Connection;
 use crate::DbResult;
 
 /// Every migration, in order. A new one is appended here, never edited in place once released.
-const MIGRATIONS: &[&str] =
-    &[include_str!("../migrations/0001_init.sql"), include_str!("../migrations/0002_player.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/0001_init.sql"),
+    include_str!("../migrations/0002_player.sql"),
+    include_str!("../migrations/0003_training.sql"),
+];
 
 /// Applies the migrations the database has not seen, each in its own transaction.
 pub(crate) fn apply(conn: &mut Connection) -> DbResult<()> {
@@ -54,6 +57,7 @@ mod tests {
             [
                 "builds",
                 "connections",
+                "datasets",
                 "drill_answers",
                 "drills",
                 "games",
@@ -61,9 +65,11 @@ mod tests {
                 "level_games",
                 "level_ratings",
                 "meta",
+                "nets",
                 "players",
                 "positions",
                 "reviews",
+                "train_steps",
                 "trials",
                 "tune_steps",
                 "versions",
