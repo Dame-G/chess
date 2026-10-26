@@ -895,6 +895,41 @@ export interface components {
             /** @description A branch, tag or commit of the Reckless checkout, such as `main` or `upstream/main`. */
             ref: string;
         };
+        /** @description How a test's or a tune's clock was scaled. */
+        Calibration: {
+            /**
+             * Format: int64
+             * @description The mean speed of the copies of base's `bench`. A tune has one build, so both are its speed.
+             */
+            base_nps: number;
+            /**
+             * Format: int32
+             * @description Copies of `bench` run at once: the games played at once times each game's threads.
+             */
+            copies: number;
+            /**
+             * Format: int64
+             * @description The mean speed of the copies of dev's `bench`, in nodes per second.
+             */
+            dev_nps: number;
+            /**
+             * Format: int64
+             * @description The speed the factor comes from: base's, as Reckless's OpenBench scales its tests.
+             */
+            measured_nps: number;
+            /** @description The clock fastchess was given, rounded to hundredths of a second as OpenBench passes it. */
+            played: components["schemas"]["TimeControl"];
+            /**
+             * Format: int64
+             * @description The speed the written clock is meant for.
+             */
+            reference_nps: number;
+            /**
+             * Format: double
+             * @description `reference_nps / measured_nps`: what the clock's base time and increment were multiplied by.
+             */
+            scale: number;
+        };
         /** @enum {string} */
         ChallengeColor: "random" | "white" | "black";
         ChallengeRequest: {
@@ -1780,6 +1815,8 @@ export interface components {
             llr?: number | null;
             penta: components["schemas"]["Pentanomial"];
             running: boolean;
+            scaling?: components["schemas"]["Calibration"] | null;
+            /** @description The settings as written: `spec.tc` is the nominal clock, such as STC's 8+0.08. */
             spec: components["schemas"]["MatchSpec"];
             stage: string;
             verdict?: components["schemas"]["Verdict"] | null;
@@ -1849,7 +1886,11 @@ export interface components {
             params: components["schemas"]["TuneParam"][];
             /** @description The ref (or build id) that was asked for. */
             ref: string;
-            /** @description Time control, hash and threads of each iteration's games; `pairs` is the pairs per iteration. */
+            scaling?: components["schemas"]["Calibration"] | null;
+            /**
+             * @description Time control, hash and threads of each iteration's games; `pairs` is the pairs per iteration. `spec.tc` is the
+             *     clock as written.
+             */
             spec: components["schemas"]["MatchSpec"];
             status: components["schemas"]["TuneStatus"];
             /** @description Why it stopped, once finished. */

@@ -11,6 +11,36 @@ pub const HOSTED_ORIGIN: &str = "https://chess.dame.gg";
 /// The Lichess the bot plays on, unless `LICHESS_URL` names another (a local mock in tests).
 pub const LICHESS_URL: &str = "https://lichess.org";
 
+/// The speed Reckless's OpenBench scales its clocks to: `bench` nodes per second, measured with every slot busy.
+pub const REFERENCE_NPS: u64 = 660_000;
+
+/// How tests and tunes scale their clocks to the machine's speed (see `engine::scale`). Read from the environment
+/// when each test starts: `CHESS_REFERENCE_NPS` sets the reference speed, and `CHESS_SCALE_CLOCKS=off` plays the
+/// clocks as written.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Scaling {
+    pub enabled: bool,
+    pub reference_nps: u64,
+}
+
+impl Scaling {
+    pub fn from_env() -> Self {
+        Self::parse(
+            std::env::var("CHESS_SCALE_CLOCKS").ok().as_deref(),
+            std::env::var("CHESS_REFERENCE_NPS").ok().as_deref(),
+        )
+    }
+
+    /// On unless `enabled` is `off`, `0`, `false` or `no`; the reference is Reckless's unless a positive number.
+    pub fn parse(enabled: Option<&str>, reference_nps: Option<&str>) -> Self {
+        let off =
+            enabled.is_some_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false" | "no"));
+        let reference_nps =
+            reference_nps.and_then(|v| v.trim().parse().ok()).filter(|n| *n > 0).unwrap_or(REFERENCE_NPS);
+        Self { enabled: !off, reference_nps }
+    }
+}
+
 pub struct Config {
     pub data: PathBuf,
     pub reckless: PathBuf,

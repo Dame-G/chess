@@ -119,6 +119,10 @@ const MIGRATIONS: &[&str] = &[
     // 6: a deleted build keeps its row (experiments, tests, tunes and matches name it) but loses its binary. Its key
     // is renamed on deletion so a later build of the same tree is a new row.
     "ALTER TABLE builds ADD COLUMN deleted_at TEXT;",
+    // 7: how a test's or a tune's clock was scaled to the machine's speed (`engine::scale::Calibration` as JSON), or
+    // NULL when it was played as written.
+    "ALTER TABLE tests ADD COLUMN scaling TEXT;
+    ALTER TABLE tunes ADD COLUMN scaling TEXT;",
 ];
 
 #[derive(Clone)]

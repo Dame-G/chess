@@ -2,11 +2,9 @@
 //! stops the experiment, so most bad ideas cost seconds or minutes, and only survivors reach the long tests.
 //!
 //! The match presets copy Reckless's own testing (its OpenBench instance): time controls, hash sizes, book, engine
-//! options, adjudication and SPRT bounds in normalized Elo. One thing differs: OpenBench scales each worker's clock
-//! to a reference speed (Reckless's is 660,000 nps of `bench`, measured with every game slot busy), and these clocks
-//! are not scaled. On this machine, with a game in every slot, an engine searches well under that, so "8+0.08" here
-//! is a shorter test in nodes than upstream's STC. Results are valid comparisons of dev against base at the clock
-//! played; they are not upstream's numbers.
+//! options, adjudication and SPRT bounds in normalized Elo. The clocks here are as written; like OpenBench, each test
+//! scales its clock to the machine's speed before playing (Reckless's reference is 660,000 nps of `bench` with every
+//! game slot busy), so "8+0.08" searches about as many nodes as upstream's STC. See `engine::scale`.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

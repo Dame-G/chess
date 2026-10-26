@@ -775,11 +775,42 @@ fn experiment_text(d: &Value) -> String {
         let mark = if r["passed"].as_bool() == Some(true) { "pass" } else { "FAIL" };
         out += &format!("\n  {mark} {:<8} {}", r["stage"].as_str().unwrap_or("?"), r["detail"].as_str().unwrap_or(""));
     }
+    for t in d["tests"].as_array().into_iter().flatten() {
+        if let Some(clock) = scaling_text(&t["spec"]["tc"], &t["scaling"]) {
+            out += &format!("\n  clock {:<5} {clock}", t["stage"].as_str().unwrap_or("?"));
+        }
+    }
     for t in d["tests"].as_array().into_iter().flatten().filter(|t| t["running"].as_bool() == Some(true)) {
         let llr = t["llr"].as_f64().map(|l| format!("LLR {l:.2}")).unwrap_or_default();
         out += &format!("\n  running {:<5} {} games {llr}", t["stage"].as_str().unwrap_or("?"), t["games"]);
     }
     out
+}
+
+/// A time control as written (`{ "clock": { seconds, increment } }` or `{ "nodes": { nodes } }`): `8+0.08`.
+fn tc_text(tc: &Value) -> Option<String> {
+    if let Some(c) = tc.get("clock") {
+        return Some(format!("{}+{}", c["seconds"].as_f64()?, c["increment"].as_f64()?));
+    }
+    Some(format!("{} nodes", tc.get("nodes")?["nodes"].as_u64()?))
+}
+
+/// How a test's or a tune's clock was played: "8+0.08 played as 11+0.11 (×1.38: 480k nodes/s with 7 benches at once,
+/// reference 660k)". `None` when it was not scaled: a node limit, scaling turned off, or not calibrated yet.
+fn scaling_text(tc: &Value, scaling: &Value) -> Option<String> {
+    if scaling.is_null() {
+        return None;
+    }
+    let written = tc_text(tc)?;
+    let k = |key: &str| scaling[key].as_u64().map_or("?".into(), |n| format!("{}k", (n as f64 / 1000.0).round()));
+    Some(format!(
+        "{written} played as {} (×{:.2}: {} nodes/s with {} benches at once, reference {})",
+        tc_text(&scaling["played"]).unwrap_or_default(),
+        scaling["scale"].as_f64().unwrap_or_default(),
+        k("measured_nps"),
+        scaling["copies"],
+        k("reference_nps"),
+    ))
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1331,6 +1362,20 @@ async fn lichess(client: &Client, cmd: LichessCommand, json: bool) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn says_how_a_clock_was_scaled() {
+        let tc = json!({ "clock": { "seconds": 8.0, "increment": 0.08 } });
+        let scaling = json!({
+            "copies": 7, "dev_nps": 482000, "base_nps": 480000, "measured_nps": 480000, "reference_nps": 660000,
+            "scale": 1.375, "played": { "clock": { "seconds": 11.0, "increment": 0.11 } }
+        });
+        assert_eq!(
+            scaling_text(&tc, &scaling).unwrap(),
+            "8+0.08 played as 11+0.11 (×1.38: 480k nodes/s with 7 benches at once, reference 660k)"
+        );
+        assert_eq!(scaling_text(&tc, &Value::Null), None);
+    }
 
     #[test]
     fn a_move_reads_as_uci_or_san() {

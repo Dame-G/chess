@@ -1962,6 +1962,60 @@
           }
         }
       },
+      "Calibration": {
+        "type": "object",
+        "description": "How a test's or a tune's clock was scaled.",
+        "required": [
+          "copies",
+          "dev_nps",
+          "base_nps",
+          "measured_nps",
+          "reference_nps",
+          "scale",
+          "played"
+        ],
+        "properties": {
+          "base_nps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The mean speed of the copies of base's `bench`. A tune has one build, so both are its speed.",
+            "minimum": 0
+          },
+          "copies": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Copies of `bench` run at once: the games played at once times each game's threads.",
+            "minimum": 0
+          },
+          "dev_nps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The mean speed of the copies of dev's `bench`, in nodes per second.",
+            "minimum": 0
+          },
+          "measured_nps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The speed the factor comes from: base's, as Reckless's OpenBench scales its tests.",
+            "minimum": 0
+          },
+          "played": {
+            "$ref": "#/components/schemas/TimeControl",
+            "description": "The clock fastchess was given, rounded to hundredths of a second as OpenBench passes it."
+          },
+          "reference_nps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The speed the written clock is meant for.",
+            "minimum": 0
+          },
+          "scale": {
+            "type": "number",
+            "format": "double",
+            "description": "`reference_nps / measured_nps`: what the clock's base time and increment were multiplied by."
+          }
+        }
+      },
       "ChallengeColor": {
         "type": "string",
         "enum": [
@@ -4367,8 +4421,20 @@
           "running": {
             "type": "boolean"
           },
+          "scaling": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Calibration",
+                "description": "How the clock was scaled to this machine's speed before the games, and the clock actually played. Null\nfor a node limit, with scaling turned off, before the calibration, and for tests from before scaling."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "spec": {
-            "$ref": "#/components/schemas/MatchSpec"
+            "$ref": "#/components/schemas/MatchSpec",
+            "description": "The settings as written: `spec.tc` is the nominal clock, such as STC's 8+0.08."
           },
           "stage": {
             "type": "string"
@@ -4566,9 +4632,20 @@
             "type": "string",
             "description": "The ref (or build id) that was asked for."
           },
+          "scaling": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Calibration",
+                "description": "How the clock was scaled to this machine's speed when the tune last started (or resumed), and the clock its\ngames are played at. Null for a node limit, with scaling turned off, or before it starts."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "spec": {
             "$ref": "#/components/schemas/MatchSpec",
-            "description": "Time control, hash and threads of each iteration's games; `pairs` is the pairs per iteration."
+            "description": "Time control, hash and threads of each iteration's games; `pairs` is the pairs per iteration. `spec.tc` is the\nclock as written."
           },
           "status": {
             "$ref": "#/components/schemas/TuneStatus"

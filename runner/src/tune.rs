@@ -30,7 +30,8 @@ use utoipa::ToSchema;
 
 use crate::{
     api::AppState,
-    engine::{build, fastchess, git},
+    config::Scaling,
+    engine::{build, fastchess, git, scale},
     experiments::{self, NewExperiment},
     funnel::{self, Kind, MatchSpec, Preset, TimeControl},
     jobs::{self, JobSpec},
@@ -258,8 +259,12 @@ pub struct Tune {
     /// The parameters, in the engine's order, with their current values. Empty until the build is made (when the
     /// request left them to the engine's declared list).
     pub params: Vec<TuneParam>,
-    /// Time control, hash and threads of each iteration's games; `pairs` is the pairs per iteration.
+    /// Time control, hash and threads of each iteration's games; `pairs` is the pairs per iteration. `spec.tc` is the
+    /// clock as written.
     pub spec: MatchSpec,
+    /// How the clock was scaled to this machine's speed when the tune last started (or resumed), and the clock its
+    /// games are played at. Null for a node limit, with scaling turned off, or before it starts.
+    pub scaling: Option<scale::Calibration>,
     pub iterations: u32,
     pub pairs_per_iteration: u32,
     /// Games played at once.
@@ -350,7 +355,7 @@ pub struct ApplyTune {
 }
 
 const COLUMNS: &str = "id, name, ref, build_id, params, spec, iterations, pairs, concurrency, alpha, gamma, a_ratio, \
-                       iteration, status, summary, job_id, created_at, finished_at";
+                       iteration, status, summary, job_id, created_at, finished_at, scaling";
 
 fn json<T: serde::de::DeserializeOwned>(r: &Row, i: usize) -> rusqlite::Result<T> {
     serde_json::from_str(&r.get::<_, String>(i)?)
@@ -377,6 +382,7 @@ fn from_row(r: &Row) -> rusqlite::Result<Tune> {
         job: r.get(15)?,
         created_at: r.get(16)?,
         finished_at: r.get(17)?,
+        scaling: r.get::<_, Option<String>>(18)?.and_then(|s| serde_json::from_str(&s).ok()),
     })
 }
 
@@ -571,6 +577,29 @@ pub async fn run(r: Run<'_>, id: i64) -> Result<TuneStatus> {
     let schedule =
         spsa::Schedule { iterations: tune.iterations, alpha: tune.alpha, gamma: tune.gamma, a_ratio: tune.a_ratio };
 
+    // Scaled to the machine as it is now, as OpenBench scales each workload (from the tuned build's speed: dev and
+    // base are the same binary). Every slot is busy while it benches, as it will be with games.
+    let settings = Scaling::from_env();
+    let mut played = tune.spec.clone();
+    if scale::applies(tune.spec.tc, settings) {
+        let copies = tune.concurrency * tune.spec.threads;
+        let side = scale::Side { bin: &bin, bench: b.bench };
+        let c = scale::calibrate(tune.spec.tc, settings, side, None, copies, r.cancel, r.log).await?;
+        played.tc = c.played;
+        let json = serde_json::to_string(&c)?;
+        update(state, id, move |c| {
+            c.execute("UPDATE tunes SET scaling = ?2 WHERE id = ?1", params![id, json])?;
+            Ok(())
+        })
+        .await?;
+    } else {
+        update(state, id, move |c| {
+            c.execute("UPDATE tunes SET scaling = NULL WHERE id = ?1", [id])?;
+            Ok(())
+        })
+        .await?;
+    }
+
     let slots = workers(tune.concurrency);
     (r.log)(&format!(
         "{} batches of {} pairs at once, {} games at a time",
@@ -580,8 +609,7 @@ pub async fn run(r: Run<'_>, id: i64) -> Result<TuneStatus> {
     ));
     let mut scheduler = Scheduler::new(schedule, params, tune.iteration);
     let n = scheduler.params.len();
-    let (fastchess, book, bin, spec, dir, cancel, slots) =
-        (&fastchess, &book, &bin, &tune.spec, &dir, r.cancel, &slots);
+    let (fastchess, book, bin, spec, dir, cancel, slots) = (&fastchess, &book, &bin, &played, &dir, r.cancel, &slots);
     let launch = move |worker: usize, batch: Batch| async move {
         let penta = fastchess::run(fastchess::Match {
             fastchess,

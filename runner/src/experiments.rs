@@ -11,7 +11,8 @@ use utoipa::ToSchema;
 
 use crate::{
     api::AppState,
-    engine::{build, fastchess},
+    config::Scaling,
+    engine::{build, fastchess, scale},
     funnel::{self, Kind, MatchSpec, Stage},
     jobs::{self, JobSpec},
     stats::{self, Estimate, Pentanomial, Verdict},
@@ -418,6 +419,15 @@ async fn match_stage(
     let concurrency = state.machine.default_concurrency(spec.threads);
 
     let sprt = spec.sprt;
+    let (dev_bin, base_bin) = (build::binary(&state.config.data, dev), build::binary(&state.config.data, base));
+    let sides = (scale::Side { bin: &base_bin, bench: base.bench }, scale::Side { bin: &dev_bin, bench: dev.bench });
+    let (played, scaling) = match scale_clock(r, test, spec, concurrency, sides).await {
+        Ok(scaled) => scaled,
+        Err(e) => {
+            tests::record(state, test, Pentanomial::default(), sprt, true).await?;
+            return Err(e);
+        }
+    };
     // One task records progress in order, and the final record waits for it, so a late update never lands after it.
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Pentanomial>();
     let writer = tokio::spawn({
@@ -437,11 +447,11 @@ async fn match_stage(
     let outcome = fastchess::run(fastchess::Match {
         fastchess: &fastchess,
         book: &book,
-        dev: &build::binary(&state.config.data, dev),
-        base: &build::binary(&state.config.data, base),
+        dev: &dev_bin,
+        base: &base_bin,
         dev_options: &[],
         base_options: &[],
-        spec,
+        spec: &played,
         concurrency,
         pgn: &dir.join("games.pgn"),
         cancel: r.cancel,
@@ -461,7 +471,7 @@ async fn match_stage(
     let est =
         t.estimate.map(|e| format!("{:+.1} ± {:.1} Elo ({:+.1} nElo)", e.elo, e.elo_error, e.nelo)).unwrap_or_default();
     let games = totals.pairs() * 2;
-    let (passed, detail) = match (sprt, t.verdict) {
+    let (passed, mut detail) = match (sprt, t.verdict) {
         (Some(s), Some(Verdict::Accepted)) => {
             (true, format!("accepted [{}, {}] after {games} games, {est}", s.elo0, s.elo1))
         }
@@ -471,7 +481,30 @@ async fn match_stage(
         (Some(_), _) => (false, format!("undecided after {games} games, {est}")),
         (None, _) => (true, format!("{games} games, {est}")),
     };
+    if let Some(c) = scaling {
+        detail += &format!(", at {} (×{:.2})", scale::clock(c.played), c.scale);
+    }
     Ok(StageResult { stage: name.into(), passed, detail, test: Some(test) })
+}
+
+/// The spec fastchess plays: the clock scaled to the machine's speed, as OpenBench does (see `engine::scale`), and
+/// the calibration, recorded on the test. A node limit, or scaling turned off, plays the spec as written.
+async fn scale_clock(
+    r: &Run<'_>,
+    test: i64,
+    spec: &MatchSpec,
+    concurrency: u32,
+    (base, dev): (scale::Side<'_>, scale::Side<'_>),
+) -> Result<(MatchSpec, Option<scale::Calibration>)> {
+    let settings = Scaling::from_env();
+    if !scale::applies(spec.tc, settings) {
+        return Ok((spec.clone(), None));
+    }
+    // As many benches at once as the threads the games will use, as OpenBench benches with every slot busy.
+    let copies = concurrency * spec.threads;
+    let c = scale::calibrate(spec.tc, settings, base, Some(dev), copies, r.cancel, r.log).await?;
+    tests::set_scaling(r.state, test, &c).await?;
+    Ok((MatchSpec { tc: c.played, ..spec.clone() }, Some(c)))
 }
 
 /// The matches experiments play, with their running totals.
@@ -483,7 +516,11 @@ pub mod tests {
         pub id: i64,
         pub experiment: i64,
         pub stage: String,
+        /// The settings as written: `spec.tc` is the nominal clock, such as STC's 8+0.08.
         pub spec: MatchSpec,
+        /// How the clock was scaled to this machine's speed before the games, and the clock actually played. Null
+        /// for a node limit, with scaling turned off, before the calibration, and for tests from before scaling.
+        pub scaling: Option<scale::Calibration>,
         pub base_build: i64,
         pub dev_build: i64,
         pub running: bool,
@@ -505,7 +542,7 @@ pub mod tests {
     }
 
     const COLUMNS: &str =
-        "id, experiment_id, stage, spec, base_build, dev_build, running, penta, created_at, finished_at";
+        "id, experiment_id, stage, spec, base_build, dev_build, running, penta, created_at, finished_at, scaling";
 
     fn from_row(r: &Row) -> rusqlite::Result<Test> {
         let spec: MatchSpec = json(r, 3)?;
@@ -524,6 +561,7 @@ pub mod tests {
             estimate: stats::estimate(&penta),
             penta,
             spec,
+            scaling: r.get::<_, Option<String>>(10)?.and_then(|s| serde_json::from_str(&s).ok()),
             created_at: r.get(8)?,
             finished_at: r.get(9)?,
         })
@@ -569,6 +607,20 @@ pub mod tests {
                 Ok(c.last_insert_rowid())
             })
             .await
+    }
+
+    /// Stores how the test's clock was scaled, and tells clients.
+    pub async fn set_scaling(state: &AppState, id: i64, c: &scale::Calibration) -> Result<Test> {
+        let json = serde_json::to_string(c)?;
+        let t = state
+            .store
+            .call(move |c| {
+                c.execute("UPDATE tests SET scaling = ?2 WHERE id = ?1", params![id, json])?;
+                Ok(get(c, id)?.expect("test exists"))
+            })
+            .await?;
+        state.events.emit("test.progress", serde_json::to_value(&t)?);
+        Ok(t)
     }
 
     /// Stores running totals and a chart point, and tells clients.

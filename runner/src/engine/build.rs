@@ -313,7 +313,8 @@ pub async fn bench(bin: &Path) -> Result<(u64, u64)> {
     parse_bench(&out).with_context(|| format!("no Bench line in: {out}"))
 }
 
-fn parse_bench(out: &str) -> Option<(u64, u64)> {
+/// `Bench: 2837905 nodes 352413 nps`: the node count and the speed.
+pub fn parse_bench(out: &str) -> Option<(u64, u64)> {
     let line = out.lines().find_map(|l| l.trim().strip_prefix("Bench:"))?;
     let words: Vec<&str> = line.split_whitespace().collect();
     Some((words.first()?.parse().ok()?, words.get(2)?.parse().ok()?))

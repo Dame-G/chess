@@ -163,6 +163,9 @@ fn tune_line(t: &Value) -> String {
 fn tune_text(d: &Value) -> String {
     let t = &d["tune"];
     let mut out = vec![tune_line(t)];
+    if let Some(clock) = super::scaling_text(&t["spec"]["tc"], &t["scaling"]) {
+        out.push(format!("  clock {clock}"));
+    }
     for p in t["params"].as_array().into_iter().flatten() {
         let (start, value) = (p["start"].as_f64().unwrap_or_default(), p["value"].as_f64().unwrap_or_default());
         out.push(format!(

@@ -190,4 +190,47 @@ mod tests {
         assert!(joined.contains("-concurrency 14"));
         assert!(joined.contains("name=dev option.rfp_quad=1200 -engine cmd=base name=base -each"), "{joined}");
     }
+
+    fn joined(spec: &MatchSpec) -> String {
+        let token = CancellationToken::new();
+        args(&Match {
+            fastchess: Path::new("fc"),
+            book: Path::new("book.epd"),
+            dev: Path::new("dev"),
+            base: Path::new("base"),
+            dev_options: &[],
+            base_options: &[],
+            spec,
+            concurrency: 7,
+            pgn: Path::new("games.pgn"),
+            cancel: &token,
+            log: &|_| {},
+            progress: &|_| {},
+        })
+        .join(" ")
+    }
+
+    #[test]
+    fn plays_the_scaled_clock() {
+        use crate::engine::scale;
+        let spec = Preset::Stc.spec(Some(bounds(0.0, 3.0)), None);
+        // 480k nps here against Reckless's 660k: 8+0.08 is played as 11+0.11.
+        let c = scale::calibration(spec.tc, 660_000, 480_000, 480_000, 7);
+        let played = MatchSpec { tc: c.played, ..spec.clone() };
+        let args = joined(&played);
+        assert!(args.contains("tc=11+0.11 timemargin=250"), "{args}");
+        // A slow machine: 8 × 660/212 = 24.91, 0.08 × 660/212 = 0.25.
+        let c = scale::calibration(spec.tc, 660_000, 212_000, 212_000, 7);
+        assert!(joined(&MatchSpec { tc: c.played, ..spec }).contains("tc=24.91+0.25 timemargin"));
+    }
+
+    #[test]
+    fn node_limits_are_not_scaled() {
+        use crate::engine::scale;
+        let spec = Preset::Nodes.spec(None, Some(10));
+        let c = scale::calibration(spec.tc, 660_000, 212_000, 212_000, 7);
+        assert_eq!(c.played, spec.tc);
+        let args = joined(&MatchSpec { tc: c.played, ..spec });
+        assert!(args.contains("nodes=25000") && !args.contains("tc="), "{args}");
+    }
 }

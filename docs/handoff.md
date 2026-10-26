@@ -35,6 +35,7 @@ The app is **Dameless** (repo `Dame-G/dameless`, deployed to chess.dame.gg on pu
   - Find a game (one random challenge to a bot near its rating) and Keep playing (continuous matchmaking).
   - **Lichess caps bot-vs-bot games at 100 per rolling day** (humans unlimited). The runner pauses matchmaking at the cap and says when it resumes.
 - **Tuning:** the fork's `spsa/tunables` branch declares 38 search tunables (same bench as main without the feature: 2837905). Tunes run OpenBench's SPSA as concurrent batches across the machine.
+- **Clock scaling:** tests and tunes scale their clocks to 660,000 nps of `bench` (Reckless's OpenBench reference), measured with every game slot busy before each test, so STC here searches about what upstream's STC does. On the i7-10700K with 7 slots busy, `bench` read about 210–320k nps (other work running), so clocks play 2–3× longer than written. Re-check on Linux: `chess experiment show` prints each test's `clock` line.
 - **Experiments so far:** #1 comment-only change passed as nonfunctional; #2 cancelled; #3 no null-move pruning rejected at the quick screen after 6,650 games, −6.6 ± 5.2 Elo. No tune has run for real yet.
 
 ## Open items, in order
