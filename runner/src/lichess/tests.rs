@@ -411,7 +411,7 @@ async fn accepts_a_challenge_declines_another_and_plays_the_game_into_a_match() 
     assert!(posts.contains(&"accept c1".to_owned()), "{posts:?}");
     assert!(posts.contains(&"decline c2 reason=variant".to_owned()), "{posts:?}");
     assert_eq!(posts.iter().filter(|p| p.starts_with("move ")).count(), 3, "{posts:?}");
-    assert!(mock.user_agent.lock().unwrap().starts_with("Reckless-Lab/"));
+    assert!(mock.user_agent.lock().unwrap().starts_with("Dameless/"));
 
     assert_eq!(game.status, MatchStatus::Finished);
     assert_eq!(game.result, GameResult::White);

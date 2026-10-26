@@ -36,7 +36,7 @@ pub struct Lichess {
 impl Lichess {
     /// `username` goes into the User-Agent once known, as Lichess asks of bots.
     pub fn new(http: reqwest::Client, base: &str, token: &str, username: Option<&str>) -> Self {
-        let mut agent = format!("Reckless-Lab/{}", env!("CARGO_PKG_VERSION"));
+        let mut agent = format!("Dameless/{}", env!("CARGO_PKG_VERSION"));
         if let Some(name) = username {
             agent += &format!(" user:{name}");
         }
