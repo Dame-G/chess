@@ -15,6 +15,8 @@ pub struct Pentanomial(pub [u64; 5]);
 const SCORES: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 const NELO_SCALE: f64 = 800.0 / std::f64::consts::LN_10;
 const Z95: f64 = 1.959963984540054;
+/// The closest a score may come to 0 or 1 when it is turned into logistic Elo.
+const SCORE_EPS: f64 = 1e-6;
 
 impl Pentanomial {
     pub fn pairs(&self) -> u64 {
@@ -146,15 +148,28 @@ pub struct Estimate {
     pub score: f64,
 }
 
+///
+/// Every field is finite, so it always serializes as a number (JSON has no NaN or infinity; serde would write `null`).
+/// Two cases need care, both common in a test's first few pairs:
+/// - Every pair scored the same (all draws, say): the variance is zero and normalized Elo would be 0/0. The spread is
+///   then taken from the counts regularized as for the LLR ([`Sprt::llr`]): tiny, but not none.
+/// - A score of 0 or 1, or an interval reaching past them: logistic Elo is infinite there, so scores are clamped to
+///   [`SCORE_EPS`, 1 − `SCORE_EPS`] (about ±2,400 Elo) before converting.
 pub fn estimate(p: &Pentanomial) -> Option<Estimate> {
     if p.pairs() == 0 {
         return None;
     }
     let (probs, pairs) = p.probs(false);
-    let (score, var) = mean_var(&SCORES, &probs);
+    let (score, mut var) = mean_var(&SCORES, &probs);
+    if var <= 0.0 {
+        var = mean_var(&SCORES, &p.probs(true).0).1;
+    }
     let per_pair = (var / pairs).sqrt();
     let (hi, lo) = (score + Z95 * per_pair, score - Z95 * per_pair);
-    let elo = |s: f64| -400.0 * (1.0 / s - 1.0).log10();
+    let elo = |s: f64| {
+        let s = s.clamp(SCORE_EPS, 1.0 - SCORE_EPS);
+        -400.0 * (1.0 / s - 1.0).log10()
+    };
     let nelo = |s: f64| (s - 0.5) / (2.0 * var).sqrt() * NELO_SCALE;
     let los = if per_pair > 0.0 { (1.0 - erf(-(score - 0.5) / (2.0f64.sqrt() * per_pair))) / 2.0 } else { 0.5 };
     Some(Estimate {
@@ -221,5 +236,26 @@ mod tests {
         assert!(e.elo_error > 0.0 && (e.los - 0.5).abs() < 1e-6);
         let e = estimate(&Pentanomial([50, 300, 1000, 500, 150])).unwrap();
         assert!(e.elo > 0.0 && e.los > 0.99);
+    }
+
+    #[test]
+    fn estimates_stay_finite_without_spread() {
+        let finite = |e: Estimate| {
+            let all = [e.elo, e.elo_error, e.nelo, e.nelo_error, e.los, e.score];
+            assert!(all.iter().all(|x| x.is_finite()), "{e:?}");
+            e
+        };
+        // All draws: no variance, an even score.
+        let e = finite(estimate(&Pentanomial([0, 0, 7, 0, 0])).unwrap());
+        assert!(e.elo.abs() < 1e-9 && e.nelo.abs() < 1e-9 && e.elo_error > 0.0);
+        // A clean sweep each way.
+        let e = finite(estimate(&Pentanomial([0, 0, 0, 0, 3])).unwrap());
+        assert!(e.elo > 1000.0 && e.nelo > 0.0 && e.score == 1.0);
+        let e = finite(estimate(&Pentanomial([3, 0, 0, 0, 0])).unwrap());
+        assert!(e.elo < -1000.0 && e.nelo < 0.0);
+        // An interval reaching past a score of 1.
+        finite(estimate(&Pentanomial([0, 0, 1, 0, 9])).unwrap());
+        let json = serde_json::to_string(&estimate(&Pentanomial([0, 0, 0, 0, 3])).unwrap()).unwrap();
+        assert!(!json.contains("null"), "{json}");
     }
 }
