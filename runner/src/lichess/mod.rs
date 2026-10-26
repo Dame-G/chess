@@ -20,7 +20,7 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result};
@@ -101,12 +101,26 @@ struct Inner {
     run: Option<CancellationToken>,
     /// The games being played, by Lichess id, with their records once they have one.
     games: HashMap<String, Option<i64>>,
-    /// Challenges accepted whose games have not started yet, and whether from a bot: they count against `max_games`.
-    accepted: HashMap<String, bool>,
+    /// Challenges accepted whose games have not started yet, whether from a bot, and when: they count against
+    /// `max_games` until their `gameStart` arrives, or for [`ACCEPTED_FOR`] at most.
+    accepted: HashMap<String, (bool, Instant)>,
     /// Looking for games.
     seek: seek::Seeking,
     /// The bot games of the last day, against Lichess's daily limit.
     quota: quota::Quota,
+}
+
+/// Lichess starts a game the moment a challenge is accepted. One whose `gameStart` has not come within this long was
+/// missed (the event stream dropped meanwhile, and the game may be over already) and stops holding a slot; a game
+/// still running comes back as a `gameStart` when the stream reconnects.
+const ACCEPTED_FOR: Duration = Duration::from_secs(60);
+
+impl Inner {
+    /// How many games are running or about to.
+    fn busy(&mut self) -> usize {
+        self.accepted.retain(|_, (_, at)| at.elapsed() < ACCEPTED_FOR);
+        self.games.len() + self.accepted.len()
+    }
 }
 
 pub struct Bot {
@@ -210,10 +224,8 @@ impl Bot {
         self.announce(state);
     }
 
-    /// How many games are running or about to.
     fn busy(&self) -> usize {
-        let inner = self.inner.lock().unwrap();
-        inner.games.len() + inner.accepted.len()
+        self.inner.lock().unwrap().busy()
     }
 }
 
@@ -630,7 +642,7 @@ async fn handle(state: &Arc<AppState>, client: &Lichess, me: &Account, event: &V
                 Ok(()) => {
                     match client.post(&format!("/api/challenge/{}/accept", c.id), &[]).await {
                         Ok(_) => {
-                            bot.inner.lock().unwrap().accepted.insert(c.id.clone(), from_bot);
+                            bot.inner.lock().unwrap().accepted.insert(c.id.clone(), (from_bot, Instant::now()));
                             state.events.emit("lichess.challenge", challenge_json(&c, "incoming", "accepted", None));
                             let name = c.challenger.as_ref().map_or("someone", |u| u.name.as_str());
                             seek::make_room(state, name).await;
@@ -678,7 +690,7 @@ async fn handle(state: &Arc<AppState>, client: &Lichess, me: &Account, event: &V
                 let mut inner = bot.inner.lock().unwrap();
                 // A bot's challenge we took, ours to a bot, or an opponent Lichess calls a bot. The game stream's
                 // `gameFull` counts it too (once), whatever the challenge was.
-                let against_bot = inner.accepted.remove(&id) == Some(true)
+                let against_bot = inner.accepted.remove(&id).is_some_and(|(bot, _)| bot)
                     || inner.seek.pending_id() == Some(id.as_str())
                     || game["opponent"]["title"].as_str() == Some("BOT");
                 if inner.games.contains_key(&id) {

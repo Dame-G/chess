@@ -355,6 +355,8 @@ pub fn ending(status: &str, winner: Option<Side>, pos: &Chess, history: &[u64]) 
         "cheat" => Reason::Cheat,
         "noStart" => Reason::NoStart,
         "variantEnd" => Reason::VariantEnd,
+        // A win on time claimed against a side that could not have mated: a draw.
+        "insufficientMaterialClaim" => Reason::InsufficientMaterial,
         // A draw by agreement, or claimed: the position says which rule, if any, was claimed.
         "draw" => match rules::detect(pos, history) {
             Some(e) if e.result == GameResult::Draw => e.reason,
@@ -503,6 +505,10 @@ mod tests {
         assert_eq!(end("noStart", Some(Side::Black)).unwrap().reason, Reason::NoStart);
         assert_eq!(end("variantEnd", Some(Side::White)).unwrap().reason, Reason::VariantEnd);
         assert_eq!(end("unknownFinish", None).unwrap().reason, Reason::Other);
+        assert_eq!(
+            end("insufficientMaterialClaim", None),
+            Some(Ending { result: GameResult::Draw, reason: Reason::InsufficientMaterial })
+        );
         assert_eq!(end("draw", None), Some(Ending { result: GameResult::Draw, reason: Reason::Agreement }));
     }
 

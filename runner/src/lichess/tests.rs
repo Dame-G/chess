@@ -808,3 +808,18 @@ async fn the_count_comes_back_after_a_restart() {
     assert_eq!(state.lichess.status().bot_games_today, 2);
     let _ = std::fs::remove_dir_all(&state.config.data);
 }
+
+#[tokio::test]
+async fn an_accepted_challenge_whose_game_never_shows_stops_holding_its_slot() {
+    let state = runner("http://127.0.0.1:9".into(), false).await;
+    let long_ago = Instant::now().checked_sub(ACCEPTED_FOR + Duration::from_secs(1)).unwrap();
+    {
+        let mut inner = state.lichess.inner.lock().unwrap();
+        inner.accepted.insert("lost".into(), (true, long_ago));
+        inner.accepted.insert("fresh".into(), (false, Instant::now()));
+    }
+    // The one missed while the stream was down no longer counts against `max_games`; the fresh one still does.
+    assert_eq!(state.lichess.busy(), 1);
+    assert!(!state.lichess.inner.lock().unwrap().accepted.contains_key("lost"));
+    let _ = std::fs::remove_dir_all(&state.config.data);
+}

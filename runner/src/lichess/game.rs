@@ -550,9 +550,16 @@ impl Table {
                     Ok(Some(end)) => break end,
                     Ok(None) => {}
                     Err(e) => {
-                        tracing::warn!("lichess game {id}: {e:#}");
-                        leave(client, id, self.played.len()).await;
-                        leaving = true;
+                        // The moves do not read, but the status still says when the game is over: without this a
+                        // finished game would be streamed again and again.
+                        if let Some(end) = bot_rules::ending(&st.status, st.winner, &self.pos, &self.history) {
+                            break end;
+                        }
+                        if !leaving {
+                            tracing::warn!("lichess game {id}: {e:#}");
+                            leave(client, id, self.played.len()).await;
+                            leaving = true;
+                        }
                     }
                 }
             }
@@ -575,7 +582,10 @@ impl Table {
                 _ = async { tokio::time::sleep_until(claim_at.unwrap()).await }, if claim_at.is_some() => {
                     claim_at = None;
                     if let Err(e) = client.post(&format!("/api/bot/game/{id}/claim-victory"), &[]).await {
+                        // Too early by Lichess's clock, or a network blip: claim again shortly, unless the opponent
+                        // comes back (`opponentGone` with `gone: false`) or the game ends first.
                         tracing::warn!("lichess game {id}: could not claim the win: {e}");
+                        claim_at = Some(tokio::time::Instant::now() + Duration::from_secs(5));
                     }
                 }
                 thought = async { thinking.as_mut().unwrap().await }, if thinking.is_some() => {

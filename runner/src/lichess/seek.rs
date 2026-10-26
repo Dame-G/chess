@@ -381,8 +381,7 @@ impl Bot {
 pub(super) async fn make_room(state: &AppState, challenger: &str) {
     let pending = {
         let mut inner = state.lichess.inner.lock().unwrap();
-        let busy = inner.games.len() + inner.accepted.len();
-        if busy < inner.settings.max_games as usize {
+        if inner.busy() < inner.settings.max_games as usize {
             return;
         }
         let pending = inner.seek.pending.take();
@@ -420,7 +419,7 @@ impl Bot {
     fn seek_step(&self) -> Step {
         let mut inner = self.inner.lock().unwrap();
         let now = Instant::now();
-        let busy = inner.games.len() + inner.accepted.len();
+        let busy = inner.busy();
         let max = inner.settings.max_games as usize;
         let (online, connected) = (inner.online, inner.state == BotState::Online);
         let wall = quota::now_ms();
@@ -444,8 +443,12 @@ impl Bot {
             }
             None => {}
         }
-        if !connected || busy >= max {
+        if !connected {
             return Step::Wait(None);
+        }
+        if busy >= max {
+            // A game's end wakes the search; an accepted challenge whose game never showed stops counting by itself.
+            return Step::Wait(Some(now + super::ACCEPTED_FOR));
         }
         match seek.next_at {
             Some(at) if now < at => Step::Wait(Some(at)),
