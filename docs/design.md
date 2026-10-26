@@ -24,19 +24,19 @@ So there are three things to understand, **the Board, Games and Players**, and e
 
 One vocabulary everywhere: code, routes, the CLI, the UI, docs.
 
-| Word         | Means                                                                                                                          |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| **You**      | The person. Has a linked Lichess account (optional).                                                                           |
-| **Dameless** | The engine, a fork of Reckless. Also the name of its Lichess BOT account when connected.                                       |
-| **Version**  | One commit of Dameless that matters: the champion line, an idea's change, an upstream tip. Shown by name (`v14`, `deeper-lmr`). |
-| **Champion** | The current best version: the tip of the fork's `main`. Versions on the champion line are numbered `v1`, `v2`, …             |
-| **Idea**     | A hypothesis and a change to try. Kinds: **gain**, **neutral**, **speed**, **tune**. Ends **kept** or **dropped**.            |
-| **Trial**    | One stage of an idea: fingerprint, screen, short, long, speed, tune, confirm. A set of games and a verdict.                    |
-| **Game**     | Two seats, moves, clocks, a result. Wherever it was played.                                                                    |
-| **Player**   | Someone who sits at a board: You, Dameless (at some version), a person on Lichess, Stockfish level N.                         |
-| **Work**     | Anything running in the background: a build, a trial, a tune, a review, an import.                                             |
-| **Review**   | The engine reading every move of a finished game.                                                                              |
-| **Connection** | A Lichess account linked to the app: **you** (your account) or **bot** (Dameless's BOT account).                             |
+| Word           | Means                                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **You**        | The person. Has a linked Lichess account (optional).                                                                            |
+| **Dameless**   | The engine, a fork of Reckless. Also the name of its Lichess BOT account when connected.                                        |
+| **Version**    | One commit of Dameless that matters: the champion line, an idea's change, an upstream tip. Shown by name (`v14`, `deeper-lmr`). |
+| **Champion**   | The current best version: the tip of the fork's `main`. Versions on the champion line are numbered `v1`, `v2`, …                |
+| **Idea**       | A hypothesis and a change to try. Kinds: **gain**, **neutral**, **speed**, **tune**. Ends **kept** or **dropped**.              |
+| **Trial**      | One stage of an idea: fingerprint, screen, short, long, speed, tune, confirm. A set of games and a verdict.                     |
+| **Game**       | Two seats, moves, clocks, a result. Wherever it was played.                                                                     |
+| **Player**     | Someone who sits at a board: You, Dameless (at some version), a person on Lichess, Stockfish level N.                           |
+| **Work**       | Anything running in the background: a build, a trial, a tune, a review, an import.                                              |
+| **Review**     | The engine reading every move of a finished game.                                                                               |
+| **Connection** | A Lichess account linked to the app: **you** (your account) or **bot** (Dameless's BOT account).                                |
 
 Never: build (except in Settings/diagnostics), branch (except the idea's form), match, experiment, test, batch, job, runner, human.
 
@@ -241,12 +241,12 @@ pub struct Trial {
 
 The funnels copy Reckless's OpenBench (unchanged from the old harness, see `AGENTS.md`):
 
-| Kind    | Stages                                                                                             |
-| ------- | -------------------------------------------------------------------------------------------------- |
+| Kind    | Stages                                                                                                                   |
+| ------- | ------------------------------------------------------------------------------------------------------------------------ |
 | gain    | fingerprint (bench must change) → screen VSTC 4+0.04 [-5, 0] → short STC 8+0.08 [0, 3] → long LTC 40+0.4 [0, 3] (opt-in) |
-| neutral | fingerprint (bench must change) → screen → short STC [-2.75, 0.25] → long (opt-in)                 |
-| speed   | fingerprint (bench must be identical) → speed (paired nps comparison, no games)                    |
-| tune    | tune (SPSA writes the change) → fingerprint → screen → confirm STC [0, 4] → long [0, 4] (opt-in)   |
+| neutral | fingerprint (bench must change) → screen → short STC [-2.75, 0.25] → long (opt-in)                                       |
+| speed   | fingerprint (bench must be identical) → speed (paired nps comparison, no games)                                          |
+| tune    | tune (SPSA writes the change) → fingerprint → screen → confirm STC [0, 4] → long [0, 4] (opt-in)                         |
 
 An idea can also be a single **custom** trial (any preset and bounds or a fixed number of pairs): what `chess test` was, including the false-accept check.
 
@@ -330,25 +330,25 @@ Topics: `game:<id>`, `games` (summaries of every game), `idea:<id>`, `ideas`, `w
 
 Kinds (a closed enum in `core::events`, each with a typed payload in the OpenAPI document):
 
-| Kind               | Payload                                                                     | Kept for replay |
-| ------------------ | --------------------------------------------------------------------------- | --------------- |
-| `game.upserted`    | `GameSummary`                                                               | yes             |
-| `game.moved`       | `{ id, ply, move: Move, clocks, fen }`                                      | yes             |
-| `game.undone`      | `{ id, plies }` (takebacks)                                                 | yes             |
-| `game.changed`     | `{ id, offers, actions, clocks, opponent_gone: Option<{claim_in_seconds}> }`| yes             |
-| `game.thinking`    | `{ id, ply, side, depth, score, nodes, nps, pv }`, at most 5/s              | no              |
-| `idea.upserted`    | `Idea`                                                                      | yes             |
-| `trial.upserted`   | `Trial`                                                                     | yes             |
-| `trial.progress`   | `{ id, idea, penta, wdl, llr, elo }` (throttled 1/s, topic `idea:<id>`)      | yes             |
-| `tune.progress`    | `{ idea, iteration, values, result }`                                       | yes             |
-| `work.upserted`    | `Work`                                                                      | yes             |
-| `work.log`         | `{ id, line }`                                                              | no              |
-| `version.upserted` | `Version`                                                                   | yes             |
-| `review.upserted`  | `{ game, accuracy: SidePair<f32> }` (fetch the review for detail)           | yes             |
-| `connection.upserted` | `ConnectionStatus`                                                       | yes             |
-| `challenge`        | `Challenge` with `event: created|accepted|declined|canceled`               | yes             |
-| `policy.changed`   | `Policy`                                                                    | yes             |
-| `eval.info`        | `{ session, depth, lines: [{ score, pv }] , nodes, nps }`                   | no              |
+| Kind                  | Payload                                                                      | Kept for replay |
+| --------------------- | ---------------------------------------------------------------------------- | --------------- |
+| `game.upserted`       | `GameSummary`                                                                | yes             |
+| `game.moved`          | `{ id, ply, move: Move, clocks, fen }`                                       | yes             |
+| `game.undone`         | `{ id, plies }` (takebacks)                                                  | yes             |
+| `game.changed`        | `{ id, offers, actions, clocks, opponent_gone: Option<{claim_in_seconds}> }` | yes             |
+| `game.thinking`       | `{ id, ply, side, depth, score, nodes, nps, pv }`, at most 5/s               | no              |
+| `idea.upserted`       | `Idea`                                                                       | yes             |
+| `trial.upserted`      | `Trial`                                                                      | yes             |
+| `trial.progress`      | `{ id, idea, penta, wdl, llr, elo }` (throttled 1/s, topic `idea:<id>`)      | yes             |
+| `tune.progress`       | `{ idea, iteration, values, result }`                                        | yes             |
+| `work.upserted`       | `Work`                                                                       | yes             |
+| `work.log`            | `{ id, line }`                                                               | no              |
+| `version.upserted`    | `Version`                                                                    | yes             |
+| `review.upserted`     | `{ game, accuracy: SidePair<f32> }` (fetch the review for detail)            | yes             |
+| `connection.upserted` | `ConnectionStatus`                                                           | yes             |
+| `challenge`           | `Challenge` with `event: created                                             | accepted        | declined | canceled` | yes |
+| `policy.changed`      | `Policy`                                                                     | yes             |
+| `eval.info`           | `{ session, depth, lines: [{ score, pv }] , nodes, nps }`                    | no              |
 
 The web client keeps one normalised store per resource and applies these: an `*.upserted` replaces the object, `game.moved`/`game.undone` patch the open game.
 
