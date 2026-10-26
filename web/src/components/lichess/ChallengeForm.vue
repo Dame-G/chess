@@ -9,7 +9,7 @@ import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { api } from "../../api/runner";
 import { unwrap, useLichessBots } from "../../api/queries";
-import { speedName, speedOf } from "../../lichess";
+import { clockOptions, parseClock, speedName, speedOf } from "../../lichess";
 import { stored } from "../../stored";
 
 const props = defineProps<{ online: boolean }>();
@@ -19,14 +19,8 @@ const router = useRouter();
 const toast = useToast();
 const { state: bots } = useLichessBots(() => props.online);
 
-// Minutes and seconds, as Lichess writes a clock: 3+2 is three minutes and two seconds a move.
-const clocks = [
-  { value: "60,0", label: "1+0" },
-  { value: "180,0", label: "3+0" },
-  { value: "180,2", label: "3+2" },
-  { value: "300,3", label: "5+3" },
-  { value: "600,5", label: "10+5" },
-];
+// The few clocks worth a button; the same minutes plus seconds a move as the search uses.
+const clocks = clockOptions([]).filter((c) => ["1+0", "3+0", "3+2", "5+3", "10+5"].includes(c.value));
 const colours = [
   { value: "random", label: "Random" },
   { value: "white", label: "White" },
@@ -34,15 +28,14 @@ const colours = [
 ];
 
 const username = ref("");
-const clock = stored("lichess.clock", "180,2");
+const clock = stored("lichess.clockText", "3+2");
 const rated = stored("lichess.rated", false);
 const color = stored("lichess.color", "random");
 const busy = ref(false);
 const error = ref("");
 
-const seconds = computed(() => Number(clock.value.split(",")[0]));
-const increment = computed(() => Number(clock.value.split(",")[1]));
-const speed = computed(() => speedOf(seconds.value, increment.value));
+const parsed = computed(() => parseClock(clock.value));
+const speed = computed(() => speedOf(parsed.value.initial, parsed.value.increment));
 
 /** Bots to pick from, each with the rating it has at the speed chosen. */
 const options = computed(() =>
@@ -68,8 +61,8 @@ async function send() {
       api.POST("/api/lichess/challenge", {
         body: {
           username: username.value.trim(),
-          clock_seconds: seconds.value,
-          increment: increment.value,
+          clock_seconds: parsed.value.initial,
+          increment: parsed.value.increment,
           rated: rated.value,
           color: color.value as "random" | "white" | "black",
         },
