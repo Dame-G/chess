@@ -5,7 +5,7 @@ import { PhHorse } from "@phosphor-icons/vue";
 <template>
   <span class="logo">
     <span class="logo-tile" aria-hidden="true"><PhHorse weight="fill" /></span>
-    <span class="logo-word">Reckless <span class="logo-lab">Lab</span></span>
+    <span class="logo-word">Dame<span class="logo-less">less</span></span>
   </span>
 </template>
 
@@ -49,7 +49,7 @@ import { PhHorse } from "@phosphor-icons/vue";
   }
 }
 
-.logo-lab {
+.logo-less {
   color: var(--e-primary);
   font-style: italic;
 }

@@ -98,7 +98,7 @@ watchEffect(() => {
     const b = builds.value.data?.find((x) => x.id === id);
     what = b ? `${b.ref} #${b.id} · Engines` : what;
   }
-  document.title = what ? `${what} · Reckless Lab` : "Reckless Lab";
+  document.title = what ? `${what} · Dameless` : "Dameless";
 });
 
 // ---- Command palette: places, actions, what you opened last, then everything else.
@@ -255,7 +255,7 @@ onUnmounted(stop);
   <EToastProvider>
     <EAppShell :class="['shell', { 'shell--workspace': workspace }]">
       <template #header>
-        <EAppHeader class="top" brand-to="/" brand-label="Reckless Lab, home" :link-component="RouterLink">
+        <EAppHeader class="top" brand-to="/" brand-label="Dameless, home" :link-component="RouterLink">
           <template #brand><Logo /></template>
           <template #logo>
             <ENavList
@@ -314,7 +314,7 @@ onUnmounted(stop);
             >
               Shortcuts
             </EButton>
-            <ELink href="https://github.com/Dame-G/chess" external>Source</ELink>
+            <ELink href="https://github.com/Dame-G/dameless" external>Source</ELink>
             <ELink href="https://github.com/Dame-G/reckless" external>Engine</ELink>
           </span>
         </EAppFooter>
@@ -323,7 +323,7 @@ onUnmounted(stop);
     <ECommandPalette
       v-model:open="palette"
       :items="commands"
-      label="Search Reckless Lab"
+      label="Search Dameless"
       placeholder="Search experiments, engines, actions"
       shortcut="mod+k"
       @select="run"

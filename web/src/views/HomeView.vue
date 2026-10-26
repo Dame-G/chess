@@ -12,7 +12,7 @@ const router = useRouter();
   <div class="cover">
     <ChequerField />
     <div class="cover-body">
-      <h1 class="cover-title">Reckless <em>Lab</em></h1>
+      <h1 class="cover-title">Dame<em>less</em></h1>
       <p class="cover-tagline">Make a chess engine stronger, one tested idea at a time.</p>
       <EActions class="cover-actions">
         <EButton :icon="PhGraph" @click="router.push('/board')">Open the board</EButton>

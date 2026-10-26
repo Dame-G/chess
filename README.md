@@ -1,4 +1,4 @@
-# chess
+# Dameless
 
 A development harness for a fork of the [Reckless](https://github.com/codedeliveryservice/Reckless) chess engine. It builds engine variants, runs them through a testing funnel, analyses and plays games, and (later) tunes parameters and trains networks. People use it through the web UI; agents use the same capabilities through the `chess` CLI and the HTTP API.
 

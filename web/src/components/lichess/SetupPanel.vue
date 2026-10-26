@@ -21,7 +21,7 @@ const upgrading = ref(false);
 /** A token is stored but its account is an ordinary one: the next step is making it a bot. */
 const account = computed(() => (props.status.configured ? props.status.account : undefined));
 
-const tokenUrl = "https://lichess.org/account/oauth/token/create?scopes[]=bot:play&description=Reckless+Lab";
+const tokenUrl = "https://lichess.org/account/oauth/token/create?scopes[]=bot:play&description=Dameless";
 
 function take(next: LichessStatus) {
   cache.setQueryData<LichessStatus>(["lichess"], next);

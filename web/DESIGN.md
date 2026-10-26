@@ -1,6 +1,6 @@
-# Reckless Lab: design
+# Dameless: design
 
-Reckless Lab is a workbench for one chess engine: look at positions with it, change its code, and let thousands of games decide whether a change helps. It should feel like **VLC crossed with Lichess**: one window that plays things, a library you pick from and an inspector that explains what you see. It is not a website of pages.
+Dameless is a workbench for one chess engine: look at positions with it, change its code, and let thousands of games decide whether a change helps. It should feel like **VLC crossed with Lichess**: one window that plays things, a library you pick from and an inspector that explains what you see. It is not a website of pages.
 
 ## The shell (`App.vue`)
 

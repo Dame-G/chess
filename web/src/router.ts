@@ -40,7 +40,7 @@ export const router = createRouter({
 });
 
 router.afterEach((to) => {
-  document.title = to.meta.title ? `${to.meta.title} · Reckless Lab` : "Reckless Lab";
+  document.title = to.meta.title ? `${to.meta.title} · Dameless` : "Dameless";
 });
 
 declare module "vue-router" {

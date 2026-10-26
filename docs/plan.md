@@ -93,7 +93,7 @@ Security: binds to 127.0.0.1 by default, requires a bearer token for any state-c
   - Located via the `RECKLESS_DIR` env var, defaulting to `../reckless`, the same pattern eos-site uses with `EOS_DIR`.
   - The harness writes the `Bench: N` line into experiment commits.
   - Reckless's own CI stays as it is.
-- **`Dame-G/chess`** at `C:\dev\chess`:
+- **`Dame-G/dameless`** at `C:\dev\chess`:
 
 ```
 runner/src/  main.rs (clap) · api/ (axum, SSE, auth, utoipa) · store/ (rusqlite + migrations)
@@ -183,8 +183,8 @@ Things deliberately left out: accounts, cloud database, a WASM engine, puzzles, 
 
 ## What you'll need to do (I'll prompt at each step)
 
-1. Fork Reckless to `Dame-G/reckless` and create `Dame-G/chess` (public, because of GPL). I can run both with `gh` if you want.
-2. Add the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets to `Dame-G/chess`. Reuse eos-site's token if it covers Workers deploys and custom domains on dame.gg.
+1. Fork Reckless to `Dame-G/reckless` and create `Dame-G/dameless` (public, because of GPL). I can run both with `gh` if you want.
+2. Add the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets to `Dame-G/dameless`. Reuse eos-site's token if it covers Workers deploys and custom domains on dame.gg.
 3. Phase 4: install the CUDA Toolkit and set `CUDA_PATH`. Optional: LLVM for Syzygy, which also unlocks tablebase adjudication.
 4. Approve Chrome's local-network prompt once, the first time the hosted site connects.
 

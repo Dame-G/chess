@@ -39,7 +39,7 @@ The lab moves from Windows to the Linux partition on the same machine (i7-10700K
 
 ## Setting up on Linux
 
-1. **Clone:** `Dame-G/chess` and `Dame-G/reckless` side by side, e.g. `~/dev/chess` and `~/dev/reckless`. The runner finds the engine through `RECKLESS_DIR`, defaulting to `../reckless`. The fork's `main` tracks upstream. Push `test/*` branches as you make them.
+1. **Clone:** `Dame-G/dameless` and `Dame-G/reckless` side by side, e.g. `~/dev/chess` and `~/dev/reckless`. The runner finds the engine through `RECKLESS_DIR`, defaulting to `../reckless`. The fork's `main` tracks upstream. Push `test/*` branches as you make them.
 2. **Toolchain:**
    - Rust (rustup) and Node with corepack (pnpm).
    - Clang/LLVM, which allows Syzygy builds. Builds used `make no-syzygy` on Windows.

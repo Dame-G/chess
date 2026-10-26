@@ -61,8 +61,8 @@ pub fn to_pgn(m: &Match) -> String {
             header("Site", &l.url);
         }
         None => {
-            header("Event", "Reckless Lab match");
-            header("Site", "Reckless Lab");
+            header("Event", "Dameless match");
+            header("Site", "Dameless");
         }
     }
     header("Date", &date);
