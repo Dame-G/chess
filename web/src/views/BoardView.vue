@@ -657,7 +657,7 @@ function strip(side: Side) {
   const lastOwn = m.moves.slice(0, cursor.value).findLast((mv) => mv.side === side);
   return {
     side,
-    name: player.name,
+    name: m.lichess && player.build != null ? `Dameless (${player.name})` : player.name,
     title: player.title,
     detail: [player.commit, player.rating].filter(Boolean).join(" · "),
     ms,
@@ -1363,6 +1363,15 @@ const filters = [
             </div>
 
             <footer class="tools">
+              <EIconButton
+                :icon="sound ? PhSpeakerHigh : PhSpeakerSlash"
+                :label="sound ? 'Mute move sounds' : 'Play move sounds'"
+                tooltip
+                size="sm"
+                class="sound"
+                :aria-pressed="sound"
+                @click="toggleSound"
+              />
               <EMenu label="Copy" :items="copyItems" side="top">
                 <template #trigger>
                   <EButton variant="quiet" size="sm" :icon="PhCopy">Copy</EButton>
@@ -1378,15 +1387,6 @@ const filters = [
                   <EButton variant="quiet" size="sm" :icon="PhChartLine">Continue from here</EButton>
                 </template>
               </EMenu>
-              <EIconButton
-                :icon="sound ? PhSpeakerHigh : PhSpeakerSlash"
-                :label="sound ? 'Mute move sounds' : 'Play move sounds'"
-                tooltip
-                size="sm"
-                class="sound"
-                :aria-pressed="sound"
-                @click="toggleSound"
-              />
             </footer>
           </div>
         </template>
@@ -1828,10 +1828,6 @@ const filters = [
   flex: 1 0 9rem;
   overflow: hidden;
   border-block-end: 0;
-}
-
-.tools :deep(.sound) {
-  margin-inline-start: auto;
 }
 
 .tools {
