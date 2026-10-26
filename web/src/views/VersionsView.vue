@@ -187,9 +187,9 @@ const fingerprint = computed(() => {
     <template v-if="current" #stage-head>
       <h2 class="title">{{ current.name }}</h2>
       <span class="grow"></span>
-      <EButton class="to-library" variant="quiet" size="sm" :icon="PhList" @click="toLibrary('Versions')"
-        >Library</EButton
-      >
+      <EButton class="to-library" variant="quiet" size="sm" :icon="PhList" @click="toLibrary('Versions')">
+        Library
+      </EButton>
       <EMenu v-if="stageMenu.length" label="More about this version" :items="stageMenu" align="end">
         <template #trigger>
           <EIconButton :icon="PhDotsThree" label="More about this version" size="sm" />
