@@ -11,7 +11,6 @@ import {
   PhClockCounterClockwise,
   PhCpu,
   PhFlask,
-  PhSlidersHorizontal,
   PhGraph,
   PhHammer,
   PhKeyboard,
@@ -50,9 +49,8 @@ const route = useRoute();
 const router = useRouter();
 const items = [
   { label: "Board", to: "/board", icon: PhGraph },
-  { label: "Lab", to: "/lab", icon: PhFlask },
-  { label: "Engines", to: "/engines", icon: PhWrench },
-  { label: "Tune", to: "/tune", icon: PhSlidersHorizontal },
+  { label: "Improve", to: "/improve", icon: PhFlask },
+  { label: "Versions", to: "/versions", icon: PhWrench },
   { label: "Lichess", to: "/lichess", icon: PhCrown },
 ];
 const isCurrent = (item: { to?: unknown }) =>
@@ -98,11 +96,11 @@ const { state: tunes } = useTunes();
 watchEffect(() => {
   const id = Number(route.params.id);
   let what = route.meta.title;
-  if (route.name === "experiment") what = experiments.value.data?.find((e) => e.id === id)?.name ?? what;
-  if (route.name === "tune-run") what = tunes.value.data?.find((t) => t.id === id)?.name ?? what;
+  if (route.name === "improve-test") what = experiments.value.data?.find((e) => e.id === id)?.name ?? what;
+  if (route.name === "improve-tune") what = tunes.value.data?.find((t) => t.id === id)?.name ?? what;
   if (route.name === "engine") {
     const b = builds.value.data?.find((x) => x.id === id);
-    what = b ? `${b.ref} #${b.id} · Engines` : what;
+    what = b ? `${b.ref} #${b.id} · Versions` : what;
   }
   document.title = what ? `${what} · Dameless` : "Dameless";
 });
@@ -112,7 +110,7 @@ const recent = stored<string[]>("recent", []);
 watch(
   () => route.path,
   (path) => {
-    if (!/^\/(lab|engines|tune)\/\d+$/.test(path)) return;
+    if (!/^\/(improve\/(experiments|tunes)|versions)\/\d+$/.test(path)) return;
     recent.value = [path, ...recent.value.filter((p) => p !== path)].slice(0, 4);
   },
   { immediate: true },
@@ -128,8 +126,8 @@ const commands = computed<CommandItem[]>(() => {
   const seen = new Set<string>();
   const recents: CommandItem[] = [];
   for (const path of recent.value) {
-    const id = Number(path.split("/")[2]);
-    if (path.startsWith("/lab/")) {
+    const id = Number(path.split("/").at(-1));
+    if (path.startsWith("/improve/experiments/")) {
       const e = exps.find((x) => x.id === id);
       if (e)
         recents.push({
@@ -138,9 +136,9 @@ const commands = computed<CommandItem[]>(() => {
           description: `${verdict(e).label} · ${e.dev} vs ${e.base}`,
           group: "Recent",
           icon: PhClockCounterClockwise,
-          keywords: [e.dev, e.base, "experiment"],
+          keywords: [e.dev, e.base, "test", "experiment"],
         });
-    } else if (path.startsWith("/tune/")) {
+    } else if (path.startsWith("/improve/tunes/")) {
       const t = tns.find((x) => x.id === id);
       if (t)
         recents.push({
@@ -157,10 +155,10 @@ const commands = computed<CommandItem[]>(() => {
         recents.push({
           id: `go:${path}`,
           label: `${b.ref} #${b.id}`,
-          description: `Engine · ${b.commit.slice(0, 7)} · ${ago(b.created_at)}`,
+          description: `Version · ${b.commit.slice(0, 7)} · ${ago(b.created_at)}`,
           group: "Recent",
           icon: PhClockCounterClockwise,
-          keywords: [b.commit, "engine", "build"],
+          keywords: [b.commit, "engine", "build", "version"],
         });
     }
   }
@@ -168,18 +166,29 @@ const commands = computed<CommandItem[]>(() => {
   return [
     ...recents,
     { id: "go:/board", label: "Open the board", group: "Go to", icon: PhGraph, keywords: ["analysis", "analyse"] },
-    { id: "go:/lab", label: "Open the lab", group: "Go to", icon: PhFlask, keywords: ["experiments", "tests"] },
-    { id: "go:/engines", label: "Open engines", group: "Go to", icon: PhWrench, keywords: ["builds"] },
     {
-      id: "go:/tune",
-      label: "Open tunes",
+      id: "go:/improve",
+      label: "Open Improve",
       group: "Go to",
-      icon: PhSlidersHorizontal,
-      keywords: ["spsa", "parameters"],
+      icon: PhFlask,
+      keywords: ["lab", "experiments", "tests", "tune", "spsa"],
     },
+    { id: "go:/versions", label: "Open Versions", group: "Go to", icon: PhWrench, keywords: ["engines", "builds"] },
     { id: "go:/lichess", label: "Open Lichess", group: "Go to", icon: PhCrown, keywords: ["bot", "online", "play"] },
-    { id: "go:/lab?new=1", label: "Test an idea", group: "Do", icon: PhPlus, keywords: ["new experiment"] },
-    { id: "go:/tune?new=1", label: "New tune", group: "Do", icon: PhPlus, keywords: ["spsa", "parameters", "tuning"] },
+    {
+      id: "go:/improve?new=test",
+      label: "New test",
+      group: "Do",
+      icon: PhPlus,
+      keywords: ["test a change", "experiment", "branch"],
+    },
+    {
+      id: "go:/improve?new=tune",
+      label: "New tune",
+      group: "Do",
+      icon: PhPlus,
+      keywords: ["tune numbers", "spsa", "parameters", "tuning"],
+    },
     { id: "go:/board?paste=1", label: "Load a game or FEN", group: "Do", icon: PhClipboardText, keywords: ["pgn"] },
     {
       id: "go:/board?mode=play",
@@ -196,8 +205,8 @@ const commands = computed<CommandItem[]>(() => {
       keywords: ["engine", "play", "versus", "live"],
     },
     {
-      id: "go:/engines?build=1",
-      label: "Build an engine",
+      id: "go:/versions?build=1",
+      label: "Build a version",
       group: "Do",
       icon: PhHammer,
       keywords: ["branch", "commit"],
@@ -231,22 +240,32 @@ const commands = computed<CommandItem[]>(() => {
     })),
     ...exps
       .slice(0, 30)
-      .filter((e) => !seen.has(`go:/lab/${e.id}`))
+      .filter((e) => !seen.has(`go:/improve/experiments/${e.id}`))
       .map((e) => ({
-        id: `go:/lab/${e.id}`,
+        id: `go:/improve/experiments/${e.id}`,
         label: e.name,
         description: `${verdict(e).label} · ${e.dev} vs ${e.base}`,
-        group: "Experiments",
+        group: "Tests",
         keywords: [e.dev, e.base],
+      })),
+    ...tns
+      .slice(0, 15)
+      .filter((t) => !seen.has(`go:/improve/tunes/${t.id}`))
+      .map((t) => ({
+        id: `go:/improve/tunes/${t.id}`,
+        label: t.name,
+        description: `Tune · ${statusWord(t)} · ${ago(t.created_at)}`,
+        group: "Tunes",
+        keywords: [t.ref, "spsa"],
       })),
     ...blds
       .slice(0, 20)
-      .filter((b) => !seen.has(`go:/engines/${b.id}`))
+      .filter((b) => !seen.has(`go:/versions/${b.id}`))
       .map((b) => ({
-        id: `go:/engines/${b.id}`,
+        id: `go:/versions/${b.id}`,
         label: `${b.ref} #${b.id}`,
-        description: `Engine · ${b.commit.slice(0, 7)} · ${ago(b.created_at)}`,
-        group: "Engines",
+        description: `Version · ${b.commit.slice(0, 7)} · ${ago(b.created_at)}`,
+        group: "Versions",
         keywords: [b.commit, "build"],
       })),
   ];
@@ -358,7 +377,7 @@ onUnmounted(stop);
       v-model:open="palette"
       :items="commands"
       label="Search Dameless"
-      placeholder="Search experiments, engines, actions"
+      placeholder="Search tests, tunes, versions, actions"
       shortcut="mod+k"
       @select="run"
     />
@@ -393,7 +412,7 @@ onUnmounted(stop);
   min-height: 0;
 }
 
-@media (width < 64rem) {
+@media (width < 75rem) {
   .shell--workspace {
     height: auto;
     min-height: 100dvh;

@@ -2,18 +2,17 @@
 import { computed, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { EProgress } from "@eos-ui/vue/components/EProgress";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ETable } from "@eos-ui/vue/components/ETable";
-import type { Job, Tune } from "../../api/queries";
+import type { Experiment, Job, Tune } from "../../api/queries";
 import { failure } from "../../format";
 import Term from "../Term.vue";
+import { pathOf, testStatus } from "../improve/improve";
 import TuneChart from "./TuneChart.vue";
-import TuneExplainer from "./TuneExplainer.vue";
 import { change, fmt, live, trajectory, tuneLine, type Iteration } from "./tune";
 
 /** One tune: how it stands in a sentence, where every parameter is heading, and the parameters themselves. */
@@ -24,6 +23,8 @@ const props = defineProps<{
   remaining?: string;
   /** The newest job that applied this tune to a branch. */
   applying?: Job;
+  /** The test of the branch this tune was applied to. */
+  test?: Experiment;
 }>();
 
 const path = computed(() => trajectory(props.tune.params, props.history));
@@ -90,9 +91,15 @@ const result = computed(() => {
     <ENotice v-else-if="applying?.status === 'done' && result" tone="success" title="Applied" :role="false">
       Branch <code>{{ result.branch }}</code> holds the new values{{ bench }}.
       <template v-if="result.experiment">
-        <ELink :link-component="RouterLink" :to="`/lab/${result.experiment}`">See its confirmation test</ELink> in the
-        lab. It must pass before the change is trusted.
+        <ELink :link-component="RouterLink" :to="pathOf('test', result.experiment)">See its test</ELink> against main.
+        It must pass before the change is trusted.
       </template>
+    </ENotice>
+
+    <ENotice v-else-if="test" tone="info" title="Applied" :role="false">
+      Its values were written to branch <code>{{ test.dev }}</code
+      >. <ELink :link-component="RouterLink" :to="pathOf('test', test.id)">See its test</ELink> against {{ test.base }}:
+      {{ testStatus(test).label.toLowerCase() }}.
     </ENotice>
 
     <section class="unit" aria-labelledby="path-title">
@@ -186,10 +193,6 @@ const result = computed(() => {
         <Term of="spsa" inline>What is SPSA?</Term>
       </p>
     </section>
-
-    <EDisclosure class="how" title="What is a tune?">
-      <TuneExplainer />
-    </EDisclosure>
   </div>
 </template>
 

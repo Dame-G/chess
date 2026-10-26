@@ -16,7 +16,7 @@ const router = useRouter();
       <p class="cover-tagline">Make a chess engine stronger, one tested idea at a time.</p>
       <EActions class="cover-actions">
         <EButton :icon="PhGraph" @click="router.push('/board')">Open the board</EButton>
-        <EButton variant="outline" @click="router.push('/lab')">Open the lab</EButton>
+        <EButton variant="outline" @click="router.push('/improve')">Open Improve</EButton>
       </EActions>
     </div>
   </div>

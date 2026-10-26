@@ -5,6 +5,8 @@ import { api } from "./runner";
 import type { components } from "./schema";
 
 export type Job = components["schemas"]["Job"];
+/** A branch of the checkout. `hidden` is set by the runner on branches the user put away. */
+export type Branch = components["schemas"]["Branch"] & { hidden?: boolean };
 export type Build = components["schemas"]["Build"];
 export type Experiment = components["schemas"]["Experiment"];
 export type Test = components["schemas"]["Test"];
@@ -31,7 +33,8 @@ export const useStatus = () =>
 
 export const useBuilds = () => useQuery({ key: ["builds"], query: () => unwrap(api.GET("/api/builds")) });
 
-export const useBranches = () => useQuery({ key: ["branches"], query: () => unwrap(api.GET("/api/branches")) });
+export const useBranches = () =>
+  useQuery({ key: ["branches"], query: async () => (await unwrap(api.GET("/api/branches"))) as Branch[] });
 
 export const useJobs = () =>
   useQuery({ key: ["jobs"], query: () => unwrap(api.GET("/api/jobs", { params: { query: { limit: 20 } } })) });

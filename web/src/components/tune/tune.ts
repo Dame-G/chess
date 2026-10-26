@@ -29,12 +29,6 @@ export function statusWord(t: Tune): string {
   }
 }
 
-/** The colour token behind a row's mark. */
-export const markTone = (t: Pick<Tune, "status">) =>
-  ({ queued: "border-strong", running: "primary", done: "success", failed: "danger", cancelled: "border-strong" })[
-    t.status
-  ];
-
 /** Values are integers in the engine (`i32`), so a parameter shows as one unless its declaration has decimals. */
 export function fmt(p: Pick<Param, "start" | "min" | "max">, v: number): string {
   const whole = [p.start, p.min, p.max].every(Number.isInteger);

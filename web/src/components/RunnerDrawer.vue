@@ -76,7 +76,7 @@ function describe(job: Job): string {
   if (job.spec.kind === "tune" || job.spec.kind === "apply_tune") {
     const id = job.spec.id;
     const name = tunes.value.data?.find((t) => t.id === id)?.name ?? `#${id}`;
-    return job.spec.kind === "tune" ? `Tune ${name}` : `Apply ${name}`;
+    return job.spec.kind === "tune" ? `Tune ${name}` : `Apply tune ${name}`;
   }
   const id = job.spec.id;
   const e = experiments.value.data?.find((x) => x.id === id);

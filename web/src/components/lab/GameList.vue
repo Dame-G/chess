@@ -14,7 +14,7 @@ const props = defineProps<{ test: number }>();
 const { state } = useGames(() => props.test);
 
 /** Stacked on a phone the list pushes the library far down the page, so it opens shorter there. */
-const PAGE = matchMedia("(width < 64rem)").matches ? 25 : 150;
+const PAGE = matchMedia("(width < 75rem)").matches ? 25 : 150;
 const shown = ref(PAGE);
 const only = ref<"all" | "W" | "D" | "L">("all");
 watch(

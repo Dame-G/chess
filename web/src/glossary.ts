@@ -46,15 +46,15 @@ export const glossary = {
   },
   branch: {
     term: "Branch",
-    text: "A named line of changes in the Reckless code. Each idea lives on its own branch; main is the current best.",
+    text: "A named copy of the engine with one change. Each idea lives on its own branch; main is the current best. Test a branch against main, and merge it if it passes.",
   },
   spsa: {
     term: "SPSA",
     text: "A way to tune many constants at once: each round tries two slightly different copies of the engine against each other and moves every constant a little towards the winner.",
   },
   build: {
-    term: "Engine",
-    text: "A compiled version of Reckless from one commit of a branch. Each is built once and kept.",
+    term: "Version",
+    text: "A compiled engine from one commit of a branch. Each is built once and kept.",
   },
 } as const;
 

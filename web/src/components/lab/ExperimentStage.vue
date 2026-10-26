@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { computed, useId } from "vue";
-import type { Experiment, Test } from "../../api/queries";
+import { RouterLink } from "vue-router";
+import { ELink } from "@eos-ui/vue/components/ELink";
+import type { Experiment, Test, Tune } from "../../api/queries";
 import { ago, kinds, stages, verdict } from "../../format";
 import TestPanel from "../TestPanel.vue";
 import Term from "../Term.vue";
+import { pathOf } from "../improve/improve";
 import StageTabs from "./StageTabs.vue";
 import { funnelOf, plainDetail, verdictLine } from "./lab";
 
 /** One experiment: how it stands in a sentence, the funnel it goes through, and the evidence of the chosen stage. */
-const props = defineProps<{ experiment: Experiment; tests: Test[]; stage: string }>();
+const props = defineProps<{ experiment: Experiment; tests: Test[]; stage: string; tune?: Tune }>();
 
 const panel = `panel-${useId()}`;
 const v = computed(() => verdict(props.experiment));
@@ -29,6 +32,10 @@ const test = computed(() => props.tests.find((t) => t.stage === props.stage));
         {{ ago(experiment.created_at) }}
         <template v-if="experiment.batch">
           <span class="sep" aria-hidden="true">·</span> batch {{ experiment.batch }}
+        </template>
+        <template v-if="tune">
+          <span class="sep" aria-hidden="true">·</span> made by tune
+          <ELink :link-component="RouterLink" :to="pathOf('tune', tune.id)">{{ tune.name }}</ELink>
         </template>
       </p>
       <p v-if="experiment.hypothesis" class="idea">

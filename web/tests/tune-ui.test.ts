@@ -69,8 +69,8 @@ const click = async (label: RegExp) => {
 
 describe("tune dialogs", { timeout: 30_000 }, () => {
   it("starts a tune with the defaults, naming only the branch", async () => {
-    const { default: NewTune } = await import("../src/components/tune/NewTune.vue");
-    await mount({ render: () => h(NewTune, { open: true }) });
+    const { default: NewWork } = await import("../src/components/improve/NewWork.vue");
+    await mount({ render: () => h(NewWork, { open: true, mode: "tune" }) });
     expect(document.body.textContent).toContain("How long are the games?");
     expect(document.body.textContent).toContain("16,000 games");
     await click(/Start tune/);
@@ -88,5 +88,35 @@ describe("tune dialogs", { timeout: 30_000 }, () => {
     await click(/^\s*Apply\s*$/);
     expect(calls[0]!.path).toBe("/api/tunes/1/apply");
     expect(calls[0]!.body).toEqual({ branch: "tune/1", base: "main", experiment: true, ltc: false, push: false });
+  });
+});
+
+describe("improve dialogs", { timeout: 30_000 }, () => {
+  it("starts a test of the newest fork branch against main", async () => {
+    const { default: NewWork } = await import("../src/components/improve/NewWork.vue");
+    await mount({ render: () => h(NewWork, { open: true }) });
+    expect(document.body.textContent).toContain("Tune numbers");
+    expect(document.body.textContent).toContain("Branch to test");
+    await click(/Start test/);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.path).toBe("/api/experiments");
+    expect(calls[0]!.body).toMatchObject({ dev: "test/comment", base: "main", kind: "gainer" });
+  });
+
+  it("lists branches with their commit titles and age, upstream apart", async () => {
+    const { default: BranchPicker } = await import("../src/components/BranchPicker.vue");
+    const picked = ref("test/no-nmp");
+    await mount({
+      render: () => h(BranchPicker, { label: "Branch", modelValue: picked.value, exclude: ["main"] }),
+    });
+    const input = document.querySelector<HTMLInputElement>("input")!;
+    expect(input.value).toBe("test/no-nmp");
+    input.focus();
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    await new Promise((r) => setTimeout(r, 30));
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("Clarify the NMP comment");
+    expect(text).toContain("Upstream");
+    expect(text).not.toContain("Minor code cleanups (#1123)main");
   });
 });
