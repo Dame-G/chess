@@ -72,7 +72,8 @@ function config(animation?: { enabled: boolean; duration?: number }) {
     fen: p.fen,
     turnColor: p.turn,
     check: p.check ? p.turn : false,
-    lastMove: p.lastMove,
+    // An empty list clears the highlight; leaving it out would keep the last one.
+    lastMove: p.lastMove ?? [],
     orientation: props.orientation ?? "white",
     viewOnly: !!props.still,
     ...(animation ? { animation } : {}),

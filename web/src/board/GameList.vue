@@ -15,33 +15,26 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ open: [id: number] }>();
 
-const kinds = computed(() => ({
-  yours: props.matches.filter((m) => m.white.human || m.black.human).length,
-  engines: props.matches.filter((m) => !m.lichess && !m.white.human && !m.black.human).length,
-  lichess: props.matches.filter((m) => m.lichess).length,
-}));
+/** Whose game it is: one you played, one on Lichess, or two of our engines. */
+const kindOf = (m: MatchSummary) => (m.lichess ? "lichess" : m.white.human || m.black.human ? "yours" : "engines");
 const filter = ref("all");
 const options = computed(() => {
-  const o = [{ value: "all", label: "All" }];
-  if (kinds.value.yours) o.push({ value: "yours", label: "Yours" });
-  if (kinds.value.engines) o.push({ value: "engines", label: "Engines" });
-  if (kinds.value.lichess) o.push({ value: "lichess", label: "Lichess" });
-  return o;
+  const kinds = new Set(props.matches.map(kindOf));
+  return [
+    { value: "all", label: "All" },
+    ...[
+      { value: "yours", label: "Yours" },
+      { value: "engines", label: "Engines" },
+      { value: "lichess", label: "Lichess" },
+    ].filter((o) => kinds.has(o.value as ReturnType<typeof kindOf>)),
+  ];
 });
 const shown = computed(() => {
   const f = options.value.some((o) => o.value === filter.value) ? filter.value : "all";
   // A game cancelled before the first move leaves nothing to replay.
   const list = props.matches
     .filter((m) => m.plies > 0 || m.status !== "aborted")
-    .filter((m) =>
-      f === "yours"
-        ? m.white.human || m.black.human
-        : f === "engines"
-          ? !m.lichess && !m.white.human && !m.black.human
-          : f === "lichess"
-            ? m.lichess
-            : true,
-    );
+    .filter((m) => f === "all" || kindOf(m) === f);
   // What is being played comes first.
   return [...list.filter((m) => m.status === "running"), ...list.filter((m) => m.status !== "running")];
 });

@@ -357,6 +357,8 @@ const engineOn = computed({
     else freeEngine.value = v;
   },
 });
+/** Whether the engine can be switched on and off, and its version picked: not while a match is live, a setup is open or your game keeps its verdict back (its own button turns the engine on). */
+const engineChoice = computed(() => !matchLive.value && !setup.value && !veiled.value);
 const multipv = stored("board.lines", "3");
 
 const playing = ref(false);
@@ -1146,7 +1148,7 @@ const filters = [
     <template #inspector>
       <ETabs v-model="tab" :items="tabs" fill stretch label="Board panel" class="panel">
         <template #panel-moves>
-          <div class="moves-head">
+          <div :class="['moves-head', { 'moves-head--game': inGame }]">
             <div class="head-row">
               <ESegmented
                 v-if="!inGame"
@@ -1162,11 +1164,11 @@ const filters = [
                 </template>
               </EMenu>
             </div>
-            <div v-if="(isMatch && !veiled) || (!matchLive && !setup)" class="head-row">
+            <div v-if="(isMatch && !veiled) || engineChoice" class="head-row">
               <ESwitch v-if="isMatch && !veiled" v-model="matchArrowsOn" label="Arrows" />
-              <ESwitch v-if="!matchLive && !setup" v-model="engineOn" label="Engine" />
+              <ESwitch v-if="engineChoice" v-model="engineOn" label="Engine" />
               <ESelect
-                v-if="buildOptions.length && !matchLive && !setup"
+                v-if="buildOptions.length && engineChoice"
                 v-model="build"
                 label="Engine version"
                 hide-label
@@ -1409,6 +1411,26 @@ const filters = [
 
 .head-row .new {
   margin-inline-start: auto;
+}
+
+/* A recorded game has no mode choice: its switches and New share one row, and the engine version takes the next. */
+.moves-head--game {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.moves-head--game .head-row {
+  display: contents;
+}
+
+.moves-head--game .new {
+  order: 1;
+}
+
+.moves-head--game .pick {
+  flex-basis: 100%;
+  order: 2;
 }
 
 .crumbs {
@@ -1754,7 +1776,12 @@ const filters = [
    then the buttons spread the width of the screen for thumbs. */
 @media (width < 75rem) {
   .board-ws {
-    --side-raw: min(100cqw - var(--col) - var(--egap) - 2 * var(--pad), max(100dvh - 17rem - var(--extra), 16rem));
+    /* The window less the header and the transport bar, which stay in view with the board. The status bar is below. */
+    --chrome: 12rem;
+    --side-raw: min(
+      100cqw - var(--col) - var(--egap) - 2 * var(--pad),
+      max(100dvh - var(--chrome) - var(--extra), 16rem)
+    );
   }
 
   .board-ws :deep(.ws-stage) {
@@ -1810,6 +1837,7 @@ const filters = [
   .board-ws {
     --pad: 0.5rem;
     --col: 1.75rem;
+    --chrome: 17rem; /* the transport bar is three rows */
   }
 
   .counter {
