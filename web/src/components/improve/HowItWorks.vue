@@ -9,8 +9,14 @@ const loop = [
     title: "Make a change",
     text: "Ask Claude for one, or write it yourself. It becomes a branch: a copy of the engine with that one change.",
   },
-  { title: "Test it here", text: "The branch plays against main until the result is clear." },
-  { title: "If it passes, merge it", text: "Into main, in the Reckless repo. A failed test costs nothing." },
+  {
+    title: "Test it here",
+    text: "The branch plays against main until the result is clear. A failed test costs nothing.",
+  },
+  {
+    title: "If it passes, use it",
+    text: "Merge it into main in the Reckless repo, or put it on Lichess from Versions.",
+  },
 ];
 const funnel = [
   { title: "Fingerprint", text: "Seconds. Fixed positions show whether play really changed." },

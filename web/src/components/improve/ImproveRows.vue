@@ -4,6 +4,7 @@ import { RouterLink } from "vue-router";
 import { EHighlight } from "@eos-ui/vue/components/EHighlight";
 import { highlight, shortAgo } from "../lab/lab";
 import { keyOf, pathOf, toneToken, type Item, type Status } from "./improve";
+import StatusLine from "./StatusLine.vue";
 
 /** The library list: every test and tune in one column, the chosen one marked. */
 defineProps<{
@@ -46,10 +47,7 @@ defineProps<{
           <template v-if="item.kind === 'test'">{{ item.test.dev }} vs {{ item.test.base }}</template>
           <template v-else>Tune · {{ item.tune.ref }}</template>
         </span>
-        <span :class="['result', `result--${status.tone}`]">
-          <strong class="label">{{ status.label }}</strong>
-          <span v-if="status.figure" class="num">{{ status.figure }}</span>
-        </span>
+        <StatusLine :status="status" />
       </RouterLink>
     </li>
   </ol>
@@ -127,63 +125,11 @@ defineProps<{
   font-size: var(--e-text-xs, 0.75rem);
 }
 
-.refs,
-.result {
+.refs {
   overflow: hidden;
   color: var(--e-muted);
   font-size: var(--e-text-xs, 0.75rem);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.result {
-  display: flex;
-  gap: var(--e-gap-snug);
-  align-items: baseline;
-}
-
-.label {
-  flex: none;
-  font-weight: 600;
-}
-
-.result .num {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.result--success {
-  color: var(--e-success);
-}
-
-.result--danger {
-  color: var(--e-danger);
-}
-
-.result--info {
-  color: var(--e-primary);
-}
-
-.result--info::before {
-  content: "";
-  display: inline-block;
-  width: 0.375rem;
-  height: 0.375rem;
-  align-self: center;
-  border-radius: 50%;
-  background: currentcolor;
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  50% {
-    opacity: 0.25;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .result--info::before {
-    animation: none;
-  }
 }
 </style>

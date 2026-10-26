@@ -5,7 +5,6 @@ import { useQueryCache } from "@pinia/colada";
 import { PhCrown, PhFlask, PhHammer, PhSlidersHorizontal, PhSword, PhUser } from "@phosphor-icons/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EDialog } from "@eos-ui/vue/components/EDialog";
-import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { EProgress } from "@eos-ui/vue/components/EProgress";
@@ -14,7 +13,6 @@ import { unwrap, useJobs, useLichess, type Version } from "../../api/queries";
 import type { LichessStatus } from "../../lichess";
 import { useRunnerEvent } from "../../api/events";
 import { ago, failure } from "../../format";
-import Term from "../Term.vue";
 import BuildTable from "./BuildTable.vue";
 import { liveBuilds, tuneBadge, verdictStatus } from "./versions";
 
@@ -29,6 +27,14 @@ const plain = computed(() => !props.version.is_main && !props.version.upstream);
 const built = computed(() => props.version.latest_build_id != null);
 const verdict = computed(() => verdictStatus(props.version));
 const tested = computed(() => props.version.verdict);
+
+const outcome: Record<string, string> = {
+  passed: "It passed every stage of the test, so it can be merged into main.",
+  queued: "Its test is waiting for its turn.",
+  running: "Its test is running.",
+  cancelled: "Its test was stopped before it finished.",
+  failed: "It failed a stage of the test. The test shows which one, and why.",
+};
 
 /** The headline: what the version's latest test found. */
 const headline = computed(() => {
@@ -52,11 +58,10 @@ const headline = computed(() => {
       title: "Not tested yet",
       text: "Test it against main to find out whether it plays stronger.",
     } as const;
-  const against = v.tested_against ?? "main";
   const s = verdict.value;
   const tone = s.tone === "success" ? "success" : s.tone === "danger" ? "danger" : "info";
-  const title = `${s.label}${s.figure ? ` · ${s.figure}` : ""} against ${against}`;
-  return { tone, title, text: t.summary ?? "" } as const;
+  const title = `${s.label}${s.figure ? ` · ${s.figure}` : ""} against ${v.tested_against ?? "main"}`;
+  return { tone, title, text: outcome[t.status] ?? "" } as const;
 });
 
 // ---- Builds in flight, and the last one that failed
@@ -121,7 +126,12 @@ async function putOnLichess() {
 }
 
 /** The primary action is the next step of the loop for this version. */
-const primary = computed(() => (plain.value || props.version.upstream ? "test" : !built.value ? "build" : "play"));
+const primary = computed(() => {
+  const v = props.version;
+  if (v.is_main) return built.value ? "play" : "build";
+  if (v.verdict?.status === "passed" && built.value && !v.on_lichess) return "lichess";
+  return "test";
+});
 </script>
 
 <template>
@@ -183,7 +193,7 @@ const primary = computed(() => (plain.value || props.version.upstream ? "test" :
         </EButton>
         <EButton
           v-if="!version.on_lichess"
-          variant="outline"
+          :variant="primary === 'lichess' ? 'primary' : 'outline'"
           :icon="PhCrown"
           :disabled="!built || !bot?.configured"
           @click="asking = true"
@@ -201,7 +211,8 @@ const primary = computed(() => (plain.value || props.version.upstream ? "test" :
         </EButton>
       </div>
       <p v-if="!built && !building" class="note">
-        It has no build yet. Build it to play it, watch it play or put it on Lichess; a test builds it by itself.
+        Not built yet. A build is the compiled engine; it is needed to play it or put it on Lichess. A test builds it by
+        itself.
       </p>
     </section>
 
@@ -225,15 +236,12 @@ const primary = computed(() => (plain.value || props.version.upstream ? "test" :
       {{ failure(failed.error, "build") }}
     </ENotice>
 
-    <section class="section" aria-labelledby="builds-title">
+    <section v-if="version.builds.length" class="section" aria-labelledby="builds-title">
       <h3 id="builds-title" class="section-title">
         Builds
         <span class="count num">{{ liveBuilds(version).length }} on disk</span>
       </h3>
-      <BuildTable v-if="version.builds.length" :version="version" />
-      <EEmptyState v-else bare size="sm" title="Not built yet">
-        A build is the compiled engine. <Term of="bench" inline>What is a fingerprint?</Term>
-      </EEmptyState>
+      <BuildTable :version="version" />
     </section>
 
     <EDialog v-model:open="asking" :title="`Put ${version.name} on Lichess?`" size="sm">

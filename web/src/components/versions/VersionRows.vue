@@ -4,6 +4,7 @@ import { RouterLink } from "vue-router";
 import { EHighlight } from "@eos-ui/vue/components/EHighlight";
 import { versionPath, type Version } from "../../api/queries";
 import { toneToken } from "../improve/improve";
+import StatusLine from "../improve/StatusLine.vue";
 import { highlight, shortAgo } from "../lab/lab";
 import { tuneBadge, verdictStatus } from "./versions";
 
@@ -47,10 +48,7 @@ defineProps<{
         </span>
         <span class="subject">{{ v.subject }}</span>
         <span v-if="!v.is_main && !v.upstream" class="status">
-          <span :class="['result', `result--${verdictStatus(v).tone}`]">
-            <strong class="label">{{ verdictStatus(v).label }}</strong>
-            <span v-if="verdictStatus(v).figure" class="num">{{ verdictStatus(v).figure }}</span>
-          </span>
+          <StatusLine :status="verdictStatus(v)" />
           <span v-if="v.tune" class="badge num">{{ tuneBadge(v) }}</span>
         </span>
       </RouterLink>
@@ -160,53 +158,7 @@ defineProps<{
   gap: 0 var(--e-gap-base);
 }
 
-.result {
-  display: flex;
-  gap: var(--e-gap-snug);
-  align-items: baseline;
-}
-
-.label {
-  flex: none;
-  font-weight: 600;
-}
-
-.result--success {
-  color: var(--e-success);
-}
-
-.result--danger {
-  color: var(--e-danger);
-}
-
-.result--info {
-  color: var(--e-primary);
-}
-
-.result--info::before {
-  content: "";
-  display: inline-block;
-  width: 0.375rem;
-  height: 0.375rem;
-  align-self: center;
-  border-radius: 50%;
-  background: currentcolor;
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
 .badge {
   color: var(--e-primary);
-}
-
-@keyframes pulse {
-  50% {
-    opacity: 0.25;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .result--info::before {
-    animation: none;
-  }
 }
 </style>
