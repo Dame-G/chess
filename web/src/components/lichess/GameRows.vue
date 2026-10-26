@@ -72,6 +72,7 @@ const rows = computed(() =>
   grid-template-columns: 3rem minmax(0, 1fr);
   align-items: baseline;
   gap: var(--e-gap-snug);
+
   /* A row holds two lines, so it grows with them: the button's own fixed control height would let the text spill over the next row. */
   block-size: auto;
   min-block-size: 2.75rem;
