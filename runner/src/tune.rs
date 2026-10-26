@@ -41,19 +41,24 @@ use crate::{
 
 /// The SPSA arithmetic, as OpenBench does it.
 ///
-/// OpenBench (`OpenBench/workloads/get_workload.py` and `submit_results.py`, and the SPSA set-up in
-/// `OpenBench/views.py`), with `N` iterations, `A = A_ratio · N` and each parameter's `c_end` and `r_end`:
+/// OpenBench (`OpenBench/spsa_utils.py`: `create_spsa_run` and `spsa_workload_assignment_dict`; the client's
+/// `report_results` for the step), with `N` iterations, `A = A_ratio · N` and each parameter's `c_end` and `r_end`:
 ///
 /// ```text
 /// c       = c_end · N^γ                      a       = r_end · c_end² · (A + N)^α
-/// c_k     = c / k^γ                          a_k     = a / (A + k)^α           (k = 1, 2, … N)
+/// c_k     = max(c / k^γ, 0.5)                a_k     = a / (A + k)^α           (k = 1, 2, … N)
 /// R_k     = a_k / c_k²
-/// θ±      = clamp(θ ± c_k · Δ), rounded for integers, Δ = ±1 per parameter at random
+/// θ±      = clamp(floor(θ ± c_k · Δ + u)),   Δ = ±1 per parameter at random, u uniform in [0, 1), one per parameter
 /// θ      ← clamp(θ + R_k · c_k · (W − L) · Δ)
 /// ```
 ///
 /// where `W − L` counts games won minus games lost by θ+ against θ−. So `c_k` shrinks to `c_end` and `R_k` to `r_end`
 /// at the last iteration, and the step is the usual SPSA gradient estimate `a_k · (W − L) / c_k` along Δ.
+///
+/// The rounding is OpenBench's stochastic rounding, with one `u` shared by both sides: on average θ± is exactly
+/// θ ± c_k, and the two sides always differ by `2·c_k` rounded down or up, never by zero while `c_k ≥ 0.5` (which the
+/// floor on `c_k`, OpenBench's for integer tunables, guarantees). Plain rounding would bias θ± toward the nearest
+/// integer and, once `c_k` is small, often give both engines the same value, a batch with no signal in it.
 pub mod spsa {
     use serde::{Deserialize, Serialize};
     use utoipa::ToSchema;
@@ -86,15 +91,18 @@ pub mod spsa {
         pub a_ratio: f64,
     }
 
+    /// The smallest perturbation of an integer tunable, as OpenBench floors it.
+    pub const MIN_C: f64 = 0.5;
+
     impl Schedule {
         fn big_a(&self) -> f64 {
             self.a_ratio * self.iterations as f64
         }
 
-        /// `c_k` for `p` at iteration `k`, counted from 1.
+        /// `c_k` for `p` at iteration `k`, counted from 1, never under [`MIN_C`] (every tunable is an integer).
         pub fn c(&self, p: &Param, k: u32) -> f64 {
             let c = p.c_end * (self.iterations as f64).powf(self.gamma);
-            c / (k as f64).powf(self.gamma)
+            (c / (k as f64).powf(self.gamma)).max(MIN_C)
         }
 
         /// `R_k = a_k / c_k²` for `p` at iteration `k`, counted from 1.
@@ -105,9 +113,10 @@ pub mod spsa {
         }
     }
 
-    /// The values the two engines play with: θ + c·Δ and θ − c·Δ, clamped and rounded (every tunable is an integer).
-    pub fn perturb(p: &Param, value: f64, c: f64, flip: f64) -> (f64, f64) {
-        let side = |v: f64| v.clamp(p.min, p.max).round();
+    /// The values the two engines play with: θ + c·Δ and θ − c·Δ, rounded stochastically with `u` in [0, 1) (shared
+    /// by both sides, as OpenBench does) and then clamped (every tunable is an integer).
+    pub fn perturb(p: &Param, value: f64, c: f64, flip: f64, u: f64) -> (f64, f64) {
+        let side = |v: f64| (v + u).floor().clamp(p.min, p.max);
         (side(value + c * flip), side(value - c * flip))
     }
 
@@ -149,9 +158,36 @@ pub mod spsa {
         #[test]
         fn perturbs_both_ways_within_bounds() {
             let p = param();
-            assert_eq!(perturb(&p, 100.0, 6.4, 1.0), (106.0, 94.0));
-            assert_eq!(perturb(&p, 100.0, 6.4, -1.0), (94.0, 106.0));
-            assert_eq!(perturb(&p, 148.0, 6.4, 1.0), (150.0, 142.0));
+            assert_eq!(perturb(&p, 100.0, 6.4, 1.0, 0.5), (106.0, 94.0));
+            assert_eq!(perturb(&p, 100.0, 6.4, -1.0, 0.5), (94.0, 106.0));
+            assert_eq!(perturb(&p, 148.0, 6.4, 1.0, 0.5), (150.0, 142.0));
+            // Rounded with u: 106.4 and 93.6 go down below u = 0.6 and up from it.
+            assert_eq!(perturb(&p, 100.0, 6.4, 1.0, 0.0), (106.0, 93.0));
+            assert_eq!(perturb(&p, 100.0, 6.4, 1.0, 0.99), (107.0, 94.0));
+        }
+
+        #[test]
+        fn stochastic_rounding_is_unbiased_and_never_collapses() {
+            let p = param();
+            // θ = 100.3, c = 0.5: the sides are 100.8 and 99.8 on average, and always one apart.
+            let n = 1000;
+            let (mut hi, mut lo) = (0.0, 0.0);
+            for i in 0..n {
+                let (h, l) = perturb(&p, 100.3, 0.5, 1.0, (i as f64 + 0.5) / n as f64);
+                assert_eq!(h - l, 1.0);
+                (hi, lo) = (hi + h, lo + l);
+            }
+            assert!((hi / n as f64 - 100.8).abs() < 1e-3 && (lo / n as f64 - 99.8).abs() < 1e-3);
+        }
+
+        #[test]
+        fn floors_c_at_a_half() {
+            let p = Param { c_end: 0.2, ..param() };
+            let s = schedule();
+            assert_eq!(s.c(&p, 1000), MIN_C);
+            // R_k uses the floored c_k, as OpenBench's does.
+            let a = p.r_end * p.c_end * p.c_end;
+            assert!((s.r(&p, 1000) - a / (MIN_C * MIN_C)).abs() < 1e-12);
         }
 
         #[test]
@@ -570,7 +606,7 @@ pub async fn run(r: Run<'_>, id: i64) -> Result<TuneStatus> {
     };
     let mut running = FuturesUnordered::new();
     for worker in 0..slots.len() {
-        if let Some(batch) = scheduler.next(flips(n)?) {
+        if let Some(batch) = scheduler.next(draw(n)?) {
             running.push(launch(worker, batch));
         }
     }
@@ -581,7 +617,7 @@ pub async fn run(r: Run<'_>, id: i64) -> Result<TuneStatus> {
         let penta = penta?;
         let result = wins_minus_losses(&penta);
         let k = scheduler.apply(&batch, result);
-        if let Some(next) = scheduler.next(flips(n)?) {
+        if let Some(next) = scheduler.next(draw(n)?) {
             running.push(launch(worker, next));
         }
         let (plus, minus) = (&batch.plus, &batch.minus);
@@ -663,17 +699,18 @@ impl Scheduler {
         Self { schedule, params, applied, in_flight: 0 }
     }
 
-    /// The next batch, drawn with these flips around the current θ; `None` once every iteration left is drawn.
-    fn next(&mut self, flips: Vec<f64>) -> Option<Batch> {
+    /// The next batch, drawn with this randomness around the current θ; `None` once every iteration left is drawn.
+    fn next(&mut self, draw: Draw) -> Option<Batch> {
         if self.applied + self.in_flight >= self.schedule.iterations {
             return None;
         }
         self.in_flight += 1;
         let k = self.applied + 1;
+        let Draw { flips, rounding } = draw;
         let mut batch = Batch { k, flips, steps: Vec::new(), plus: Vec::new(), minus: Vec::new() };
-        for (p, &flip) in self.params.iter().zip(&batch.flips) {
+        for ((p, &flip), &u) in self.params.iter().zip(&batch.flips).zip(&rounding) {
             let (c, rk) = (self.schedule.c(&p.param, k), self.schedule.r(&p.param, k));
-            let (hi, lo) = spsa::perturb(&p.param, p.value, c, flip);
+            let (hi, lo) = spsa::perturb(&p.param, p.value, c, flip, u);
             batch.plus.push((p.param.name.clone(), format!("{hi}")));
             batch.minus.push((p.param.name.clone(), format!("{lo}")));
             batch.steps.push((c, rk));
@@ -699,11 +736,22 @@ async fn resolve_ref(state: &AppState, refname: &str) -> Result<String> {
     Ok(b.map(|b| b.commit).unwrap_or_else(|| refname.to_owned()))
 }
 
-/// A random ±1 per parameter.
-fn flips(n: usize) -> Result<Vec<f64>> {
-    let mut bytes = vec![0u8; n];
-    getrandom::fill(&mut bytes).map_err(|e| anyhow::anyhow!("random flips: {e}"))?;
-    Ok(bytes.iter().map(|b| if b & 1 == 1 { 1.0 } else { -1.0 }).collect())
+/// The randomness of one batch: a ±1 flip per parameter, and the `u` in [0, 1) its θ± are rounded with.
+struct Draw {
+    flips: Vec<f64>,
+    rounding: Vec<f64>,
+}
+
+/// A random draw for `n` parameters.
+fn draw(n: usize) -> Result<Draw> {
+    let mut bytes = vec![0u8; n * 8];
+    getrandom::fill(&mut bytes).map_err(|e| anyhow::anyhow!("random draw: {e}"))?;
+    let words: Vec<u64> = bytes.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().expect("8 bytes"))).collect();
+    Ok(Draw {
+        // The top bit for the flip, the low 53 bits for u.
+        flips: words.iter().map(|w| if w >> 63 == 1 { 1.0 } else { -1.0 }).collect(),
+        rounding: words.iter().map(|w| (w & ((1 << 53) - 1)) as f64 / (1u64 << 53) as f64).collect(),
+    })
 }
 
 /// Games won minus games lost from game-pair counts: pairs scoring 0, ½, 1, 1½, 2 are −2, −1, 0, +1, +2.
@@ -961,11 +1009,24 @@ mod tests {
         Scheduler::new(schedule, vec![TuneParam { value: param.start, param }], applied)
     }
 
+    /// One parameter's draw with this flip, rounded half up.
+    fn fixed(flip: f64) -> Draw {
+        Draw { flips: vec![flip], rounding: vec![0.5] }
+    }
+
+    #[test]
+    fn draws_flips_and_rounding_in_range() {
+        let d = draw(64).unwrap();
+        assert!(d.flips.iter().all(|f| *f == 1.0 || *f == -1.0));
+        assert!(d.rounding.iter().all(|u| (0.0..1.0).contains(u)));
+        assert!(d.flips.contains(&1.0) && d.flips.contains(&-1.0));
+    }
+
     #[test]
     fn batches_in_flight_share_theta_and_k_until_a_result_lands() {
         let mut s = scheduler(10, 0);
-        let a = s.next(vec![1.0]).unwrap();
-        let b = s.next(vec![-1.0]).unwrap();
+        let a = s.next(fixed(1.0)).unwrap();
+        let b = s.next(fixed(-1.0)).unwrap();
         // Both drawn against θ = 100 at k = 1, with opposite flips.
         assert_eq!((a.k, b.k), (1, 1));
         assert_eq!(a.plus, b.minus);
@@ -978,7 +1039,7 @@ mod tests {
         assert!((s.params[0].value - after_b).abs() < 1e-9);
 
         // A batch drawn now sees the moved θ and k = 2.
-        let c2 = s.next(vec![1.0]).unwrap();
+        let c2 = s.next(fixed(1.0)).unwrap();
         assert_eq!(c2.k, 2);
         let (cc, _) = c2.steps[0];
         assert_eq!(c2.plus[0].1, format!("{}", (after_b + cc).round()));
@@ -993,12 +1054,12 @@ mod tests {
     fn draws_exactly_the_iterations_left() {
         // A resumed tune with 7 of 10 applied: three batches, however many workers ask.
         let mut s = scheduler(10, 7);
-        let drawn: Vec<Batch> = (0..7).filter_map(|_| s.next(vec![1.0])).collect();
+        let drawn: Vec<Batch> = (0..7).filter_map(|_| s.next(fixed(1.0))).collect();
         assert_eq!(drawn.len(), 3);
         assert!(drawn.iter().all(|b| b.k == 8));
         let numbers: Vec<u32> = drawn.iter().map(|b| s.apply(b, 0)).collect();
         assert_eq!(numbers, [8, 9, 10]);
-        assert!(s.next(vec![1.0]).is_none());
+        assert!(s.next(fixed(1.0)).is_none());
     }
 
     #[test]
