@@ -949,7 +949,7 @@
         "tags": [
           "matches"
         ],
-        "summary": "Stops the running match, which is recorded as aborted, and returns it. 409 if it is not running. A Lichess game is\nresigned instead (aborted, if it has not got going), and the answer is the game as it stands: it ends, and\n`match.ended` follows, once Lichess confirms.",
+        "summary": "Stops the running match, which is recorded as aborted, and returns it. 409 if it is not running. In a game you play\nit is a resignation once each side has moved. A Lichess game is\nresigned instead (aborted, if it has not got going), and the answer is the game as it stands: it ends, and\n`match.ended` follows, once Lichess confirms.",
         "operationId": "stop_match",
         "parameters": [
           {
@@ -972,6 +972,84 @@
               }
             }
           },
+          "404": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/matches/{id}/draw": {
+      "post": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "Offers the engine a draw, on your turn. It accepts once twenty plies are played and its own last score is no more\nthan +0.10; the game then ends as a draw by agreement. Otherwise it declines and the game goes on.",
+        "operationId": "offer_draw",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrawAnswer"
+                }
+              }
+            }
+          },
+          "400": {},
+          "404": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/matches/{id}/moves": {
+      "post": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "Plays your move in a match where you hold a seat (`\"human\"`). Your clock is charged like an engine's, from the start\nof your turn to the arrival of the move. The answer is the match with the move on the board. 400 when the move is\nnot legal or the match has no human player, 409 when it is not your turn or the match is over.",
+        "operationId": "play_move",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Match"
+                }
+              }
+            }
+          },
+          "400": {},
           "404": {},
           "409": {}
         }
@@ -1006,6 +1084,40 @@
             }
           },
           "404": {}
+        }
+      }
+    },
+    "/api/matches/{id}/takeback": {
+      "post": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "Takes back your last move and the engine's reply to it, on your turn, in a game without a clock. A `match.takeback`\nevent carries the number of plies left. 409 in a timed game, when there is nothing to take back or it is not your\nturn.",
+        "operationId": "takeback_move",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Match"
+                }
+              }
+            }
+          },
+          "400": {},
+          "404": {},
+          "409": {}
         }
       }
     },
@@ -1441,6 +1553,18 @@
           }
         }
       },
+      "DrawAnswer": {
+        "type": "object",
+        "required": [
+          "accepted"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "description": "Whether the engine took the draw. If it did, the game is over."
+          }
+        }
+      },
       "Estimate": {
         "type": "object",
         "description": "Elo and normalized Elo with 95% intervals (`±`), from game pairs.",
@@ -1679,6 +1803,13 @@
             "type": "string"
           }
         }
+      },
+      "HumanSeat": {
+        "type": "string",
+        "description": "The string `\"human\"`: the seat a person takes.",
+        "enum": [
+          "human"
+        ]
       },
       "Info": {
         "type": "object",
@@ -2233,9 +2364,8 @@
             ]
           },
           "black": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The build that plays Black, by id."
+            "$ref": "#/components/schemas/Seat",
+            "description": "Who plays Black: a build id, or `\"human\"` for you. At least one side must be a build."
           },
           "hash": {
             "type": [
@@ -2269,9 +2399,8 @@
             "$ref": "#/components/schemas/MatchTime"
           },
           "white": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The build that plays White, by id."
+            "$ref": "#/components/schemas/Seat",
+            "description": "Who plays White: a build id, or `\"human\"` for you."
           }
         }
       },
@@ -2465,6 +2594,18 @@
           }
         ],
         "description": "How a match is timed."
+      },
+      "MoveRequest": {
+        "type": "object",
+        "required": [
+          "uci"
+        ],
+        "properties": {
+          "uci": {
+            "type": "string",
+            "description": "The move in UCI notation, such as `e2e4` or `e7e8q`."
+          }
+        }
       },
       "NewBatch": {
         "type": "object",
@@ -2669,6 +2810,10 @@
             "type": "string",
             "description": "The first seven characters of its commit; empty for a Lichess opponent."
           },
+          "human": {
+            "type": "boolean",
+            "description": "A person moving on the board rather than an engine; `name` is then \"You\"."
+          },
           "lichess": {
             "type": [
               "string",
@@ -2865,6 +3010,20 @@
           }
         ],
         "description": "A search score from the side to move's point of view."
+      },
+      "Seat": {
+        "oneOf": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "A build, by id."
+          },
+          {
+            "$ref": "#/components/schemas/HumanSeat",
+            "description": "You, moving on the board through `POST /api/matches/{id}/moves`."
+          }
+        ],
+        "description": "Who plays a side of a match you start."
       },
       "SeekChallenge": {
         "type": "object",

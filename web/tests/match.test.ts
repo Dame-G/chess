@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { clockText, matchTimeText, outcomeText, sideScore } from "../src/board/matchText";
+import {
+  clockText,
+  matchTimeText,
+  outcomeText,
+  sideScore,
+  youOutcome,
+  youResult,
+  youSide,
+} from "../src/board/matchText";
 
 describe("match text", () => {
   it("writes clocks as minutes and seconds, with tenths when low", () => {
@@ -43,5 +51,27 @@ describe("match text", () => {
     expect(sideScore("1-0", "white")).toBe("1");
     expect(sideScore("1-0", "black")).toBe("0");
     expect(sideScore("1/2-1/2", "black")).toBe("½");
+  });
+
+  it("tells a game you played in the second person", () => {
+    const you = { human: true, name: "You", commit: "" };
+    const engine = { build: 2, name: "main", commit: "abc" };
+    const as = (white: typeof you | typeof engine, black: typeof you | typeof engine) => ({ white, black });
+    const asWhite = as(you, engine);
+    expect(youSide(asWhite)).toBe("white");
+    expect(youSide(as(engine, you))).toBe("black");
+    const done = (result: "1-0" | "0-1" | "1/2-1/2", reason: "time" | "resigned" | "checkmate" | "agreement") => ({
+      ...asWhite,
+      result,
+      reason,
+      status: "finished" as const,
+    });
+    expect(youOutcome(done("0-1", "time"))).toBe("You lost on time");
+    expect(youOutcome(done("1-0", "resigned"))).toBe("Your opponent resigned");
+    expect(youOutcome(done("0-1", "resigned"))).toBe("You resigned");
+    expect(youOutcome(done("1-0", "checkmate"))).toBe("You won by checkmate");
+    expect(youOutcome(done("1/2-1/2", "agreement"))).toBe("Draw agreed");
+    expect(youResult(done("1-0", "time"))).toBe("Won");
+    expect(youResult(done("1/2-1/2", "agreement"))).toBe("Draw");
   });
 });

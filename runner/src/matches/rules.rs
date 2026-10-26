@@ -270,6 +270,12 @@ pub fn adjudicate(judged: &[Judged], fullmove: u32) -> Option<Ending> {
     None
 }
 
+/// A draw offered to an engine is accepted when it has played a fair number of moves and its own last score is not
+/// above a tenth of a pawn: it takes a draw it is not winning, and never one it knows it is.
+pub fn accepts_draw(engine_cp: Option<i32>, plies: usize) -> bool {
+    plies >= 20 && engine_cp.is_some_and(|cp| cp <= 10)
+}
+
 #[cfg(test)]
 mod tests {
     use shakmaty::{CastlingMode, fen::Fen, uci::UciMove};
@@ -405,6 +411,15 @@ mod tests {
         // Black on the receiving end loses too.
         let black = run(Side::Black, &[Some(-900), Some(900), Some(-900), Some(900), Some(-900), Some(900)]);
         assert_eq!(adjudicate(&black, 4).unwrap().result, GameResult::White);
+    }
+
+    #[test]
+    fn an_engine_takes_a_draw_only_when_it_is_not_winning() {
+        assert!(accepts_draw(Some(0), 30));
+        assert!(accepts_draw(Some(-150), 30));
+        assert!(!accepts_draw(Some(80), 30));
+        assert!(!accepts_draw(None, 30));
+        assert!(!accepts_draw(Some(0), 10));
     }
 
     #[test]

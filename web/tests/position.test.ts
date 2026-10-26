@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   boardMove,
+  inspectPosition,
   isValidFen,
+  listGames,
   play,
   readPosition,
   sanLine,
@@ -68,5 +70,24 @@ describe("whitePawns", () => {
     expect(whitePawns({ cp: 50 }, "black")).toBe(-0.5);
     expect(whitePawns({ mate: 3 }, "white")).toBe(100);
     expect(whitePawns({ mate: 2 }, "black")).toBe(-100);
+  });
+});
+
+describe("a file of several games", () => {
+  const game = (white: string, black: string, result: string, moves: string) =>
+    `[White "${white}"]\n[Black "${black}"]\n[Result "${result}"]\n\n${moves} ${result}`;
+  const pgn = [game("Ann", "Bob", "1-0", "1. e4 e5 2. Nf3"), game("Cy", "Di", "0-1", "1. d4 d5")].join("\n\n");
+
+  it("lists its games and loads the one picked", () => {
+    const games = listGames(pgn);
+    expect(games.map((g) => g.label)).toEqual(["1. Ann – Bob", "2. Cy – Di"]);
+    expect(games.map((g) => g.moves)).toEqual([3, 2]);
+    expect(inspectPosition(pgn, 0)).toMatchObject({ line: { moves: ["e2e4", "e7e5", "g1f3"] } });
+    expect(inspectPosition(pgn, 1)).toMatchObject({ line: { moves: ["d2d4", "d7d5"] } });
+  });
+
+  it("lists nothing for a single game or a FEN", () => {
+    expect(listGames("1. e4 e5 *")).toEqual([]);
+    expect(listGames("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")).toEqual([]);
   });
 });

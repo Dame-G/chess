@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { gameClock, oursOf, oursText } from "../lichess";
-import { matchTimeText, type MatchSummary } from "./matchText";
+import { matchTimeText, youResult, type MatchSummary } from "./matchText";
 
 defineProps<{
   matches: MatchSummary[];
@@ -19,13 +19,15 @@ const detail = (m: MatchSummary) => {
 };
 /** A local match reads as its score; a Lichess game as how it went for our bot. */
 const shown = (m: MatchSummary) =>
-  m.lichess
-    ? oursText[oursOf(m)]
-    : m.result === "1/2-1/2"
-      ? "½–½"
-      : m.result === "*"
-        ? "·"
-        : m.result.replace("-", "–");
+  m.white.human || m.black.human
+    ? youResult(m)
+    : m.lichess
+      ? oursText[oursOf(m)]
+      : m.result === "1/2-1/2"
+        ? "½–½"
+        : m.result === "*"
+          ? "·"
+          : m.result.replace("-", "–");
 </script>
 
 <template>
@@ -139,6 +141,12 @@ const shown = (m: MatchSummary) =>
 .n {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.tc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .vs,

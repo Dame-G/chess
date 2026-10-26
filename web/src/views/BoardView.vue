@@ -10,11 +10,9 @@ import {
   PhCaretLeft,
   PhCaretRight,
   PhChartLine,
-  PhClipboardText,
   PhCopy,
-  PhClockCounterClockwise,
   PhListBullets,
-  PhFlask,
+  PhMagnifyingGlass,
   PhPause,
   PhPlay,
   PhSword,
@@ -22,7 +20,7 @@ import {
   PhSkipForward,
   PhSpeakerHigh,
   PhSpeakerSlash,
-  PhSquaresFour,
+  PhUser,
 } from "@phosphor-icons/vue";
 import { useCopy, useShortcuts, useToast } from "@eos-ui/vue";
 import { EBreadcrumb } from "@eos-ui/vue/components/EBreadcrumb";
@@ -39,24 +37,26 @@ import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { EStamp } from "@eos-ui/vue/components/EStamp";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextarea } from "@eos-ui/vue/components/ETextarea";
+import { EUpload } from "@eos-ui/vue/components/EUpload";
+import BoardLibrary from "../board/BoardLibrary.vue";
 import ChessBoard from "../board/ChessBoard.vue";
 import EngineLines from "../board/EngineLines.vue";
 import EvalBar from "../board/EvalBar.vue";
+import GameSetup from "../board/GameSetup.vue";
 import MatchEngines, { type EngineRow } from "../board/MatchEngines.vue";
-import MatchList from "../board/MatchList.vue";
 import MatchStatus from "../board/MatchStatus.vue";
 import MoveList from "../board/MoveList.vue";
 import Playlist from "../board/Playlist.vue";
 import PlayerStrip from "../board/PlayerStrip.vue";
+import PlayPanel from "../board/PlayPanel.vue";
 import Timeline from "../board/Timeline.vue";
-import MatchDialog from "../components/MatchDialog.vue";
 import Term from "../components/Term.vue";
 import Workspace from "../components/Workspace.vue";
 import { readGame, type Game } from "../board/game";
-import { clockAt, sideScore, type Side } from "../board/matchText";
+import { clockAt, sideScore, youSide, type Side } from "../board/matchText";
 import { useMatch } from "../board/useMatch";
 import { outcome, type Outcome } from "../board/playlist";
-import { inspectPosition, play, sanLine, sanMoves, toPgn, whitePawns, whiteScore } from "../board/position";
+import { inspectPosition, listGames, play, sanLine, sanMoves, toPgn, whitePawns, whiteScore } from "../board/position";
 import { playMoveSound, soundOf } from "../board/sound";
 import { useAnalysis, type Seen } from "../board/useAnalysis";
 import { api } from "../api/runner";
@@ -88,6 +88,31 @@ const isMatch = computed(() => route.name === "match");
 const matchId = computed(() => (isMatch.value ? Number(route.params.id) : 0));
 /** Whether the line on the board is a recorded one (a game or a match) rather than free analysis. */
 const inGame = computed(() => isGame.value || isMatch.value);
+
+/**
+ * What the free board is for: looking at a position with the engine (analyse), playing a build (play), or setting two
+ * builds against each other (engines). The last two show their setup beside the board; a game in progress has its own
+ * place at /matches/<id>.
+ */
+type Mode = "analyse" | "play" | "engines";
+const mode = ref<Mode>("analyse");
+const setup = computed(() => (!inGame.value && mode.value !== "analyse" ? mode.value : undefined));
+const modes = [
+  { value: "analyse", label: "Analyse", icon: PhMagnifyingGlass },
+  { value: "play", label: "Play", icon: PhUser },
+  { value: "engines", label: "Engines", icon: PhSword },
+];
+// The command palette and "Play from here" send `mode=` (or the older `match=1`); the mode is taken and the parameter goes.
+watch(
+  () => [route.query.mode, route.query.match],
+  ([m, old]) => {
+    const wanted = m === "play" || m === "engines" || m === "analyse" ? m : old ? "engines" : undefined;
+    if (!wanted) return;
+    mode.value = wanted;
+    void router.replace({ query: { ...route.query, mode: undefined, match: undefined } });
+  },
+  { immediate: true },
+);
 
 // The line on the board: where it starts, every move entered (including ones stepped back past), and how many are
 // played. Stepping back keeps the moves after; a different move replaces them. A game fills the same three.
@@ -169,9 +194,17 @@ watch(isGame, (g) => {
 
 // A match from the runner, kept current by its events. Moving to another match keeps the last on show until the new one
 // arrives, as games do.
-const { match: matchRaw, failed: matchFailed, clock, thinking } = useMatch(matchId);
+const { match: matchRaw, failed: matchFailed, clock, thinking, takebacks } = useMatch(matchId);
 const matchData = computed(() => (matchRaw.value?.id === matchId.value ? matchRaw.value : undefined));
 const matchLive = computed(() => matchData.value?.status === "running");
+/** The side you play, in a game against a build. */
+const humanSide = computed(() => (matchData.value ? youSide(matchData.value) : undefined));
+/** Your game is on, and you move on the board. */
+const humanLive = computed(() => matchLive.value && !!humanSide.value);
+/** Whether the engine's analysis of a game of yours has been asked for: until then, and while it is on, it stays hidden. */
+const analysed = ref(false);
+watch(matchId, () => (analysed.value = false));
+const veiled = computed(() => !!humanSide.value && (matchLive.value || !analysed.value));
 /** The match as a game, so the move list, the timeline and the evaluation bar read it like any other. */
 const matchGame = computed<Game | undefined>(() => {
   const m = matchData.value;
@@ -241,7 +274,7 @@ watch(
       cursor.value =
         m.status === "running" ? moves.value.length : Math.max(0, Math.min(moves.value.length, wantedPly ?? 0));
       wantedPly = null;
-      gameOrientation.value = "white";
+      gameOrientation.value = youSide(m) ?? "white";
     } else if (m.moves.length > moves.value.length) {
       moves.value = [...moves.value, ...m.moves.slice(moves.value.length).map((mv) => mv.uci)];
       if (attached.value) cursor.value = moves.value.length;
@@ -249,6 +282,15 @@ watch(
   },
   { immediate: true },
 );
+
+// A takeback shortens the game: the line follows it back.
+watch(takebacks, () => {
+  const m = matchData.value;
+  if (!m) return;
+  moves.value = m.moves.map((mv) => mv.uci);
+  cursor.value = moves.value.length;
+  attached.value = true;
+});
 
 // The address follows the board, so a position can be bookmarked or shared.
 let addressing: ReturnType<typeof setTimeout> | undefined;
@@ -303,10 +345,14 @@ const freeEngine = stored("board.engine", true);
 const gameEngine = stored("board.engine.game", false);
 // The analysis engine rests while a match is live: the two engines playing it have the machine.
 const engineOn = computed({
-  get: () => !matchLive.value && (inGame.value ? gameEngine.value : freeEngine.value),
+  get: () =>
+    !matchLive.value &&
+    !setup.value &&
+    (inGame.value ? (humanSide.value ? analysed.value : gameEngine.value) : freeEngine.value),
   set: (v) => {
     if (matchLive.value) return;
-    if (inGame.value) gameEngine.value = v;
+    if (humanSide.value) analysed.value = v;
+    else if (inGame.value) gameEngine.value = v;
     else freeEngine.value = v;
   },
 });
@@ -362,7 +408,7 @@ const matchShapes = computed(() => isMatch.value && (matchLive.value || !searchi
 const wanted = computed<DrawShape[]>(() =>
   matchShapes.value ? (matchArrowsOn.value ? matchArrows.value : []) : analysisArrows.value,
 );
-const arrowsVisible = computed(() => matchShapes.value || searching.value);
+const arrowsVisible = computed(() => (matchShapes.value && !veiled.value) || searching.value);
 // The arrows hold still unless the moves they point along change, and a change settles for a moment first, so an engine
 // that flips between two candidates while it searches does not make the board flicker. The first arrows show at once.
 const shapes = shallowRef<DrawShape[]>([]);
@@ -460,6 +506,12 @@ const timeline = computed(() => {
   const values: (number | null)[] = [];
   const texts: (string | null)[] = [];
   fens.value.forEach((f, i) => {
+    // Your game keeps the engine's opinion to itself until it is over.
+    if (veiled.value) {
+      values.push(null);
+      texts.push(null);
+      return;
+    }
     const r = i > 0 ? plies?.[i - 1]?.eval : null;
     const e = r === null || r === undefined ? evals.get(f) : undefined;
     values.push(r !== null && r !== undefined ? gauge(r) : e ? gauge(e.pawns) : null);
@@ -473,8 +525,9 @@ const timeline = computed(() => {
 // ---------------------------------------------------------------------------------------------------------------------
 
 /** A line played off the game becomes free analysis from the same position. */
-function fork(extra: string[]) {
+function fork(extra: string[], into?: Mode) {
   const query: Record<string, string> = {};
+  if (into) query.mode = into;
   if (start.value !== "startpos") query.fen = start.value;
   const line = [...moves.value.slice(0, cursor.value), ...extra];
   if (line.length) query.moves = line.join(",");
@@ -535,17 +588,27 @@ function openMatch(id: number | undefined) {
   if (id !== undefined && id !== matchId.value) void router.push(`/matches/${id}`);
 }
 
-const matchOpen = ref(false);
-// The command palette sends `match=1`; the dialog opens and the parameter goes.
-watch(
-  () => route.query.match,
-  (p) => {
-    if (!p) return;
-    matchOpen.value = true;
-    void router.replace({ query: { ...route.query, match: undefined } });
-  },
-  { immediate: true },
-);
+/** Opens the setup for a game of your own or of two engines: on the free board it is a mode, elsewhere it goes there. */
+function openSetup(into: Mode) {
+  drawerOpen.value = false;
+  if (inGame.value) void router.push({ path: "/board", query: { mode: into } });
+  else mode.value = into;
+}
+/** Plays on from the board as it stands, whichever view it is. */
+function playFromHere(into: Mode) {
+  if (inGame.value) fork([], into);
+  else mode.value = into;
+}
+function openPosition(fen: string, line: string[]) {
+  mode.value = "analyse";
+  drawerOpen.value = false;
+  if (inGame.value) {
+    const query: Record<string, string> = {};
+    if (fen !== "startpos") query.fen = fen;
+    if (line.length) query.moves = line.join(",");
+    void router.push({ path: "/board", query });
+  } else reset(fen, line);
+}
 
 const topSide = computed<Side>(() => (orientation.value === "white" ? "black" : "white"));
 const bottomSide = computed<Side>(() => orientation.value);
@@ -588,8 +651,8 @@ const engineRows = computed<EngineRow[]>(() => {
   const m = matchData.value;
   if (!m) return [];
   const liveView = matchLive.value && attached.value;
-  // A Lichess opponent reports nothing to read: only our own engine has a row.
-  const sides = (["white", "black"] as const).filter((side) => !m.lichess || m[side].build != null);
+  // A Lichess opponent or you report nothing to read: only our own engines have a row.
+  const sides = (["white", "black"] as const).filter((side) => m[side].build != null);
   return sides.map((side) => {
     const t = thinking.value[side];
     if (liveView && t && m.turn === side && t.ply === moves.value.length + 1) {
@@ -632,16 +695,19 @@ async function stopMatch() {
 /** The same match again from the same position, with the colours kept or swapped. */
 async function again(swap: boolean) {
   const m = matchData.value;
+  const seat = (p: { human?: boolean; build?: number | null }) => (p.human ? ("human" as const) : p.build);
+  const w = m && seat(m.white);
+  const b = m && seat(m.black);
   // A Lichess game has an opponent that is not one of our builds: there is nothing to replay it with.
-  if (!m || m.white.build == null || m.black.build == null) return;
+  if (!m || w == null || b == null) return;
   matchBusy.value = true;
   matchError.value = "";
   try {
     const next = await unwrap(
       api.POST("/api/matches", {
         body: {
-          white: swap ? m.black.build : m.white.build,
-          black: swap ? m.white.build : m.black.build,
+          white: swap ? b : w,
+          black: swap ? w : b,
           time: m.time,
           opening: m.start_fen === "startpos" ? { type: "start" } : { type: "position", fen: m.start_fen, moves: [] },
           hash: m.hash,
@@ -659,7 +725,59 @@ async function again(swap: boolean) {
 }
 watch(matchId, () => (matchError.value = ""));
 
-const libraryName = computed(() => (isMatch.value ? "Matches" : isGame.value ? "Games" : "Positions"));
+const libraryName = computed(() => (isGame.value ? "Games" : "Library"));
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Playing against a build
+// ---------------------------------------------------------------------------------------------------------------------
+
+const board = ref<InstanceType<typeof ChessBoard>>();
+const toast = useToast();
+
+/** A move from the board: in your game it goes to the runner, which checks it and charges your clock. */
+function onBoardMove(uci: string) {
+  if (humanLive.value) void sendMove(uci);
+  else playMoves([uci]);
+}
+async function sendMove(uci: string) {
+  const id = matchId.value;
+  const before = moves.value.length;
+  // The piece is already where you put it: the line follows at once, and is put back if the runner says no.
+  moves.value = [...moves.value, uci];
+  cursor.value = moves.value.length;
+  try {
+    await unwrap(api.POST("/api/matches/{id}/moves", { params: { path: { id } }, body: { uci } }));
+  } catch (e) {
+    if (matchId.value === id && moves.value.length === before + 1 && moves.value[before] === uci) {
+      moves.value = moves.value.slice(0, before);
+      cursor.value = Math.min(cursor.value, before);
+    }
+    board.value?.reset();
+    toast.show({ key: "move", title: "That move was not played", message: (e as Error).message, tone: "danger" });
+  }
+}
+async function takeback() {
+  matchError.value = "";
+  try {
+    await unwrap(api.POST("/api/matches/{id}/takeback", { params: { path: { id: matchId.value } } }));
+  } catch (e) {
+    matchError.value = (e as Error).message;
+  }
+}
+async function offerDraw() {
+  matchError.value = "";
+  try {
+    const { accepted } = await unwrap(api.POST("/api/matches/{id}/draw", { params: { path: { id: matchId.value } } }));
+    if (!accepted) toast.show({ key: "draw", title: "The draw was declined", tone: "info" });
+  } catch (e) {
+    matchError.value = (e as Error).message;
+  }
+}
+/** Turns the engine on for a finished game of yours, which shows its verdict. */
+function analyseGame() {
+  analysed.value = true;
+  go(0);
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Playing the moves
@@ -717,7 +835,65 @@ watch(importText, (t) => {
   else reading = setTimeout(() => (importRead.value = t), 180);
 });
 onBeforeUnmount(() => clearTimeout(reading));
-const imported = computed(() => inspectPosition(importRead.value));
+// A file of several games lists them, and the one picked is what loads.
+const importGames = computed(() => listGames(importRead.value));
+const importGame = ref("0");
+watch(importRead, () => (importGame.value = "0"));
+const importGameOptions = computed(() =>
+  importGames.value.map((g, i) => ({
+    value: String(i),
+    label: g.label,
+    description: `${g.result} · ${g.moves} move${g.moves === 1 ? "" : "s"}`,
+  })),
+);
+const imported = computed(() => inspectPosition(importRead.value, Number(importGame.value)));
+
+/** A text from the clipboard or a file: opens the dialog on it, so what it holds shows before it loads. */
+function offer(text: string) {
+  importText.value = text;
+  importRead.value = text;
+  importOpen.value = true;
+}
+const picked = ref<File[]>([]);
+watch(picked, async (files) => {
+  const file = files[0];
+  if (!file) return;
+  offer(await file.text());
+  picked.value = [];
+});
+const looksLoadable = (text: string) => text.length < 2_000_000 && !("error" in inspectPosition(text));
+// Paste anywhere on the board loads a game or position; a .pgn dropped on it does the same.
+function onPaste(e: ClipboardEvent) {
+  if (
+    e.defaultPrevented ||
+    (e.target instanceof Element && e.target.closest("input, textarea, select, [contenteditable]"))
+  )
+    return;
+  const text = e.clipboardData?.getData("text/plain") ?? "";
+  if (text.trim() && looksLoadable(text)) {
+    e.preventDefault();
+    offer(text);
+  }
+}
+function onDragOver(e: DragEvent) {
+  if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+}
+async function onDrop(e: DragEvent) {
+  const file = e.dataTransfer?.files[0];
+  if (!file) return;
+  e.preventDefault();
+  offer(await file.text());
+}
+onMounted(() => {
+  window.addEventListener("paste", onPaste);
+  window.addEventListener("dragover", onDragOver);
+  window.addEventListener("drop", onDrop);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("paste", onPaste);
+  window.removeEventListener("dragover", onDragOver);
+  window.removeEventListener("drop", onDrop);
+});
 /** What the text holds, when it holds a position, and that position for the preview. */
 const importLine = computed(() => ("line" in imported.value ? imported.value : undefined));
 const importError = computed(() => ("error" in imported.value ? imported.value.error : ""));
@@ -744,6 +920,7 @@ function load() {
   importOpen.value = false;
   importText.value = "";
   importRead.value = "";
+  mode.value = "analyse";
   if (inGame.value) {
     const query: Record<string, string> = {};
     if (line.fen !== "startpos") query.fen = line.fen;
@@ -790,11 +967,17 @@ function recentLabel(r: Recent) {
   if (!r.moves.length) return r.fen.split(" ")[0]!;
   return sanLine(r.fen, r.moves.slice(0, 6)) + (r.moves.length > 6 ? " …" : "");
 }
+const recentItems = computed(() => recent.value.slice(0, 6).map((r) => ({ ...r, label: recentLabel(r) })));
 
 const { state: experiments } = useExperiments();
 const newest = computed(() => experiments.value.data?.reduce((a, b) => (b.id > a.id ? b : a)));
 const { state: newestDetail } = useExperiment(() => newest.value?.id ?? 0);
 const latestTest = computed(() => newestDetail.value.data?.tests.findLast((t) => t.games > 0));
+const latestItem = computed(() =>
+  latestTest.value && newest.value
+    ? { id: latestTest.value.id, name: newest.value.name, games: latestTest.value.games }
+    : undefined,
+);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Copying
@@ -806,7 +989,6 @@ const pgn = () =>
     : toPgn({ fen: start.value, moves: moves.value.slice(0, isMatch.value ? undefined : cursor.value) });
 
 const { copy } = useCopy();
-const toast = useToast();
 async function copyAs(what: "FEN" | "PGN") {
   const ok = await copy(what === "FEN" ? position.value.fen : pgn());
   toast.show({
@@ -945,7 +1127,7 @@ useShortcuts({
   space: toggle,
   f: flip,
   e: () => (engineOn.value = !engineOn.value),
-  m: () => (matchOpen.value = true),
+  m: () => openSetup("engines"),
   n: () => (isMatch.value ? openMatch(nextMatch.value) : openGame(nextGame.value?.index)),
   p: () => (isMatch.value ? openMatch(previousMatch.value) : openGame(previousGame.value?.index)),
 });
@@ -966,19 +1148,7 @@ const filters = [
 
 <template>
   <DefineLibrary>
-    <div v-if="isMatch" class="games">
-      <div class="games-bar">
-        <EButton variant="outline" size="sm" :icon="PhSword" @click="matchOpen = true">Watch a match</EButton>
-        <span class="count num">{{ matchList.length }}</span>
-      </div>
-      <ESkeleton v-if="matchesState.status === 'pending'" :lines="6" label="Loading matches" class="pad" />
-      <EEmptyState v-else-if="!matchList.length" title="No matches yet" icon="info" size="sm" bare class="pad">
-        Start one and it is kept here to replay.
-      </EEmptyState>
-      <div v-else class="match-rows"><MatchList :matches="matchList" :current="matchId" @open="openMatch" /></div>
-    </div>
-
-    <div v-else-if="isGame" class="games">
+    <div v-if="isGame" class="games">
       <div class="games-bar">
         <ESegmented v-model="filter" label="Show games" hide-label size="sm" :options="filters" />
         <span class="count num">{{ listed.length.toLocaleString() }}</span>
@@ -990,50 +1160,20 @@ const filters = [
       <Playlist v-else :games="listed" :current="index" @open="openGame($event)" />
     </div>
 
-    <div v-else class="starts">
-      <EButton variant="quiet" size="sm" block :icon="PhSquaresFour" class="start" @click="reset()">
-        Start position
-      </EButton>
-      <EButton variant="quiet" size="sm" block :icon="PhClipboardText" class="start" @click="importOpen = true">
-        Paste a game or FEN
-      </EButton>
-      <EButton variant="quiet" size="sm" block :icon="PhSword" class="start" @click="matchOpen = true">
-        Watch a match
-      </EButton>
-      <template v-if="matchList.length">
-        <h3 class="section">Matches</h3>
-        <MatchList :matches="matchList.slice(0, 5)" @open="openMatch" />
-      </template>
-      <template v-if="latestTest">
-        <h3 class="section">Latest test</h3>
-        <EButton
-          variant="quiet"
-          size="sm"
-          block
-          :icon="PhFlask"
-          class="start"
-          @click="router.push(`/games/${latestTest.id}/0`)"
-        >
-          <span class="grow">{{ newest?.name }}</span>
-          <span class="aside num">{{ latestTest.games.toLocaleString() }}</span>
-        </EButton>
-      </template>
-      <template v-if="recent.length">
-        <h3 class="section">Recent</h3>
-        <EButton
-          v-for="(r, i) in recent"
-          :key="i"
-          variant="quiet"
-          size="sm"
-          block
-          :icon="PhClockCounterClockwise"
-          class="start recent"
-          @click="reset(r.fen, r.moves)"
-        >
-          <span class="recent-text num">{{ recentLabel(r) }}</span>
-        </EButton>
-      </template>
-    </div>
+    <BoardLibrary
+      v-else
+      :matches="matchList"
+      :loading="matchesState.status === 'pending'"
+      :current="matchId || undefined"
+      :recent="recentItems"
+      :latest="latestItem"
+      @play="openSetup('play')"
+      @engines="openSetup('engines')"
+      @load="importOpen = true"
+      @open="openMatch"
+      @position="openPosition"
+      @test="router.push(`/games/${$event}/0`)"
+    />
   </DefineLibrary>
   <Workspace
     ref="frame"
@@ -1064,14 +1204,18 @@ const filters = [
     <div class="stage" :class="{ loading }">
       <div :class="['rig', { 'rig--match': isMatch && matchData }]">
         <PlayerStrip v-if="isMatch && matchData" v-bind="strip(topSide)" class="strip-top" />
-        <EvalBar :pawns="shown?.pawns" :text="shown?.text" :orientation="orientation" class="rig-eval" />
+        <!-- Your game keeps the engine's opinion to itself until it is over. -->
+        <div v-if="veiled" class="rig-eval"></div>
+        <EvalBar v-else :pawns="shown?.pawns" :text="shown?.text" :orientation="orientation" class="rig-eval" />
         <ChessBoard
+          ref="board"
           :position="position"
           :orientation="orientation"
-          :movable="!matchLive"
+          :movable="humanLive ? attached : !matchLive"
+          :premove="humanLive ? humanSide : undefined"
           :shapes="arrowsVisible ? shapes : []"
           class="rig-board"
-          @move="playMoves([$event])"
+          @move="onBoardMove"
         />
         <PlayerStrip v-if="isMatch && matchData" v-bind="strip(bottomSide)" class="strip-bottom" />
       </div>
@@ -1180,10 +1324,18 @@ const filters = [
 
     <!-- Inspector: the engine, then the moves, as on Lichess. -->
     <template #inspector-head>
-      <ESwitch v-if="isMatch" v-model="matchArrowsOn" label="Arrows" />
-      <ESwitch v-if="!matchLive" v-model="engineOn" label="Engine" />
+      <ESegmented
+        v-if="!inGame"
+        v-model="mode"
+        label="What to do with the board"
+        hide-label
+        size="sm"
+        :options="modes"
+      />
+      <ESwitch v-if="isMatch && !veiled" v-model="matchArrowsOn" label="Arrows" />
+      <ESwitch v-if="!matchLive && !setup" v-model="engineOn" label="Engine" />
       <ESelect
-        v-if="buildOptions.length && !matchLive"
+        v-if="buildOptions.length && !matchLive && !setup"
         v-model="build"
         label="Engine version"
         hide-label
@@ -1195,8 +1347,22 @@ const filters = [
 
     <template #inspector>
       <div class="insp">
+        <PlayPanel
+          v-if="isMatch && matchData && humanSide"
+          :match="matchData"
+          :attached="attached"
+          :busy="matchBusy"
+          :analysing="analysed"
+          @resign="stopMatch"
+          @takeback="takeback"
+          @draw="offerDraw"
+          @analyse="analyseGame"
+          @rematch="again(false)"
+          @swap="again(true)"
+          @fresh="openSetup('play')"
+        />
         <MatchStatus
-          v-if="isMatch && matchData"
+          v-else-if="isMatch && matchData"
           :match="matchData"
           :attached="attached"
           :busy="matchBusy"
@@ -1252,11 +1418,13 @@ const filters = [
           It may have been removed, or the runner is not reachable.
         </ENotice>
 
-        <section v-if="isMatch && matchData" class="engine engine--match" aria-label="Engines in the match">
+        <GameSetup v-if="setup" :mode="setup" :fen="start" :moves="moves.slice(0, cursor)" />
+
+        <section v-if="isMatch && matchData && !veiled" class="engine engine--match" aria-label="Engines in the match">
           <MatchEngines :rows="engineRows" />
         </section>
 
-        <section v-if="!isMatch || engineOn" class="engine" aria-label="Engine">
+        <section v-if="!setup && !humanLive && (!isMatch || engineOn)" class="engine" aria-label="Engine">
           <EEmptyState v-if="noBuilds" title="No engine built yet" icon="info" size="sm" bare>
             Build Reckless once and it analyses here.
             <template #action>
@@ -1320,9 +1488,15 @@ const filters = [
               <EButton variant="quiet" size="sm" :icon="PhCopy">Copy</EButton>
             </template>
           </EMenu>
-          <EButton v-if="inGame" variant="quiet" size="sm" :icon="PhChartLine" @click="fork([])">
-            Analyse from here
-          </EButton>
+          <template v-if="!humanLive && !(isMatch && matchLive)">
+            <EButton v-if="inGame" variant="quiet" size="sm" :icon="PhChartLine" @click="fork([])">
+              Analyse from here
+            </EButton>
+            <EButton variant="quiet" size="sm" :icon="PhUser" @click="playFromHere('play')">Play from here</EButton>
+            <EButton variant="quiet" size="sm" :icon="PhSword" @click="playFromHere('engines')">
+              Engines from here
+            </EButton>
+          </template>
           <EIconButton
             :icon="sound ? PhSpeakerHigh : PhSpeakerSlash"
             :label="sound ? 'Mute move sounds' : 'Play move sounds'"
@@ -1338,18 +1512,24 @@ const filters = [
     </template>
   </Workspace>
 
-  <MatchDialog v-model:open="matchOpen" :fen="start" :moves="moves.slice(0, cursor)" />
-
   <EDrawer v-model:open="drawerOpen" side="start" size="sm" :title="libraryName">
     <div class="drawer-body"><UseLibrary v-if="!libraryInline" /></div>
   </EDrawer>
 
   <EDialog
     v-model:open="importOpen"
-    title="Paste a game or position"
-    description="A FEN, or a PGN from Lichess, Chess.com or anywhere."
+    title="Load a game or position"
+    description="Paste a FEN or a PGN from Lichess, Chess.com or anywhere, or drop a .pgn file on the board."
   >
     <div class="paste">
+      <EUpload v-model="picked" label="PGN file" accept=".pgn,.txt" :preview="false" />
+      <ESelect
+        v-if="importGames.length"
+        v-model="importGame"
+        label="Game in the file"
+        size="sm"
+        :options="importGameOptions"
+      />
       <ETextarea
         v-model="importText"
         label="FEN or PGN"

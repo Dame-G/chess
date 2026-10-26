@@ -20,7 +20,10 @@ use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use shakmaty::{CastlingMode, Chess, EnPassantMode, Position, fen::Fen, san::SanPlus, uci::UciMove};
-use tokio::time::MissedTickBehavior;
+use tokio::{
+    sync::{mpsc, oneshot},
+    time::MissedTickBehavior,
+};
 use tokio_util::sync::CancellationToken;
 use utoipa::ToSchema;
 
@@ -65,12 +68,29 @@ pub enum Opening {
     Book,
 }
 
+/// Who plays a side of a match you start.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+pub enum Seat {
+    /// A build, by id.
+    Build(i64),
+    /// You, moving on the board through `POST /api/matches/{id}/moves`.
+    Human(HumanSeat),
+}
+
+/// The string `"human"`: the seat a person takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub enum HumanSeat {
+    #[serde(rename = "human")]
+    Human,
+}
+
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 pub struct MatchRequest {
-    /// The build that plays White, by id.
-    pub white: i64,
-    /// The build that plays Black, by id.
-    pub black: i64,
+    /// Who plays White: a build id, or `"human"` for you.
+    pub white: Seat,
+    /// Who plays Black: a build id, or `"human"` for you. At least one side must be a build.
+    pub black: Seat,
     pub time: MatchTime,
     #[serde(default)]
     pub opening: Opening,
@@ -104,6 +124,9 @@ pub struct Player {
     /// The Lichess username the player played under, ours included.
     #[serde(default)]
     pub lichess: Option<String>,
+    /// A person moving on the board rather than an engine; `name` is then "You".
+    #[serde(default)]
+    pub human: bool,
 }
 
 /// What a game played on Lichess adds to the record.
@@ -311,6 +334,34 @@ struct Live {
     id: i64,
     cancel: CancellationToken,
     shared: Arc<Mutex<Shared>>,
+    /// Where a human player's moves go, when the match has one.
+    human: Option<mpsc::UnboundedSender<Request>>,
+}
+
+/// What a human player asks of their game.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Action {
+    /// A move in UCI notation.
+    Move(String),
+    /// Take back the last move of each side. Only in a game without a clock, on your own turn.
+    Takeback,
+    /// Offer a draw, which the engine accepts or declines by [`rules::accepts_draw`].
+    Draw,
+}
+
+/// How the game answered an [`Action`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reply {
+    Moved,
+    TakenBack,
+    Draw { accepted: bool },
+}
+
+type Ack = oneshot::Sender<Result<Reply, ApiError>>;
+
+struct Request {
+    action: Action,
+    ack: Ack,
 }
 
 pub struct Matches {
@@ -397,8 +448,8 @@ pub async fn stop(state: &AppState, id: i64) -> Result<Match, ApiError> {
 
 /// Everything about the match that is known before the first move.
 struct Plan {
-    white: Build,
-    black: Build,
+    /// Which sides a person plays.
+    humans: [bool; 2],
     time: MatchTime,
     start: String,
     pos: Chess,
@@ -409,16 +460,25 @@ struct Plan {
     minimal: bool,
 }
 
+/// How long to wait for a game to answer a human's request before saying it moved on.
+const ANSWER: Duration = Duration::from_secs(5);
+
 pub async fn start(state: &Arc<AppState>, req: MatchRequest) -> Result<Match, ApiError> {
     if state.matches.live.lock().unwrap().is_some() {
         return Err(ApiError::conflict("a match is already running: stop it first"));
     }
-    let (white, black) = {
-        let (w, b) = (req.white, req.black);
-        state.store.call(move |c| Ok((build::get(c, w)?, build::get(c, b)?))).await?
-    };
-    let white = white.ok_or(ApiError::bad_request(&format!("no build {}", req.white)))?;
-    let black = black.ok_or(ApiError::bad_request(&format!("no build {}", req.black)))?;
+    let seats = [req.white, req.black];
+    if seats.iter().all(|s| matches!(s, Seat::Human(_))) {
+        return Err(ApiError::bad_request("at least one side must be a build"));
+    }
+    // A seat is a person or a build that exists.
+    let mut builds: [Option<Build>; 2] = [None, None];
+    for (i, seat) in seats.iter().enumerate() {
+        if let Seat::Build(id) = *seat {
+            let found = state.store.call(move |c| build::get(c, id)).await?;
+            builds[i] = Some(found.ok_or(ApiError::bad_request(&format!("no build {id}")))?);
+        }
+    }
     match req.time {
         MatchTime::Clock { seconds, increment } if !(seconds > 0.0 && increment >= 0.0) => {
             return Err(ApiError::bad_request("a clock needs a positive time and a non-negative increment"));
@@ -435,22 +495,24 @@ pub async fn start(state: &Arc<AppState>, req: MatchRequest) -> Result<Match, Ap
     } else {
         Fen::from_position(&pos, EnPassantMode::Legal).to_string()
     };
+    let humans = [builds[0].is_none(), builds[1].is_none()];
     let plan = Plan {
-        white,
-        black,
+        humans,
         time: req.time,
         start,
         pos,
         book,
         hash: req.hash.unwrap_or(16).clamp(1, 4096),
         threads: req.threads.unwrap_or(1).clamp(1, 16),
-        adjudicate: req.adjudicate.unwrap_or(false),
+        // A person's moves carry no score, so there is nothing to adjudicate.
+        adjudicate: req.adjudicate.unwrap_or(false) && !humans.iter().any(|h| *h),
         minimal: req.minimal.unwrap_or(false),
     };
 
-    // Both engines are up before the match is announced, so a missing binary is an error here and not a dead match.
-    let mut engines = Vec::new();
-    for b in [&plan.white, &plan.black] {
+    // The engines are up before the match is announced, so a missing binary is an error here and not a dead match.
+    let mut engines: [Option<Engine>; 2] = [None, None];
+    for (i, b) in builds.iter().enumerate() {
+        let Some(b) = b else { continue };
         let mut engine = Engine::start(&build::binary(&state.config.data, b)).await?;
         engine.set_option("Threads", plan.threads).await?;
         engine.set_option("Hash", plan.hash).await?;
@@ -459,19 +521,32 @@ pub async fn start(state: &Arc<AppState>, req: MatchRequest) -> Result<Match, Ap
         engine.set_option("MoveOverhead", 0).await?;
         engine.send("ucinewgame").await?;
         engine.ready().await?;
-        engines.push(engine);
+        engines[i] = Some(engine);
     }
-    let black_engine = engines.pop().unwrap();
-    let white_engine = engines.pop().unwrap();
+    let players = [0, 1].map(|i| builds[i].as_ref().map_or_else(you, player));
+    begin(state, plan, players, engines).await
+}
 
+/// The person at the board.
+fn you() -> Player {
+    Player { name: "You".to_owned(), human: true, ..Player::default() }
+}
+
+/// Records the match, announces it and starts its player task.
+async fn begin(
+    state: &Arc<AppState>,
+    plan: Plan,
+    [white, black]: [Player; 2],
+    engines: [Option<Engine>; 2],
+) -> Result<Match, ApiError> {
     let (clock_white_ms, clock_black_ms) = match plan.time {
         MatchTime::Clock { seconds, .. } => (Some((seconds * 1000.0) as u64), Some((seconds * 1000.0) as u64)),
         _ => (None, None),
     };
     let mut game = Match {
         id: 0,
-        white: player(&plan.white),
-        black: player(&plan.black),
+        white,
+        black,
         time: plan.time,
         start_fen: plan.start.clone(),
         book: plan.book,
@@ -503,10 +578,48 @@ pub async fn start(state: &Arc<AppState>, req: MatchRequest) -> Result<Match, Ap
 
     let cancel = CancellationToken::new();
     let shared = Arc::new(Mutex::new(Shared { game: game.clone(), thinking: None }));
-    *state.matches.live.lock().unwrap() = Some(Live { id: game.id, cancel: cancel.clone(), shared: shared.clone() });
+    let (human_tx, human_rx) = mpsc::unbounded_channel();
+    let human = plan.humans.iter().any(|h| *h).then_some(human_tx);
+    *state.matches.live.lock().unwrap() =
+        Some(Live { id: game.id, cancel: cancel.clone(), shared: shared.clone(), human });
     state.events.emit("match.started", serde_json::json!({ "id": game.id, "match": game }));
-    tokio::spawn(play(state.clone(), shared, cancel, white_engine, black_engine, plan));
+    tokio::spawn(play(state.clone(), shared, cancel, engines, human_rx, plan));
     Ok(game)
+}
+
+/// A human player's move, takeback or draw offer. The answer comes once the game has acted on it: for a move, after
+/// it is on the board and stored. 400 when the match has no human player or the move is not legal, 409 when the match
+/// is over or it is not your turn (or, for a takeback, there is nothing to take back or the game has a clock).
+pub async fn act(state: &AppState, id: i64, action: Action) -> Result<Reply, ApiError> {
+    let found = {
+        let live = state.matches.live.lock().unwrap();
+        live.as_ref().filter(|l| l.id == id).map(|l| (l.human.clone(), l.shared.clone()))
+    };
+    let Some((human, shared)) = found else {
+        return match get(state, id).await? {
+            Some(_) => Err(ApiError::conflict("that match is not running")),
+            None => Err(ApiError::not_found("no such match")),
+        };
+    };
+    let Some(human) = human else {
+        return Err(ApiError::bad_request("that match has no human player"));
+    };
+    let yours = {
+        let s = shared.lock().unwrap();
+        match s.game.turn {
+            Side::White => s.game.white.human,
+            Side::Black => s.game.black.human,
+        }
+    };
+    if !yours {
+        return Err(ApiError::conflict("it is not your turn"));
+    }
+    let (ack, answer) = oneshot::channel();
+    human.send(Request { action, ack }).map_err(|_| ApiError::conflict("that match is not running"))?;
+    match tokio::time::timeout(ANSWER, answer).await {
+        Ok(Ok(reply)) => reply,
+        _ => Err(ApiError::conflict("the game moved on")),
+    }
 }
 
 /// The position a game starts from, and whether the book chose it.
@@ -564,10 +677,19 @@ const INFO_EVERY: Duration = Duration::from_millis(200);
 
 /// How a search for one move came out.
 enum Think {
-    Move { best: String, took: Duration },
+    /// `ack` answers the human who made the move, once it is on the board.
+    Move {
+        best: String,
+        took: Duration,
+        ack: Option<Ack>,
+    },
     Flagged,
     Crashed,
     Aborted,
+    /// The human took back their last move and the reply to it.
+    Takeback(Ack),
+    /// The engine accepted the human's offer of a draw.
+    DrawAgreed,
 }
 
 fn go_command(time: MatchTime, clock: Option<&Clock>) -> String {
@@ -615,12 +737,12 @@ async fn play(
     state: Arc<AppState>,
     shared: Arc<Mutex<Shared>>,
     cancel: CancellationToken,
-    mut white: Engine,
-    mut black: Engine,
+    mut engines: [Option<Engine>; 2],
+    mut requests: mpsc::UnboundedReceiver<Request>,
     plan: Plan,
 ) {
     let id = shared.lock().unwrap().game.id;
-    let ending = game_loop(&state, &shared, &cancel, [&mut white, &mut black], &plan).await;
+    let ending = game_loop(&state, &shared, &cancel, &mut engines, &mut requests, &plan).await;
     let game = conclude(&state, &shared, ending).await;
     // The match leaves the live slot before the end is announced, so a client that starts another one on the news can.
     {
@@ -630,8 +752,9 @@ async fn play(
         }
     }
     emit_ended(&state, &game);
-    let _ = white.send("quit").await;
-    let _ = black.send("quit").await;
+    for engine in engines.iter_mut().flatten() {
+        let _ = engine.send("quit").await;
+    }
 }
 
 /// Records the end of a game: its result, its reason and when it finished.
@@ -697,7 +820,8 @@ async fn game_loop(
     state: &AppState,
     shared: &Mutex<Shared>,
     cancel: &CancellationToken,
-    engines: [&mut Engine; 2],
+    engines: &mut [Option<Engine>; 2],
+    requests: &mut mpsc::UnboundedReceiver<Request>,
     plan: &Plan,
 ) -> Ending {
     let id = shared.lock().unwrap().game.id;
@@ -722,12 +846,11 @@ async fn game_loop(
             return end;
         }
         if cancel.is_cancelled() {
-            return Ending { result: GameResult::Unfinished, reason: Reason::Aborted };
+            return stopped(plan, played.len());
         }
 
         let side = Side::from(pos.turn());
         let ply = played.len() as u32 + 1;
-        let engine = &mut *engines[side.index()];
         let command = go_command(plan.time, clock.as_ref());
 
         // The clock runs from the moment the search is asked for until its answer is read, measured on a monotonic
@@ -735,12 +858,22 @@ async fn game_loop(
         let began = Instant::now();
         shared.lock().unwrap().thinking = Some(began);
         let mut last: Option<Info> = None;
-        let think = if let Err(e) = engine.go_command(&plan.start, &played, &command).await {
+        let think = if plan.humans[side.index()] {
+            let deadline = clock.as_ref().map(|c| tokio::time::Instant::now() + c.allowance(side));
+            let human = Turn { cancel, requests: &mut *requests, deadline, began };
+            wait_for_human(human, &pos, side, &played, &judged, clock.is_some()).await
+        } else if let Err(e) = engines[side.index()]
+            .as_mut()
+            .expect("an engine plays this side")
+            .go_command(&plan.start, &played, &command)
+            .await
+        {
             tracing::warn!("match {id}: could not ask {side:?} for a move: {e:#}");
             Think::Crashed
         } else {
             let deadline = clock.as_ref().map(|c| tokio::time::Instant::now() + c.allowance(side));
             let mut unsent: Option<Info> = None;
+            let engine = engines[side.index()].as_mut().expect("an engine plays this side");
             let mut tick = tokio::time::interval(INFO_EVERY);
             tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
             loop {
@@ -753,6 +886,10 @@ async fn game_loop(
                     _ = tick.tick() => {
                         if let Some(info) = unsent.take() {
                             emit_info(state, id, ply, side, &info);
+                        }
+                        // Not your turn: whatever a human sent now was meant for a position that is gone.
+                        while let Ok(late) = requests.try_recv() {
+                            let _ = late.ack.send(Err(ApiError::conflict("it is not your turn")));
                         }
                     }
                     next = engine.next() => match next {
@@ -767,7 +904,7 @@ async fn game_loop(
                             if let Some(info) = unsent.take() {
                                 emit_info(state, id, ply, side, &info);
                             }
-                            break Think::Move { best, took };
+                            break Think::Move { best, took, ack: None };
                         }
                         Err(e) => {
                             tracing::warn!("match {id}: {side:?} stopped: {e:#}");
@@ -778,11 +915,32 @@ async fn game_loop(
             }
         };
 
-        let (uci, san, took) = match think {
-            Think::Aborted => return Ending { result: GameResult::Unfinished, reason: Reason::Aborted },
+        let (uci, san, took, ack) = match think {
+            Think::Aborted => return stopped(plan, played.len()),
             Think::Flagged => return Ending::lost_by(side, Reason::Time),
             Think::Crashed => return Ending::lost_by(side, Reason::Crash),
-            Think::Move { best, took } => {
+            Think::DrawAgreed => return Ending { result: GameResult::Draw, reason: Reason::Agreement },
+            Think::Takeback(ack) => {
+                let keep = played.len() - 2;
+                played.truncate(keep);
+                history.truncate(keep + 1);
+                judged.truncate(keep);
+                pos = replay(&plan.pos, &played);
+                let stored = {
+                    let mut s = shared.lock().unwrap();
+                    s.thinking = None;
+                    s.game.turn = pos.turn().into();
+                    s.game.moves.truncate(keep);
+                    s.game.clone()
+                };
+                if let Err(e) = state.store.call(move |c| save(c, &stored)).await {
+                    tracing::error!("could not store match {id}: {e:#}");
+                }
+                state.events.emit("match.takeback", serde_json::json!({ "id": id, "plies": keep }));
+                let _ = ack.send(Ok(Reply::TakenBack));
+                continue;
+            }
+            Think::Move { best, took, ack } => {
                 let Some(m) = best.parse::<UciMove>().ok().and_then(|u| u.to_move(&pos).ok()) else {
                     return Ending::lost_by(side, Reason::IllegalMove);
                 };
@@ -793,7 +951,7 @@ async fn game_loop(
                 }
                 let san = SanPlus::from_move_and_play_unchecked(&mut pos, m);
                 let uci = m.to_uci(CastlingMode::Standard).to_string();
-                (uci, san.to_string(), took)
+                (uci, san.to_string(), took, ack)
             }
         };
 
@@ -827,6 +985,89 @@ async fn game_loop(
             tracing::error!("could not store match {id}: {e:#}");
         }
         emit_move(state, id, &mv);
+        if let Some(ack) = ack {
+            let _ = ack.send(Ok(Reply::Moved));
+        }
+    }
+}
+
+/// How a game ends when it is stopped from outside: a person who stops a game that has got going resigns it, and
+/// anything else (an engine match, a game before each side has moved) is aborted.
+fn stopped(plan: &Plan, plies: usize) -> Ending {
+    match plan.humans.iter().position(|h| *h) {
+        Some(i) if plies >= 2 => Ending::lost_by(if i == 0 { Side::White } else { Side::Black }, Reason::Resigned),
+        _ => Ending { result: GameResult::Unfinished, reason: Reason::Aborted },
+    }
+}
+
+/// The position after `played` from `start`; the moves were legal when they were played.
+fn replay(start: &Chess, played: &[String]) -> Chess {
+    let mut pos = start.clone();
+    for uci in played {
+        if let Some(m) = uci.parse::<UciMove>().ok().and_then(|u| u.to_move(&pos).ok()) {
+            pos.play_unchecked(m);
+        }
+    }
+    pos
+}
+
+/// What a human's turn waits on.
+struct Turn<'a> {
+    cancel: &'a CancellationToken,
+    requests: &'a mut mpsc::UnboundedReceiver<Request>,
+    /// When the clock runs out, if there is one.
+    deadline: Option<tokio::time::Instant>,
+    /// When the turn began, which is when the clock started running.
+    began: Instant,
+}
+
+/// Waits for the human to move, flag, or leave, answering takebacks and draw offers on the way.
+async fn wait_for_human(
+    turn: Turn<'_>,
+    pos: &Chess,
+    side: Side,
+    played: &[String],
+    judged: &[Judged],
+    clocked: bool,
+) -> Think {
+    let Turn { cancel, requests, deadline, began } = turn;
+    loop {
+        let request = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Think::Aborted,
+            _ = async { tokio::time::sleep_until(deadline.unwrap()).await }, if deadline.is_some() => {
+                return Think::Flagged;
+            }
+            request = requests.recv() => match request {
+                Some(r) => r,
+                None => return Think::Aborted,
+            },
+        };
+        let Request { action, ack } = request;
+        match action {
+            Action::Move(uci) => {
+                if uci.parse::<UciMove>().ok().and_then(|u| u.to_move(pos).ok()).is_none() {
+                    let _ = ack.send(Err(ApiError::bad_request(&format!("{uci} is not a legal move there"))));
+                    continue;
+                }
+                return Think::Move { best: uci, took: began.elapsed(), ack: Some(ack) };
+            }
+            Action::Takeback if clocked => {
+                let _ = ack.send(Err(ApiError::conflict("a game with a clock has no takebacks")));
+            }
+            Action::Takeback if played.len() < 2 => {
+                let _ = ack.send(Err(ApiError::conflict("there is nothing to take back")));
+            }
+            Action::Takeback => return Think::Takeback(ack),
+            Action::Draw => {
+                let engine = judged.iter().rev().find(|j| j.side != side).and_then(|j| j.cp);
+                let accepted = rules::accepts_draw(engine, played.len());
+                let _ = ack.send(Ok(Reply::Draw { accepted }));
+                if accepted {
+                    return Think::DrawAgreed;
+                }
+            }
+        }
     }
 }
 
@@ -884,7 +1125,7 @@ impl Recorder {
             .await?;
         let id = game.id;
         let shared = Arc::new(Mutex::new(Shared { game: game.clone(), thinking: None }));
-        state.matches.external.lock().unwrap().insert(id, Live { id, cancel, shared: shared.clone() });
+        state.matches.external.lock().unwrap().insert(id, Live { id, cancel, shared: shared.clone(), human: None });
         state.events.emit("match.started", serde_json::json!({ "id": id, "match": game }));
         Ok(Self { state: state.clone(), shared, id })
     }
@@ -953,5 +1194,170 @@ impl Drop for Recorder {
     /// stays as it stood until the next start marks it aborted.
     fn drop(&mut self) {
         self.state.matches.external.lock().unwrap().remove(&self.id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::StatusCode;
+
+    use super::*;
+    use crate::{config::Config, store::Store};
+
+    /// A state with nothing in it but a store, for games between people: no engine needed.
+    fn state() -> Arc<AppState> {
+        let config = Config {
+            data: std::env::temp_dir(),
+            reckless: ".".into(),
+            listen: "127.0.0.1:0".parse().unwrap(),
+            token: "t".into(),
+            lichess_url: String::new(),
+        };
+        Arc::new(AppState::new(config, Store::memory().unwrap(), crate::lichess::engines()))
+    }
+
+    async fn game(state: &Arc<AppState>, time: MatchTime) -> i64 {
+        let plan = Plan {
+            humans: [true, true],
+            time,
+            start: "startpos".into(),
+            pos: Chess::default(),
+            book: false,
+            hash: 16,
+            threads: 1,
+            adjudicate: false,
+            minimal: false,
+        };
+        begin(state, plan, [you(), you()], [None, None]).await.unwrap().id
+    }
+
+    const CASUAL: MatchTime = MatchTime::Movetime { ms: 1000 };
+
+    async fn play_moves(state: &AppState, id: i64, moves: &[&str]) {
+        for uci in moves {
+            act(state, id, Action::Move((*uci).to_owned())).await.unwrap();
+        }
+    }
+
+    async fn ended(state: &AppState, id: i64) -> Match {
+        for _ in 0..200 {
+            let m = get(state, id).await.unwrap().unwrap();
+            if m.status != MatchStatus::Running {
+                return m;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("the game never ended");
+    }
+
+    #[tokio::test]
+    async fn a_human_move_must_be_legal_and_lands_on_the_board() {
+        let state = state();
+        let id = game(&state, CASUAL).await;
+        let bad = act(&state, id, Action::Move("e2e5".into())).await.unwrap_err();
+        assert_eq!(bad.status, StatusCode::BAD_REQUEST);
+        let junk = act(&state, id, Action::Move("hello".into())).await.unwrap_err();
+        assert_eq!(junk.status, StatusCode::BAD_REQUEST);
+        assert_eq!(act(&state, id, Action::Move("e2e4".into())).await.unwrap(), Reply::Moved);
+        let m = get(&state, id).await.unwrap().unwrap();
+        assert_eq!(m.moves.len(), 1);
+        assert_eq!(m.moves[0].san, "e4");
+        assert_eq!(m.turn, Side::Black);
+        // It is Black's move now: a White move is not legal for them.
+        let wrong = act(&state, id, Action::Move("d2d4".into())).await.unwrap_err();
+        assert_eq!(wrong.status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn a_game_between_people_ends_in_mate_and_frees_the_slot() {
+        let state = state();
+        let id = game(&state, CASUAL).await;
+        play_moves(&state, id, &["f2f3", "e7e5", "g2g4", "d8h4"]).await;
+        let m = ended(&state, id).await;
+        assert_eq!(m.status, MatchStatus::Finished);
+        assert_eq!(m.result, GameResult::Black);
+        assert_eq!(m.reason, Some(Reason::Checkmate));
+        let over = act(&state, id, Action::Move("a2a3".into())).await.unwrap_err();
+        assert_eq!(over.status, StatusCode::CONFLICT);
+        assert!(state.matches.live.lock().unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn takeback_removes_a_move_of_each_side_but_only_without_a_clock() {
+        let state = state();
+        let id = game(&state, CASUAL).await;
+        let none = act(&state, id, Action::Takeback).await.unwrap_err();
+        assert_eq!(none.status, StatusCode::CONFLICT);
+        play_moves(&state, id, &["e2e4", "e7e5"]).await;
+        assert_eq!(act(&state, id, Action::Takeback).await.unwrap(), Reply::TakenBack);
+        let m = get(&state, id).await.unwrap().unwrap();
+        assert!(m.moves.is_empty());
+        assert_eq!(m.turn, Side::White);
+        // The game goes on from the start.
+        play_moves(&state, id, &["d2d4"]).await;
+        stop(&state, id).await.unwrap();
+
+        let timed = game(&state, MatchTime::Clock { seconds: 60.0, increment: 1.0 }).await;
+        play_moves(&state, timed, &["e2e4", "e7e5"]).await;
+        let refused = act(&state, timed, Action::Takeback).await.unwrap_err();
+        assert_eq!(refused.status, StatusCode::CONFLICT);
+        stop(&state, timed).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_clock_is_charged_like_an_engines_and_flags() {
+        let state = state();
+        let id = game(&state, MatchTime::Clock { seconds: 60.0, increment: 2.0 }).await;
+        play_moves(&state, id, &["e2e4"]).await;
+        let m = get(&state, id).await.unwrap().unwrap();
+        // White spent next to nothing and got the increment; Black's clock is running down.
+        assert!(m.clock_white_ms.unwrap() > 61_000);
+        assert!(m.clock_black_ms.unwrap() <= 60_000);
+        stop(&state, id).await.unwrap();
+
+        let id = game(&state, MatchTime::Clock { seconds: 0.1, increment: 0.0 }).await;
+        let m = ended(&state, id).await;
+        assert_eq!(m.reason, Some(Reason::Time));
+        assert_eq!(m.result, GameResult::Black);
+    }
+
+    #[tokio::test]
+    async fn stopping_resigns_a_game_that_has_got_going_and_aborts_one_that_has_not() {
+        let state = state();
+        let id = game(&state, CASUAL).await;
+        let m = stop(&state, id).await.unwrap();
+        assert_eq!((m.status, m.reason), (MatchStatus::Aborted, Some(Reason::Aborted)));
+
+        let id = game(&state, CASUAL).await;
+        play_moves(&state, id, &["e2e4", "e7e5"]).await;
+        let m = stop(&state, id).await.unwrap();
+        assert_eq!((m.status, m.reason, m.result), (MatchStatus::Finished, Some(Reason::Resigned), GameResult::Black));
+    }
+
+    #[tokio::test]
+    async fn a_match_needs_a_build_and_moves_need_a_match() {
+        let state = state();
+        let err = act(&state, 99, Action::Move("e2e4".into())).await.unwrap_err();
+        assert_eq!(err.status, StatusCode::NOT_FOUND);
+        let req = MatchRequest {
+            white: Seat::Human(HumanSeat::Human),
+            black: Seat::Human(HumanSeat::Human),
+            time: CASUAL,
+            opening: Opening::Start,
+            hash: None,
+            threads: None,
+            minimal: None,
+            adjudicate: None,
+        };
+        assert_eq!(start(&state, req).await.unwrap_err().status, StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn a_seat_reads_as_a_build_id_or_human() {
+        let req: MatchRequest =
+            serde_json::from_str(r#"{"white":"human","black":3,"time":{"type":"movetime","ms":500}}"#).unwrap();
+        assert_eq!((req.white, req.black), (Seat::Human(HumanSeat::Human), Seat::Build(3)));
+        let robot = r#"{"white":"robot","black":3,"time":{"type":"nodes","nodes":1}}"#;
+        assert!(serde_json::from_str::<MatchRequest>(robot).is_err());
     }
 }

@@ -80,7 +80,13 @@ How games are run and ended:
 - Clocks are charged with the measured think time on a monotonic timer, and the increment is added after each move. A move that takes longer than the clock holds plus 250 ms (as the tests allow, `timemargin=250`) loses on time.
 - Engines get `Hash 16`, `Threads 1` and `MoveOverhead 0` as in the tests. `Minimal` is off by default, because with it on Reckless reports nothing while it thinks and there is nothing to watch; pass `minimal` to match the tests exactly. It does not change how the engine plays.
 - Games end by checkmate, stalemate, threefold repetition, the fifty-move rule, insufficient material, time forfeit, an engine crash or an illegal move. With `adjudicate`, the tests' adjudication also applies: a side whose last three moves each scored -4 or worse loses, and a game within 0.10 for six moves each from move 30 is drawn.
-- A match is stopped with `DELETE`; its result is `*` with reason `aborted`.
+- A match is stopped with `DELETE`; its result is `*` with reason `aborted`. In a game you play it is a resignation once each side has moved.
+
+You can take a seat yourself: `white` or `black` of `POST /api/matches` is a build id or `"human"` (at least one side must be a build; that player is `{name: "You", human: true}`). The board sends your moves, and the clock runs on you exactly as on an engine:
+
+- `POST /api/matches/{id}/moves` `{ uci }`: your move, answered with the match once it is on the board. 400 for an illegal move or a match without a human, 409 when it is not your turn or the game is over.
+- `POST /api/matches/{id}/takeback`: takes back your last move and the reply, on your turn, in a game without a clock (`movetime` or `nodes`). The `match.takeback` event carries `{ id, plies }`.
+- `POST /api/matches/{id}/draw`: offers a draw on your turn; the engine takes it from ply 20 when its own last score is at most +0.10 (`{ accepted }`), and the game ends as `agreement`.
 
 The game record (`runner/src/matches/mod.rs`) is a plain `Match` filled in by a player task. A later human-versus-build game can fill the same record by taking one side's moves from the board instead of an engine.
 

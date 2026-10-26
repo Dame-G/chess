@@ -170,7 +170,7 @@ const setupProblem: Record<string, string> = {
 };
 
 /** Reads a pasted FEN or PGN and says what is wrong with it in words, for a live check as the person types. */
-export function inspectPosition(text: string): Reading {
+export function inspectPosition(text: string, which = 0): Reading {
   const trimmed = text.trim();
   if (!trimmed) return { empty: true };
   const parsed = parseFen(trimmed);
@@ -185,7 +185,7 @@ export function inspectPosition(text: string): Reading {
       error: "The board part of that FEN does not have eight ranks of eight squares, or it has an unknown piece.",
     };
   }
-  const game = parsePgn(trimmed)[0];
+  const game = parsePgn(trimmed)[which] ?? parsePgn(trimmed)[0];
   if (!game) return { error: "Paste a FEN, or a PGN with moves." };
   const start = startingPosition(game.headers);
   if (start.isErr) return { error: "The FEN in that PGN's header is not a legal position." };
@@ -208,4 +208,25 @@ export function inspectPosition(text: string): Reading {
     return { error: note ?? "No moves found. Paste a FEN, or a PGN with moves." };
   }
   return { line: { fen: fen === INITIAL_FEN ? "startpos" : fen, moves }, kind: "pgn", note };
+}
+
+/** One game of a PGN file, as a list shows it. */
+export interface PgnGame {
+  label: string;
+  result: string;
+  moves: number;
+}
+
+/** The games of a PGN with more than one, so the person can choose; empty for a FEN or a single game. */
+export function listGames(text: string): PgnGame[] {
+  const trimmed = text.trim();
+  if (!trimmed || isValidFen(trimmed)) return [];
+  const games = parsePgn(trimmed);
+  if (games.length < 2) return [];
+  return games.map((g, i) => {
+    const white = g.headers.get("White") ?? "?";
+    const black = g.headers.get("Black") ?? "?";
+    const moves = [...g.moves.mainline()].length;
+    return { label: i + 1 + ". " + white + " – " + black, result: g.headers.get("Result") ?? "*", moves };
+  });
 }

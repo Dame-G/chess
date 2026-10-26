@@ -57,6 +57,8 @@ export function useMatch(id: Ref<number>) {
   const failed = ref(false);
   const clock = shallowRef<ClockModel>();
   const thinking = shallowRef<Record<Side, Thinking | undefined>>({ white: undefined, black: undefined });
+  /** Counts takebacks, which shorten the game: the board watches it to follow the line back. */
+  const takebacks = ref(0);
 
   let queue: Queued[] | undefined = [];
   let wanted = 0;
@@ -146,6 +148,9 @@ export function useMatch(id: Ref<number>) {
   useRunnerEvent("match.move", (d) => take("move", d));
   useRunnerEvent("match.info", (d) => take("info", d));
   useRunnerEvent("match.ended", (d) => take("ended", d));
+  useRunnerEvent("match.takeback", (d) => {
+    if ((d as { id?: number }).id === id.value) void load(true).then(() => takebacks.value++);
+  });
 
   watch(id, () => void load(), { immediate: true });
 
@@ -158,5 +163,5 @@ export function useMatch(id: Ref<number>) {
     wanted++;
   });
 
-  return { match, failed, clock, thinking };
+  return { match, failed, clock, thinking, takebacks };
 }

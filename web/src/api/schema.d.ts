@@ -435,11 +435,53 @@ export interface paths {
         put?: never;
         post?: never;
         /**
-         * Stops the running match, which is recorded as aborted, and returns it. 409 if it is not running. A Lichess game is
+         * Stops the running match, which is recorded as aborted, and returns it. 409 if it is not running. In a game you play
+         *     it is a resignation once each side has moved. A Lichess game is
          *     resigned instead (aborted, if it has not got going), and the answer is the game as it stands: it ends, and
          *     `match.ended` follows, once Lichess confirms.
          */
         delete: operations["stop_match"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/matches/{id}/draw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Offers the engine a draw, on your turn. It accepts once twenty plies are played and its own last score is no more
+         *     than +0.10; the game then ends as a draw by agreement. Otherwise it declines and the game goes on.
+         */
+        post: operations["offer_draw"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/matches/{id}/moves": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Plays your move in a match where you hold a seat (`"human"`). Your clock is charged like an engine's, from the start
+         *     of your turn to the arrival of the move. The answer is the match with the move on the board. 400 when the move is
+         *     not legal or the match has no human player, 409 when it is not your turn or the match is over.
+         */
+        post: operations["play_move"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -456,6 +498,27 @@ export interface paths {
         get: operations["get_match_pgn"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/matches/{id}/takeback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Takes back your last move and the engine's reply to it, on your turn, in a game without a clock. A `match.takeback`
+         *     event carries the number of plies left. 409 in a timed game, when there is nothing to take back or it is not your
+         *     turn.
+         */
+        post: operations["takeback_move"];
         delete?: never;
         options?: never;
         head?: never;
@@ -658,6 +721,10 @@ export interface components {
             url: string;
             username: string;
         };
+        DrawAnswer: {
+            /** @description Whether the engine took the draw. If it did, the game is over. */
+            accepted: boolean;
+        };
         /** @description Elo and normalized Elo with 95% intervals (`±`), from game pairs. */
         Estimate: {
             /** Format: double */
@@ -737,6 +804,11 @@ export interface components {
             termination: string;
             white: string;
         };
+        /**
+         * @description The string `"human"`: the seat a person takes.
+         * @enum {string}
+         */
+        HumanSeat: "human";
         /** @description One `info` line with a principal variation. */
         Info: {
             /** Format: int32 */
@@ -915,11 +987,8 @@ export interface components {
         };
         MatchRequest: {
             adjudicate?: boolean | null;
-            /**
-             * Format: int64
-             * @description The build that plays Black, by id.
-             */
-            black: number;
+            /** @description Who plays Black: a build id, or `"human"` for you. At least one side must be a build. */
+            black: components["schemas"]["Seat"];
             /**
              * Format: int32
              * @description Hash table size in MiB for each engine. Default 16, as in the tests.
@@ -939,11 +1008,8 @@ export interface components {
              */
             threads?: number | null;
             time: components["schemas"]["MatchTime"];
-            /**
-             * Format: int64
-             * @description The build that plays White, by id.
-             */
-            white: number;
+            /** @description Who plays White: a build id, or `"human"` for you. */
+            white: components["schemas"]["Seat"];
         };
         /** @description One match between the dev and base builds. */
         MatchSpec: {
@@ -995,6 +1061,10 @@ export interface components {
             ms: number;
             /** @enum {string} */
             type: "movetime";
+        };
+        MoveRequest: {
+            /** @description The move in UCI notation, such as `e2e4` or `e7e8q`. */
+            uci: string;
         };
         NewBatch: {
             experiments: components["schemas"]["NewExperiment"][];
@@ -1052,6 +1122,8 @@ export interface components {
             build?: number | null;
             /** @description The first seven characters of its commit; empty for a Lichess opponent. */
             commit: string;
+            /** @description A person moving on the board rather than an engine; `name` is then "You". */
+            human?: boolean;
             /** @description The Lichess username the player played under, ours included. */
             lichess?: string | null;
             /** @description The ref the build was made from, such as `main`; for a Lichess opponent, its username. */
@@ -1122,6 +1194,8 @@ export interface components {
              */
             mate: number;
         };
+        /** @description Who plays a side of a match you start. */
+        Seat: number | components["schemas"]["HumanSeat"];
         /** @description The challenge the bot has sent and is waiting on. */
         SeekChallenge: {
             clock: components["schemas"]["SeekClock"];
@@ -2214,6 +2288,88 @@ export interface operations {
             };
         };
     };
+    offer_draw: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrawAnswer"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    play_move: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Match"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_match_pgn: {
         parameters: {
             query?: never;
@@ -2234,6 +2390,45 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    takeback_move: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Match"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

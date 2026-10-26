@@ -1,0 +1,63 @@
+{
+  "id": 4,
+  "white": {
+    "name": "You",
+    "commit": "",
+    "human": true
+  },
+  "black": {
+    "build": 2,
+    "name": "main",
+    "commit": "69aea90"
+  },
+  "time": {
+    "type": "clock",
+    "seconds": 300,
+    "increment": 3
+  },
+  "start_fen": "startpos",
+  "book": false,
+  "hash": 16,
+  "threads": 1,
+  "adjudicate": false,
+  "minimal": false,
+  "moves": [
+    {
+      "ply": 1,
+      "side": "white",
+      "uci": "e2e4",
+      "san": "e4",
+      "fen_after": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+      "clock_white_ms": 302000,
+      "clock_black_ms": 300000,
+      "eval": null,
+      "depth": null,
+      "nodes": null,
+      "time_ms": 900
+    },
+    {
+      "ply": 2,
+      "side": "black",
+      "uci": "e7e5",
+      "san": "e5",
+      "fen_after": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+      "clock_white_ms": 302000,
+      "clock_black_ms": 302950,
+      "eval": {
+        "cp": 20
+      },
+      "depth": 10,
+      "nodes": 1000,
+      "time_ms": 50
+    }
+  ],
+  "created_at": "2026-10-25T10:00:00Z",
+  "finished_at": "2026-10-25T10:05:00Z",
+  "lichess": null,
+  "turn": "white",
+  "clock_white_ms": 302000,
+  "clock_black_ms": 302950,
+  "status": "finished",
+  "result": "0-1",
+  "reason": "time"
+}

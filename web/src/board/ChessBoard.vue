@@ -16,6 +16,8 @@ const props = defineProps<{
   movable?: boolean;
   /** Arrows, such as the engine's best moves. */
   shapes?: DrawShape[];
+  /** The side that may premove while the other is to move: a move set down early is played the moment it is legal. */
+  premove?: Color;
   /** A board to look at only, such as a preview: no moves, no animation. */
   still?: boolean;
 }>();
@@ -65,6 +67,7 @@ function motion(next: Position) {
 function config(animation?: { enabled: boolean; duration?: number }) {
   const p = props.position;
   const live = props.movable && !props.still;
+  const mine = live ? props.premove : undefined;
   return {
     fen: p.fen,
     turnColor: p.turn,
@@ -75,10 +78,11 @@ function config(animation?: { enabled: boolean; duration?: number }) {
     ...(animation ? { animation } : {}),
     movable: {
       free: false,
-      color: live ? p.turn : undefined,
-      dests: live ? p.dests : new Map(),
+      color: live ? (mine ?? p.turn) : undefined,
+      dests: live && (!mine || mine === p.turn) ? p.dests : new Map(),
       showDests: true,
     },
+    premovable: { enabled: !!mine, showDests: true },
     drawable: { autoShapes: props.shapes ?? [] },
   } as const;
 }
@@ -104,7 +108,6 @@ onMounted(() => {
         engineBlack: { key: "eb", color: "#d9822b", opacity: 0.85, lineWidth: 10 },
       },
     },
-    premovable: { enabled: false },
     movable: {
       ...c.movable,
       events: { after: (from: Key, to: Key) => emit("move", boardMove(props.position, from, to)) },
@@ -116,10 +119,14 @@ onMounted(() => {
 
 watch(
   () => props.position,
-  (p) => cg?.set(config(motion(p))),
+  (p) => {
+    cg?.set(config(motion(p)));
+    // A premove waiting for this turn is played now, if it is still legal.
+    if (props.premove && props.premove === p.turn) cg?.playPremove();
+  },
 );
 watch(
-  () => [props.orientation, props.movable, props.still],
+  () => [props.orientation, props.movable, props.still, props.premove],
   () => cg?.set(config({ enabled: false })),
 );
 watch(
@@ -128,6 +135,14 @@ watch(
 );
 
 onBeforeUnmount(() => cg?.destroy());
+
+defineExpose({
+  /** Puts the pieces back where the position says, such as after a move the runner refused. */
+  reset: () => {
+    cg?.cancelPremove();
+    cg?.set(config({ enabled: false }));
+  },
+});
 </script>
 
 <template>

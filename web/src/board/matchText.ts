@@ -94,3 +94,37 @@ export function clockAt(m: Match, ply: number, side: Side): number | null {
   }
   return start;
 }
+
+/** The side a person plays in a game against a build, if one does. */
+export function youSide(m: Pick<Match, "white" | "black">): Side | undefined {
+  return m.white.human ? "white" : m.black.human ? "black" : undefined;
+}
+
+/** How a game you played came out, in the second person: "You won on time", "You resigned", "Draw agreed". */
+export function youOutcome(m: Ended & Pick<Match, "white" | "black">): string {
+  const me = youSide(m);
+  const won = (m.result === "1-0" && me === "white") || (m.result === "0-1" && me === "black");
+  if (m.status === "aborted" || m.reason === "aborted")
+    return m.status === "running" ? "In progress" : "Game cancelled";
+  switch (m.reason) {
+    case "resigned":
+      return won ? "Your opponent resigned" : "You resigned";
+    case "checkmate":
+      return won ? "You won by checkmate" : "You were checkmated";
+    case "time":
+      return won ? "You won on time" : "You lost on time";
+    case "crash":
+    case "illegal_move":
+      return won ? "You won, the engine stopped" : "You lost, the engine stopped";
+    default:
+      return outcomeText(m);
+  }
+}
+
+/** A game list row's result for a game you played: `Won`, `Lost`, `Draw`. */
+export function youResult(m: Pick<MatchSummary, "result" | "white" | "black">): string {
+  const me = youSide(m);
+  if (m.result === "1/2-1/2") return "Draw";
+  if (m.result === "*") return "·";
+  return (m.result === "1-0") === (me === "white") ? "Won" : "Lost";
+}
