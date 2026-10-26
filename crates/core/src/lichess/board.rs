@@ -5,7 +5,12 @@
 //! So a seek must be at least 8 minutes estimated, a challenge at least 3, and a challenge's clock is 0, 15, 30, 45 or
 //! 90 seconds or whole minutes up to 180, with an increment of at most 180 seconds (60 against the AI).
 
-use crate::{error::Error, time::Speed};
+use crate::{
+    error::Error,
+    game::{Offers, SeatAction},
+    ids::Side,
+    time::Speed,
+};
 
 /// The longest increment of a challenge, in seconds.
 pub const MAX_INCREMENT: u32 = 180;
@@ -92,6 +97,34 @@ pub fn check_ai(level: u8, rated: bool) -> Result<(), Error> {
     Ok(())
 }
 
+/// What you may do in your game on Lichess, by its rules: move on your turn; abort until both sides have moved and
+/// resign after; offer a draw or ask for a takeback (either turn, from the second ply, one at a time) and answer the
+/// opponent's; claim the game or a draw once the opponent has been gone long enough (`can_claim`).
+pub fn actions(you: Side, turn: Side, plies: u32, offers: Offers, can_claim: bool) -> Vec<SeatAction> {
+    let mut actions = Vec::new();
+    if turn == you {
+        actions.push(SeatAction::Move);
+    }
+    let them = you.other();
+    if plies >= 2 {
+        match offers.draw {
+            Some(s) if s == them => actions.extend([SeatAction::AcceptDraw, SeatAction::DeclineDraw]),
+            Some(_) => {}
+            None => actions.push(SeatAction::OfferDraw),
+        }
+        match offers.takeback {
+            Some(s) if s == them => actions.extend([SeatAction::AcceptTakeback, SeatAction::DeclineTakeback]),
+            Some(_) => {}
+            None => actions.push(SeatAction::Takeback),
+        }
+    }
+    actions.push(if plies < 2 { SeatAction::Abort } else { SeatAction::Resign });
+    if can_claim {
+        actions.extend([SeatAction::ClaimVictory, SeatAction::ClaimDraw]);
+    }
+    actions
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,6 +151,33 @@ mod tests {
         assert_eq!(rating_range(Some("")).unwrap(), None);
         assert!(rating_range(Some("1800-1500")).is_err());
         assert!(rating_range(Some("high")).is_err());
+    }
+
+    #[test]
+    fn your_actions_follow_lichess() {
+        let none = Offers::default();
+        assert_eq!(actions(Side::White, Side::White, 0, none, false), [SeatAction::Move, SeatAction::Abort]);
+        assert_eq!(actions(Side::Black, Side::White, 1, none, false), [SeatAction::Abort]);
+        let a = actions(Side::White, Side::Black, 10, Offers { draw: Some(Side::Black), takeback: None }, true);
+        assert_eq!(
+            a,
+            [
+                SeatAction::AcceptDraw,
+                SeatAction::DeclineDraw,
+                SeatAction::Takeback,
+                SeatAction::Resign,
+                SeatAction::ClaimVictory,
+                SeatAction::ClaimDraw
+            ]
+        );
+        let mine = actions(
+            Side::White,
+            Side::White,
+            10,
+            Offers { draw: Some(Side::White), takeback: Some(Side::White) },
+            false,
+        );
+        assert_eq!(mine, [SeatAction::Move, SeatAction::Resign]);
     }
 
     #[test]
