@@ -60,8 +60,9 @@ crates/                                                    ▼
 Dependencies only point down this list's layers:
 
 - `core` depends on nothing of ours and does no I/O (no tokio, no filesystem, no network). Everything in it is unit tested.
-- `engine` and `lichess` are **adapters**: they know their outside world (UCI, git, cargo, fastchess; Lichess's HTTP API) and depend on `core` for shared vocabulary only (scores, sides, clocks, UCI moves). They never touch the store or the bus.
+- `engine` and `lichess` are **adapters**: they know their outside world (UCI, git, cargo, fastchess; Lichess's HTTP API) and keep their own wire types (a UCI `info` line, a Lichess game JSON). They do not depend on `core`, the store or the bus; `play`, `analysis` and `work` map their types to `core`'s.
 - `hub` and `store` depend on `core`.
+- Lichess's business rules (which challenges the bot takes, how it seeks, the daily bot limit, the Board API's speed rules) are domain logic: their pure parts live in `core::lichess`, their running parts in `play`.
 - `play`, `analysis`, `work` depend on `core`, `hub`, `store`, and the adapters they use.
 - `server` depends on everything and holds no domain logic: routes translate HTTP to service calls.
 
