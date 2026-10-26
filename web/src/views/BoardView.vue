@@ -323,7 +323,8 @@ watch(
   () => builds.value.data,
   (list) => {
     if (!list?.length) return;
-    if (!list.some((b) => String(b.id) === build.value)) build.value = String(defaultBuild(list)!.id);
+    if (!list.some((b) => String(b.id) === build.value && !b.deleted_at))
+      build.value = String(defaultBuild(list)?.id ?? "");
   },
   { immediate: true },
 );
@@ -332,13 +333,15 @@ watch(build, (b, before) => {
   if (before && b !== before && builds.value.data) void router.replace({ query: { ...route.query, build: b } });
 });
 const buildOptions = computed(() =>
-  (builds.value.data ?? []).map((b) => ({
-    value: String(b.id),
-    label: `${b.ref} · ${b.commit.slice(0, 7)}`,
-    description: b.subject,
-  })),
+  (builds.value.data ?? [])
+    .filter((b) => !b.deleted_at)
+    .map((b) => ({
+      value: String(b.id),
+      label: `${b.ref} · ${b.commit.slice(0, 7)}`,
+      description: b.subject,
+    })),
 );
-const noBuilds = computed(() => builds.value.status === "success" && builds.value.data.length === 0);
+const noBuilds = computed(() => builds.value.status === "success" && builds.value.data.every((b) => !!b.deleted_at));
 
 // Free analysis keeps the engine on; a game opens with it off, so stepping through costs nothing until it is wanted.
 const freeEngine = stored("board.engine", true);
@@ -1374,7 +1377,7 @@ const filters = [
               <EEmptyState v-if="noBuilds" title="No engine built yet" icon="info" size="sm" bare>
                 Build Reckless once and it analyses here.
                 <template #action>
-                  <EButton size="sm" @click="router.push('/engines')">Build an engine</EButton>
+                  <EButton size="sm" @click="router.push('/versions')">Build a version</EButton>
                 </template>
               </EEmptyState>
 

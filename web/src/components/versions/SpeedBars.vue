@@ -1,24 +1,22 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { Build } from "../../api/queries";
 import { speed } from "../../format";
 
 const props = defineProps<{
-  builds: readonly Build[];
-  /** The build the page is about: drawn in the brand colour, the others in grey. */
-  selected: number;
+  /** One bar each: a version and the speed of its newest build. */
+  bars: readonly { name: string; nps: number }[];
+  /** The version the page is about: drawn in the brand colour, the others in grey. */
+  selected: string;
 }>();
 
-const shown = computed(() => props.builds.slice(0, 8));
+const shown = computed(() => props.bars.slice(0, 8));
 const fastest = computed(() => Math.max(...shown.value.map((b) => b.nps), 1));
 </script>
 
 <template>
-  <ul class="bars" aria-label="Search speed of each build">
-    <li v-for="b in shown" :key="b.id" :class="['bar', { 'bar--on': b.id === selected }]">
-      <span class="bar-name" :title="`${b.ref} #${b.id}`"
-        >{{ b.ref }} <span class="bar-id">#{{ b.id }}</span></span
-      >
+  <ul class="bars" aria-label="Search speed of each version">
+    <li v-for="b in shown" :key="b.name" :class="['bar', { 'bar--on': b.name === selected }]">
+      <span class="bar-name" :title="b.name">{{ b.name }}</span>
       <span class="bar-track" aria-hidden="true"
         ><span :style="{ inlineSize: `${(b.nps / fastest) * 100}%` }"></span
       ></span>
@@ -70,10 +68,6 @@ const fastest = computed(() => Math.max(...shown.value.map((b) => b.nps), 1));
   font-family: var(--e-font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.bar-id {
-  color: var(--e-muted);
 }
 
 .bar-track {

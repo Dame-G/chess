@@ -4,19 +4,20 @@
  * beside the board, so a game is a choice or two away, from the start position or from the board as it stands.
  */
 import { computed, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { PhArrowsLeftRight, PhPlay } from "@phosphor-icons/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
-import { ESelect } from "@eos-ui/vue/components/ESelect";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { api } from "../api/runner";
-import { defaultBuild, unwrap, useBuilds, useMatches } from "../api/queries";
+import { unwrap, useJobs, useMatches, useVersions, type Branch } from "../api/queries";
 import type { components } from "../api/schema";
 import { stored } from "../stored";
+import BranchPicker from "../components/BranchPicker.vue";
+import { sortVersions } from "../components/versions/versions";
 
 type MatchRequest = components["schemas"]["MatchRequest"];
 
@@ -28,31 +29,55 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
-const { state: builds } = useBuilds();
+const route = useRoute();
+const { state: versions } = useVersions();
+const { state: jobs } = useJobs();
 const { state: recent } = useMatches();
 const running = computed(() => recent.value.data?.find((m) => m.status === "running" && !m.lichess));
 
-const options = computed(() =>
-  (builds.value.data ?? []).map((b) => ({
-    value: String(b.id),
-    label: `${b.ref} · ${b.commit.slice(0, 7)}`,
-    description: b.subject,
-  })),
+// The versions: newest main first; for two engines the second is the newest other version that has a build.
+// The Versions page opens this with `white`, `black` or `opponent` naming branches.
+const asked = (key: string) => (typeof route.query[key] === "string" ? (route.query[key] as string) : "");
+const opponent = ref(asked("opponent") || "main");
+const white = ref(asked("white") || "main");
+const black = ref(asked("black"));
+if (asked("opponent") || asked("white") || asked("black")) {
+  const rest = { ...route.query };
+  delete rest.opponent;
+  delete rest.white;
+  delete rest.black;
+  void router.replace({ query: rest });
+}
+watch(
+  () => versions.value.data,
+  (list) => {
+    if (black.value || !list) return;
+    const other = sortVersions(list).find((v) => !v.is_main && !v.upstream && !v.hidden && v.latest_build_id != null);
+    black.value = other?.name ?? "main";
+  },
+  { immediate: true },
 );
 
-// The builds: newest main first; for two engines the second is the newest build of another ref.
-const opponent = ref("");
-const white = ref("");
-const black = ref("");
-function pick() {
-  const list = builds.value.data ?? [];
-  const first = defaultBuild(list);
-  if (!opponent.value || !list.some((b) => String(b.id) === opponent.value)) opponent.value = String(first?.id ?? "");
-  if (!white.value || !list.some((b) => String(b.id) === white.value)) white.value = String(first?.id ?? "");
-  if (!black.value || !list.some((b) => String(b.id) === black.value))
-    black.value = String((list.find((b) => b.id !== first?.id && b.ref !== first?.ref) ?? first)?.id ?? "");
+/** The build that plays for a version: its newest. */
+const buildOf = (name: string) => versions.value.data?.find((v) => v.name === name)?.latest_build_id ?? undefined;
+const note = (branch: Branch) => (buildOf(branch.name) == null ? "not built" : undefined);
+const chosen = computed(() => (props.mode === "play" ? [opponent.value] : [white.value, black.value]));
+/** The chosen versions that have no build to play with. */
+const unbuilt = computed(() =>
+  versions.value.status === "success" ? [...new Set(chosen.value.filter((n) => n && buildOf(n) == null))] : [],
+);
+const building = (name: string) =>
+  !!jobs.value.data?.some(
+    (j) => j.spec.kind === "build" && j.spec.ref === name && (j.status === "queued" || j.status === "running"),
+  );
+async function build(name: string) {
+  error.value = "";
+  try {
+    await unwrap(api.POST("/api/builds", { body: { ref: name } }));
+  } catch (e) {
+    error.value = (e as Error).message;
+  }
 }
-watch(() => builds.value.data, pick, { immediate: true });
 
 // You against a build.
 const colour = stored("play.colour", "random");
@@ -120,8 +145,8 @@ const busy = ref(false);
 const error = ref("");
 const valid = computed(() =>
   props.mode === "play"
-    ? !!opponent.value
-    : !!white.value && !!black.value && paceSeconds.value > 0 && paceIncrement.value >= 0,
+    ? buildOf(opponent.value) != null
+    : buildOf(white.value) != null && buildOf(black.value) != null && paceSeconds.value > 0 && paceIncrement.value >= 0,
 );
 
 function opening(here: boolean): MatchRequest["opening"] {
@@ -136,8 +161,8 @@ async function begin() {
     let body: MatchRequest;
     if (props.mode === "play") {
       const mine = colour.value === "random" ? (Math.random() < 0.5 ? "white" : "black") : colour.value;
-      const build = Number(opponent.value);
-      const [w, b] = mine === "white" ? (["human", build] as const) : ([build, "human"] as const);
+      const opposing = buildOf(opponent.value)!;
+      const [w, b] = mine === "white" ? (["human", opposing] as const) : ([opposing, "human"] as const);
       const [seconds, increment] = clock.value.split("+").map(Number) as [number, number];
       body = {
         white: w,
@@ -149,8 +174,8 @@ async function begin() {
       };
     } else {
       body = {
-        white: Number(white.value),
-        black: Number(black.value),
+        white: buildOf(white.value)!,
+        black: buildOf(black.value)!,
         time: { type: "clock", seconds: paceSeconds.value, increment: paceIncrement.value },
         opening: start.value === "book" ? { type: "book" } : opening(start.value === "position"),
       };
@@ -178,13 +203,13 @@ function swap() {
       :role="false"
     >
       Only one game runs at a time.
-      <template #action>
+      <template #actions>
         <EButton size="sm" variant="outline" @click="router.push(`/matches/${running.id}`)">Go to it</EButton>
       </template>
     </ENotice>
 
     <template v-if="mode === 'play'">
-      <ESelect v-model="opponent" label="Play against" size="sm" :options="options" />
+      <BranchPicker v-model="opponent" label="Play against" size="sm" :note="note" />
       <ESegmented v-model="colour" label="You play" size="sm" :options="colours" />
       <ESegmented v-model="clock" label="Clock (minutes + seconds)" size="sm" :options="clocks" :disabled="casual" />
       <ESwitch v-model="casual" label="No clock" />
@@ -201,9 +226,9 @@ function swap() {
 
     <template v-else>
       <div class="engines">
-        <ESelect v-model="white" label="White" size="sm" :options="options" />
+        <BranchPicker v-model="white" label="White" size="sm" :note="note" />
         <EIconButton :icon="PhArrowsLeftRight" label="Swap colours" tooltip size="sm" class="swap" @click="swap" />
-        <ESelect v-model="black" label="Black" size="sm" :options="options" />
+        <BranchPicker v-model="black" label="Black" size="sm" :note="note" />
       </div>
       <ESegmented
         v-model="pace"
@@ -219,6 +244,12 @@ function swap() {
       <ESegmented v-model="start" label="Opening" size="sm" :options="startOptions" :hint="startHint" />
     </template>
 
+    <ENotice v-for="name in unbuilt" :key="name" tone="warning" :title="`${name} has no build yet`" :role="false">
+      A version has to be built before it can play.
+      <template #actions>
+        <EButton size="sm" variant="outline" :loading="building(name)" @click="build(name)">Build it</EButton>
+      </template>
+    </ENotice>
     <ENotice v-if="error" tone="danger" title="The game did not start" :role="false">{{ error }}</ENotice>
     <EButton type="submit" block :icon="PhPlay" :disabled="!valid" :loading="busy">
       {{ mode === "play" ? "Play" : "Start match" }}

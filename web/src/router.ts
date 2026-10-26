@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 
 const board = () => import("./views/BoardView.vue");
 const improve = () => import("./views/ImproveView.vue");
-const engines = () => import("./views/EnginesView.vue");
+const versions = () => import("./views/VersionsView.vue");
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -29,9 +29,9 @@ export const router = createRouter({
       meta: { title: "Improve", workspace: true },
     },
 
-    // Versions: the engine builds. (Still the engines page, for now.)
-    { path: "/versions", name: "engines", component: engines, meta: { title: "Versions", workspace: true } },
-    { path: "/versions/:id", name: "engine", component: engines, meta: { title: "Versions", workspace: true } },
+    // Versions: the engine's branches, with their builds. A name with a slash is one encoded segment.
+    { path: "/versions", name: "versions", component: versions, meta: { title: "Versions", workspace: true } },
+    { path: "/versions/:name", name: "version", component: versions, meta: { title: "Versions", workspace: true } },
 
     // The Lichess bot: its games, rules and challenges.
     {

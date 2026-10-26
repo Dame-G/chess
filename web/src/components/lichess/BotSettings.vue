@@ -5,16 +5,15 @@ import { ECheckboxGroup } from "@eos-ui/vue/components/ECheckboxGroup";
 import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
-import { ESelect } from "@eos-ui/vue/components/ESelect";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { api } from "../../api/runner";
-import { unwrap, useBuilds } from "../../api/queries";
+import { unwrap } from "../../api/queries";
+import BranchPicker from "../BranchPicker.vue";
 import type { LichessSettings, LichessStatus, Speed } from "../../lichess";
 
 const props = defineProps<{ settings: LichessSettings }>();
 
 const cache = useQueryCache();
-const { state: builds } = useBuilds();
 
 const clone = (s: LichessSettings): LichessSettings => JSON.parse(JSON.stringify(s)) as LichessSettings;
 const draft = ref(clone(props.settings));
@@ -23,26 +22,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 const note = ref<"" | "saving" | "saved">("");
 const error = ref("");
 
-// ---- Which build plays: a ref ("main", always its newest build) or one build.
-const buildOptions = computed(() => {
-  const list = builds.value.data ?? [];
-  const refs = [...new Set(list.map((b) => b.ref))].map((r) => ({
-    value: r,
-    label: r,
-    description: "Always the newest build",
-  }));
-  const one = list.slice(0, 20).map((b) => ({
-    value: String(b.id),
-    label: `${b.ref} #${b.id}`,
-    description: `${b.commit.slice(0, 7)} · ${b.subject}`,
-  }));
-  const all = [...refs, ...one];
-  const chosen = draft.value.build;
-  // A ref that is not built yet still shows as the choice.
-  return chosen && !all.some((o) => o.value === chosen)
-    ? [{ value: chosen, label: chosen, description: "Not built yet" }, ...all]
-    : all;
-});
+// ---- Which version plays: a branch, always its newest build. A build number or tag saved earlier stays as typed.
 const build = computed({
   get: () => draft.value.build ?? "",
   set: (v: string) => (draft.value.build = v || null),
@@ -160,13 +140,15 @@ onBeforeUnmount(() => {
         Plays
         <span v-if="note" class="saved" role="status">{{ note === "saving" ? "Saving…" : "Saved" }}</span>
       </h3>
-      <ESelect
+      <BranchPicker
         v-model="build"
         label="Engine"
         size="sm"
-        placeholder="Choose a build"
-        :options="buildOptions"
-        :hint="draft.build ? undefined : 'Until one is chosen, every challenge is declined.'"
+        placeholder="Choose a version"
+        allow-ref
+        :hint="
+          draft.build ? 'Always the newest build of the version.' : 'Until one is chosen, every challenge is declined.'
+        "
       />
     </section>
 

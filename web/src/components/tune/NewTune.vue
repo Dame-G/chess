@@ -23,6 +23,7 @@ import { controls, gamesIn } from "./tune";
 type NewTune = components["schemas"]["NewTune"];
 type ParamInput = components["schemas"]["ParamInput"];
 
+const props = defineProps<{ branch?: string }>();
 const emit = defineEmits<{ done: [] }>();
 /** The form for tuning a branch. The dialog around it owns the buttons. */
 const busy = defineModel<boolean>("busy", { default: false });
@@ -32,7 +33,13 @@ const { state: builds } = useBuilds();
 const { state: status } = useStatus();
 
 const DEFAULT_REF = "spsa/tunables";
-const ref_ = ref(DEFAULT_REF);
+const ref_ = ref(props.branch || DEFAULT_REF);
+watch(
+  () => props.branch,
+  (b) => {
+    if (b) ref_.value = b;
+  },
+);
 const name = ref("");
 const iterations = ref<number | null>(1000);
 const pairs = ref<number | null>(8);

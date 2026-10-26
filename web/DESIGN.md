@@ -38,10 +38,10 @@ Selection lives in the URL (`/lab/3`, `/engines/2`, `/games/7/12`), so every vie
   - **Library:** tunes, the live one first, with its iteration progress; "New tune" is the one filled button (`?new=1` opens it).
   - **Stage:** a sentence on where the tune stands, a trajectory chart (every parameter as a share of its own range; point at a line to read its real value, pick one in the table to highlight it) and the parameter table. Actions in the bar: Stop (confirmed), Resume, Apply (a dialog: branch, experiment, LTC, push; the result links to the lab).
   - **Inspector:** the tune's settings and its recent iterations.
-- **Engines `/engines`, `/engines/:id`**:
-  - **Library:** builds, plus the build form.
-  - **Stage:** the chosen build: fingerprint check, speed compared with the others, network, compile log, "Analyse with it".
-  - `?build=1` focuses the build form.
+- **Versions `/versions`, `/versions/:name`** (a name with a slash is one encoded segment; an old build number redirects to its branch):
+  - **Library:** one row per version, `main` first as the reference, with its verdict against main, tune badge and a Lichess mark. Hidden and upstream versions sit behind one toggle. The header menu frees disk space (a dry run first).
+  - **Stage:** the version's verdict and quick actions (Test it, Tune it, Watch it play, Play it, Put it on Lichess, Build now), then its builds as a detail with per-build Delete. The menu hides or deletes the branch (typed confirmation).
+  - **Inspector:** speed of each version's newest build, and what the fingerprint means.
 
 ## Look
 

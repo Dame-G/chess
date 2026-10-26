@@ -12,7 +12,6 @@ import {
   PhCpu,
   PhFlask,
   PhGraph,
-  PhHammer,
   PhKeyboard,
   PhMoon,
   PhMagnifyingGlass,
@@ -33,7 +32,7 @@ import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENavList } from "@eos-ui/vue/components/ENavList";
 import { EToastProvider } from "@eos-ui/vue/components/EToastProvider";
 import { dispatch, followEvents } from "./api/events";
-import { applyTuneEvent, useBuilds, useExperiments, useTunes } from "./api/queries";
+import { applyTuneEvent, useExperiments, useTunes, useVersions, versionPath } from "./api/queries";
 import { useActivity } from "./activity";
 import { ago, verdict } from "./format";
 import { statusWord } from "./components/tune/tune";
@@ -91,17 +90,14 @@ watch(
 
 // ---- Titles: the place, then what is open in it.
 const { state: experiments } = useExperiments();
-const { state: builds } = useBuilds();
+const { state: versions } = useVersions();
 const { state: tunes } = useTunes();
 watchEffect(() => {
   const id = Number(route.params.id);
   let what = route.meta.title;
   if (route.name === "improve-test") what = experiments.value.data?.find((e) => e.id === id)?.name ?? what;
   if (route.name === "improve-tune") what = tunes.value.data?.find((t) => t.id === id)?.name ?? what;
-  if (route.name === "engine") {
-    const b = builds.value.data?.find((x) => x.id === id);
-    what = b ? `${b.ref} #${b.id} · Versions` : what;
-  }
+  if (route.name === "version" && route.params.name) what = `${String(route.params.name)} · Versions`;
   document.title = what ? `${what} · Dameless` : "Dameless";
 });
 
@@ -110,7 +106,7 @@ const recent = stored<string[]>("recent", []);
 watch(
   () => route.path,
   (path) => {
-    if (!/^\/(improve\/(experiments|tunes)|versions)\/\d+$/.test(path)) return;
+    if (!/^\/(improve\/(experiments|tunes)\/\d+|versions\/[^/]+)$/.test(path)) return;
     recent.value = [path, ...recent.value.filter((p) => p !== path)].slice(0, 4);
   },
   { immediate: true },
@@ -121,12 +117,13 @@ const touch = matchMedia("(hover: none) and (pointer: coarse)").matches;
 
 const commands = computed<CommandItem[]>(() => {
   const exps = experiments.value.data ?? [];
-  const blds = builds.value.data ?? [];
+  const vers = versions.value.data ?? [];
   const tns = tunes.value.data ?? [];
   const seen = new Set<string>();
   const recents: CommandItem[] = [];
   for (const path of recent.value) {
-    const id = Number(path.split("/").at(-1));
+    const last = path.split("/").at(-1)!;
+    const id = Number(last);
     if (path.startsWith("/improve/experiments/")) {
       const e = exps.find((x) => x.id === id);
       if (e)
@@ -150,15 +147,15 @@ const commands = computed<CommandItem[]>(() => {
           keywords: [t.ref, "tune", "spsa"],
         });
     } else {
-      const b = blds.find((x) => x.id === id);
-      if (b)
+      const v = vers.find((x) => x.name === decodeURIComponent(last));
+      if (v)
         recents.push({
           id: `go:${path}`,
-          label: `${b.ref} #${b.id}`,
-          description: `Version · ${b.commit.slice(0, 7)} · ${ago(b.created_at)}`,
+          label: v.name,
+          description: `Version · ${v.subject}`,
           group: "Recent",
           icon: PhClockCounterClockwise,
-          keywords: [b.commit, "engine", "build", "version"],
+          keywords: [v.sha, "branch", "build", "version"],
         });
     }
   }
@@ -173,7 +170,13 @@ const commands = computed<CommandItem[]>(() => {
       icon: PhFlask,
       keywords: ["lab", "experiments", "tests", "tune", "spsa"],
     },
-    { id: "go:/versions", label: "Open Versions", group: "Go to", icon: PhWrench, keywords: ["engines", "builds"] },
+    {
+      id: "go:/versions",
+      label: "Open Versions",
+      group: "Go to",
+      icon: PhWrench,
+      keywords: ["engines", "builds", "branches"],
+    },
     { id: "go:/lichess", label: "Open Lichess", group: "Go to", icon: PhCrown, keywords: ["bot", "online", "play"] },
     {
       id: "go:/improve?new=test",
@@ -203,13 +206,6 @@ const commands = computed<CommandItem[]>(() => {
       group: "Do",
       icon: PhSword,
       keywords: ["engine", "play", "versus", "live"],
-    },
-    {
-      id: "go:/versions?build=1",
-      label: "Build a version",
-      group: "Do",
-      icon: PhHammer,
-      keywords: ["branch", "commit"],
     },
     {
       id: "go:/lichess?challenge=1",
@@ -258,15 +254,15 @@ const commands = computed<CommandItem[]>(() => {
         group: "Tunes",
         keywords: [t.ref, "spsa"],
       })),
-    ...blds
+    ...vers
+      .filter((v) => !v.hidden && !seen.has(`go:${versionPath(v.name)}`))
       .slice(0, 20)
-      .filter((b) => !seen.has(`go:/versions/${b.id}`))
-      .map((b) => ({
-        id: `go:/versions/${b.id}`,
-        label: `${b.ref} #${b.id}`,
-        description: `Version · ${b.commit.slice(0, 7)} · ${ago(b.created_at)}`,
+      .map((v) => ({
+        id: `go:${versionPath(v.name)}`,
+        label: v.name,
+        description: `Version · ${v.subject} · ${ago(v.date)}`,
         group: "Versions",
-        keywords: [b.commit, "build"],
+        keywords: [v.sha, "branch", "build"],
       })),
   ];
 });
@@ -283,14 +279,25 @@ const stop = followEvents((event) => {
   if (event.kind === "runner.started") cache.invalidateQueries();
   if (event.kind === "job.updated") {
     cache.invalidateQueries({ key: ["jobs"] });
-    if ((event.data as { status?: string }).status === "done") cache.invalidateQueries({ key: ["builds"] });
+    const status = (event.data as { status?: string }).status;
+    if (status === "done") cache.invalidateQueries({ key: ["builds"] });
+    if (status === "done" || status === "failed") cache.invalidateQueries({ key: ["versions"] });
+  }
+  if (event.kind === "versions.changed") {
+    cache.invalidateQueries({ key: ["versions"] });
+    cache.invalidateQueries({ key: ["branches"] });
+    cache.invalidateQueries({ key: ["builds"] });
   }
   if (event.kind === "experiment.updated") {
     const { id } = event.data as { id: number };
     cache.invalidateQueries({ key: ["experiments"] });
     cache.invalidateQueries({ key: ["experiment", id] });
+    cache.invalidateQueries({ key: ["versions"] });
   }
-  if (event.kind.startsWith("tune.")) applyTuneEvent(cache, event.kind, event.data);
+  if (event.kind.startsWith("tune.")) {
+    applyTuneEvent(cache, event.kind, event.data);
+    cache.invalidateQueries({ key: ["versions"] });
+  }
   if (event.kind === "match.started" || event.kind === "match.ended") cache.invalidateQueries({ key: ["matches"] });
   if (event.kind === "test.progress") {
     const { id } = event.data as { id: number };

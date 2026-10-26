@@ -6,6 +6,8 @@ import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import NewTune from "../tune/NewTune.vue";
 import NewTest from "./NewTest.vue";
 
+/** A branch to start from, when the form is opened for one. */
+defineProps<{ branch?: string }>();
 /** The one way to start something: first what for, then the form for it. */
 const open = defineModel<boolean>("open", { default: false });
 const mode = defineModel<"test" | "tune">("mode", { default: "test" });
@@ -35,8 +37,8 @@ const about = {
           { value: 'tune', label: 'Tune numbers' },
         ]"
       />
-      <NewTest v-if="mode === 'test'" v-model:valid="valid" v-model:busy="busy" @done="open = false" />
-      <NewTune v-else v-model:valid="valid" v-model:busy="busy" @done="open = false" />
+      <NewTest v-if="mode === 'test'" v-model:valid="valid" v-model:busy="busy" :branch="branch" @done="open = false" />
+      <NewTune v-else v-model:valid="valid" v-model:busy="busy" :branch="branch" @done="open = false" />
     </div>
     <template #actions>
       <EButton type="submit" :form="mode === 'test' ? 'new-test' : 'new-tune'" :loading="busy" :disabled="!valid">

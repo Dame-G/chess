@@ -202,14 +202,20 @@ const resume = () => act(() => unwrap(api.POST("/api/tunes/{id}/resume", { param
 // ---- New: the command palette sends ?new=1 (a test), ?new=test or ?new=tune
 const creating = ref(false);
 const mode = ref<"test" | "tune">("test");
+/** A branch to start from, sent by the Versions page: ?new=test&dev=<branch> or ?new=tune&branch=<branch>. */
+const prefill = ref("");
 watch(
   () => route.query.new,
   (flag) => {
     if (!flag) return;
     mode.value = flag === "tune" ? "tune" : "test";
+    const named = flag === "tune" ? route.query.branch : route.query.dev;
+    prefill.value = typeof named === "string" ? named : "";
     creating.value = true;
     const rest = { ...route.query };
     delete rest.new;
+    delete rest.dev;
+    delete rest.branch;
     void router.replace({ path: route.path, query: rest });
   },
   { immediate: true },
@@ -366,7 +372,7 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
     </template>
   </Workspace>
 
-  <NewWork v-model:open="creating" v-model:mode="mode" />
+  <NewWork v-model:open="creating" v-model:mode="mode" :branch="prefill" />
   <ApplyTune v-if="tune" v-model:open="applying" :tune="tune" />
   <EDialog v-model:open="stoppingTune" title="Stop this tune?" size="sm">
     Its iterations so far are kept, and it can resume later.

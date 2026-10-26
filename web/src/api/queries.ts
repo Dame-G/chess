@@ -8,6 +8,8 @@ export type Job = components["schemas"]["Job"];
 /** A branch of the checkout. `hidden` is set by the runner on branches the user put away. */
 export type Branch = components["schemas"]["Branch"] & { hidden?: boolean };
 export type Build = components["schemas"]["Build"];
+export type Version = components["schemas"]["Version"];
+export type VersionBuild = components["schemas"]["VersionBuild"];
 export type Experiment = components["schemas"]["Experiment"];
 export type Test = components["schemas"]["Test"];
 
@@ -35,6 +37,12 @@ export const useBuilds = () => useQuery({ key: ["builds"], query: () => unwrap(a
 
 export const useBranches = () =>
   useQuery({ key: ["branches"], query: async () => (await unwrap(api.GET("/api/branches"))) as Branch[] });
+
+/** One entry per branch with its builds, verdict, tune and bot state. Build, test and tune events keep it current. */
+export const useVersions = () => useQuery({ key: ["versions"], query: () => unwrap(api.GET("/api/versions")) });
+
+/** The address of a version. A name with a `/` stays one path segment. */
+export const versionPath = (name: string) => `/versions/${encodeURIComponent(name)}`;
 
 export const useJobs = () =>
   useQuery({ key: ["jobs"], query: () => unwrap(api.GET("/api/jobs", { params: { query: { limit: 20 } } })) });
@@ -66,9 +74,10 @@ export const useGames = (id: MaybeRefOrGetter<number>) =>
     query: () => unwrap(api.GET("/api/tests/{id}/games", { params: { path: { id: toValue(id) } } })),
   });
 
-/** The engine to use when none is chosen: the newest build of `main`, else the newest build. */
+/** The engine to use when none is chosen: the newest build of `main`, else the newest build. A deleted build cannot play. */
 export function defaultBuild(builds: readonly Build[] | undefined): Build | undefined {
-  return builds?.find((b) => b.ref === "main") ?? builds?.[0];
+  const live = builds?.filter((b) => !b.deleted_at);
+  return live?.find((b) => b.ref === "main") ?? live?.[0];
 }
 
 /** Recent matches, newest first, without their moves. The app refreshes them as matches start and end. */

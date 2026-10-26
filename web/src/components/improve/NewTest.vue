@@ -15,6 +15,7 @@ import { kinds, stageLabel } from "../../format";
 import BranchPicker from "../BranchPicker.vue";
 import { pathOf } from "./improve";
 
+const props = defineProps<{ branch?: string }>();
 const emit = defineEmits<{ done: [] }>();
 /** The form for testing one branch against another. The dialog around it owns the buttons. */
 const valid = defineModel<boolean>("valid", { default: false });
@@ -22,7 +23,13 @@ const busy = defineModel<boolean>("busy", { default: false });
 const router = useRouter();
 const { state: branches } = useBranches();
 
-const dev = ref("");
+const dev = ref(props.branch ?? "");
+watch(
+  () => props.branch,
+  (b) => {
+    if (b) dev.value = b;
+  },
+);
 const base = ref("main");
 const kind = ref<keyof typeof kinds>("gainer");
 const name = ref("");
