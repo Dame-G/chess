@@ -132,7 +132,10 @@ pub async fn serve(config: Config) -> Result<()> {
 
     let (api, _) = api();
     let api = api.layer(middleware::from_fn_with_state(state.clone(), guard::guard));
-    let app = protect(Router::new().merge(api).fallback(web::web)).with_state(state.clone());
+    // Requests are logged at debug level (`RUST_LOG=debug`); a 500 is logged as an error.
+    let app = protect(Router::new().merge(api).fallback(web::web))
+        .layer(tower_http::trace::TraceLayer::new_for_http())
+        .with_state(state.clone());
 
     // Clients following the stream see restarts, and drop state that only lived in the old process.
     state.events.emit("runner.started", serde_json::json!({ "version": env!("CARGO_PKG_VERSION") }));

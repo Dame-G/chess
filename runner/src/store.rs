@@ -139,6 +139,11 @@ impl Store {
 
     fn init(mut conn: Connection) -> Result<Self> {
         conn.pragma_update(None, "journal_mode", "WAL")?;
+        // With WAL, NORMAL loses at most the last transactions on a power cut and never corrupts; FULL syncs on every
+        // commit, and a match is rewritten after every move.
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
+        // Another process on the file (the sqlite3 shell, a backup) makes a write wait a little instead of failing.
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         migrate(&mut conn)?;
         Ok(Self { conn: Arc::new(Mutex::new(conn)) })

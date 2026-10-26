@@ -81,7 +81,9 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Command::Serve { listen, reckless, lichess_url } => {
-            tracing_subscriber::fmt().with_target(false).init();
+            // `RUST_LOG=debug` (or warn, error, trace) changes how much is logged; info by default.
+            let level = std::env::var("RUST_LOG").ok().and_then(|l| l.parse().ok()).unwrap_or(tracing::Level::INFO);
+            tracing_subscriber::fmt().with_target(false).with_max_level(level).init();
             let config = Config::load(data, reckless, listen, lichess_url)?;
             api::serve(config).await
         }

@@ -1,14 +1,12 @@
 //! External tools and data the runner downloads once into the data directory, each pinned to a version and a
 //! SHA-256 so every machine tests with the same bits: fastchess (the match runner) and the opening book.
 
-use std::{
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use futures::StreamExt;
 use sha2::{Digest, Sha256};
+use tokio::io::AsyncWriteExt;
 
 struct Download {
     url: &'static str,
@@ -71,14 +69,17 @@ async fn ensure(data: &Path, d: &Download, log: &(dyn Fn(&str) + Sync)) -> Resul
 /// Downloads to `to`, checking the SHA-256 as it streams.
 async fn fetch(url: &str, to: &Path, sha256: &str) -> Result<()> {
     let res = reqwest::get(url).await?.error_for_status().with_context(|| format!("download {url}"))?;
-    let mut file = std::fs::File::create(to)?;
+    let mut file = tokio::fs::File::create(to).await?;
     let mut hash = Sha256::new();
     let mut body = res.bytes_stream();
     while let Some(chunk) = body.next().await {
         let chunk = chunk?;
         hash.update(&chunk);
-        file.write_all(&chunk)?;
+        file.write_all(&chunk).await?;
     }
+    // Written out before the archive is opened again to be extracted.
+    file.flush().await?;
+    drop(file);
     let got: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
     if got != sha256 {
         let _ = std::fs::remove_file(to);
