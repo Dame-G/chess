@@ -139,7 +139,7 @@ pub enum Outcome { WhiteWins, BlackWins, Draw }
 pub enum Ending {
     Checkmate, Resignation, Timeout, Stalemate, Repetition, FiftyMoves, InsufficientMaterial,
     Agreement, Adjudication, Abandoned, Aborted, EngineFailure, IllegalMove, Other,
-}
+}   // Lichess statuses without a word here (noStart with a winner, cheat, variantEnd) are Other; noStart without one is Aborted
 
 pub struct GameSummary {             // what lists, events and the Games rail use
     pub id: GameId,
@@ -265,7 +265,7 @@ pub struct Review { pub id: ReviewId, pub game: GameId, pub version: VersionId, 
                     pub summary: ReviewSummary, pub plies: Vec<ReviewedMove>, pub created_at: Timestamp }
 ```
 
-`ReviewSummary` and `ReviewedMove` keep the old shapes, with every score White POV.
+`ReviewSummary` and `ReviewedMove` keep the old shapes (`PlyReview` is now `ReviewedMove`), with every score White POV and the summary naming its `version` where the old one named a build. The searched positions they are judged from (`PositionEval { lines: [{uci, score, pv}], depth, nodes }`) are White POV too: `analysis` flips the engine's side-to-move scores before caching.
 
 ### Players and profiles
 
@@ -282,18 +282,20 @@ pub struct Profile {                            // GET /api/players/{key}/profil
     pub results: Results,                       // overall, as White, as Black
     pub accuracy: PhaseStats,                   // overall, opening, middlegame, endgame, by speed
     pub acpl: Option<f32>,
-    pub counts_per_game: ClassCounts,
+    pub counts: ClassCounts, pub counts_per_game: ClassRates,   // totals, and per reviewed game
     pub openings: Vec<OpeningStats>,
     pub time: TimeStats,
     pub trend: Vec<TrendPoint>,                 // accuracy and rating over time, one point per game
     pub moments: Moments,                       // best moves, worst blunders, most/least accurate game
     pub weak_spots: Vec<WeakSpot>,              // You only: positions from your mistakes, to play out
+    // and, from the old compare: pending_review, first_game, last_game, rating, judgements,
+    // opponents {average_rating, performance}, longest_win_streak
 }
 ```
 
-Comparison is profiles side by side: `GET /api/compare?players=you,dameless,lichess:cutemouse83&…` returns `Vec<Profile>` plus who leads each row. The old `review/compare.rs` is the starting point.
+Comparison is profiles side by side: `GET /api/compare?players=you,dameless,lichess:cutemouse83&…` returns `Comparison { profiles: Vec<Profile>, leaders: Vec<Leader { row, players: [index] }> }` (ties lead together; a row only one player has figures for leads nobody). The old `review/compare.rs` is the starting point.
 
-A **weak spot** is a position before one of your mistakes or blunders in a reviewed game (`{game, ply, fen, played, best, swing}`), recurring themes first (same opening family and phase). "Play this out" starts a local game from that FEN against Dameless.
+A **weak spot** is a position before one of your mistakes or blunders in a reviewed game (`{game, ply, fen, played, best, swing, opening, phase, recurring}`), recurring themes first (same opening family and phase). "Play this out" starts a local game from that FEN against Dameless.
 
 **Dameless's profile** adds the logbook: `GET /api/dameless` → `{ champion: Version, line: Vec<Version>, ideas: { running, queued, recent }, connection: Option<BotStatus>, strength: Vec<StrengthPoint> }`, where a strength point is a champion version and its cumulative Elo over `v1` (summing each promotion's deciding estimate).
 
