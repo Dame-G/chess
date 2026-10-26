@@ -17,6 +17,7 @@ mod proc;
 mod stats;
 mod store;
 mod tools;
+mod tune;
 
 use std::path::PathBuf;
 

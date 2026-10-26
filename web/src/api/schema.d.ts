@@ -105,6 +105,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/builds/{id}/tunables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The tunables a build declares, as a tune would read them. The build must be an `spsa` build (made by a tune). */
+        get: operations["list_tunables"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events": {
         parameters: {
             query?: never;
@@ -593,6 +610,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tunes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** SPSA tunes, newest first. */
+        get: operations["list_tunes"];
+        put?: never;
+        /**
+         * Queues an SPSA tune of a build's tunables (every declared one unless `params` names some). It is a job: it runs
+         *     when the queue reaches it, one at a time with tests.
+         */
+        post: operations["create_tune"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tunes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One tune with its history. */
+        get: operations["get_tune"];
+        put?: never;
+        post?: never;
+        /** Cancels a queued tune or stops a running one. Its iterations so far are kept, and it can resume. */
+        delete: operations["cancel_tune"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tunes/{id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Queues a job that writes the tune's current values into the engine as its new defaults, on a new branch of the
+         *     fork with the right `Bench:` line, and (unless `experiment` is false) queues a gainer experiment of that branch
+         *     against `base` at SPRT [0, 4]. The job's result is `{ tune, branch, commit, bench, experiment }`.
+         */
+        post: operations["apply_tune"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tunes/{id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queues a stopped (failed or cancelled) tune again; it carries on from its last iteration. */
+        post: operations["resume_tune"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -639,6 +733,19 @@ export interface components {
             /** @description The last report of each line, best first. */
             lines: components["schemas"]["Info"][];
         };
+        /** @description What `apply` should do with a tune's values. */
+        ApplyTune: {
+            /** @description The experiment's baseline. Default `main`. */
+            base?: string | null;
+            /** @description The branch to create in the fork. Default `tune/<id>`; it must not exist yet. */
+            branch?: string | null;
+            /** @description Queue a gainer experiment of the branch against `base` at SPRT [0, 4]. Default true. */
+            experiment?: boolean | null;
+            /** @description Add an LTC [0, 4] confirmation to the experiment. */
+            ltc?: boolean;
+            /** @description Push the branch to the fork's `origin`. */
+            push?: boolean;
+        };
         /**
          * @description Where the bot's connection to Lichess stands.
          * @enum {string}
@@ -671,7 +778,7 @@ export interface components {
             bench_expected?: number | null;
             commit: string;
             created_at: string;
-            /** @description `syzygy` with tablebase support (needs clang), else `no-syzygy`. */
+            /** @description `syzygy` with tablebase support (needs clang), else `no-syzygy`; `+spsa` when its tunables are UCI options. */
             features: string;
             /** Format: int64 */
             id: number;
@@ -852,7 +959,18 @@ export interface components {
             id: number;
             /** @enum {string} */
             kind: "experiment";
-        };
+        } | {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            kind: "tune";
+        } | (components["schemas"]["ApplyTune"] & {
+            /** Format: int64 */
+            id: number;
+        } & {
+            /** @enum {string} */
+            kind: "apply_tune";
+        });
         /** @enum {string} */
         JobStatus: "queued" | "running" | "done" | "failed" | "cancelled";
         /**
@@ -1094,6 +1212,56 @@ export interface components {
             /** @description Run these stages instead of the default funnel for the kind. */
             stages?: components["schemas"]["Stage"][] | null;
         };
+        /** @description A tune to run. */
+        NewTune: {
+            /**
+             * Format: double
+             * @description `A` as a fraction of the iterations. Default 0.1.
+             */
+            a_ratio?: number | null;
+            /**
+             * Format: double
+             * @description Default 0.602.
+             */
+            alpha?: number | null;
+            /** @description The ref to tune (built with the `spsa` feature), or the id of a build whose commit to tune. */
+            build: string;
+            /**
+             * Format: int32
+             * @description Games at once. Default: the machine's threads less two, divided by the preset's threads.
+             */
+            concurrency?: number | null;
+            /**
+             * Format: double
+             * @description Default 0.101.
+             */
+            gamma?: number | null;
+            /**
+             * Format: int32
+             * @description Hash in MiB, instead of the preset's.
+             */
+            hash?: number | null;
+            /**
+             * Format: int32
+             * @description Default 1000.
+             */
+            iterations?: number | null;
+            /** @description A short name. Defaults to the build. */
+            name?: string | null;
+            /**
+             * Format: int64
+             * @description Play this many nodes per move instead of the preset's clock.
+             */
+            nodes?: number | null;
+            /**
+             * Format: int32
+             * @description Game pairs per iteration. Default 8, as OpenBench batches SPSA.
+             */
+            pairs_per_iteration?: number | null;
+            /** @description The parameters to tune. Left out or empty, every tunable the engine declares. */
+            params?: components["schemas"]["ParamInput"][];
+            preset?: components["schemas"]["Preset"] | null;
+        };
         OnlineBot: {
             name: string;
             ratings: components["schemas"]["Ratings"];
@@ -1111,6 +1279,43 @@ export interface components {
         } | {
             /** @enum {string} */
             type: "book";
+        };
+        /** @description One tunable: its range and step sizes, and where it starts. */
+        Param: {
+            /**
+             * Format: double
+             * @description The perturbation at the last iteration.
+             */
+            c_end: number;
+            /** Format: double */
+            max: number;
+            /** Format: double */
+            min: number;
+            name: string;
+            /**
+             * Format: double
+             * @description The learning rate `a_k / c_k²` at the last iteration.
+             */
+            r_end: number;
+            /** Format: double */
+            start: number;
+        };
+        /**
+         * @description A parameter to tune. Anything left out comes from the engine's declaration (`spsa` command), so `{ "name": "x" }`
+         *     tunes `x` as declared.
+         */
+        ParamInput: {
+            /** Format: double */
+            c_end?: number | null;
+            /** Format: double */
+            max?: number | null;
+            /** Format: double */
+            min?: number | null;
+            name: string;
+            /** Format: double */
+            r_end?: number | null;
+            /** Format: double */
+            start?: number | null;
         };
         /** @description Game-pair outcomes from the dev engine's side: `[LL, LD, WL+DD, WD, WW]`, i.e. pairs scoring 0, ½, 1, 1½ and 2. */
         Pentanomial: number[];
@@ -1451,6 +1656,84 @@ export interface components {
             /** @description A Lichess personal API token with the `bot:play` scope, made at https://lichess.org/account/oauth/token. */
             token: string;
         };
+        Tune: {
+            /** Format: double */
+            a_ratio: number;
+            /** Format: double */
+            alpha: number;
+            /**
+             * Format: int64
+             * @description The `spsa` build being tuned, once built.
+             */
+            build?: number | null;
+            /**
+             * Format: int32
+             * @description Games played at once.
+             */
+            concurrency: number;
+            created_at: string;
+            finished_at?: string | null;
+            /** Format: double */
+            gamma: number;
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int32
+             * @description Iterations finished.
+             */
+            iteration: number;
+            /** Format: int32 */
+            iterations: number;
+            /** Format: int64 */
+            job?: number | null;
+            name: string;
+            /** Format: int32 */
+            pairs_per_iteration: number;
+            /**
+             * @description The parameters, in the engine's order, with their current values. Empty until the build is made (when the
+             *     request left them to the engine's declared list).
+             */
+            params: components["schemas"]["TuneParam"][];
+            /** @description The ref (or build id) that was asked for. */
+            ref: string;
+            /** @description Time control, hash and threads of each iteration's games; `pairs` is the pairs per iteration. */
+            spec: components["schemas"]["MatchSpec"];
+            status: components["schemas"]["TuneStatus"];
+            /** @description Why it stopped, once finished. */
+            summary?: string | null;
+        };
+        TuneDetail: {
+            /** @description Every finished iteration, in order: the parameters after it (in the order of `tune.params`) and its result. */
+            history: components["schemas"]["TuneIteration"][];
+            tune: components["schemas"]["Tune"];
+        };
+        /** @description One finished iteration. */
+        TuneIteration: {
+            /**
+             * Format: int32
+             * @description Counted from 1.
+             */
+            iteration: number;
+            /** @description θ+ against θ−, as game pairs from θ+'s side. */
+            penta: components["schemas"]["Pentanomial"];
+            /**
+             * Format: int64
+             * @description Games won minus games lost by θ+.
+             */
+            result: number;
+            /** @description Every parameter after this iteration's step, in the order of the tune's `params`. */
+            values: number[];
+        };
+        /** @description A parameter being tuned, with where it is now. */
+        TuneParam: components["schemas"]["Param"] & {
+            /**
+             * Format: double
+             * @description The current value, unrounded.
+             */
+            value: number;
+        };
+        /** @enum {string} */
+        TuneStatus: "queued" | "running" | "done" | "failed" | "cancelled";
         UpgradeRequest: {
             /** @description Must be `true`: the upgrade cannot be undone. */
             confirm?: boolean;
@@ -1633,6 +1916,39 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_tunables: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Param"][];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2524,6 +2840,181 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_tunes: {
+        parameters: {
+            query?: {
+                /** @description How many, newest first. Default 100. */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tune"][];
+                };
+            };
+        };
+    };
+    create_tune: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewTune"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tune"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_tune: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TuneDetail"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancel_tune: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tune"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    apply_tune: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyTune"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resume_tune: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tune"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

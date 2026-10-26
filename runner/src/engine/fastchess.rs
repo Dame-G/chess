@@ -16,6 +16,9 @@ pub struct Match<'a> {
     pub book: &'a Path,
     pub dev: &'a Path,
     pub base: &'a Path,
+    /// UCI options for one engine only, such as `rfp_quad=1140` (SPSA's two sides of a perturbation).
+    pub dev_options: &'a [(String, String)],
+    pub base_options: &'a [(String, String)],
     pub spec: &'a MatchSpec,
     pub concurrency: u32,
     pub pgn: &'a Path,
@@ -47,15 +50,12 @@ pub fn args(m: &Match) -> Vec<String> {
         TimeControl::Nodes { nodes } => each.push(format!("nodes={nodes}")),
     }
 
-    let mut args = vec![
-        "-engine".into(),
-        format!("cmd={}", path(m.dev)),
-        "name=dev".into(),
-        "-engine".into(),
-        format!("cmd={}", path(m.base)),
-        "name=base".into(),
-        "-each".into(),
-    ];
+    let options = |o: &[(String, String)]| o.iter().map(|(k, v)| format!("option.{k}={v}")).collect::<Vec<_>>();
+    let mut args = vec!["-engine".into(), format!("cmd={}", path(m.dev)), "name=dev".into()];
+    args.extend(options(m.dev_options));
+    args.extend(["-engine".into(), format!("cmd={}", path(m.base)), "name=base".into()]);
+    args.extend(options(m.base_options));
+    args.push("-each".into());
     args.extend(each);
     args.extend([
         "-openings".into(),
@@ -167,6 +167,8 @@ mod tests {
             book: Path::new("book.epd"),
             dev: Path::new("dev"),
             base: Path::new("base"),
+            dev_options: &[("rfp_quad".into(), "1200".into())],
+            base_options: &[],
             spec: &spec,
             concurrency: 14,
             pgn: Path::new("games.pgn"),
@@ -179,5 +181,6 @@ mod tests {
         assert!(joined.contains("option.Hash=16 option.Threads=1 option.Minimal=true option.MoveOverhead=0"));
         assert!(joined.contains("-sprt elo0=0 elo1=3 alpha=0.05 beta=0.1 model=normalized"));
         assert!(joined.contains("-concurrency 14"));
+        assert!(joined.contains("name=dev option.rfp_quad=1200 -engine cmd=base name=base -each"), "{joined}");
     }
 }

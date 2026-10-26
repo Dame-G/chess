@@ -52,6 +52,24 @@ Live progress is a server-sent event stream: `curl -N http://127.0.0.1:7878/api/
 
 The engine is the Reckless fork in `RECKLESS_DIR` (default `../reckless`). Experiments are branches there. Every engine commit message ends with `Bench: <nodes>`, the node count of `reckless bench`: it is the engine's functional fingerprint, and CI checks it.
 
+## Tuning
+
+A tune moves a build's search constants by SPSA, as OpenBench does. The tunables are declared in the fork's `src/parameters.rs` with `define!` (`i32 name: default, min, max, c_end;`). Without the `spsa` cargo feature each one is a `const fn`, so the bench does not change. With it, each is a UCI spin option, and `reckless spsa` prints them in OpenBench's format. The branch `spsa/tunables` declares 38 of them: aspiration, RFP, NMP, ProbCut, SE, LMP, futility, LMR and history bonuses. A tune builds its ref with the feature; that build is cached separately, with `+spsa` in its `features`.
+
+```bash
+chess tune new --build spsa/tunables [--params rfp_quad,lmr_base] [--iterations 1000] [--pairs 8] \
+  [--preset stc | --nodes 25000] [--hash 16] [--concurrency N] [--name "<name>"] [--wait]
+chess tune list | show <id> | wait <id> | cancel <id> | resume <id>
+chess tune tunables <build id>        # what an spsa build declares
+chess tune apply <id> [--branch tune/<id>] [--base main] [--no-experiment] [--ltc] [--push] [--wait]
+```
+
+- **How it runs.** A tune is a job in the queue, so it waits behind tests. Each iteration plays `--pairs` game pairs of θ+ against θ−, with the tests' book and adjudication, and takes a step. The defaults are OpenBench's: alpha 0.602, gamma 0.101, A = 0.1 × iterations, `r_end` 0.002. `c_k` shrinks to `c_end` and `a_k / c_k²` shrinks to `r_end` at the last iteration. With no `--params`, every declared tunable is tuned. In the API, each entry of `params` can override `start`, `min`, `max`, `c_end` or `r_end`.
+- **What is kept.** Every iteration is stored: the values after it and its game pairs. `GET /api/tunes/{id}` returns `{ tune, history }`, and `history[i].values` follow the order of `tune.params`. A cancelled tune keeps its iterations, and so does one that was running when the runner stopped (that one is marked failed). `resume` carries on from the last iteration.
+- **Applying a tune.** `apply` writes the current values, rounded, into `src/parameters.rs` as the new defaults, on a new branch made from the tune's commit. It builds that branch and commits with its `Bench:` line. Unless you pass `--no-experiment`, it also queues a gainer experiment against `--base`: bench, the screen, then STC at **[0, 4]** (and LTC at [0, 4] with `--ltc`), the bounds Reckless confirms its tunes with. Apply is a job. Its result is `{ tune, branch, commit, bench, experiment }`.
+- **Events.** `tune.updated` sends the whole tune on each change of status. `tune.progress` sends `{ id, iteration, values, result, penta }` after each iteration, where `result` is θ+'s games won minus games lost. `tune.finished` sends `{ id, status, summary, iteration }`.
+- **What to trust.** A tune is only as good as its games. Even a long tune can drift on noise, so trust the [0, 4] confirmation, not the trajectory. Tune at the time control you care about, and use `--nodes` only to check that everything works.
+
 ## Matches you can watch
 
 Two builds play each other live, move by move; the board shows it at `/matches/<id>`, and finished games replay like any other. A match runs outside the job queue (so a long experiment never holds it up), one at a time, on two search threads (one per engine). It is stored in the database and survives a restart; one that was running when the runner stopped is kept as it stood, aborted.

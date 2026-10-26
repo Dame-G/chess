@@ -170,7 +170,7 @@ export function ending(termination: string | undefined): string {
 }
 
 /** Why a job failed, in a sentence, without git's command line or a file path. */
-export function failure(error: string | null | undefined, kind?: "build" | "experiment"): string {
+export function failure(error: string | null | undefined, kind?: string): string {
   if (!error) return kind === "build" ? "The build failed." : "It failed.";
   const missing = /^no commit named (.+?) in /.exec(error);
   if (missing) return `There is no branch, tag or commit called ${missing[1]}.`;

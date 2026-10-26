@@ -14,7 +14,7 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use utoipa::ToSchema;
 
-use crate::{api::AppState, engine::build, experiments};
+use crate::{api::AppState, engine::build, experiments, tune};
 
 /// What a job does.
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
@@ -27,6 +27,14 @@ pub enum JobSpec {
     },
     /// Run an experiment's funnel.
     Experiment { id: i64 },
+    /// Run an SPSA tune's remaining iterations.
+    Tune { id: i64 },
+    /// Bake a tune's values into a branch of the fork, and queue its confirmation.
+    ApplyTune {
+        id: i64,
+        #[serde(flatten)]
+        options: tune::ApplyTune,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -176,6 +184,12 @@ pub async fn worker(state: Arc<AppState>) {
         .store
         .call(|c| {
             c.execute("UPDATE jobs SET status = 'failed', error = 'the runner stopped' WHERE status = 'running'", [])?;
+            // A tune keeps every iteration, so one stopped this way can resume where it was.
+            c.execute(
+                "UPDATE tunes SET status = 'failed', summary = 'the runner stopped',
+                 finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE status = 'running'",
+                [],
+            )?;
             Ok(())
         })
         .await;
@@ -242,6 +256,22 @@ async fn run(state: &Arc<AppState>, job: Job) {
                 let _ = experiments::finish(state, *id, status, &summary).await;
             }
             outcome.map(|status| serde_json::json!({ "experiment": id, "status": status }))
+        }
+        JobSpec::Tune { id } => {
+            let run = tune::Run { state, cancel: &token, log: &log };
+            let outcome = tune::run(run, *id).await;
+            let ended = match &outcome {
+                Ok(_) => None,
+                Err(_) if token.is_cancelled() => Some((tune::TuneStatus::Cancelled, "cancelled".to_owned())),
+                Err(e) => Some((tune::TuneStatus::Failed, format!("{e:#}"))),
+            };
+            if let Some((status, summary)) = ended {
+                let _ = tune::finish(state, *id, status, &summary).await;
+            }
+            outcome.map(|status| serde_json::json!({ "tune": id, "status": status }))
+        }
+        JobSpec::ApplyTune { id, options } => {
+            tune::apply(tune::Run { state, cancel: &token, log: &log }, *id, options).await
         }
     };
 

@@ -96,7 +96,8 @@ pub async fn checkout(repo: &Path, worktree: &Path, sha: &str) -> Result<()> {
     Ok(())
 }
 
-async fn git(dir: &Path, args: &[&str]) -> Result<String> {
+/// Runs git in `dir` and returns its trimmed output.
+pub async fn git(dir: &Path, args: &[&str]) -> Result<String> {
     let mut all = vec!["-C", dir.to_str().context("non-UTF-8 path")?];
     all.extend_from_slice(args);
     Ok(proc::output(Path::new("git"), &all, None).await?.trim().to_owned())

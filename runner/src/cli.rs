@@ -9,6 +9,8 @@ use serde_json::{Value, json};
 
 use crate::client::{Client, print};
 
+mod tune;
+
 #[derive(Subcommand)]
 pub enum ClientCommand {
     /// Show the runner's status.
@@ -76,6 +78,9 @@ pub enum ClientCommand {
     /// Several experiments submitted, waited for and read together.
     #[command(subcommand)]
     Batch(BatchCommand),
+    /// SPSA tunes of a build's declared tunables, and applying their result as a branch.
+    #[command(subcommand)]
+    Tune(tune::TuneCommand),
     /// One match between two refs: shorthand for an experiment with a single match stage.
     Test {
         #[arg(long)]
@@ -324,6 +329,7 @@ pub async fn run(client: Client, command: ClientCommand, json: bool) -> Result<(
     match command {
         ClientCommand::Experiment(cmd) => return experiment(&client, cmd, json).await,
         ClientCommand::Batch(cmd) => return batch(&client, cmd, json).await,
+        ClientCommand::Tune(cmd) => return tune::run(&client, cmd, json).await,
         ClientCommand::Match(cmd) => return matches(&client, cmd, json).await,
         ClientCommand::Lichess(cmd) => return lichess(&client, cmd, json).await,
         ClientCommand::Matches { limit } => {

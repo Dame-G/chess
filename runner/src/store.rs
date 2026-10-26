@@ -84,6 +84,38 @@ const MIGRATIONS: &[&str] = &[
         data TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     );",
+    // 5: SPSA tunes and every iteration's parameters, for trajectory charts. `inputs` is the request's parameter list;
+    // `params` the resolved parameters with their current values.
+    "CREATE TABLE tunes (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        ref TEXT NOT NULL,
+        build_id INTEGER REFERENCES builds (id),
+        inputs TEXT NOT NULL,
+        params TEXT NOT NULL,
+        spec TEXT NOT NULL,
+        iterations INTEGER NOT NULL,
+        pairs INTEGER NOT NULL,
+        concurrency INTEGER NOT NULL,
+        alpha REAL NOT NULL,
+        gamma REAL NOT NULL,
+        a_ratio REAL NOT NULL,
+        iteration INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        summary TEXT,
+        job_id INTEGER REFERENCES jobs (id),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        finished_at TEXT
+    );
+    CREATE TABLE tune_iterations (
+        tune_id INTEGER NOT NULL REFERENCES tunes (id),
+        iteration INTEGER NOT NULL,
+        vals TEXT NOT NULL,
+        penta TEXT NOT NULL,
+        result INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        PRIMARY KEY (tune_id, iteration)
+    );",
 ];
 
 #[derive(Clone)]

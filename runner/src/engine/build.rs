@@ -20,7 +20,7 @@ pub struct Build {
     pub refname: String,
     pub commit: String,
     pub subject: String,
-    /// `syzygy` with tablebase support (needs clang), else `no-syzygy`.
+    /// `syzygy` with tablebase support (needs clang), else `no-syzygy`; `+spsa` when its tunables are UCI options.
     pub features: String,
     /// The network file the build embeds.
     pub network: Option<String>,
@@ -77,6 +77,17 @@ fn key(tree: &str, features: &str) -> String {
     format!("{tree}-{features}")
 }
 
+/// The features a build is made with, as stored and as part of its key.
+fn features(syzygy: bool, spsa: bool) -> String {
+    let base = if syzygy { "syzygy" } else { "no-syzygy" };
+    if spsa { format!("{base}+spsa") } else { base.to_owned() }
+}
+
+/// Whether a build has its tunables as UCI options.
+pub fn is_spsa(build: &Build) -> bool {
+    build.features.ends_with("+spsa")
+}
+
 fn exe(name: &str) -> String {
     format!("{name}{}", std::env::consts::EXE_SUFFIX)
 }
@@ -91,9 +102,20 @@ pub struct BuildContext<'a> {
 
 /// Builds `refname`, or returns the existing build of the same commit and features.
 pub async fn build(cx: BuildContext<'_>, refname: &str) -> Result<Build> {
+    build_with(cx, refname, false).await
+}
+
+/// Builds `refname` with Reckless's `spsa` feature, which makes its declared tunables UCI options (for tuning). It
+/// is a build of its own, cached apart from the plain one.
+pub async fn build_spsa(cx: BuildContext<'_>, refname: &str) -> Result<Build> {
+    build_with(cx, refname, true).await
+}
+
+async fn build_with(cx: BuildContext<'_>, refname: &str, spsa: bool) -> Result<Build> {
     let commit = git::resolve(cx.reckless, refname).await?;
-    let features = if has_clang().await { "syzygy" } else { "no-syzygy" };
-    let key = key(&commit.tree, features);
+    let syzygy = has_clang().await;
+    let features = features(syzygy, spsa);
+    let key = key(&commit.tree, &features);
     let existing = {
         cx.store
             .call({
@@ -128,8 +150,11 @@ pub async fn build(cx: BuildContext<'_>, refname: &str) -> Result<Build> {
     }
 
     let mut args = vec!["build", "--release", "--bin", "reckless"];
-    if features == "no-syzygy" {
+    if !syzygy {
         args.push("--no-default-features");
+    }
+    if spsa {
+        args.extend(["--features", "spsa"]);
     }
     (cx.log)(&format!("cargo {}", args.join(" ")));
     let env_refs: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
@@ -231,5 +256,12 @@ mod tests {
     fn parses_bench_output() {
         assert_eq!(parse_bench("Bench: 2837905 nodes 352413 nps\n"), Some((2837905, 352413)));
         assert_eq!(parse_bench("nothing"), None);
+    }
+
+    #[test]
+    fn spsa_builds_are_keyed_apart() {
+        assert_eq!(features(true, false), "syzygy");
+        assert_eq!(features(false, true), "no-syzygy+spsa");
+        assert_ne!(key("t", &features(true, false)), key("t", &features(true, true)));
     }
 }

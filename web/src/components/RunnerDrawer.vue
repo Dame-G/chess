@@ -67,6 +67,8 @@ useRunnerEvent("job.log", (data) => {
 
 function describe(job: Job): string {
   if (job.spec.kind === "build") return `Build ${job.spec.ref}`;
+  if (job.spec.kind === "tune") return `Tune ${job.spec.id}`;
+  if (job.spec.kind === "apply_tune") return `Apply tune ${job.spec.id}`;
   const id = job.spec.id;
   const e = experiments.value.data?.find((x) => x.id === id);
   return e ? `Test ${e.name}` : `Test ${id}`;

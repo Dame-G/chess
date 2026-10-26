@@ -137,6 +137,21 @@ pub fn default_funnel(kind: Kind, ltc: bool) -> Vec<Stage> {
     }
 }
 
+/// The confirmation of an SPSA result, as Reckless confirms its tunes: bench must change, the usual screen, then STC at
+/// [0, 4] (and LTC at [0, 4] with `ltc`).
+pub fn tuned_funnel(ltc: bool) -> Vec<Stage> {
+    let m = |name: &str, preset: Preset, sprt| Stage::Match { name: name.into(), spec: preset.spec(Some(sprt), None) };
+    let mut stages = vec![
+        Stage::Bench { functional: true },
+        m("screen", Preset::Vstc, bounds(-5.0, 0.0)),
+        m("stc", Preset::Stc, bounds(0.0, 4.0)),
+    ];
+    if ltc {
+        stages.push(m("ltc", Preset::Ltc, bounds(0.0, 4.0)));
+    }
+    stages
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,6 +162,13 @@ mod tests {
         let names: Vec<_> = f.iter().map(Stage::name).collect();
         assert_eq!(names, ["bench", "screen", "stc", "ltc"]);
         assert_eq!(default_funnel(Kind::Nonfunctional, true).len(), 2);
+    }
+
+    #[test]
+    fn tunes_confirm_at_zero_four() {
+        let f = tuned_funnel(false);
+        let Some(Stage::Match { name, spec }) = f.last() else { panic!("no match stage") };
+        assert_eq!((name.as_str(), spec.sprt), ("stc", Some(bounds(0.0, 4.0))));
     }
 
     #[test]

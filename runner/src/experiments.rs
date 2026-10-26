@@ -419,6 +419,8 @@ async fn match_stage(
         book: &book,
         dev: &build::binary(&state.config.data, dev),
         base: &build::binary(&state.config.data, base),
+        dev_options: &[],
+        base_options: &[],
         spec,
         concurrency,
         pgn: &dir.join("games.pgn"),

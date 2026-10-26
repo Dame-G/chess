@@ -219,6 +219,42 @@
         }
       }
     },
+    "/api/builds/{id}/tunables": {
+      "get": {
+        "tags": [
+          "tunes"
+        ],
+        "summary": "The tunables a build declares, as a tune would read them. The build must be an `spsa` build (made by a tune).",
+        "operationId": "list_tunables",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Param"
+                  }
+                }
+              }
+            }
+          },
+          "404": {},
+          "409": {}
+        }
+      }
+    },
     "/api/events": {
       "get": {
         "tags": [
@@ -1247,6 +1283,211 @@
           "404": {}
         }
       }
+    },
+    "/api/tunes": {
+      "get": {
+        "tags": [
+          "tunes"
+        ],
+        "summary": "SPSA tunes, newest first.",
+        "operationId": "list_tunes",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many, newest first. Default 100.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Tune"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "tunes"
+        ],
+        "summary": "Queues an SPSA tune of a build's tunables (every declared one unless `params` names some). It is a job: it runs\nwhen the queue reaches it, one at a time with tests.",
+        "operationId": "create_tune",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewTune"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tune"
+                }
+              }
+            }
+          },
+          "400": {}
+        }
+      }
+    },
+    "/api/tunes/{id}": {
+      "get": {
+        "tags": [
+          "tunes"
+        ],
+        "summary": "One tune with its history.",
+        "operationId": "get_tune",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TuneDetail"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      },
+      "delete": {
+        "tags": [
+          "tunes"
+        ],
+        "summary": "Cancels a queued tune or stops a running one. Its iterations so far are kept, and it can resume.",
+        "operationId": "cancel_tune",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tune"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/tunes/{id}/apply": {
+      "post": {
+        "tags": [
+          "tunes"
+        ],
+        "summary": "Queues a job that writes the tune's current values into the engine as its new defaults, on a new branch of the\nfork with the right `Bench:` line, and (unless `experiment` is false) queues a gainer experiment of that branch\nagainst `base` at SPRT [0, 4]. The job's result is `{ tune, branch, commit, bench, experiment }`.",
+        "operationId": "apply_tune",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyTune"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "404": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/tunes/{id}/resume": {
+      "post": {
+        "tags": [
+          "tunes"
+        ],
+        "summary": "Queues a stopped (failed or cancelled) tune again; it carries on from its last iteration.",
+        "operationId": "resume_tune",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tune"
+                }
+              }
+            }
+          },
+          "404": {},
+          "409": {}
+        }
+      }
     }
   },
   "components": {
@@ -1352,6 +1593,41 @@
           }
         }
       },
+      "ApplyTune": {
+        "type": "object",
+        "description": "What `apply` should do with a tune's values.",
+        "properties": {
+          "base": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The experiment's baseline. Default `main`."
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The branch to create in the fork. Default `tune/<id>`; it must not exist yet."
+          },
+          "experiment": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Queue a gainer experiment of the branch against `base` at SPRT [0, 4]. Default true."
+          },
+          "ltc": {
+            "type": "boolean",
+            "description": "Add an LTC [0, 4] confirmation to the experiment."
+          },
+          "push": {
+            "type": "boolean",
+            "description": "Push the branch to the fork's `origin`."
+          }
+        }
+      },
       "BotState": {
         "type": "string",
         "description": "Where the bot's connection to Lichess stands.",
@@ -1433,7 +1709,7 @@
           },
           "features": {
             "type": "string",
-            "description": "`syzygy` with tablebase support (needs clang), else `no-syzygy`."
+            "description": "`syzygy` with tablebase support (needs clang), else `no-syzygy`; `+spsa` when its tunables are UCI options."
           },
           "id": {
             "type": "integer",
@@ -1953,6 +2229,61 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "Run an SPSA tune's remaining iterations.",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tune"
+                ]
+              }
+            }
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ApplyTune"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "description": "Bake a tune's values into a branch of the fork, and queue its confirmation.",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "apply_tune"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Bake a tune's values into a branch of the fork, and queue its confirmation."
           }
         ],
         "description": "What a job does."
@@ -2701,6 +3032,113 @@
           }
         }
       },
+      "NewTune": {
+        "type": "object",
+        "description": "A tune to run.",
+        "required": [
+          "build"
+        ],
+        "properties": {
+          "a_ratio": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "`A` as a fraction of the iterations. Default 0.1."
+          },
+          "alpha": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Default 0.602."
+          },
+          "build": {
+            "type": "string",
+            "description": "The ref to tune (built with the `spsa` feature), or the id of a build whose commit to tune."
+          },
+          "concurrency": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Games at once. Default: the machine's threads less two, divided by the preset's threads.",
+            "minimum": 0
+          },
+          "gamma": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Default 0.101."
+          },
+          "hash": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Hash in MiB, instead of the preset's.",
+            "minimum": 0
+          },
+          "iterations": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Default 1000.",
+            "minimum": 0
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A short name. Defaults to the build."
+          },
+          "nodes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Play this many nodes per move instead of the preset's clock.",
+            "minimum": 0
+          },
+          "pairs_per_iteration": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Game pairs per iteration. Default 8, as OpenBench batches SPSA.",
+            "minimum": 0
+          },
+          "params": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParamInput"
+            },
+            "description": "The parameters to tune. Left out or empty, every tunable the engine declares."
+          },
+          "preset": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Preset",
+                "description": "The time control and hash of the games. Default `stc` (8+0.08, 16 MiB)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "OnlineBot": {
         "type": "object",
         "required": [
@@ -2781,6 +3219,92 @@
           }
         ],
         "description": "Where the game starts."
+      },
+      "Param": {
+        "type": "object",
+        "description": "One tunable: its range and step sizes, and where it starts.",
+        "required": [
+          "name",
+          "start",
+          "min",
+          "max",
+          "c_end",
+          "r_end"
+        ],
+        "properties": {
+          "c_end": {
+            "type": "number",
+            "format": "double",
+            "description": "The perturbation at the last iteration."
+          },
+          "max": {
+            "type": "number",
+            "format": "double"
+          },
+          "min": {
+            "type": "number",
+            "format": "double"
+          },
+          "name": {
+            "type": "string"
+          },
+          "r_end": {
+            "type": "number",
+            "format": "double",
+            "description": "The learning rate `a_k / c_k²` at the last iteration."
+          },
+          "start": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "ParamInput": {
+        "type": "object",
+        "description": "A parameter to tune. Anything left out comes from the engine's declaration (`spsa` command), so `{ \"name\": \"x\" }`\ntunes `x` as declared.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "c_end": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "max": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "min": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "name": {
+            "type": "string"
+          },
+          "r_end": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "start": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
       },
       "Pentanomial": {
         "type": "array",
@@ -3604,6 +4128,202 @@
             "description": "A Lichess personal API token with the `bot:play` scope, made at https://lichess.org/account/oauth/token."
           }
         }
+      },
+      "Tune": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "ref",
+          "params",
+          "spec",
+          "iterations",
+          "pairs_per_iteration",
+          "concurrency",
+          "alpha",
+          "gamma",
+          "a_ratio",
+          "iteration",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "a_ratio": {
+            "type": "number",
+            "format": "double"
+          },
+          "alpha": {
+            "type": "number",
+            "format": "double"
+          },
+          "build": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The `spsa` build being tuned, once built."
+          },
+          "concurrency": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Games played at once.",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gamma": {
+            "type": "number",
+            "format": "double"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "iteration": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Iterations finished.",
+            "minimum": 0
+          },
+          "iterations": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "job": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pairs_per_iteration": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "params": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TuneParam"
+            },
+            "description": "The parameters, in the engine's order, with their current values. Empty until the build is made (when the\nrequest left them to the engine's declared list)."
+          },
+          "ref": {
+            "type": "string",
+            "description": "The ref (or build id) that was asked for."
+          },
+          "spec": {
+            "$ref": "#/components/schemas/MatchSpec",
+            "description": "Time control, hash and threads of each iteration's games; `pairs` is the pairs per iteration."
+          },
+          "status": {
+            "$ref": "#/components/schemas/TuneStatus"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it stopped, once finished."
+          }
+        }
+      },
+      "TuneDetail": {
+        "type": "object",
+        "required": [
+          "tune",
+          "history"
+        ],
+        "properties": {
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TuneIteration"
+            },
+            "description": "Every finished iteration, in order: the parameters after it (in the order of `tune.params`) and its result."
+          },
+          "tune": {
+            "$ref": "#/components/schemas/Tune"
+          }
+        }
+      },
+      "TuneIteration": {
+        "type": "object",
+        "description": "One finished iteration.",
+        "required": [
+          "iteration",
+          "values",
+          "penta",
+          "result"
+        ],
+        "properties": {
+          "iteration": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Counted from 1.",
+            "minimum": 0
+          },
+          "penta": {
+            "$ref": "#/components/schemas/Pentanomial",
+            "description": "θ+ against θ−, as game pairs from θ+'s side."
+          },
+          "result": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Games won minus games lost by θ+."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "description": "Every parameter after this iteration's step, in the order of the tune's `params`."
+          }
+        }
+      },
+      "TuneParam": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Param"
+          },
+          {
+            "type": "object",
+            "required": [
+              "value"
+            ],
+            "properties": {
+              "value": {
+                "type": "number",
+                "format": "double",
+                "description": "The current value, unrounded."
+              }
+            }
+          }
+        ],
+        "description": "A parameter being tuned, with where it is now."
+      },
+      "TuneStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "done",
+          "failed",
+          "cancelled"
+        ]
       },
       "UpgradeRequest": {
         "type": "object",

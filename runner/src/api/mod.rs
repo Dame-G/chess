@@ -11,6 +11,7 @@ mod jobs;
 mod lichess;
 mod matches;
 mod status;
+mod tunes;
 mod web;
 
 use std::sync::Arc;
@@ -96,6 +97,11 @@ fn api() -> (Router<Arc<AppState>>, utoipa::openapi::OpenApi) {
         .routes(routes!(experiments::test))
         .routes(routes!(experiments::games))
         .routes(routes!(experiments::game))
+        .routes(routes!(tunes::list, tunes::create))
+        .routes(routes!(tunes::get, tunes::cancel))
+        .routes(routes!(tunes::apply))
+        .routes(routes!(tunes::resume))
+        .routes(routes!(tunes::declared))
         .split_for_parts()
 }
 
