@@ -176,14 +176,14 @@ const commands = computed<CommandItem[]>(() => {
     { id: "go:/lichess", label: "Open Lichess", group: "Go to", icon: PhCrown, keywords: ["bot", "online", "play"] },
     {
       id: "go:/improve?new=test",
-      label: "New test",
+      label: "Test a change",
       group: "Do",
       icon: PhPlus,
       keywords: ["test a change", "experiment", "branch"],
     },
     {
       id: "go:/improve?new=tune",
-      label: "New tune",
+      label: "Tune numbers",
       group: "Do",
       icon: PhPlus,
       keywords: ["tune numbers", "spsa", "parameters", "tuning"],
@@ -198,7 +198,7 @@ const commands = computed<CommandItem[]>(() => {
     },
     {
       id: "go:/board?mode=engines",
-      label: "Watch two engines play",
+      label: "Watch two versions play",
       group: "Do",
       icon: PhSword,
       keywords: ["engine", "play", "versus", "live"],
@@ -321,7 +321,7 @@ onUnmounted(stop);
               Shortcuts
             </EButton>
             <ELink href="https://github.com/Dame-G/dameless" external>Source</ELink>
-            <ELink href="https://github.com/Dame-G/reckless" external>Engine</ELink>
+            <ELink href="https://github.com/Dame-G/reckless" external>Reckless source</ELink>
           </span>
         </EAppFooter>
       </template>
@@ -408,11 +408,26 @@ onUnmounted(stop);
   font-weight: 600;
 }
 
-@media (width < 36rem) {
+/* The header never sets the width of the page: icons go first, then the search label. */
+.top,
+.top :deep(.e-appheader-bar) {
+  min-inline-size: 0;
+}
+
+@media (width < 56rem) {
   .top :deep(.e-nav-item .e-icon) {
     display: none;
   }
+}
 
+@media (width < 60rem) {
+  .search-label,
+  .search-kbd {
+    display: none;
+  }
+}
+
+@media (width < 36rem) {
   .top :deep(.e-appheader-logo) {
     gap: var(--e-gap-base);
   }
@@ -448,13 +463,6 @@ onUnmounted(stop);
 
 .search-label {
   color: var(--e-muted);
-}
-
-@media (width < 40rem) {
-  .search-label,
-  .search-kbd {
-    display: none;
-  }
 }
 
 /* The footer is a status bar, like a media player's: one slim line of 40px, the runner on the left, small print on the right. */

@@ -58,7 +58,7 @@ export function duration(minutes: number): string {
 }
 
 /** The stages of a funnel, in words. */
-export const stages: Record<string, { label: string; detail: string }> = {
+export const stages: Record<string, { label: string; detail: string; tc?: string }> = {
   bench: {
     label: "Fingerprint",
     detail:
@@ -67,18 +67,26 @@ export const stages: Record<string, { label: string; detail: string }> = {
   speed: { label: "Speed", detail: "Both versions are timed on the same positions, in turns, to catch a slowdown." },
   screen: {
     label: "Quick screen",
-    detail: "Very fast games (4 seconds each) that throw out clearly bad ideas in minutes.",
+    tc: "4+0.04",
+    detail: "Throws out clearly bad ideas in minutes.",
   },
-  stc: { label: "Short games", detail: "Games at 8 seconds each: the main test, as Reckless runs it." },
+  stc: { label: "Short games", tc: "8+0.08", detail: "The main test, as Reckless runs it." },
   ltc: {
     label: "Long games",
-    detail: "Games at 40 seconds each, to confirm that a gain holds with more thinking time.",
+    tc: "40+0.4",
+    detail: "Confirms that a gain holds with more thinking time.",
   },
   match: { label: "Match", detail: "A match between the two versions." },
 };
 
 export function stageLabel(name: string): string {
   return stages[name]?.label ?? name;
+}
+
+/** A stage with its time control, the one name used in tabs, dialogs and lists: "Quick screen (4+0.04)". */
+export function stageTitle(name: string): string {
+  const s = stages[name];
+  return s?.tc ? `${s.label} (${s.tc})` : stageLabel(name);
 }
 
 export const kinds = {
@@ -99,18 +107,16 @@ export const kinds = {
 /** What an experiment's state means, in a word and a sentence. */
 export function verdict(e: Experiment): { label: string; tone: Tone; sentence: string } {
   if (e.status === "queued")
-    return { label: "Waiting", tone: "neutral", sentence: "Waiting for the runner to start it." };
+    return { label: "Queued", tone: "neutral", sentence: "Waiting for the runner to start it." };
   if (e.status === "cancelled") return { label: "Stopped", tone: "neutral", sentence: "Stopped before it finished." };
   if (e.status === "running") {
     const stage = e.current ? stageLabel(e.current) : "Building";
-    return { label: "Testing", tone: "info", sentence: `${stage} in progress.` };
+    return { label: "Running", tone: "info", sentence: `${stage} in progress.` };
   }
   if (e.status === "passed") {
-    const label = e.kind === "gainer" ? "Stronger" : e.kind === "nonregression" ? "No weaker" : "Same play";
-    return { label, tone: "success", sentence: e.summary ?? "" };
+    return { label: "Passed", tone: "success", sentence: e.summary ?? "" };
   }
-  const label = e.kind === "gainer" ? "Not stronger" : e.kind === "nonregression" ? "Weaker" : "Failed a check";
-  return { label, tone: "danger", sentence: e.summary ?? "" };
+  return { label: "Rejected", tone: "danger", sentence: e.summary ?? "" };
 }
 
 /** The SPRT's decision lines: reject below, accept above. */

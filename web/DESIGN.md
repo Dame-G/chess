@@ -40,10 +40,22 @@ Selection lives in the URL (`/improve/experiments/3`, `/versions/test%2Fno-nmp`)
   - **Stage (a tune):** where it stands in a sentence, the trajectory chart and parameter table. Stop (confirmed), Resume and Apply (a dialog: branch, test against main, long games, push) are in the head.
   - **Inspector:** the test's games (each opens `/games/...`) or the tune's recent iterations.
 - **Versions `/versions`, `/versions/:name`** (a name with a slash is one encoded segment; an old build number redirects to its branch) is one row per branch:
-  - **Library:** `main` first as the reference, then the fork's branches newest first, each with its verdict against main, a tune badge and a Lichess mark. Hidden and upstream versions sit behind one toggle. The header menu frees disk space (a dry run first).
+  - **Library:** `main` first as the baseline, then the fork's branches newest first, each with its verdict against main, a tune badge and a Lichess mark. Hidden and upstream versions sit behind one toggle. The header menu frees disk space (a dry run first).
   - **Stage:** a verdict in plain words and the next step as the one filled button (Test it; once passed and built, Put it on Lichess), then the other actions that apply (Tune it, Watch it play, Play it, Build now; those that need a build appear only once built), then its builds with per-build Delete. The menu analyses with it, hides it or deletes the branch (typed confirmation).
   - **Inspector:** the speed of each version's newest build, and what the fingerprint means.
 - **Lichess `/lichess`** is the bot account: connection, settings (build, challenges accepted), finding games, the log of challenges and the games played.
+
+## Words
+
+One vocabulary across every screen, the command palette and the docs. Use these, not synonyms.
+
+- **Baseline:** `main`. Never "reference", "base" or "current version".
+- **Version:** a branch of the engine, shown by its branch name. Commit hashes appear only on hover.
+- **Verdicts:** Passed, Rejected, Stopped, Running, Queued. Nothing else ("Stronger", "Not stronger", "Waiting", "Testing").
+- **Actions:** "Test a change" and "Tune numbers" (not "New test", "New tune"). "Watch two versions play", "Improve the engine".
+- **Test stages:** Quick screen (4+0.04), Short games (8+0.08), Long games (40+0.4).
+- **Clocks:** written `3+2`, minutes plus seconds a move. Bullet, Blitz and Rapid mean Lichess's speeds only.
+- **Links:** a control that goes to another page is a link (middle-click and copy-link work), never a button that navigates.
 
 ## Look
 

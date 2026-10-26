@@ -24,7 +24,7 @@ const groups = [
       { keys: [["E"]], does: "Turn the engine on or off" },
       { keys: [["N"], ["P"]], does: "Next and previous game or match" },
       { keys: [["L"]], does: "Back to the live match (End does too)" },
-      { keys: [["M"]], does: "Watch a match" },
+      { keys: [["M"]], does: "Watch two versions play" },
     ],
   },
   {

@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { useRouter } from "vue-router";
+import { RouterLink } from "vue-router";
 import { PhGraph } from "@phosphor-icons/vue";
 import { EActions } from "@eos-ui/vue/components/EActions";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import ChequerField from "../components/home/ChequerField.vue";
-
-const router = useRouter();
 </script>
 
 <template>
@@ -15,8 +13,12 @@ const router = useRouter();
       <h1 class="cover-title">Dame<em>less</em></h1>
       <p class="cover-tagline">Make a chess engine stronger, one tested idea at a time.</p>
       <EActions class="cover-actions">
-        <EButton :icon="PhGraph" @click="router.push('/board')">Open the board</EButton>
-        <EButton variant="outline" @click="router.push('/improve')">Open Improve</EButton>
+        <RouterLink v-slot="{ href, navigate }" custom to="/board">
+          <EButton :icon="PhGraph" :href="href" @click="navigate">Open the board</EButton>
+        </RouterLink>
+        <RouterLink v-slot="{ href, navigate }" custom to="/improve">
+          <EButton variant="outline" :href="href" @click="navigate">Improve the engine</EButton>
+        </RouterLink>
       </EActions>
     </div>
   </div>

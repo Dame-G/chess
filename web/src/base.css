@@ -2,7 +2,6 @@
    the footer sits at the bottom of a short page. */
 html {
   height: 100%;
-  scrollbar-gutter: stable;
   text-size-adjust: 100%;
 }
 

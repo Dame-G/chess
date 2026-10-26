@@ -5,6 +5,7 @@ import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ECombobox } from "@eos-ui/vue/components/ECombobox";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
+import { ERadioGroup } from "@eos-ui/vue/components/ERadioGroup";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { api } from "../../api/runner";
@@ -19,8 +20,8 @@ const router = useRouter();
 const toast = useToast();
 const { state: bots } = useLichessBots(() => props.online);
 
-// The few clocks worth a button; the same minutes plus seconds a move as the search uses.
-const clocks = clockOptions([]).filter((c) => ["1+0", "3+0", "3+2", "5+3", "10+5"].includes(c.value));
+// The same clocks as "Clocks to play" in Find a game.
+const clocks = clockOptions([]);
 const colours = [
   { value: "random", label: "Random" },
   { value: "white", label: "White" },
@@ -108,10 +109,10 @@ watch(() => route.query.challenge, focusField);
       :options="options"
       :loading="online && bots.status === 'pending'"
     />
-    <ESegmented
+    <ERadioGroup
       v-model="clock"
       label="Clock"
-      size="sm"
+      orientation="horizontal"
       :options="clocks"
       :hint="`${speedName(speed)}, in minutes plus seconds a move.`"
     />

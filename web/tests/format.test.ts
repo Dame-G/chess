@@ -29,10 +29,10 @@ describe("forecast", () => {
 
 describe("verdict", () => {
   const e = (over: Partial<Experiment>) => ({ kind: "gainer", status: "passed", summary: "", ...over }) as Experiment;
-  it("says what a result means for the kind of change", () => {
-    expect(verdict(e({})).label).toBe("Stronger");
-    expect(verdict(e({ status: "failed" })).label).toBe("Not stronger");
-    expect(verdict(e({ kind: "nonregression" })).label).toBe("No weaker");
+  it("names the outcome with the shared words", () => {
+    expect(verdict(e({})).label).toBe("Passed");
+    expect(verdict(e({ status: "failed" })).label).toBe("Rejected");
+    expect(verdict(e({ kind: "nonregression" })).label).toBe("Passed");
     expect(verdict(e({ status: "running", current: "screen" })).sentence).toBe("Quick screen in progress.");
   });
 });

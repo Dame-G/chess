@@ -2,7 +2,7 @@
 export const glossary = {
   elo: {
     term: "Elo",
-    text: "A rating difference. +10 Elo means the new version scores about 51.4% against the old one. Top engines improve a few Elo at a time.",
+    text: "A rating difference. +10 Elo means the changed version scores about 51.4% against main. Top engines improve a few Elo at a time.",
   },
   nelo: {
     term: "Normalized Elo",
@@ -17,12 +17,12 @@ export const glossary = {
     text: "How strongly the games so far favour one answer. The test stops when it crosses the accept or the reject line.",
   },
   bounds: {
-    term: "Bounds",
+    term: "Elo range tested",
     text: "The two answers the test chooses between, in normalized Elo: [0, 3] asks “is it at least 3 better, or no better at all?”",
   },
   los: {
     term: "Chance stronger",
-    text: "The likelihood, from the games so far, that the new version is truly stronger rather than lucky.",
+    text: "The likelihood, from the games so far, that the changed version is truly stronger rather than lucky.",
   },
   pairs: {
     term: "Game pairs",
@@ -46,15 +46,15 @@ export const glossary = {
   },
   branch: {
     term: "Branch",
-    text: "A named copy of the engine with one change. Each idea lives on its own branch; main is the current best. Test a branch against main, and merge it if it passes.",
+    text: "A named copy of the engine with one change. Each idea lives on its own branch; main is the baseline every change is tested against. Merge a branch into main if it passes.",
   },
   spsa: {
     term: "SPSA",
     text: "A way to tune many constants at once: each round tries two slightly different copies of the engine against each other and moves every constant a little towards the winner.",
   },
   build: {
-    term: "Version",
-    text: "A compiled engine from one commit of a branch. Each is built once and kept.",
+    term: "Build",
+    text: "A compiled engine from one commit of a version (a branch). Each is built once and kept.",
   },
 } as const;
 

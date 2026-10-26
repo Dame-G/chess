@@ -45,7 +45,12 @@ const whoOptions = [
 ];
 const speeds = computed({
   get: () => draft.value.speeds as string[],
-  set: (v) => (draft.value.speeds = v as Speed[]),
+  set: (v) => {
+    draft.value.speeds = v as Speed[];
+    // The speeds are the clock filter: any initial time up to the longest speed picked.
+    draft.value.min_initial = 0;
+    draft.value.max_initial = v.includes("classical") ? 10_800 : 1800;
+  },
 });
 const modes = computed({
   get: () => [...(draft.value.accept_rated ? ["rated"] : []), ...(draft.value.accept_casual ? ["casual"] : [])],
@@ -61,15 +66,6 @@ const who = computed({
     draft.value.accept_bots = v.includes("bots");
   },
 });
-
-/** Clocks are kept in seconds; people think in minutes. */
-const minutes = (key: "min_initial" | "max_initial") =>
-  computed({
-    get: () => draft.value[key] / 60,
-    set: (v: number | null) => (draft.value[key] = v === null ? Number.NaN : Math.round(v * 60)),
-  });
-const minInitial = minutes("min_initial");
-const maxInitial = minutes("max_initial");
 
 // ---- Mistakes the rules cannot carry out are said, not saved.
 const problem = computed(() => {
@@ -160,8 +156,6 @@ onBeforeUnmount(() => {
         <ECheckboxGroup v-model="who" label="Opponents" orientation="horizontal" :options="whoOptions" />
       </div>
       <div class="pair">
-        <ENumberField v-model="minInitial" label="Clock from" size="sm" :min="0" :step="1" suffix="min" />
-        <ENumberField v-model="maxInitial" label="Clock up to" size="sm" :min="0" :step="1" suffix="min" />
         <ENumberField v-model="draft.min_increment" label="Increment from" size="sm" :min="0" suffix="s" />
         <ENumberField v-model="draft.max_increment" label="Increment up to" size="sm" :min="0" suffix="s" />
       </div>
@@ -175,7 +169,7 @@ onBeforeUnmount(() => {
       <ENotice v-if="error" tone="danger" title="Could not save" :role="false">{{ error }}</ENotice>
     </section>
 
-    <EDisclosure title="Engine">
+    <EDisclosure title="Engine options">
       <div class="pair pair--engine">
         <ENumberField v-model="draft.hash" label="Hash" size="sm" :min="1" suffix="MB" />
         <ENumberField v-model="draft.threads" label="Threads" size="sm" :min="1" />
