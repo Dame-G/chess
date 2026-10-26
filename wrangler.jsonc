@@ -4,7 +4,7 @@
   "name": "chess",
   "compatibility_date": "2026-10-01",
   "assets": {
-    "directory": "./web/dist",
+    "directory": "./apps/web/dist",
     // A single-page app: every path that is not a file gets index.html, and the router takes over.
     "not_found_handling": "single-page-application",
   },

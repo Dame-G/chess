@@ -1,0 +1,9 @@
+[package]
+name = "dameless-work"
+description = "The scheduler, ideas and trials (the funnel), tunes (SPSA), imports as work."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

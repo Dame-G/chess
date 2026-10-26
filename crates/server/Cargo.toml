@@ -1,0 +1,13 @@
+[package]
+name = "dameless"
+description = "The Dameless app: the HTTP API, the event stream and the CLI, in one binary."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "dameless"
+path = "src/main.rs"
+
+[dependencies]

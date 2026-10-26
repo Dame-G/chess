@@ -4,6 +4,6 @@
     ".": {
       "entry": ["scripts/*.mjs"]
     },
-    "web": {}
+    "apps/web": {}
   }
 }

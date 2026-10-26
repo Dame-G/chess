@@ -1,0 +1,9 @@
+[package]
+name = "dameless-core"
+description = "Pure domain: types, chess, statistics, review rules, referee rules, SPSA and scaling maths, events. No I/O."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

@@ -1,0 +1,9 @@
+[package]
+name = "dameless-lichess"
+description = "Adapter: Lichess's HTTP API with its rate rules, OAuth PKCE, NDJSON streams, Bot and Board API, import, explorer."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

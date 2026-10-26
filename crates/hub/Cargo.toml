@@ -1,0 +1,9 @@
+[package]
+name = "dameless-hub"
+description = "The shared runtime: config, data directory, secrets, the event bus, the fair-play policy and the core ledger."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

@@ -1,0 +1,9 @@
+[package]
+name = "dameless-engine"
+description = "Adapter: UCI processes, the engine pool, git and cargo builds, bench, fastchess."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

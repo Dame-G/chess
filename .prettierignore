@@ -2,7 +2,7 @@ dist
 node_modules
 target*/
 pnpm-lock.yaml
-web/src/api/schema.d.ts
-runner/openapi.json
+apps/web/src/api/schema.d.ts
+crates/server/openapi.json
 LICENSE
 .claude
