@@ -345,6 +345,17 @@ pub async fn run(r: Run<'_>, id: i64) -> Result<ExperimentStatus> {
 }
 
 fn bench_stage(base: &build::Build, dev: &build::Build, functional: bool) -> StageResult {
+    // A build whose bench differs from its commit's `Bench:` line is suspect (a stale line, or search that is not
+    // deterministic), as Reckless's CI would say: testing with it would test something other than the commit claims.
+    for (side, build) in [("base", base), ("dev", dev)] {
+        if let Some(expected) = build.bench_expected.filter(|e| *e != build.bench) {
+            let detail = format!(
+                "{side} benches {} but its commit says Bench: {expected}: fix the Bench: line, or find the non-determinism",
+                build.bench
+            );
+            return StageResult { stage: "bench".into(), passed: false, detail, test: None };
+        }
+    }
     let (b, d) = (base.bench, dev.bench);
     let (passed, detail) = match (functional, b == d) {
         (true, false) => (true, format!("bench {b} → {d}")),
@@ -588,5 +599,45 @@ pub mod tests {
             .await?;
         state.events.emit("test.progress", serde_json::to_value(&t)?);
         Ok(t)
+    }
+}
+
+#[cfg(test)]
+mod bench_tests {
+    use super::*;
+
+    fn build(bench: u64, expected: Option<u64>) -> build::Build {
+        build::Build {
+            id: 1,
+            refname: "x".into(),
+            commit: "c".into(),
+            subject: "s".into(),
+            features: "no-syzygy".into(),
+            network: None,
+            bench,
+            bench_expected: expected,
+            nps: 1,
+            created_at: String::new(),
+            deleted_at: None,
+            key: String::new(),
+        }
+    }
+
+    #[test]
+    fn bench_stage_wants_a_change_only_for_functional_changes() {
+        let (main, same, other) = (build(100, Some(100)), build(100, None), build(200, Some(200)));
+        assert!(bench_stage(&main, &other, true).passed);
+        assert!(!bench_stage(&main, &same, true).passed);
+        assert!(bench_stage(&main, &same, false).passed);
+        assert!(!bench_stage(&main, &other, false).passed);
+    }
+
+    #[test]
+    fn bench_stage_fails_a_build_that_disagrees_with_its_bench_line() {
+        let main = build(100, Some(100));
+        let r = bench_stage(&main, &build(200, Some(150)), true);
+        assert!(!r.passed && r.detail.contains("dev benches 200") && r.detail.contains("Bench: 150"), "{}", r.detail);
+        let r = bench_stage(&build(100, Some(90)), &build(100, Some(100)), false);
+        assert!(!r.passed && r.detail.starts_with("base"), "{}", r.detail);
     }
 }
