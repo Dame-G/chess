@@ -129,9 +129,11 @@ async function putOnLichess() {
 
 /** Whether its fingerprint equals main's: the same search, so a test against main would play the same games. */
 const sameAsMain = computed(() => {
-  const mine = props.version.builds.find((b) => !b.spsa);
-  const main = versions.value.data?.find((v) => v.is_main)?.builds.find((b) => !b.spsa);
-  return !props.version.is_main && !!mine && !!main && mine.bench === main.bench;
+  const main = versions.value.data?.find((v) => v.is_main);
+  if (props.version.is_main || !main) return false;
+  const mine = props.version.builds.find((b) => !b.spsa)?.bench ?? props.version.bench;
+  const theirs = main.builds.find((b) => !b.spsa)?.bench ?? main.bench;
+  return mine != null && theirs != null && mine === theirs;
 });
 
 type Action = "test" | "tune" | "watch" | "play" | "lichess" | "build";
