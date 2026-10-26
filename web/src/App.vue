@@ -191,6 +191,13 @@ const commands = computed<CommandItem[]>(() => {
       keywords: ["find a game", "seek", "challenge", "rapid", "friend", "stockfish"],
     },
     {
+      id: "go:/lichess/compare",
+      label: "Compare players",
+      group: "Do",
+      icon: PhCrown,
+      keywords: ["compare", "accuracy", "brilliant", "blunders", "stats", "review"],
+    },
+    {
       id: "go:/improve?new=test",
       label: "Test a change",
       group: "Do",

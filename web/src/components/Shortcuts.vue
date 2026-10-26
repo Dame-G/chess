@@ -22,6 +22,7 @@ const groups = [
       { keys: [["Space"]], does: "Play or pause" },
       { keys: [["F"]], does: "Flip the board" },
       { keys: [["E"]], does: "Turn the engine on or off" },
+      { keys: [["X"], ["Shift", "X"]], does: "Next and previous mistake, in a reviewed game" },
       { keys: [["N"], ["P"]], does: "Next and previous game or match" },
       { keys: [["L"]], does: "Back to the live match (End does too)" },
       { keys: [["M"]], does: "Watch two versions play" },
