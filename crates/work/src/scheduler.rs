@@ -80,7 +80,7 @@ struct Running {
 fn lane(kind: WorkKind) -> Option<u8> {
     match kind {
         WorkKind::Build => Some(0),
-        WorkKind::Trial | WorkKind::Tune => Some(1),
+        WorkKind::Trial | WorkKind::Tune | WorkKind::Calibrate => Some(1),
         WorkKind::Review => Some(2),
         WorkKind::Promote => Some(3),
         WorkKind::Import => None,

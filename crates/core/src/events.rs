@@ -7,10 +7,12 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
+    drills::{Drill, DrillId, DrillOutcome},
     error::FAIR_PLAY_REASON,
     game::{GameSummary, Move, Offers, SeatAction},
     ideas::{Idea, Trial},
-    ids::{ConnectionKey, GameId, IdeaId, PlayerKey, Side, SidePair, TrialId, WorkId},
+    ids::{ConnectionKey, GameId, IdeaId, PlayerKey, Side, SidePair, Timestamp, TrialId, WorkId},
+    levels::EntrantRating,
     lichess::{ChallengeEvent, ConnectionStatus},
     score::Score,
     stats::Pentanomial,
@@ -72,10 +74,22 @@ pub enum EventKind {
     /// [`EvalInfo`], never replayed.
     #[serde(rename = "eval.info")]
     EvalInfo,
+    /// [`Drill`].
+    #[serde(rename = "drill.upserted")]
+    DrillUpserted,
+    /// [`DrillAnswered`].
+    #[serde(rename = "drill.answered")]
+    DrillAnswered,
+    /// [`DrillDeleted`].
+    #[serde(rename = "drill.deleted")]
+    DrillDeleted,
+    /// [`LevelsUpdated`].
+    #[serde(rename = "levels.updated")]
+    LevelsUpdated,
 }
 
 impl EventKind {
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 21] = [
         Self::GameUpserted,
         Self::GameMoved,
         Self::GameUndone,
@@ -93,6 +107,10 @@ impl EventKind {
         Self::Challenge,
         Self::PolicyChanged,
         Self::EvalInfo,
+        Self::DrillUpserted,
+        Self::DrillAnswered,
+        Self::DrillDeleted,
+        Self::LevelsUpdated,
     ];
 
     /// The name on the wire: `game.upserted`.
@@ -115,6 +133,10 @@ impl EventKind {
             Self::Challenge => "challenge",
             Self::PolicyChanged => "policy.changed",
             Self::EvalInfo => "eval.info",
+            Self::DrillUpserted => "drill.upserted",
+            Self::DrillAnswered => "drill.answered",
+            Self::DrillDeleted => "drill.deleted",
+            Self::LevelsUpdated => "levels.updated",
         }
     }
 
@@ -307,6 +329,27 @@ pub struct EvalInfo {
     pub nps: u64,
 }
 
+/// `drill.answered`: a drill was answered; the rescheduled drill follows as `drill.upserted`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct DrillAnswered {
+    pub drill: DrillId,
+    pub outcome: DrillOutcome,
+    pub at: Timestamp,
+}
+
+/// `drill.deleted`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct DrillDeleted {
+    pub id: DrillId,
+}
+
+/// `levels.updated`: the levels were refitted.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct LevelsUpdated {
+    pub ratings: Vec<EntrantRating>,
+    pub updated_at: Timestamp,
+}
+
 /// Every payload, typed, for building events without mixing kinds and payloads up.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Payload {
@@ -327,6 +370,10 @@ pub enum Payload {
     Challenge(Box<ChallengeEvent>),
     PolicyChanged(Policy),
     EvalInfo(EvalInfo),
+    DrillUpserted(Box<Drill>),
+    DrillAnswered(DrillAnswered),
+    DrillDeleted(DrillDeleted),
+    LevelsUpdated(LevelsUpdated),
 }
 
 impl Payload {
@@ -349,6 +396,10 @@ impl Payload {
             Self::Challenge(_) => EventKind::Challenge,
             Self::PolicyChanged(_) => EventKind::PolicyChanged,
             Self::EvalInfo(_) => EventKind::EvalInfo,
+            Self::DrillUpserted(_) => EventKind::DrillUpserted,
+            Self::DrillAnswered(_) => EventKind::DrillAnswered,
+            Self::DrillDeleted(_) => EventKind::DrillDeleted,
+            Self::LevelsUpdated(_) => EventKind::LevelsUpdated,
         }
     }
 
@@ -371,6 +422,8 @@ impl Payload {
             Self::Challenge(p) => Topic::Connection(p.challenge.connection),
             Self::PolicyChanged(_) => Topic::Policy,
             Self::EvalInfo(p) => Topic::Eval(p.session.clone()),
+            Self::DrillUpserted(_) | Self::DrillAnswered(_) | Self::DrillDeleted(_) => Topic::Player(PlayerKey::You),
+            Self::LevelsUpdated(_) => Topic::Player(PlayerKey::Dameless),
         }
     }
 
@@ -394,6 +447,10 @@ impl Payload {
             Self::Challenge(p) => serde_json::to_value(p),
             Self::PolicyChanged(p) => serde_json::to_value(p),
             Self::EvalInfo(p) => serde_json::to_value(p),
+            Self::DrillUpserted(p) => serde_json::to_value(p),
+            Self::DrillAnswered(p) => serde_json::to_value(p),
+            Self::DrillDeleted(p) => serde_json::to_value(p),
+            Self::LevelsUpdated(p) => serde_json::to_value(p),
         };
         // Every payload is plain data with string keys and finite numbers, which always serializes.
         v.unwrap_or(serde_json::Value::Null)

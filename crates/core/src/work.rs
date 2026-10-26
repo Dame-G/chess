@@ -14,6 +14,8 @@ pub enum WorkKind {
     Review,
     Import,
     Promote,
+    /// Games between Dameless's levels, to fit their ratings.
+    Calibrate,
 }
 
 impl WorkKind {
