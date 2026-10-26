@@ -174,6 +174,60 @@ Events on `/api/events`:
 - `lichess.status`: the whole status (as `GET /api/lichess`) whenever the connection, the account, the settings, the games being played or the search for games change.
 - `lichess.challenge`: `{ id, direction: incoming|outgoing, from: {name, title, rating}, to, rated, speed, variant, clock: {initial, increment} | null, decision: accepted|declined|canceled, reason, detail }`. `reason` is the Lichess decline key, ours for incoming challenges and theirs for outgoing ones; `detail` is a few words more, or null.
 
+## Your own Lichess account
+
+Beside the bot, the user can log in with their own (human) Lichess account, and the runner becomes their Lichess client: the games they play are matches on the board, played through the Board API, and their history can be imported. The account is independent of the bot (both can be connected at once) and can never be the bot's: a BOT account, or the bot's own, is refused. The token is kept in the data directory as `lichess-me-token` (0600 on Unix), apart from the bot's, and no route returns it. Nothing here logs in by itself: the user does, in the browser.
+
+```bash
+chess lichess me                    # status: account and ratings, connection, games, challenges, seek, fair-play lock
+chess lichess me login              # prints the Lichess login link (PKCE); the runner stores the token when Lichess answers
+chess lichess me token < token.txt  # or a personal token (board:play, challenge:read, challenge:write), from stdin
+chess lichess me logout             # revokes the token at Lichess and forgets it
+chess lichess me seek --tc 10+5 [--rated] [--color white] [--range 1500-1800]   # rapid or slower; `seek stop` cancels
+chess lichess me challenge <user> | --bot | --ai 1-8  --tc 5+3 [--rated] [--color black]   # blitz or slower
+chess lichess me accept <id> | decline <id> [--reason later] | cancel <id>
+chess lichess me import [--max N] [--since MS] [--wait]   # finished games as matches; later runs fetch only newer ones
+chess move <match id> e4            # your move in a Lichess game, like any game you play here
+```
+
+Logging in (`runner/src/lichess/me/oauth.rs`): `POST /api/lichess/me/login {return_to?}` answers `{ url, expires_in_seconds }`. The URL is Lichess's `/oauth` with `client_id=dameless`, an S256 code challenge, the scopes `board:play challenge:read challenge:write` and a random `state`; the verifier and the state stay in the runner for ten minutes, single-use. Lichess sends the browser to `http://<the runner's loopback host>/api/lichess/me/callback`, which exchanges the code at `POST /api/token`, checks and stores the token, and redirects (303) to `return_to` with `?lichess=connected` or `?lichess=error&message=...`. `return_to` must be a page of the runner on a loopback address or of https://chess.dame.gg (default `/lichess` on the runner). The callback is outside the API's guard and the OpenAPI document: a browser arriving from lichess.org is cross-site with no token, and the state is the proof. A login lasts a year (Lichess's token lifetime); `expires_at` says when.
+
+The routes:
+
+- `GET /api/lichess/me`: `{ configured, account: {id, username, title, ratings: {bullet, blitz, rapid, classical}}, scopes, missing_scopes, expires_at, state: off|connecting|online|error, error, playing: [match ids], elsewhere: [{id, url, speed}], challenges: {incoming, outgoing}, seek: {seeking: {clock_seconds, increment, rated, color, rating_range} | null, note}, fair_play_lock }`. A challenge is `{ id, url, direction, opponent: {name, title, rating}, rated, speed, variant, clock: {initial, increment} | null, days, color (the colour you would play), playable }`.
+- `PUT /api/lichess/me/token {token}` (400 if Lichess refuses it, it lacks `board:play`, or it is a BOT or the bot's account), `DELETE /api/lichess/me` (revokes at Lichess, then forgets).
+- `POST /api/lichess/me/seek {clock_seconds, increment, rated, color, rating_range?}` and `DELETE` to cancel. The seek is a connection Lichess holds open until someone takes it; the game then starts.
+- `POST /api/lichess/me/challenge {username | ai_level: 1-8 | my_bot: true, clock_seconds, increment, rated, color}` (201, the bot's `ChallengeSent` shape). AI games are casual and start at once; `my_bot` challenges the bot's account, which answers by its own settings.
+- `POST /api/lichess/me/challenges/{id}/accept`, `POST .../decline {reason?}` (Lichess's keys: `generic`, `later`, `tooFast`, ...), `DELETE /api/lichess/me/challenges/{id}` (withdraw yours). All answer the status.
+- `POST /api/lichess/me/import {max?, since?}` (202, a job). Errors from Lichess come back as 400, 429 or 502, as for the bot.
+
+What Lichess allows through the Board API (its documentation and lila's `isBoardCompatible`): rapid, classical and correspondence; blitz too for direct challenges and AI games, never bullet. A game's speed is Lichess's estimate, initial + 40 × increment: under 3 minutes is bullet, under 8 blitz. So a seek must be at least 8 minutes (400 otherwise, pointing to a challenge for blitz), a challenge at least 3, and a challenge's clock is 0, 15, 30, 45 or 90 seconds or whole minutes up to 180, the increment at most 180 seconds (60 against the AI). Accepting a challenge the Board API cannot play (`playable: false`: bullet, a variant) is a 400: that one is played on lichess.org. Lichess asks for one request at a time and a minute's pause after a 429.
+
+Playing (`runner/src/lichess/me/game.rs`):
+
+- The runner follows the account's event stream while a token is stored, and comes back after a restart. Each game that starts and that the Board API plays (`compat.board`) is a `Match` with `lichess: { id, url, rated, speed, our_side, account: "me", opening, draw_offer, takeback_offer }`; your seat is a human `Player` (`human: true`, name = username, rating), the opponent has name, rating and title (Lichess's AI is "Stockfish level N"). Clocks are Lichess's; moves carry no eval. A correspondence game's `time` is `movetime` of its days per turn. Games that cannot be played here (started on lichess.org at bullet, variants) are listed in `elsewhere` and still lock analysis.
+- The match routes act on it: `POST /api/matches/{id}/moves {uci}` plays the move through the Board API and answers once Lichess has it (409 when it is not your turn, 400 when illegal); `POST .../draw` accepts the opponent's offer (`{accepted: true}`) or offers one (`{accepted: false, offered: true}`), on either turn; `POST .../takeback` accepts the opponent's proposal or proposes one, clock or not; `DELETE /api/matches/{id}` resigns (aborts before both sides have moved). Only a Lichess game has `POST /api/matches/{id}/abort`, `/claim-victory`, `/claim-draw` (after the opponent left), `/decline-draw` and `/decline-takeback` (409 without an offer).
+- A game between our two accounts (you against your bot) has two records, one per account; `GET /api/matches?account=me|bot` (with or without `source=lichess`) lists one account's games, played here or imported.
+
+History (`runner/src/lichess/me/import.rs`): a job that starts at once beside the queue (it uses the network, not the CPU), listed, logged and cancelled like any job. It reads `GET /api/games/user/{username}` as NDJSON with clocks, evals and the opening, and stores each finished standard game as a finished match (`account: "me"`, `opening` such as "C20 King's Pawn Game", Lichess's evaluations where the game was analysed, as the mover's score). A Lichess game is stored once per account; the newest game's time is kept in `meta` (`lichess.me.import.since`), so a run without `since` fetches only newer games. The result is `{ imported, skipped, other, newest }`.
+
+Analysis helpers (`runner/src/lichess/me/explorer.rs`):
+
+- `GET /api/lichess/explorer?db=lichess|masters|player&fen&play&speeds&ratings&modes&since&until&moves&top_games&recent_games&player&color`: Lichess's opening explorer answer, as is. explorer.lichess.org now answers 401 without a login, so it is asked with your token: 409 when you are not logged in. The player explorer streams while it indexes; the last document within 8 seconds is returned.
+- `GET /api/lichess/tablebase?fen`: tablebase.lichess.org's answer for at most 7 pieces (no login needed).
+- Both are cached in memory (explorer ten minutes, tablebase a day). `LICHESS_EXPLORER_URL` and `LICHESS_TABLEBASE_URL` point them elsewhere; with `LICHESS_URL` set to a mock they default to `<mock>/explorer` and `<mock>/tablebase`.
+
+Fair play, a hard rule: Lichess's terms forbid engines, opening books, tablebases and other help during a game; the explorer is allowed in correspondence only. While you have any game running on Lichess, `fair_play_lock` is true and the runner refuses, with 409 "Analysis is off while you're playing on Lichess": `POST /api/analyse`, `POST /api/analysis` (a live search running when a game starts is stopped), the tablebase, and the explorer (unless every running game is correspondence). Bot games, tests and local matches are unaffected. Do not work around it: no agent should analyse a position from a game the user is playing.
+
+Events on `/api/events`:
+
+- `lichess.me.status`: the whole status whenever the connection, the account, the games, the challenges or the seek change.
+- `lichess.me.challenge`: `{ challenge, event: created|accepted|declined|canceled, reason }`.
+- `lichess.me.fair_play`: `{ locked }` when the lock turns on or off.
+- `match.offer`: `{ id, draw_offer, takeback_offer }` (each `white`, `black` or null) when an offer in your game changes; the record's `lichess.draw_offer` and `takeback_offer` hold the same.
+- `match.opponent_gone`: `{ id, gone, claim_win_in_seconds }`: the opponent left (or came back), and when you may claim.
+- `match.started`, `match.move`, `match.takeback` and `match.ended` as for any match.
+
 ## Versions and tidying
 
 A branch is a version of the engine. `GET /api/versions` gives one entry per branch (the fork's and upstream's, as `chess branches`), newest commit first: its builds (each with `on_disk`), `latest_build_id`, the `verdict` of its latest experiment as dev (status, summary, the last match's Elo estimate) and the base it was `tested_against`, its latest `tune`, `tunables`, `on_lichess`, `is_main` and `hidden`. A build belongs to a branch when it was built from that name or is of its tip commit.
