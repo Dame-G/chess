@@ -4,7 +4,7 @@
  * game), pick up a game, and go back to a position. Live games sit on top.
  */
 import { computed, ref } from "vue";
-import { PhClipboardText, PhClockCounterClockwise, PhFlask, PhSquaresFour, PhSword, PhUser } from "@phosphor-icons/vue";
+import { PhClockCounterClockwise, PhFlask, PhSquaresFour } from "@phosphor-icons/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
@@ -29,9 +29,6 @@ const props = defineProps<{
   latest?: { id: number; name: string; games: number };
 }>();
 const emit = defineEmits<{
-  play: [];
-  engines: [];
-  load: [];
   open: [id: number];
   position: [fen: string, moves: string[]];
   test: [id: number];
@@ -71,12 +68,6 @@ const shown = computed(() => {
 
 <template>
   <div class="lib">
-    <div class="start">
-      <EButton size="sm" :icon="PhUser" @click="emit('play')">Play</EButton>
-      <EButton size="sm" variant="outline" :icon="PhSword" @click="emit('engines')">Engines</EButton>
-      <EButton size="sm" variant="quiet" :icon="PhClipboardText" @click="emit('load')">Load</EButton>
-    </div>
-
     <section aria-label="Games">
       <div class="head">
         <h3 class="section">Games</h3>
@@ -93,7 +84,7 @@ const shown = computed(() => {
       />
       <ESkeleton v-if="loading && !matches.length" :lines="4" label="Loading games" class="pad" />
       <EEmptyState v-else-if="!shown.length" title="No games yet" icon="info" size="sm" bare class="pad">
-        Play one, or have two engines play, and it is kept here to replay.
+        Games you play or watch are kept here to replay.
       </EEmptyState>
       <MatchList v-else :matches="shown" :current="current" @open="emit('open', $event)" />
     </section>
@@ -143,14 +134,6 @@ const shown = computed(() => {
   display: grid;
   align-content: start;
   padding-block-end: var(--e-gap-base);
-}
-
-.start {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: var(--e-gap-snug);
-  padding: var(--e-gap-snug) var(--ws-pad);
-  border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
 }
 
 .head {

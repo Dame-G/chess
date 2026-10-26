@@ -10,6 +10,7 @@ import {
   PhCaretLeft,
   PhCaretRight,
   PhChartLine,
+  PhClipboardText,
   PhCopy,
   PhListBullets,
   PhMagnifyingGlass,
@@ -1167,9 +1168,6 @@ const filters = [
       :current="matchId || undefined"
       :recent="recentItems"
       :latest="latestItem"
-      @play="openSetup('play')"
-      @engines="openSetup('engines')"
-      @load="importOpen = true"
       @open="openMatch"
       @position="openPosition"
       @test="router.push(`/games/${$event}/0`)"
@@ -1193,7 +1191,17 @@ const filters = [
           { label: 'Games' },
         ]"
       />
-      <h2 v-else class="head-title">{{ libraryName }}</h2>
+      <template v-else>
+        <h2 class="head-title">{{ libraryName }}</h2>
+        <EIconButton
+          :icon="PhClipboardText"
+          label="Load a game or FEN"
+          tooltip
+          size="sm"
+          class="head-load"
+          @click="importOpen = true"
+        />
+      </template>
     </template>
 
     <template v-if="libraryInline" #library>
@@ -1488,10 +1496,8 @@ const filters = [
               <EButton variant="quiet" size="sm" :icon="PhCopy">Copy</EButton>
             </template>
           </EMenu>
-          <template v-if="!humanLive && !(isMatch && matchLive)">
-            <EButton v-if="inGame" variant="quiet" size="sm" :icon="PhChartLine" @click="fork([])">
-              Analyse from here
-            </EButton>
+          <template v-if="inGame && !humanLive && !(isMatch && matchLive)">
+            <EButton variant="quiet" size="sm" :icon="PhChartLine" @click="fork([])"> Analyse from here </EButton>
             <EButton variant="quiet" size="sm" :icon="PhUser" @click="playFromHere('play')">Play from here</EButton>
             <EButton variant="quiet" size="sm" :icon="PhSword" @click="playFromHere('engines')">
               Engines from here
@@ -1561,6 +1567,10 @@ const filters = [
 .head-title {
   margin: 0;
   font: var(--e-type-h6);
+}
+
+.head-load {
+  margin-inline-start: auto;
 }
 
 .games {

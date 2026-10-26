@@ -26,8 +26,11 @@ const shown = (m: MatchSummary) =>
       : m.result === "1/2-1/2"
         ? "½–½"
         : m.result === "*"
-          ? "·"
+          ? ""
           : m.result.replace("-", "–");
+/** Which side won, for the row to set the winner in bold and the loser back. */
+const won = (m: MatchSummary, side: "white" | "black") =>
+  m.result === (side === "white" ? "1-0" : "0-1") ? "win" : m.result === "*" || m.result === "1/2-1/2" ? "" : "lose";
 </script>
 
 <template>
@@ -50,9 +53,9 @@ const shown = (m: MatchSummary) =>
       <span v-else class="res num">{{ shown(m) }}</span>
       <span class="what">
         <span class="names">
-          <span class="n">{{ m.white.name }}</span>
+          <span :class="['n', won(m, 'white')]">{{ m.white.name }}</span>
           <span class="vs">vs</span>
-          <span class="n">{{ m.black.name }}</span>
+          <span :class="['n', won(m, 'black')]">{{ m.black.name }}</span>
         </span>
         <span class="tc num">{{ detail(m) }}</span>
       </span>
@@ -141,6 +144,14 @@ const shown = (m: MatchSummary) =>
 .n {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.win {
+  font-weight: 700;
+}
+
+.lose {
+  color: var(--e-muted);
 }
 
 .tc {
