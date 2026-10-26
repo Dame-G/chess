@@ -48,10 +48,11 @@ export function useEventToasts() {
     });
   }
   onScopeDispose(
-    onEvent("challenge", (c) => {
-      if (c.event !== "created" || c.direction !== "incoming" || c.connection !== "you") {
+    onEvent("challenge", (e) => {
+      const c = e.challenge;
+      if (e.event !== "created" || c.direction !== "incoming" || c.connection !== "you") {
         const shown = challengeToasts.get(c.id);
-        if (c.event !== "created" && shown) toast.dismiss(shown);
+        if (e.event !== "created" && shown) toast.dismiss(shown);
         return;
       }
       const rating = c.opponent.rating ? ` (${c.opponent.rating})` : "";

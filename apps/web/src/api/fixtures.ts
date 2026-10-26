@@ -10,6 +10,7 @@ import { makeFen } from "chessops/fen";
 import { parseSan } from "chessops/san";
 import { makeUci } from "chessops/util";
 import { playUci, setup, uciOf } from "../board/position";
+import { createSheetRoutes } from "./fixtures-sheets";
 import { fixtureMode } from "./mode";
 import type {
   AppEvent,
@@ -898,6 +899,43 @@ const connections: Connections = {
     state: "online",
     error: null,
     playing: fairplay ? [1] : [],
+    challenges: [
+      {
+        id: "chInA1",
+        connection: "you",
+        direction: "incoming",
+        opponent: { name: "knightowl", title: "FM", rating: 1802 },
+        rated: true,
+        speed: "rapid",
+        variant: "standard",
+        time: clockTc(10, 5),
+        color: "random",
+        playable: true,
+        url: "https://lichess.org/chInA1",
+      },
+      {
+        id: "chOut2",
+        connection: "you",
+        direction: "outgoing",
+        opponent: { name: "cutemouse83", title: null, rating: 1862 },
+        rated: false,
+        speed: "rapid",
+        variant: "standard",
+        time: clockTc(15, 10),
+        color: "white",
+        playable: true,
+        url: "https://lichess.org/chOut2",
+      },
+    ],
+    you: {
+      scopes: ["board:play", "challenge:read", "challenge:write"],
+      missing_scopes: [],
+      expires_at: minutesAgo(-60 * 24 * 300),
+      elsewhere: [],
+      seek: null,
+      seek_note: null,
+    },
+    bot: null,
   },
   bot: {
     key: "bot",
@@ -914,7 +952,38 @@ const connections: Connections = {
     state: "online",
     error: null,
     playing: [2],
-    online: true,
+    challenges: [],
+    you: null,
+    bot: {
+      online: true,
+      settings: {
+        version: "champion",
+        hash: 64,
+        threads: 1,
+        move_overhead: 300,
+        accept_rated: true,
+        accept_casual: true,
+        speeds: ["bullet", "blitz", "rapid"],
+        min_initial: 60,
+        max_initial: 1800,
+        min_increment: 0,
+        max_increment: 30,
+        from_position: false,
+        accept_humans: true,
+        accept_bots: true,
+        max_games: 1,
+        seek_clocks: ["3+0", "3+2", "5+3"],
+        seek_rated: true,
+        seek_range: 300,
+      },
+      seek: {
+        mode: "always",
+        pending: null,
+        note: "Alpha-Bot declined (too fast). Trying another bot.",
+      },
+      bot_games_today: 37,
+      bot_limit_until: null,
+    },
   },
 };
 
@@ -925,6 +994,29 @@ const status: Status = {
     ? { assist: "off", reason: "Analysis is off while you're playing on Lichess" }
     : { assist: "allowed", reason: null },
 };
+
+const sheetRoutes = createSheetRoutes({
+  minutesAgo,
+  rng,
+  emit,
+  json,
+  error,
+  ideas,
+  trials,
+  versions,
+  work,
+  connections,
+  status,
+  games,
+  summaryOf,
+  fenAfter: (san, plies) => {
+    const pos = setup("startpos")!;
+    for (const uci of moves(san, plies, 1).slice(0, plies)) playUci(pos, uci);
+    return makeFen(pos.toSetup());
+  },
+  lines: { italian: ITALIAN, sicilian: SICILIAN, qgd: QGD, london: LONDON, caro: CARO },
+  mode: fixtureMode(),
+});
 
 // ---- Events
 
@@ -1317,6 +1409,9 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
   startLive();
   if (path === "/api/events") return streamResponse(url, init?.signal);
   await new Promise((r) => setTimeout(r, 40 + Math.random() * 80));
+
+  const sheet = sheetRoutes(method, path, url, body);
+  if (sheet) return sheet;
 
   let m: RegExpMatchArray | null;
   if (method === "GET") {

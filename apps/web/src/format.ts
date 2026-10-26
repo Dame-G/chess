@@ -1,4 +1,4 @@
-import type { GameSummary, Outcome, Score, Seat, Side, Speed, TimeControl } from "./api/types";
+import type { Estimate, GameSummary, Outcome, Score, Seat, Side, Speed, TimeControl } from "./api/types";
 
 /** `+1.23`, `−0.50` or `0.00`: a figure that rounds to zero has no sign. */
 export function signed(n: number, digits = 2): string {
@@ -129,3 +129,48 @@ export function seatName(seat: Seat, versionName?: string): string {
 }
 
 export const other = (side: Side): Side => (side === "white" ? "black" : "white");
+
+/** An estimate as `+3.1 ± 2.0`: the figure and half its 95 % interval. */
+export function plusMinus(e: Estimate, digits = 1): string {
+  return `${signed(e.elo, digits)} ± ${((e.high - e.low) / 2).toFixed(digits)}`;
+}
+
+/** A figure with `digits` decimals, or an em dash when there is none. */
+export function figure(n: number | null | undefined, digits = 1): string {
+  return n == null ? "—" : n.toFixed(digits);
+}
+
+/** A percentage as `81.3`, or an em dash. */
+export const percent = (n: number | null | undefined, digits = 1): string => figure(n, digits);
+
+/** A file size as `412 MB`, `1.3 GB`. */
+export function bytes(n: number): string {
+  const units = ["B", "kB", "MB", "GB", "TB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1000 && i < units.length - 1) {
+    v /= 1000;
+    i++;
+  }
+  return `${i === 0 || v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}
+
+/** `12 Oct`, with the year when it is not this one. */
+export function shortDate(iso: string, now = new Date()): string {
+  const d = new Date(iso);
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }) });
+}
+
+/** Seconds a review takes per game on this machine, as the design quotes it. */
+const REVIEW_SECONDS_PER_GAME = 20;
+
+/** What reviewing `games` games costs, in words: "about 40 s", "about 7 min". */
+export function reviewCost(games: number): string {
+  const seconds = games * REVIEW_SECONDS_PER_GAME;
+  return seconds < 90 ? `about ${Math.max(5, Math.round(seconds / 5) * 5)} s` : `about ${duration(seconds)}`;
+}
+
+/** `1 game`, `3 games`. */
+export const plural = (n: number, one: string, many = `${one}s`): string =>
+  `${n.toLocaleString("en-GB")} ${n === 1 ? one : many}`;

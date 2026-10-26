@@ -38,7 +38,7 @@ function back() {
 /** Escape closes the sheet, unless something inside it (a menu, a dialog) takes it first. */
 function onKey(e: KeyboardEvent) {
   if (e.key !== "Escape" || e.defaultPrevented) return;
-  if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+  if (document.querySelector('[aria-modal="true"]')) return;
   e.preventDefault();
   close();
 }
@@ -112,5 +112,13 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--ws-pad);
+}
+
+/* A phone gets a 16px gutter. */
+@media (width < 36rem) {
+  .sheet-head,
+  .sheet-body {
+    padding-inline: 1rem;
+  }
 }
 </style>

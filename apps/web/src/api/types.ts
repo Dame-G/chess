@@ -343,12 +343,295 @@ export interface Player {
   lichess: string | null;
 }
 
-/** `GET /api/players/{key}/profile`, as far as the app reads it yet. The sheets deepen it. */
-export interface Profile {
-  player: Player;
+/** Which games a profile adds up. */
+export interface ProfileFilter {
+  /** Only these speeds; empty for all. */
+  speeds: Speed[];
+  /** Only rated (true) or casual (false) games; `null` for both. */
+  rated: boolean | null;
+  /** Only games from this moment on. */
+  since: Timestamp | null;
+  /** The newest games, at most. */
+  limit: number;
+}
+
+/** Wins, draws and losses. `score` is points as a percentage of the decided games. */
+export interface Wdl {
+  games: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  score: number | null;
+}
+
+export interface Results {
+  overall: Wdl;
+  white: Wdl;
+  black: Wdl;
+}
+
+export interface SpeedStats {
+  /** `null` for games without a speed (movetime or node limits). */
+  speed: Speed | null;
   games: number;
   reviewed: number;
-  accuracy: { overall: number | null };
+  results: Wdl;
+  accuracy: number | null;
+  acpl: number | null;
+}
+
+/** Average game accuracy overall, per phase and per speed. */
+export interface PhaseStats {
+  overall: number | null;
+  opening: number | null;
+  middlegame: number | null;
+  endgame: number | null;
+  by_speed: SpeedStats[];
+}
+
+/** Classifications per reviewed game. */
+export type ClassRates = Record<Classification, number>;
+
+export type JudgementCounts = Record<Judgement, number>;
+
+export interface Opponents {
+  average_rating: number | null;
+  /** The opponents' average plus 400 × (wins − losses) / games. */
+  performance: number | null;
+}
+
+export interface OpeningStats {
+  /** The opening family without the ECO code or the variation ("Sicilian Defense"). */
+  name: string;
+  results: Wdl;
+}
+
+export interface TimeStats {
+  games: number;
+  average_ms: number | null;
+  opening_ms: number | null;
+  middlegame_ms: number | null;
+  endgame_ms: number | null;
+  time_trouble_blunders: number;
+  time_trouble_blunders_per_game: number;
+}
+
+/** One game on the trend line, oldest first. */
+export interface TrendPoint {
+  game: GameId;
+  played_at: Timestamp;
+  accuracy: number | null;
+  rating: number | null;
+  /** 1, ½ or 0; `null` for an unfinished game. */
+  points: number | null;
+}
+
+/** A move worth linking to: the board opens the game at `ply`. */
+export interface Moment {
+  game: GameId;
+  ply: number;
+  san: string;
+  side: Side;
+  classification: Classification;
+  win_before: number;
+  win_after: number;
+  sacrifice: number;
+  opponent: string;
+  played_at: Timestamp;
+  url: string | null;
+}
+
+export interface GameMoment {
+  game: GameId;
+  accuracy: number;
+  opponent: string;
+  outcome: Outcome | null;
+  played_at: Timestamp;
+}
+
+export interface Moments {
+  best: Moment[];
+  blunders: Moment[];
+  most_accurate_game: GameMoment | null;
+  least_accurate_game: GameMoment | null;
+}
+
+/** A position before one of your mistakes, to play out again. */
+export interface WeakSpot {
+  game: GameId;
+  ply: number;
+  fen: string;
+  /** What was played, and what was better, in SAN. */
+  played: string;
+  best: string;
+  /** Win percentage lost. */
+  swing: number;
+  opening: string | null;
+  phase: Phase;
+  /** How many weak spots share this one's opening family and phase. */
+  recurring: number;
+}
+
+/** A player's games added up (`GET /api/players/{key}/profile`). */
+export interface Profile {
+  player: Player;
+  filter: ProfileFilter;
+  games: number;
+  reviewed: number;
+  pending_review: number;
+  first_game: Timestamp | null;
+  last_game: Timestamp | null;
+  rating: number | null;
+  results: Results;
+  accuracy: PhaseStats;
+  acpl: number | null;
+  counts: ClassCounts;
+  counts_per_game: ClassRates;
+  judgements: JudgementCounts;
+  opponents: Opponents;
+  openings: OpeningStats[];
+  time: TimeStats;
+  trend: TrendPoint[];
+  longest_win_streak: number;
+  moments: Moments;
+  /** You only. */
+  weak_spots: WeakSpot[];
+}
+
+/** The rows of a comparison that have a leader. */
+export type LeaderRow =
+  | "score"
+  | "accuracy"
+  | "opening"
+  | "middlegame"
+  | "endgame"
+  | "acpl"
+  | "blunders"
+  | "mistakes"
+  | "brilliant"
+  | "performance"
+  | "streak"
+  | "time_trouble";
+
+export interface Leader {
+  row: LeaderRow;
+  /** Indexes into `profiles`; ties lead together, and a row only one player has figures for leads nobody. */
+  players: number[];
+}
+
+/** `GET /api/compare`. */
+export interface Comparison {
+  profiles: Profile[];
+  leaders: Leader[];
+}
+
+/** `GET /api/players/top`: Lichess's leaderboard. */
+export interface TopPlayer {
+  id: string;
+  username: string;
+  title: string | null;
+  rating: number;
+  progress: number;
+}
+
+/** `POST /api/players/{key}/import`. */
+export interface ImportRequest {
+  max?: number;
+  speeds?: Speed[];
+  rated?: boolean;
+}
+
+// ---- Tunes
+
+export interface Tunable {
+  name: string;
+  start: number;
+  min: number;
+  max: number;
+  c_end: number;
+  r_end: number;
+}
+
+/** A tunable to tune; what is left out comes from the engine's declaration. */
+export interface TunableOverride {
+  name: string;
+  start?: number | null;
+  min?: number | null;
+  max?: number | null;
+  c_end?: number | null;
+  r_end?: number | null;
+}
+
+export interface TuneSpec {
+  /** Empty means every declared tunable. */
+  params: TunableOverride[];
+  iterations: number;
+  /** Game pairs per iteration. */
+  pairs: number;
+  time: TimeControl;
+  /** MiB. */
+  hash: number;
+  concurrency: number | null;
+  alpha: number;
+  gamma: number;
+  a_ratio: number;
+}
+
+/** A tunable and where the tune has it now (unrounded). */
+export interface TuneParam extends Tunable {
+  value: number;
+}
+
+/** One applied update. `values` follow the order of the tune's params. */
+export interface TuneStep {
+  iteration: number;
+  values: number[];
+  /** Games won minus games lost by θ+. */
+  result: number;
+  penta: [number, number, number, number, number];
+}
+
+/** `GET /api/ideas/{id}/tune`. `params` is the web's addition to the design's `{ spec, steps }`: names and ranges. */
+export interface TuneState {
+  spec: TuneSpec;
+  params: TuneParam[];
+  steps: TuneStep[];
+}
+
+/** `POST /api/ideas`. */
+export interface NewIdea {
+  title: string;
+  hypothesis: string;
+  kind: IdeaKind;
+  branch: string;
+  base?: VersionId | null;
+  author?: Author;
+  tags?: string[];
+  /** Also run the long games stage. */
+  long?: boolean;
+  tune?: Partial<TuneSpec>;
+  /** A single test with any preset and bounds, or a fixed number of pairs. */
+  custom?: { preset: Preset; bounds?: [number, number]; pairs?: number };
+}
+
+// ---- Dameless
+
+/** A champion version and its cumulative Elo over v1. */
+export interface StrengthPoint {
+  version: VersionId;
+  name: string;
+  elo: number;
+  low: number;
+  high: number;
+}
+
+/** `GET /api/dameless`. */
+export interface DamelessOverview {
+  champion: Version;
+  line: Version[];
+  ideas: { running: Idea[]; queued: Idea[]; recent: Idea[] };
+  connection: ConnectionStatus | null;
+  strength: StrengthPoint[];
 }
 
 // ---- Work
@@ -392,7 +675,7 @@ export interface Work {
   ended_at: Timestamp | null;
 }
 
-// ---- Connections (minimal: the sheets deepen it)
+// ---- Connections
 
 export type ConnectionState = "off" | "connecting" | "online" | "error";
 
@@ -403,21 +686,73 @@ export interface Account {
   ratings: Ratings;
 }
 
-export interface ConnectionStatus {
-  key: ConnectionKey;
-  configured: boolean;
-  account: Account | null;
-  state: ConnectionState;
-  error: string | null;
-  /** The games being played through this connection. */
-  playing: GameId[];
-  /** The bot only: whether it is set to be online. */
-  online?: boolean;
+export type SeekMode = "off" | "once" | "always";
+
+export interface SeekChallenge {
+  id: string;
+  url: string;
+  opponent: { name: string; title: string | null; rating: number };
+  clock: { initial: number; increment: number };
+  rated: boolean;
 }
 
-export interface Connections {
-  you: ConnectionStatus;
-  bot: ConnectionStatus;
+export interface SeekStatus {
+  mode: SeekMode;
+  /** The challenge sent and not answered yet. */
+  pending: SeekChallenge | null;
+  /** A short sentence on how the search last went. */
+  note: string | null;
+}
+
+/** The bot's settings: what plays, how, and which challenges it accepts. Clocks are in seconds. */
+export interface BotSettings {
+  /** A version name such as `v14`, or `champion` for the champion at the start of each game. */
+  version: string | null;
+  hash: number;
+  threads: number;
+  move_overhead: number;
+  accept_rated: boolean;
+  accept_casual: boolean;
+  speeds: Speed[];
+  min_initial: number;
+  max_initial: number;
+  min_increment: number;
+  max_increment: number;
+  from_position: boolean;
+  accept_humans: boolean;
+  accept_bots: boolean;
+  max_games: number;
+  /** As Lichess writes them: `3+2`. */
+  seek_clocks: string[];
+  seek_rated: boolean;
+  seek_range: number;
+}
+
+export interface ElsewhereGame {
+  id: string;
+  url: string;
+  speed: Speed;
+}
+
+/** What only your connection has. */
+export interface YouStatus {
+  scopes: string[];
+  missing_scopes: string[];
+  expires_at: Timestamp | null;
+  elsewhere: ElsewhereGame[];
+  seek: { time: TimeControl; rated: boolean; color: Color; rating_range: string | null } | null;
+  seek_note: string | null;
+}
+
+/** What only the bot's connection has. */
+export interface BotStatus {
+  online: boolean;
+  settings: BotSettings;
+  seek: SeekStatus;
+  /** Games against bots started in the last 24 hours. */
+  bot_games_today: number;
+  /** While at the daily limit: when it lifts. */
+  bot_limit_until: Timestamp | null;
 }
 
 export interface Challenge {
@@ -427,9 +762,32 @@ export interface Challenge {
   opponent: { name: string; title: string | null; rating: number | null };
   rated: boolean;
   speed: Speed;
+  variant: string;
   time: TimeControl | null;
+  /** The colour you would play. */
   color: Color;
+  /** Whether the Board API can play it here. */
+  playable: boolean;
   url: string;
+}
+
+export interface ConnectionStatus {
+  key: ConnectionKey;
+  /** Whether a token is stored. */
+  configured: boolean;
+  account: Account | null;
+  state: ConnectionState;
+  error: string | null;
+  /** The games being played here through this connection. */
+  playing: GameId[];
+  challenges: Challenge[];
+  you: YouStatus | null;
+  bot: BotStatus | null;
+}
+
+export interface Connections {
+  you: ConnectionStatus;
+  bot: ConnectionStatus;
 }
 
 // ---- Policy (fair play)
@@ -442,11 +800,27 @@ export interface Policy {
   reason: string | null;
 }
 
+/** What the machine and the engine checkout look like, for Settings. */
+export interface Machine {
+  engine: { dir: string; branch: string | null; commit: string | null; dirty: boolean } | null;
+  data_dir: string;
+  /** The binaries kept, and the disk they take. */
+  builds: { count: number; bytes: number };
+}
+
+/** `POST /api/builds/prune`: what was (or, for a dry run, would be) freed. */
+export interface PruneResult {
+  builds: number;
+  bytes: number;
+  dry_run: boolean;
+}
+
 /** `GET /api/status`. */
 export interface Status {
   version: string;
   cores: number;
   policy: Policy;
+  machine?: Machine;
 }
 
 // ---- Evaluation
@@ -533,7 +907,13 @@ export interface ReviewUpserted {
   accuracy: SidePair<number>;
 }
 
-export type ChallengeEvent = Challenge & { event: "created" | "accepted" | "declined" | "canceled" };
+export interface ChallengeEvent {
+  challenge: Challenge;
+  event: "created" | "accepted" | "declined" | "canceled";
+  /** Lichess's decline key: ours for incoming challenges, theirs for outgoing ones. */
+  reason: string | null;
+  detail: string | null;
+}
 
 /** Each kind with its payload: a closed set, as `core::events`. */
 export interface EventPayloads {

@@ -290,6 +290,9 @@ describe("connections, policy and versions", () => {
       state: "online",
       error: null,
       playing: [],
+      challenges: [],
+      you: null,
+      bot: null,
     });
     expect(c.youRating).toBe(1840);
     const challenge = {
@@ -299,14 +302,17 @@ describe("connections, policy and versions", () => {
       opponent: { name: "x", title: null, rating: 1800 },
       rated: true,
       speed: "rapid" as const,
+      variant: "standard",
       time: null,
       color: "random" as const,
+      playable: true,
       url: "",
     };
-    event("challenge", { ...challenge, event: "created" });
+    event("challenge", { challenge, event: "created", reason: null, detail: null });
     expect(c.challenges.map((x) => x.id)).toEqual(["abc"]);
-    event("challenge", { ...challenge, event: "declined" });
+    event("challenge", { challenge, event: "declined", reason: "later", detail: null });
     expect(c.challenges).toEqual([]);
+    expect(c.recent.map((x) => x.reason)).toEqual(["later"]);
   });
 
   it("follows the fair-play policy", () => {

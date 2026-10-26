@@ -53,3 +53,88 @@ body {
   display: inline-flex;
   gap: var(--e-gap-snug);
 }
+
+/* ---- Sheets: sections divided by hairlines, key figures, plain lists. */
+.sec {
+  display: grid;
+  gap: var(--e-gap-snug);
+  min-width: 0;
+  padding-block: var(--e-gap-base);
+  border-block-start: var(--line);
+}
+
+.sec:first-child {
+  padding-block-start: 0;
+  border-block-start: 0;
+}
+
+.sec-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--e-gap-base);
+}
+
+.sec-note {
+  margin: 0;
+  color: var(--e-muted);
+  font: var(--e-type-small);
+}
+
+.figs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: var(--e-gap-snug) var(--e-gap-base);
+  margin: 0;
+}
+
+.fig {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.fig dt {
+  color: var(--e-muted);
+  font: var(--e-type-small);
+}
+
+.fig dd {
+  margin: 0;
+  font: 600 1.25rem/1.2 var(--e-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.fig dd small {
+  color: var(--e-muted);
+  font: var(--e-type-small);
+}
+
+.plain {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mono {
+  font-family: var(--e-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--e-gap-snug);
+}
+
+/* Key figures in a tighter setting: evidence under a chart, where several fit a line. */
+.figs--small {
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+}
+
+.figs--small .fig dd {
+  font-size: 1rem;
+}

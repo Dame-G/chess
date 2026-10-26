@@ -1,99 +1,227 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { useRoute } from "vue-router";
+import { computed, ref, watch } from "vue";
+import { RouterLink, useRoute } from "vue-router";
+import { EButton } from "@eos-ui/vue/components/EButton";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
+import { ELink } from "@eos-ui/vue/components/ELink";
+import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { EStamp } from "@eos-ui/vue/components/EStamp";
-import type { TrialStatus } from "../api/types";
-import { signed, trialClock } from "../format";
-import { stageLabel } from "../rail/rail";
+import { ETag } from "@eos-ui/vue/components/ETag";
+import { ago, plusMinus, trialClock } from "../format";
+import IdeaActions from "../parts/IdeaActions.vue";
+import Notes from "../parts/Notes.vue";
+import Term from "../parts/Term.vue";
+import TrialEvidence from "../parts/TrialEvidence.vue";
+import TuneView from "../parts/TuneView.vue";
 import { useIdeas } from "../stores/ideas";
+import { useVersions } from "../stores/versions";
+import { KIND_WORD, pairsOf, PRESET_CLOCK, STAGE_WORD, STATUS_TONE, STATUS_WORD, TRIAL_TONE } from "./idea";
 import SheetFrame from "./SheetFrame.vue";
 
 /**
- * An idea: its hypothesis and notes, the funnel as a row of stages with the deciding numbers, the selected trial's
- * evidence, its games, a tune's trajectory, and Promote when kept. For now: the hypothesis, the verdict and the
- * funnel's stages.
+ * An idea: what it is for, how it is going or ended, the funnel as a row of stages each with its status and deciding
+ * number, and under it the chosen stage's evidence: the gauge, Elo, the pairs, the clock it was played at, its games,
+ * and for a tune its trajectory. Stop, Resume and Promote are in the head, Push the fork after promoting.
  */
 const route = useRoute();
 const ideas = useIdeas();
-const idea = computed(() => ideas.ideas[Number(route.params["id"])]);
+const versions = useVersions();
 
-const tone: Record<TrialStatus, "neutral" | "info" | "success" | "warning" | "danger"> = {
-  waiting: "neutral",
-  running: "info",
-  passed: "success",
-  failed: "danger",
-  stopped: "neutral",
-  skipped: "neutral",
+const id = computed(() => Number(route.params["id"]));
+const idea = computed(() => ideas.ideas[id.value]);
+const missing = ref(false);
+const selected = ref<string | undefined>();
+
+async function open() {
+  missing.value = false;
+  selected.value = undefined;
+  if (!ideas.ideas[id.value]) {
+    try {
+      await ideas.loadIdea(id.value);
+    } catch {
+      missing.value = true;
+      return;
+    }
+  }
+  if (ideas.ideas[id.value]?.kind === "tune") void ideas.loadTune(id.value).catch(() => {});
+}
+watch(id, open, { immediate: true });
+
+const trials = computed(() => idea.value?.trials ?? []);
+/** The stage shown: the one chosen, else the one running, else the last. */
+const current = computed(
+  () => selected.value ?? String((trials.value.find((t) => t.status === "running") ?? trials.value.at(-1))?.id ?? ""),
+);
+const trial = computed(() => trials.value.find((t) => String(t.id) === current.value));
+const full = computed(() => (trial.value ? ideas.trials[trial.value.id] : undefined));
+watch(
+  trial,
+  (t) => {
+    if (t && !ideas.trials[t.id]) void ideas.loadTrial(id.value, t.id).catch(() => {});
+  },
+  { immediate: true },
+);
+
+const decider = (t: (typeof trials.value)[number]) =>
+  t.elo ? plusMinus(t.elo) : pairsOf(t.penta) ? `${pairsOf(t.penta).toLocaleString("en-GB")} pairs` : "";
+const clockOf = (t: NonNullable<typeof trial.value>) => {
+  const preset = ideas.trials[t.id]?.preset;
+  return t.time ? trialClock(t.time) : preset ? PRESET_CLOCK[preset] : "";
 };
+
+const base = computed(() => (idea.value ? versions.name(idea.value.base) : undefined));
+const change = computed(
+  () => (idea.value?.version != null ? versions.name(idea.value.version) : undefined) ?? idea.value?.branch,
+);
+const tune = computed(() => ideas.tuneStates[id.value]);
 </script>
 
 <template>
   <SheetFrame :title="idea?.title ?? 'Idea'" :description="idea?.hypothesis">
-    <EEmptyState v-if="!idea" title="No such idea">It may have been removed, or the link is wrong.</EEmptyState>
+    <EEmptyState v-if="missing" title="No such idea">It may have been removed, or the link is wrong.</EEmptyState>
+    <div v-else-if="!idea" aria-busy="true"><ESkeleton :lines="5" label="Loading the idea" /></div>
     <template v-else>
-      <p v-if="idea.verdict" class="verdict">{{ idea.verdict }}</p>
-      <ol class="funnel">
-        <li v-for="t in idea.trials" :key="t.id" class="stage">
-          <span class="stage-name"
-            >{{ stageLabel[t.stage] }}<template v-if="t.time"> · {{ trialClock(t.time) }}</template></span
-          >
-          <EStamp size="sm" :tone="tone[t.status]" :label="t.status" />
-          <span class="stage-elo num">{{
-            t.elo ? `${signed(t.elo.elo, 1)} ± ${((t.elo.high - t.elo.low) / 2).toFixed(1)}` : ""
-          }}</span>
-          <p v-if="t.detail" class="stage-detail">{{ t.detail }}</p>
-        </li>
-      </ol>
-      <p v-if="idea.notes" class="notes">{{ idea.notes }}</p>
+      <section class="sec" aria-label="The idea">
+        <div class="meta">
+          <EStamp :tone="STATUS_TONE[idea.status]" :label="STATUS_WORD[idea.status]" />
+          <span class="sec-note">
+            {{ idea.author === "you" ? "You" : "Claude" }} · {{ KIND_WORD[idea.kind] }} · tests
+            <span class="mono">{{ change }}</span> against
+            <ELink :link-component="RouterLink" to="/dameless">{{ base ?? "the champion" }}</ELink> ·
+            {{ ago(idea.created_at) }}
+          </span>
+        </div>
+        <p v-if="idea.verdict" class="verdict">{{ idea.verdict }}</p>
+        <p v-if="idea.tags.length" class="tags"><ETag v-for="t in idea.tags" :key="t" :label="t" size="sm" /></p>
+        <IdeaActions :idea="idea" />
+      </section>
+
+      <section v-if="idea.notes" class="sec" aria-labelledby="i-notes">
+        <h2 id="i-notes" class="part-title">Notes</h2>
+        <Notes :text="idea.notes" />
+      </section>
+
+      <section class="sec" aria-labelledby="i-funnel">
+        <div class="sec-head">
+          <h2 id="i-funnel" class="part-title">The tests</h2>
+          <p class="sec-note">Each stage must pass before the next one runs.</p>
+        </div>
+        <p v-if="!trials.length" class="sec-note">
+          {{ idea.status === "queued" ? "It is waiting its turn. The first stage checks the bench." : "No test ran." }}
+        </p>
+        <ol v-else class="funnel" aria-label="Stages">
+          <li v-for="t in trials" :key="t.id" class="funnel-item">
+            <EButton
+              variant="quiet"
+              class="stage"
+              :aria-pressed="current === String(t.id)"
+              @click="selected = String(t.id)"
+            >
+              <span class="stage-name">{{ STAGE_WORD[t.stage] }}</span>
+              <span class="stage-line">
+                <EStamp size="sm" :tone="TRIAL_TONE[t.status]" :label="t.status" />
+                <span class="stage-num mono">{{ decider(t) }}</span>
+              </span>
+            </EButton>
+          </li>
+        </ol>
+        <div v-if="trial" class="panel" aria-live="polite">
+          <h3 class="panel-title">
+            {{ STAGE_WORD[trial.stage] }}
+            <span v-if="clockOf(trial)" class="mono sec-note"> · {{ clockOf(trial) }}</span>
+          </h3>
+          <TuneView v-if="trial.stage === 'tune' && tune" :tune="tune" :running="trial.status === 'running'" />
+          <ESkeleton v-if="!full && trial.stage !== 'tune'" :lines="4" label="Loading the stage" />
+          <TrialEvidence v-else-if="full" :trial="full" />
+          <p v-else-if="trial.detail" class="verdict">{{ trial.detail }}</p>
+        </div>
+        <p v-if="idea.kind === 'speed'" class="sec-note">
+          A speed change must leave the <Term k="bench" /> exactly as it was; then the two builds race and no games are
+          played.
+        </p>
+      </section>
     </template>
   </SheetFrame>
 </template>
 
 <style scoped>
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--e-gap-snug);
+}
+
 .verdict {
-  margin-block-start: 0;
+  margin: 0;
   font-weight: 600;
 }
 
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--e-gap-tight);
+  margin: 0;
+}
+
 .funnel {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--e-gap-tight);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+.funnel-item {
+  display: flex;
+  align-items: center;
+}
+
+.funnel-item:not(:last-child)::after {
+  margin-inline: 0.125rem;
+  color: var(--e-muted);
+  content: "›";
+}
+
 .stage {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 7rem;
-  align-items: center;
-  gap: var(--e-gap-tight) var(--e-gap-snug);
-  padding-block: var(--e-gap-snug);
-  border-block-end: var(--line);
+  justify-items: start;
+  gap: 0.25rem;
+  block-size: auto;
+  padding-block: 0.375rem;
+  border: var(--line);
+  text-align: start;
+}
+
+.stage[aria-pressed="true"] {
+  border-color: var(--e-primary);
+  background: var(--e-primary-soft);
 }
 
 .stage-name {
   font-weight: 600;
 }
 
-.stage-name::first-letter {
-  text-transform: uppercase;
+.stage-line {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e-gap-snug);
 }
 
-.stage-elo {
-  font-family: var(--e-font-mono);
-  text-align: end;
-}
-
-.stage-detail,
-.notes {
-  grid-column: 1 / -1;
-  margin: 0;
+.stage-num {
   color: var(--e-muted);
-  font: var(--e-type-small);
+  font-size: 0.8125rem;
 }
 
-.notes {
-  margin-block-start: var(--e-gap-base);
+.panel {
+  display: grid;
+  gap: var(--e-gap-snug);
+  padding-block-start: var(--e-gap-base);
+}
+
+.panel-title {
+  margin: 0;
+  font: var(--e-type-h5, 600 1rem/1.2 var(--e-font-sans));
 }
 </style>
