@@ -190,6 +190,14 @@ pub enum LichessAction {
     },
     /// List the bots online on Lichess now, with their ratings.
     Bots,
+    /// Look for a game: challenge random online bots near the bot's rating until one accepts. `seek stop` stops.
+    Seek {
+        /// Keep looking after every game, across restarts, until `chess lichess seek stop` or `chess lichess stop`.
+        #[arg(long)]
+        always: bool,
+        #[command(subcommand)]
+        action: Option<SeekAction>,
+    },
     /// Turn the account into a BOT account. This cannot be undone, and Lichess only allows it for an account that has
     /// never played a game.
     Upgrade {
@@ -197,6 +205,12 @@ pub enum LichessAction {
         #[arg(long)]
         yes_irreversible: bool,
     },
+}
+
+#[derive(Subcommand)]
+pub enum SeekAction {
+    /// Stop looking for games and withdraw the challenge waiting for an answer.
+    Stop,
 }
 
 /// Flags change only what they name; the rest stays as it is.
@@ -241,6 +255,15 @@ pub struct LichessSettings {
     /// Games at once.
     #[arg(long)]
     max_games: Option<u32>,
+    /// The clocks to look for games at, as minutes+seconds such as 3+0,3+2,5+3. One is picked at random each time.
+    #[arg(long, value_delimiter = ',')]
+    seek_clocks: Option<Vec<String>>,
+    /// Whether the challenges sent when looking for a game are rated: true or false.
+    #[arg(long, value_name = "BOOL")]
+    seek_rated: Option<bool>,
+    /// The rating window for opponents when looking for a game (widened to twice it, then anyone, if nobody is in it).
+    #[arg(long, value_name = "N")]
+    seek_range: Option<u32>,
 }
 
 #[derive(Subcommand)]
@@ -830,6 +853,25 @@ fn lichess_text(s: &Value) -> String {
     if !playing.is_empty() {
         out += &format!("\n  playing {}", playing.join(", "));
     }
+    let seek = &s["seek"];
+    match seek["mode"].as_str() {
+        Some("once") => out += "\n  looking for a game",
+        Some("always") => out += "\n  looking for games, again after each one",
+        _ => {}
+    }
+    if let Some(p) = seek["pending"].as_object() {
+        out += &format!(
+            "\n  waiting on {} ({}) at {}+{}: {}",
+            p["opponent"]["name"].as_str().unwrap_or("?"),
+            p["opponent"]["rating"],
+            p["clock"]["initial"].as_u64().unwrap_or(0) as f64 / 60.0,
+            p["clock"]["increment"],
+            p["url"].as_str().unwrap_or("?"),
+        );
+    }
+    if let Some(note) = seek["note"].as_str() {
+        out += &format!("\n  {note}");
+    }
     out + "\n" + &lichess_settings_text(&s["settings"])
 }
 
@@ -848,9 +890,10 @@ fn lichess_settings_text(s: &Value) -> String {
         (false, true) => "bots only",
         (false, false) => "nobody",
     };
+    let clocks: Vec<&str> = s["seek_clocks"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
     format!(
         "  build {}, hash {} MiB, {} thread(s), move overhead {} ms\n  accepts {modes} {} at {}-{}s +{}-{}s{}, from \
-         {from}, {} game(s) at once",
+         {from}, {} game(s) at once\n  looks for {} games at {} against bots within {} points",
         s["build"].as_str().unwrap_or("(none chosen)"),
         s["hash"],
         s["threads"],
@@ -862,6 +905,9 @@ fn lichess_settings_text(s: &Value) -> String {
         s["max_increment"],
         if on("from_position") { ", from set positions too" } else { "" },
         s["max_games"],
+        if on("seek_rated") { "rated" } else { "casual" },
+        clocks.join(", "),
+        s["seek_range"],
     )
 }
 
@@ -919,6 +965,15 @@ fn apply_settings(mut s: Value, a: LichessSettings) -> Result<Value> {
     }
     if let Some(v) = a.max_games {
         set("max_games", json!(v));
+    }
+    if let Some(v) = a.seek_clocks {
+        set("seek_clocks", json!(v.iter().map(|c| c.trim()).collect::<Vec<_>>()));
+    }
+    if let Some(v) = a.seek_rated {
+        set("seek_rated", json!(v));
+    }
+    if let Some(v) = a.seek_range {
+        set("seek_range", json!(v));
     }
     Ok(s)
 }
@@ -987,6 +1042,13 @@ async fn lichess(client: &Client, cmd: LichessCommand, json: bool) -> Result<()>
             });
         }
         LichessAction::Bots => print(&client.get("/api/lichess/bots").await?, json, |b| lines(b, bot_line)),
+        LichessAction::Seek { action: Some(SeekAction::Stop), .. } => {
+            print(&client.delete("/api/lichess/seek").await?, json, lichess_text);
+        }
+        LichessAction::Seek { always, action: None } => {
+            let mode = if always { "always" } else { "once" };
+            print(&client.post("/api/lichess/seek", json!({ "mode": mode })).await?, json, lichess_text);
+        }
         LichessAction::Upgrade { yes_irreversible } => {
             if !yes_irreversible {
                 bail!(

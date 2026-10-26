@@ -603,6 +603,55 @@
         }
       }
     },
+    "/api/lichess/seek": {
+      "post": {
+        "tags": [
+          "lichess"
+        ],
+        "summary": "Looks for a game: the bot challenges a random online bot near its rating, at a clock from `seek_clocks`, and tries\nanother when one declines or does not answer within 25 seconds. Answers the status, whose `seek` follows the\nsearch. 409 while the bot is offline or has no token.",
+        "operationId": "start_lichess_seek",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeekRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LichessStatus"
+                }
+              }
+            }
+          },
+          "409": {}
+        }
+      },
+      "delete": {
+        "tags": [
+          "lichess"
+        ],
+        "summary": "Stops looking for games and withdraws the challenge waiting for an answer. Games in progress are played out.",
+        "operationId": "stop_lichess_seek",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LichessStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/lichess/settings": {
       "get": {
         "tags": [
@@ -1835,7 +1884,8 @@
           "online",
           "state",
           "playing",
-          "settings"
+          "settings",
+          "seek"
         ],
         "properties": {
           "account": {
@@ -1871,6 +1921,10 @@
               "format": "int64"
             },
             "description": "The matches of the games being played now."
+          },
+          "seek": {
+            "$ref": "#/components/schemas/SeekStatus",
+            "description": "Whether the bot is looking for games by challenging other bots, the challenge it is waiting on, and how the\nsearch last went."
           },
           "settings": {
             "$ref": "#/components/schemas/Settings"
@@ -2812,6 +2866,131 @@
         ],
         "description": "A search score from the side to move's point of view."
       },
+      "SeekChallenge": {
+        "type": "object",
+        "description": "The challenge the bot has sent and is waiting on.",
+        "required": [
+          "id",
+          "url",
+          "opponent",
+          "clock",
+          "rated"
+        ],
+        "properties": {
+          "clock": {
+            "$ref": "#/components/schemas/SeekClock"
+          },
+          "id": {
+            "type": "string",
+            "description": "The challenge id, which becomes the game id if it is accepted."
+          },
+          "opponent": {
+            "$ref": "#/components/schemas/SeekOpponent"
+          },
+          "rated": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "SeekClock": {
+        "type": "object",
+        "description": "A clock to challenge at: the initial time and the increment, in seconds.",
+        "required": [
+          "initial",
+          "increment"
+        ],
+        "properties": {
+          "increment": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Seconds.",
+            "minimum": 0
+          },
+          "initial": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Seconds.",
+            "minimum": 0
+          }
+        }
+      },
+      "SeekMode": {
+        "type": "string",
+        "description": "Whether, and how, the bot is looking for games.",
+        "enum": [
+          "off",
+          "once",
+          "always"
+        ]
+      },
+      "SeekOpponent": {
+        "type": "object",
+        "required": [
+          "name",
+          "rating"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "rating": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Their rating at the challenge's speed.",
+            "minimum": 0
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SeekRequest": {
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/SeekMode",
+            "description": "`once` looks until one game starts; `always` looks again after every game, and across restarts, until stopped.\n`off` stops, as `DELETE` does."
+          }
+        }
+      },
+      "SeekStatus": {
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/SeekMode"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A short sentence on how the search last went, for people to read."
+          },
+          "pending": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SeekChallenge",
+                "description": "The challenge sent and not answered yet. There is never more than one."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "Settings": {
         "type": "object",
         "description": "The bot's settings: what plays, how, and which challenges it accepts. Stored in the database.",
@@ -2897,6 +3076,30 @@
             "description": "Milliseconds the engine keeps in hand on every move for the network, as Reckless's `MoveOverhead` (0 to 2000).\nDefault 300.",
             "default": 300,
             "minimum": 0
+          },
+          "seek_clocks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The clocks the bot challenges other bots at when it looks for a game, as Lichess writes them: minutes plus\nincrement seconds, such as `3+2`. One is picked at random for each challenge. Default 3+0, 3+2 and 5+3.",
+            "default": [
+              "3+0",
+              "3+2",
+              "5+3"
+            ]
+          },
+          "seek_range": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The rating window for opponents when looking for a game: bots within this many points of ours at that speed\nare preferred, then within twice as many, then any. Default 300.",
+            "default": 300,
+            "minimum": 0
+          },
+          "seek_rated": {
+            "type": "boolean",
+            "description": "Whether the challenges it sends when looking for a game are rated. Default true.",
+            "default": true
           },
           "speeds": {
             "type": "array",

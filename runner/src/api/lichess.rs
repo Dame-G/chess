@@ -5,7 +5,9 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 
 use super::{ApiError, AppState};
-use crate::lichess::{self, ChallengeRequest, ChallengeSent, LichessStatus, OnlineBot, rules::Settings};
+use crate::lichess::{
+    self, ChallengeRequest, ChallengeSent, LichessStatus, OnlineBot, rules::Settings, seek::SeekMode,
+};
 
 /// The bot: whether a token is stored and whose it is, whether it is online and how its connection stands, the
 /// matches of the games it is playing, and its settings. The token itself is never returned.
@@ -102,4 +104,28 @@ pub async fn challenge(
 #[utoipa::path(get, path = "/api/lichess/bots", operation_id = "list_lichess_bots", tag = "lichess", responses((status = 200, body = Vec<OnlineBot>), (status = 409)))]
 pub async fn bots(State(state): State<Arc<AppState>>) -> Result<Json<Vec<OnlineBot>>, ApiError> {
     Ok(Json(lichess::online_bots(&state).await?))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct SeekRequest {
+    /// `once` looks until one game starts; `always` looks again after every game, and across restarts, until stopped.
+    /// `off` stops, as `DELETE` does.
+    pub mode: SeekMode,
+}
+
+/// Looks for a game: the bot challenges a random online bot near its rating, at a clock from `seek_clocks`, and tries
+/// another when one declines or does not answer within 25 seconds. Answers the status, whose `seek` follows the
+/// search. 409 while the bot is offline or has no token.
+#[utoipa::path(post, path = "/api/lichess/seek", operation_id = "start_lichess_seek", tag = "lichess", request_body = SeekRequest, responses((status = 200, body = LichessStatus), (status = 409)))]
+pub async fn seek(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SeekRequest>,
+) -> Result<Json<LichessStatus>, ApiError> {
+    Ok(Json(lichess::seek::start(&state, req.mode).await?))
+}
+
+/// Stops looking for games and withdraws the challenge waiting for an answer. Games in progress are played out.
+#[utoipa::path(delete, path = "/api/lichess/seek", operation_id = "stop_lichess_seek", tag = "lichess", responses((status = 200, body = LichessStatus)))]
+pub async fn stop_seek(State(state): State<Arc<AppState>>) -> Result<Json<LichessStatus>, ApiError> {
+    Ok(Json(lichess::seek::stop(&state).await?))
 }

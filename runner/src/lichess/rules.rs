@@ -43,6 +43,14 @@ pub struct Settings {
     pub accept_bots: bool,
     /// Games at once. Challenges beyond this are declined as `later`. Default 1.
     pub max_games: u32,
+    /// The clocks the bot challenges other bots at when it looks for a game, as Lichess writes them: minutes plus
+    /// increment seconds, such as `3+2`. One is picked at random for each challenge. Default 3+0, 3+2 and 5+3.
+    pub seek_clocks: Vec<String>,
+    /// Whether the challenges it sends when looking for a game are rated. Default true.
+    pub seek_rated: bool,
+    /// The rating window for opponents when looking for a game: bots within this many points of ours at that speed
+    /// are preferred, then within twice as many, then any. Default 300.
+    pub seek_range: u32,
 }
 
 impl Default for Settings {
@@ -63,6 +71,9 @@ impl Default for Settings {
             accept_humans: true,
             accept_bots: true,
             max_games: 1,
+            seek_clocks: vec!["3+0".into(), "3+2".into(), "5+3".into()],
+            seek_rated: true,
+            seek_range: 300,
         }
     }
 }
@@ -83,6 +94,18 @@ impl Settings {
         if self.min_increment > self.max_increment {
             return Err("the smallest increment is larger than the largest".into());
         }
+        let mut clocks = Vec::new();
+        for text in &self.seek_clocks {
+            let clock = SeekClock::parse(text)?.to_string();
+            if !clocks.contains(&clock) {
+                clocks.push(clock);
+            }
+        }
+        if clocks.is_empty() {
+            return Err("give at least one clock to look for games at, such as 3+2".into());
+        }
+        self.seek_clocks = clocks;
+        self.seek_range = self.seek_range.clamp(25, 2000);
         Ok(self)
     }
 }
@@ -105,6 +128,75 @@ impl Speed {
             "rapid" => Some(Self::Rapid),
             "classical" => Some(Self::Classical),
             _ => None,
+        }
+    }
+}
+
+/// A clock to challenge at: the initial time and the increment, in seconds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ToSchema)]
+pub struct SeekClock {
+    /// Seconds.
+    pub initial: u32,
+    /// Seconds.
+    pub increment: u32,
+}
+
+impl SeekClock {
+    /// Reads `minutes+seconds` as Lichess writes a clock (`3+2`, `0.5+0`), within what a challenge to a bot can have:
+    /// an initial clock of 0, 15, 30, 45 or 90 seconds or whole minutes up to 180, an increment up to 60 seconds, and
+    /// no UltraBullet (which bots do not play).
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let bad = || format!("a clock looks like 3+2 (minutes plus increment seconds), not {text:?}");
+        let (minutes, increment) = text.trim().split_once('+').ok_or_else(bad)?;
+        let minutes: f64 = minutes.trim().parse().map_err(|_| bad())?;
+        let increment: u32 = increment.trim().parse().map_err(|_| bad())?;
+        if !minutes.is_finite() || minutes < 0.0 {
+            return Err(bad());
+        }
+        let seconds = minutes * 60.0;
+        let initial = seconds.round() as u32;
+        if (seconds - seconds.round()).abs() > 1e-9
+            || !(matches!(initial, 0 | 15 | 30 | 45 | 90) || (initial.is_multiple_of(60) && initial <= 10_800))
+        {
+            return Err(format!(
+                "{}: Lichess clocks start at 0, 1/4, 1/2, 3/4, 1.5 or a whole number of minutes up to 180",
+                text.trim()
+            ));
+        }
+        if increment > 60 {
+            return Err(format!("{}: a challenge's increment is at most 60 seconds", text.trim()));
+        }
+        let clock = Self { initial, increment };
+        if clock.estimate() < 30 {
+            return Err(format!("{}: that is UltraBullet, which bots cannot play", text.trim()));
+        }
+        Ok(clock)
+    }
+
+    /// Lichess's estimate of a game's length, which sets its speed: the initial clock plus 40 increments.
+    fn estimate(self) -> u32 {
+        self.initial + 40 * self.increment
+    }
+
+    /// The speed Lichess files a game at this clock under, and so the rating that counts.
+    pub fn speed(self) -> Speed {
+        match self.estimate() {
+            ..180 => Speed::Bullet,
+            180..480 => Speed::Blitz,
+            480..1500 => Speed::Rapid,
+            _ => Speed::Classical,
+        }
+    }
+}
+
+impl std::fmt::Display for SeekClock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.initial {
+            15 => write!(f, "0.25+{}", self.increment),
+            30 => write!(f, "0.5+{}", self.increment),
+            45 => write!(f, "0.75+{}", self.increment),
+            90 => write!(f, "1.5+{}", self.increment),
+            s => write!(f, "{}+{}", s / 60, self.increment),
         }
     }
 }
@@ -354,6 +446,27 @@ mod tests {
         let partial: Settings = serde_json::from_str(r#"{ "build": "main" }"#).unwrap();
         assert_eq!(partial.hash, 64);
         assert_eq!(partial.build.as_deref(), Some("main"));
+        assert_eq!(partial.seek_clocks, ["3+0", "3+2", "5+3"]);
+        assert!(partial.seek_rated);
+    }
+
+    #[test]
+    fn seek_clocks_are_read_as_lichess_writes_them() {
+        assert_eq!(SeekClock::parse("3+2"), Ok(SeekClock { initial: 180, increment: 2 }));
+        assert_eq!(SeekClock::parse(" 0.5+1 ").map(|c| c.to_string()), Ok("0.5+1".into()));
+        assert_eq!(SeekClock::parse("1+0").unwrap().speed(), Speed::Bullet);
+        assert_eq!(SeekClock::parse("3+0").unwrap().speed(), Speed::Blitz);
+        assert_eq!(SeekClock::parse("10+0").unwrap().speed(), Speed::Rapid);
+        assert_eq!(SeekClock::parse("30+20").unwrap().speed(), Speed::Classical);
+        for bad in ["3", "3+x", "0.2+0", "200+0", "3+61", "0.25+0", "0+0", "-1+2"] {
+            assert!(SeekClock::parse(bad).is_err(), "{bad}");
+        }
+        let clocks = vec!["3+2".into(), "3+2 ".into(), "1.5+0".into()];
+        let s = Settings { seek_clocks: clocks, seek_range: 1, ..Settings::default() }.checked().unwrap();
+        assert_eq!(s.seek_clocks, ["3+2", "1.5+0"]);
+        assert_eq!(s.seek_range, 25);
+        assert!(Settings { seek_clocks: vec![], ..Settings::default() }.checked().is_err());
+        assert!(Settings { seek_clocks: vec!["3+90".into()], ..Settings::default() }.checked().is_err());
     }
 
     fn pos(fen: &str) -> Chess {

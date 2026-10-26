@@ -273,6 +273,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lichess/seek": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Looks for a game: the bot challenges a random online bot near its rating, at a clock from `seek_clocks`, and tries
+         *     another when one declines or does not answer within 25 seconds. Answers the status, whose `seek` follows the
+         *     search. 409 while the bot is offline or has no token.
+         */
+        post: operations["start_lichess_seek"];
+        /** Stops looking for games and withdraws the challenge waiting for an answer. Games in progress are played out. */
+        delete: operations["stop_lichess_seek"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/lichess/settings": {
         parameters: {
             query?: never;
@@ -788,6 +810,11 @@ export interface components {
             online: boolean;
             /** @description The matches of the games being played now. */
             playing: number[];
+            /**
+             * @description Whether the bot is looking for games by challenging other bots, the challenge it is waiting on, and how the
+             *     search last went.
+             */
+            seek: components["schemas"]["SeekStatus"];
             settings: components["schemas"]["Settings"];
             state: components["schemas"]["BotState"];
         };
@@ -1095,6 +1122,55 @@ export interface components {
              */
             mate: number;
         };
+        /** @description The challenge the bot has sent and is waiting on. */
+        SeekChallenge: {
+            clock: components["schemas"]["SeekClock"];
+            /** @description The challenge id, which becomes the game id if it is accepted. */
+            id: string;
+            opponent: components["schemas"]["SeekOpponent"];
+            rated: boolean;
+            url: string;
+        };
+        /** @description A clock to challenge at: the initial time and the increment, in seconds. */
+        SeekClock: {
+            /**
+             * Format: int32
+             * @description Seconds.
+             */
+            increment: number;
+            /**
+             * Format: int32
+             * @description Seconds.
+             */
+            initial: number;
+        };
+        /**
+         * @description Whether, and how, the bot is looking for games.
+         * @enum {string}
+         */
+        SeekMode: "off" | "once" | "always";
+        SeekOpponent: {
+            name: string;
+            /**
+             * Format: int32
+             * @description Their rating at the challenge's speed.
+             */
+            rating: number;
+            title?: string | null;
+        };
+        SeekRequest: {
+            /**
+             * @description `once` looks until one game starts; `always` looks again after every game, and across restarts, until stopped.
+             *     `off` stops, as `DELETE` does.
+             */
+            mode: components["schemas"]["SeekMode"];
+        };
+        SeekStatus: {
+            mode: components["schemas"]["SeekMode"];
+            /** @description A short sentence on how the search last went, for people to read. */
+            note?: string | null;
+            pending?: components["schemas"]["SeekChallenge"] | null;
+        };
         /** @description The bot's settings: what plays, how, and which challenges it accepts. Stored in the database. */
         Settings: {
             /**
@@ -1171,6 +1247,28 @@ export interface components {
              * @default 300
              */
             move_overhead: number;
+            /**
+             * @description The clocks the bot challenges other bots at when it looks for a game, as Lichess writes them: minutes plus
+             *     increment seconds, such as `3+2`. One is picked at random for each challenge. Default 3+0, 3+2 and 5+3.
+             * @default [
+             *       "3+0",
+             *       "3+2",
+             *       "5+3"
+             *     ]
+             */
+            seek_clocks: string[];
+            /**
+             * Format: int32
+             * @description The rating window for opponents when looking for a game: bots within this many points of ours at that speed
+             *     are preferred, then within twice as many, then any. Default 300.
+             * @default 300
+             */
+            seek_range: number;
+            /**
+             * @description Whether the challenges it sends when looking for a game are rated. Default true.
+             * @default true
+             */
+            seek_rated: boolean;
             /**
              * @description The speeds accepted. Correspondence is never played.
              * @default [
@@ -1765,6 +1863,54 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    start_lichess_seek: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeekRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LichessStatus"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    stop_lichess_seek: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LichessStatus"];
+                };
             };
         };
     };

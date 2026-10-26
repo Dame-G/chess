@@ -11,6 +11,7 @@
 pub mod client;
 mod game;
 pub mod rules;
+pub mod seek;
 #[cfg(test)]
 mod tests;
 
@@ -32,6 +33,7 @@ pub use self::game::{Brains, engines};
 use self::{
     client::{CallError, Lichess},
     rules::{Challenge, Settings},
+    seek::{Outcome, SeekMode, SeekStatus},
 };
 use crate::{
     api::{ApiError, AppState},
@@ -77,6 +79,9 @@ pub struct LichessStatus {
     /// The matches of the games being played now.
     pub playing: Vec<i64>,
     pub settings: Settings,
+    /// Whether the bot is looking for games by challenging other bots, the challenge it is waiting on, and how the
+    /// search last went.
+    pub seek: SeekStatus,
 }
 
 struct Inner {
@@ -92,6 +97,8 @@ struct Inner {
     games: HashMap<String, Option<i64>>,
     /// Challenges accepted whose games have not started yet: they count against `max_games`.
     accepted: HashSet<String>,
+    /// Looking for games.
+    seek: seek::Seeking,
 }
 
 pub struct Bot {
@@ -99,6 +106,8 @@ pub struct Bot {
     http: reqwest::Client,
     brains: Brains,
     inner: Mutex<Inner>,
+    /// Wakes the search for games when something it waits on may have changed.
+    seek_wake: tokio::sync::Notify,
 }
 
 impl Bot {
@@ -119,7 +128,9 @@ impl Bot {
                 run: None,
                 games: HashMap::new(),
                 accepted: HashSet::new(),
+                seek: seek::Seeking::default(),
             }),
+            seek_wake: tokio::sync::Notify::new(),
         }
     }
 
@@ -150,11 +161,14 @@ impl Bot {
             error: inner.error.clone(),
             playing,
             settings: inner.settings.clone(),
+            seek: inner.seek.status(),
         }
     }
 
+    /// Sends the status to whoever follows the events, and wakes the search for games, which may be waiting on it.
     fn announce(&self, state: &AppState) {
         state.events.emit("lichess.status", serde_json::to_value(self.status()).unwrap_or_default());
+        self.seek_wake.notify_one();
     }
 
     /// Moves the connection to `to`, announcing it when that is a change.
@@ -180,6 +194,7 @@ impl Bot {
 
     fn game_over(&self, state: &AppState, id: &str) {
         self.inner.lock().unwrap().games.remove(id);
+        self.seek_game_ended();
         self.announce(state);
     }
 
@@ -286,6 +301,7 @@ pub async fn resume(state: &Arc<AppState>) -> Result<()> {
         None => Settings::default(),
     };
     let online = meta_get(state, ONLINE_KEY).await?.as_deref() == Some("true");
+    let always = meta_get(state, seek::SEEK_KEY).await?.as_deref() == Some("always");
     {
         let mut inner = state.lichess.inner.lock().unwrap();
         inner.token = token.filter(|t| !t.is_empty());
@@ -294,6 +310,9 @@ pub async fn resume(state: &Arc<AppState>) -> Result<()> {
     }
     if state.lichess.inner.lock().unwrap().online {
         spawn_loop(state);
+        if always && let Err(e) = seek::start(state, SeekMode::Always).await {
+            tracing::warn!("lichess: could not go back to looking for games: {}", e.message);
+        }
     } else if let Some(client) = state.lichess.client() {
         // Not online, but the status should still name the account.
         let state = state.clone();
@@ -335,6 +354,8 @@ pub async fn set_token(state: &Arc<AppState>, token: &str) -> Result<LichessStat
 
 /// Forgets the token and takes the bot offline. Games in progress are played out with the token they started with.
 pub async fn clear_token(state: &Arc<AppState>) -> Result<LichessStatus, ApiError> {
+    meta_set(state, seek::SEEK_KEY, "off".into()).await?;
+    seek::halt(state).await;
     {
         let mut inner = state.lichess.inner.lock().unwrap();
         if let Some(run) = inner.run.take() {
@@ -435,8 +456,10 @@ pub async fn start(state: &Arc<AppState>) -> Result<LichessStatus, ApiError> {
     Ok(state.lichess.status())
 }
 
-/// Takes the bot offline: no more challenges are answered. Games in progress are played out.
+/// Takes the bot offline: no more challenges are answered or sent. Games in progress are played out.
 pub async fn stop(state: &Arc<AppState>) -> Result<LichessStatus, ApiError> {
+    meta_set(state, seek::SEEK_KEY, "off".into()).await?;
+    seek::halt(state).await;
     {
         let mut inner = state.lichess.inner.lock().unwrap();
         inner.online = false;
@@ -568,6 +591,8 @@ async fn handle(state: &Arc<AppState>, client: &Lichess, me: &Account, event: &V
                         Ok(_) => {
                             bot.inner.lock().unwrap().accepted.insert(c.id.clone());
                             state.events.emit("lichess.challenge", challenge_json(&c, "incoming", "accepted", None));
+                            let name = c.challenger.as_ref().map_or("someone", |u| u.name.as_str());
+                            seek::make_room(state, name).await;
                         }
                         // Withdrawn meanwhile, most likely; `challengeCanceled` says so.
                         Err(e) => tracing::info!("lichess: could not accept challenge {}: {e}", c.id),
@@ -589,12 +614,16 @@ async fn handle(state: &Arc<AppState>, client: &Lichess, me: &Account, event: &V
             bot.inner.lock().unwrap().accepted.remove(&c.id);
             let direction = if c.challenger.as_ref().is_some_and(|u| u.id == me.id) { "outgoing" } else { "incoming" };
             state.events.emit("lichess.challenge", challenge_json(&c, direction, "canceled", None));
+            if direction == "outgoing" {
+                bot.seek_outcome(state, &c.id, Outcome::Canceled);
+            }
         }
         "challengeDeclined" => {
             // Someone declined one of ours.
             let c: Challenge = serde_json::from_value(event["challenge"].clone()).unwrap_or_default();
             let reason = event["challenge"]["declineReasonKey"].as_str().map(str::to_owned);
             state.events.emit("lichess.challenge", challenge_json(&c, "outgoing", "declined", reason.as_deref()));
+            bot.seek_outcome(state, &c.id, Outcome::Declined(reason));
         }
         "gameStart" => {
             let game = &event["game"];
@@ -611,6 +640,7 @@ async fn handle(state: &Arc<AppState>, client: &Lichess, me: &Account, event: &V
                 // What `DELETE /api/matches/{id}` triggers: the game's task resigns.
                 CancellationToken::new()
             };
+            bot.seek_outcome(state, &id, Outcome::Started);
             tokio::spawn(game::play(state.clone(), id, cancel));
         }
         "gameFinish" => {

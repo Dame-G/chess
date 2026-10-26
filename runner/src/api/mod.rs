@@ -86,6 +86,7 @@ fn api() -> (Router<Arc<AppState>>, utoipa::openapi::OpenApi) {
         .routes(routes!(lichess::upgrade))
         .routes(routes!(lichess::challenge))
         .routes(routes!(lichess::bots))
+        .routes(routes!(lichess::seek, lichess::stop_seek))
         .routes(routes!(experiments::list, experiments::create))
         .routes(routes!(experiments::batch))
         .routes(routes!(experiments::get, experiments::cancel))
