@@ -1,14 +1,18 @@
 //! An engine at a seat: one UCI process for the game's life, its cores reserved in the ledger while it plays. It
 //! searches with the game's clocks (`go wtime btime winc binc`) or the fixed time or nodes per move, and reports its
 //! progress as `game.thinking`, at most five times a second, with scores turned to White's point of view.
+//!
+//! At a level ([`EngineSeat::at_level`]) it searches the level's node budget with its MultiPV, whatever the game's
+//! clock, and plays the move `core::levels::choose_move` picks among the lines, drawing from the seat's seeded RNG.
 
-use std::{sync::Arc, time::Instant};
+use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 use async_trait::async_trait;
 use dameless_core::{
     Error, GameId, Score, Side, TimeControl,
     events::{GameThinking, Payload},
     game::{SeatAction, SeatMove, Turn},
+    levels::{self, Level},
 };
 use dameless_engine::{
     proc,
@@ -50,6 +54,15 @@ struct Flight {
     last: Option<Info>,
     sent: Option<Instant>,
     unsent: bool,
+    /// Each MultiPV line's latest report: (depth, first move, score from the side to move).
+    lines: BTreeMap<u32, (u32, String, uci::Score)>,
+}
+
+/// How a seat at a level plays: its level, the nodes per move, and the RNG its choices draw from.
+struct AtLevel {
+    level: Level,
+    nodes: Option<u64>,
+    rng: SplitMix64,
 }
 
 pub struct EngineSeat {
@@ -58,7 +71,8 @@ pub struct EngineSeat {
     bus: Arc<Bus>,
     every: std::time::Duration,
     unclocked_ms: u64,
-    _cores: Reservation,
+    level: Option<AtLevel>,
+    _cores: Option<Reservation>,
 }
 
 impl EngineSeat {
@@ -70,6 +84,13 @@ impl EngineSeat {
         bus: Arc<Bus>,
         owner: &str,
     ) -> Result<Self, Error> {
+        let mut seat = Self::launch(binary, options, bus).await?;
+        seat._cores = Some(ledger.reserve(owner, options.threads.max(1)));
+        Ok(seat)
+    }
+
+    /// Starts the engine without reserving cores: for work (calibration) that holds a grant for its engines.
+    pub(crate) async fn launch(binary: &EngineBinary, options: EngineOptions, bus: Arc<Bus>) -> Result<Self, Error> {
         let command = proc::Command::new(&binary.path).args(&binary.args);
         let mut engine = Engine::start_command(&command, uci::UCIOK_TIMEOUT).await.map_err(error::internal)?;
         let mut settings = vec![
@@ -82,15 +103,27 @@ impl EngineSeat {
         }
         engine.configure(&settings).await.map_err(error::internal)?;
         engine.new_game().await.map_err(error::internal)?;
-        let cores = ledger.reserve(owner, options.threads.max(1));
         Ok(Self {
             engine,
             flight: None,
             bus,
             every: std::time::Duration::from_millis(200),
             unclocked_ms: UNCLOCKED_MS,
-            _cores: cores,
+            level: None,
+            _cores: None,
         })
+    }
+
+    /// Plays at `level`: `nodes` per move (the level's own when `None`; full strength then plays on the game's
+    /// clock), with the level's MultiPV, choosing among the lines with an RNG seeded by `seed`.
+    pub async fn at_level(mut self, level: Level, nodes: Option<u64>, seed: u64) -> Result<Self, Error> {
+        if level.multipv > 1 && self.engine.options.iter().any(|o| o.name.eq_ignore_ascii_case("MultiPV")) {
+            let settings = [("MultiPV".to_owned(), level.multipv.to_string())];
+            self.engine.configure(&settings).await.map_err(error::internal)?;
+        }
+        let nodes = nodes.or(level.nodes);
+        self.level = Some(AtLevel { level, nodes, rng: SplitMix64::new(seed) });
+        Ok(self)
     }
 
     /// Reports at most once per `every` and searches unclocked games for `unclocked_ms` (tests shorten both).
@@ -101,6 +134,9 @@ impl EngineSeat {
     }
 
     fn limits(&self, turn: &Turn<'_>) -> Limits {
+        if let Some(nodes) = self.level.as_ref().and_then(|l| l.nodes) {
+            return Limits::nodes(nodes);
+        }
         match turn.time {
             TimeControl::Clock { increment_ms, initial_ms } => {
                 let clocks = turn.clocks.unwrap_or(dameless_core::SidePair::both(initial_ms));
@@ -143,12 +179,23 @@ impl EngineSeat {
             let position = uci::Position { fen: turn.start_fen.map(str::to_owned), moves: turn.moves.to_vec() };
             let limits = self.limits(turn);
             self.engine.go(&position, &limits).await.map_err(error::internal)?;
-            self.flight =
-                Some(Flight { ply: turn.ply, fen: turn.fen.to_owned(), last: None, sent: None, unsent: false });
+            self.flight = Some(Flight {
+                ply: turn.ply,
+                fen: turn.fen.to_owned(),
+                last: None,
+                sent: None,
+                unsent: false,
+                lines: BTreeMap::new(),
+            });
         }
         loop {
             let event = self.engine.next().await.map_err(error::internal)?;
             let Some(flight) = self.flight.as_mut() else { return Err(Error::internal("no search in flight")) };
+            if let SearchEvent::Info(info) = &event
+                && let Some(first) = info.pv.first()
+            {
+                flight.lines.insert(info.multipv.max(1), (info.depth, first.clone(), info.score));
+            }
             match event {
                 SearchEvent::Info(info) if info.multipv == 1 => {
                     let report = flight.sent.is_none_or(|t| t.elapsed() >= self.every);
@@ -169,6 +216,7 @@ impl EngineSeat {
                         last: None,
                         sent: None,
                         unsent: false,
+                        lines: BTreeMap::new(),
                     });
                     let last = flight.last;
                     if flight.unsent
@@ -179,6 +227,9 @@ impl EngineSeat {
                     let Some(uci) = best.best else {
                         return Err(Error::internal("the engine found no move"));
                     };
+                    if let Some(chosen) = self.choose(&flight.lines, &uci, turn.side) {
+                        return Ok(chosen);
+                    }
                     return Ok(SeatMove {
                         uci,
                         eval: last.as_ref().map(|i| white_score(i.score, turn.side)),
@@ -190,19 +241,66 @@ impl EngineSeat {
         }
     }
 
+    /// At a level with more than one line: the move `choose_move` picks among the lines, with its own score and depth.
+    /// `None` plays the engine's best move as usual.
+    fn choose(&mut self, lines: &BTreeMap<u32, (u32, String, uci::Score)>, best: &str, side: Side) -> Option<SeatMove> {
+        let at = self.level.as_mut()?;
+        if at.level.multipv <= 1 || lines.len() < 2 {
+            return None;
+        }
+        let candidates: Vec<(String, Score)> =
+            lines.values().map(|(_, mv, score)| (mv.clone(), own_score(*score))).collect();
+        let u = at.rng.next_f64();
+        let uci = levels::choose_move(&candidates, at.level.temperature, u).unwrap_or_else(|| best.to_owned());
+        let (depth, _, score) = lines.values().find(|(_, mv, _)| *mv == uci)?;
+        Some(SeatMove { uci, eval: Some(white_score(*score, side)), depth: Some(*depth), nodes: None })
+    }
+
     /// Ends the engine.
     pub async fn quit(self) {
         self.engine.quit().await;
     }
 }
 
-/// An engine's score (from the side to move) as White's.
-fn white_score(score: uci::Score, side: Side) -> Score {
-    let own = match score {
+/// A small, fast, seedable RNG (SplitMix64): a level's choices are reproducible from the seed.
+#[derive(Clone, Debug)]
+pub(crate) struct SplitMix64(u64);
+
+impl SplitMix64 {
+    pub fn new(seed: u64) -> Self {
+        Self(seed)
+    }
+
+    pub fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// Uniform in [0, 1).
+    pub fn next_f64(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    /// Uniform below `n` (at least 1).
+    pub fn below(&mut self, n: usize) -> usize {
+        (self.next_u64() % n.max(1) as u64) as usize
+    }
+}
+
+/// An engine's score as `core` writes it, still from the side to move.
+fn own_score(score: uci::Score) -> Score {
+    match score {
         uci::Score::Cp(cp) => Score::Cp(cp),
         uci::Score::Mate(m) => Score::Mate(m),
-    };
-    own.from_side(side)
+    }
+}
+
+/// An engine's score (from the side to move) as White's.
+fn white_score(score: uci::Score, side: Side) -> Score {
+    own_score(score).from_side(side)
 }
 
 #[async_trait]

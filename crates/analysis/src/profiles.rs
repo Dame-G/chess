@@ -28,6 +28,10 @@ impl Profiles {
         Self { hub }
     }
 
+    pub(crate) fn hub(&self) -> &Arc<Hub> {
+        &self.hub
+    }
+
     /// What is known of a player: the players table first (Lichess people, as imports record them), then your Lichess
     /// account for You, then the name they sat at a board under.
     pub async fn player(&self, key: &PlayerKey) -> Result<Player, Error> {

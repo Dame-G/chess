@@ -22,6 +22,7 @@ fn request(white: &str, black: &str, time: TimeControl) -> NewGameRequest {
         hash: None,
         threads: None,
         adjudicate: false,
+        seed: None,
     }
 }
 

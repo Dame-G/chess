@@ -38,10 +38,12 @@ pub(crate) struct LocalGame {
     pub cancel: CancellationToken,
     /// The side you play, if you play.
     pub you: Option<Side>,
+    /// A game at a level: the levels are refitted when it ends.
+    pub refit: bool,
 }
 
 pub(crate) async fn run(game: LocalGame) {
-    let LocalGame { games, record, mut referee, start_fen, time, mut seats, mut commands, cancel, you } = game;
+    let LocalGame { games, record, mut referee, start_fen, time, mut seats, mut commands, cancel, you, refit } = game;
     let clocked = referee.clock().is_some();
     let actions = |r: &Referee| you.map(|s| r.actions_for(s)).unwrap_or_default();
     record.set(referee.offers(), actions(&referee), referee.clocks(), clocked);
@@ -128,4 +130,7 @@ pub(crate) async fn run(game: LocalGame) {
     games.forget(record.id);
     // The engines stop with their seats.
     drop(seats);
+    if refit {
+        games.levels().refit_quietly().await;
+    }
 }

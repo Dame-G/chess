@@ -6,6 +6,9 @@
 //! - `--delay <ms>`: how long it takes over each move (default none); `stop` cuts it short.
 //! - `--illegal`: answers every search with a move that is not legal.
 //! - `--die`: exits on its first `go`, as a crashing engine would.
+//!
+//! With `MultiPV` set above 1 it reports that many lines (its choice first, then the other legal moves in order), each
+//! 25 cp worse than the one before, as levels need.
 
 use std::{
     io::{BufRead, Write},
@@ -35,6 +38,7 @@ fn main() {
 
     let mut out = std::io::stdout().lock();
     let mut position = Position::start();
+    let mut multipv: usize = 1;
     while let Ok(line) = rx.recv() {
         let words: Vec<&str> = line.split_whitespace().collect();
         match words.as_slice() {
@@ -45,9 +49,11 @@ fn main() {
                 writeln!(out, "option name Threads type spin default 1 min 1 max 64").unwrap();
                 writeln!(out, "option name MoveOverhead type spin default 0 min 0 max 5000").unwrap();
                 writeln!(out, "option name Minimal type check default false").unwrap();
+                writeln!(out, "option name MultiPV type spin default 1 min 1 max 256").unwrap();
                 writeln!(out, "uciok").unwrap();
             }
             ["isready"] => writeln!(out, "readyok").unwrap(),
+            ["setoption", "name", "MultiPV", "value", n] => multipv = n.parse().unwrap_or(1).max(1),
             ["position", rest @ ..] => {
                 let (start, moves): (Option<String>, Vec<String>) = match rest {
                     ["startpos", tail @ ..] => (None, moves_of(tail)),
@@ -77,6 +83,20 @@ fn main() {
                 }
                 let best = if illegal { Some("a1a8".to_owned()) } else { choose(&position) };
                 match best {
+                    Some(m) if multipv > 1 => {
+                        let mut lines = vec![m.clone()];
+                        lines.extend(position.legal_moves().into_iter().filter(|x| *x != m));
+                        for (k, mv) in lines.iter().take(multipv).enumerate() {
+                            let cp = score - 25 * k as i64;
+                            let n = k + 1;
+                            writeln!(
+                                out,
+                                "info depth 1 seldepth 1 multipv {n} score cp {cp} nodes 100 nps 100000 time 1 pv {mv}"
+                            )
+                            .unwrap();
+                        }
+                        writeln!(out, "bestmove {m}").unwrap();
+                    }
                     Some(m) => {
                         writeln!(
                             out,

@@ -24,7 +24,7 @@ use dameless_work::Scheduler;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{Eval, versions::VersionRef};
+use crate::{Eval, drills::Drills, versions::VersionRef};
 
 /// The smallest and largest node budgets a review takes.
 pub const NODES_RANGE: std::ops::RangeInclusive<u64> = 1_000..=100_000_000;
@@ -109,11 +109,18 @@ enum Outcome {
 #[derive(Clone)]
 pub struct Reviews {
     eval: Eval,
+    drills: Option<Drills>,
 }
 
 impl Reviews {
     pub fn new(eval: Eval) -> Self {
-        Self { eval }
+        Self { eval, drills: None }
+    }
+
+    /// Makes drills from each of your games once it is reviewed.
+    pub fn with_drills(mut self, drills: Drills) -> Self {
+        self.drills = Some(drills);
+        self
     }
 
     /// The work item for a request, resolved now: the games (checked to exist), the version, the budget and the
@@ -342,6 +349,15 @@ impl Executor for Reviews {
                         accuracy_text(review.summary.black.accuracy),
                         began.elapsed().as_secs_f64()
                     ));
+                    if let Some(drills) = &self.drills {
+                        match drills.make_from_game(id).await {
+                            Ok(made) if !made.is_empty() => {
+                                cx.log(format!("{} new drills from game {id}.", made.len()))
+                            }
+                            Ok(_) => {}
+                            Err(e) => cx.log(format!("No drills from game {id}: {}", e.message())),
+                        }
+                    }
                 }
                 Ok(Outcome::Skipped(why)) => {
                     state.skipped += 1;

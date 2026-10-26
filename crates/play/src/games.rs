@@ -14,6 +14,7 @@ use dameless_core::{
     Error, GameId, PlayerKey, Side, SidePair, TimeControl,
     chess::Position,
     game::{Ending, Game, GameEnd, GameSummary, Seat, SeatAction, Source},
+    levels::{Entrant, Level},
     referee::{Referee, Setup, Sitter},
 };
 use dameless_hub::Hub;
@@ -29,6 +30,7 @@ use utoipa::{
 use crate::{
     binaries::Binaries,
     engine_seat::{EngineOptions, EngineSeat},
+    levels::Levels,
     local::{self, LocalGame},
     record::{Live, Record},
     seat::{LocalSeat, MoveRequest, MoveSender, SeatController},
@@ -39,20 +41,40 @@ use crate::{
 // Requests
 // ---------------------------------------------------------------------------------------------------------------------
 
-/// Who sits at a side of a local game: you, or Dameless at a version. Written as a string: `you`, `dameless` (the
-/// champion), `dameless:<version>` (a name such as `v14` or a branch, or an id).
+/// Who sits at a side of a local game: you, or Dameless at a version, at full strength or at a level. Written as a
+/// string: `you`, `dameless` (the champion), `dameless:<version>` (a name such as `v14` or a branch, or an id), and
+/// either Dameless form with `@<level>` (`dameless@5`, `dameless:v14@5`) to play at a level of the ladder. The object
+/// form `{ "player": "dameless", "version": "v14", "level": 5 }` reads too.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SeatRequest {
     You,
-    Dameless { version: Option<String> },
+    Dameless { version: Option<String>, level: Option<u32> },
 }
 
 impl SeatRequest {
+    /// The champion at full strength.
+    pub fn dameless() -> Self {
+        Self::Dameless { version: None, level: None }
+    }
+
+    /// The champion at a level.
+    pub fn at_level(level: u32) -> Self {
+        Self::Dameless { version: None, level: Some(level) }
+    }
+
     /// The version a Dameless seat plays: the champion unless one is named.
     pub fn version(&self) -> Option<&str> {
         match self {
             Self::You => None,
-            Self::Dameless { version } => Some(version.as_deref().unwrap_or("champion")),
+            Self::Dameless { version, .. } => Some(version.as_deref().unwrap_or("champion")),
+        }
+    }
+
+    /// The level a Dameless seat plays at, when it plays at one.
+    pub fn level(&self) -> Option<u32> {
+        match self {
+            Self::You => None,
+            Self::Dameless { level, .. } => *level,
         }
     }
 }
@@ -61,8 +83,16 @@ impl fmt::Display for SeatRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::You => f.write_str("you"),
-            Self::Dameless { version: None } => f.write_str("dameless"),
-            Self::Dameless { version: Some(v) } => write!(f, "dameless:{v}"),
+            Self::Dameless { version, level } => {
+                f.write_str("dameless")?;
+                if let Some(v) = version {
+                    write!(f, ":{v}")?;
+                }
+                if let Some(l) = level {
+                    write!(f, "@{l}")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -71,12 +101,23 @@ impl FromStr for SeatRequest {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.trim() {
-            "you" => Ok(Self::You),
-            "dameless" => Ok(Self::Dameless { version: None }),
+        let bad = || format!("{:?} is not a seat: use you, dameless, dameless:<version> or dameless@<level>", s.trim());
+        let text = s.trim();
+        if text == "you" {
+            return Ok(Self::You);
+        }
+        // A trailing `@<digits>` is the level; anything else after an `@` belongs to the version's name.
+        let (rest, level) = match text.rsplit_once('@') {
+            Some((rest, l)) if !l.is_empty() && l.bytes().all(|b| b.is_ascii_digit()) => {
+                (rest, Some(l.parse::<u32>().map_err(|_| bad())?))
+            }
+            _ => (text, None),
+        };
+        match rest {
+            "dameless" => Ok(Self::Dameless { version: None, level }),
             other => match other.strip_prefix("dameless:").map(str::trim) {
-                Some(v) if !v.is_empty() => Ok(Self::Dameless { version: Some(v.to_owned()) }),
-                _ => Err(format!("{other:?} is not a seat: use you, dameless or dameless:<version>")),
+                Some(v) if !v.is_empty() => Ok(Self::Dameless { version: Some(v.to_owned()), level }),
+                _ => Err(bad()),
             },
         }
     }
@@ -88,9 +129,30 @@ impl Serialize for SeatRequest {
     }
 }
 
+/// A seat as JSON: the string form, or an object.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum SeatWire {
+    Text(String),
+    Object {
+        player: String,
+        #[serde(default)]
+        version: Option<String>,
+        #[serde(default)]
+        level: Option<u32>,
+    },
+}
+
 impl<'de> Deserialize<'de> for SeatRequest {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        String::deserialize(d)?.parse().map_err(serde::de::Error::custom)
+        match SeatWire::deserialize(d)? {
+            SeatWire::Text(text) => text.parse().map_err(serde::de::Error::custom),
+            SeatWire::Object { player, version, level } => match player.trim() {
+                "you" if version.is_none() && level.is_none() => Ok(Self::You),
+                "dameless" => Ok(Self::Dameless { version: version.filter(|v| !v.trim().is_empty()), level }),
+                other => Err(serde::de::Error::custom(format!("{other:?} is not a seat: use you or dameless"))),
+            },
+        }
     }
 }
 
@@ -98,8 +160,11 @@ impl PartialSchema for SeatRequest {
     fn schema() -> RefOr<Schema> {
         ObjectBuilder::new()
             .schema_type(Type::String)
-            .description(Some("`you`, `dameless` (the champion) or `dameless:<version>`"))
-            .examples(["you", "dameless", "dameless:v14"])
+            .description(Some(
+                "`you`, `dameless` (the champion), `dameless:<version>`, and `@<level>` after either Dameless form \
+                 to play at a level (`dameless@5`). The object `{ player, version?, level? }` reads too.",
+            ))
+            .examples(["you", "dameless", "dameless:v14", "dameless@5"])
             .into()
     }
 }
@@ -137,6 +202,9 @@ pub struct NewGameRequest {
     /// End decided games early, as the trials do (engines' scores only).
     #[serde(default)]
     pub adjudicate: bool,
+    /// Seeds the choices of seats at a level, so a game can be replayed; random when none.
+    #[serde(default)]
+    pub seed: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -165,6 +233,7 @@ struct Inner {
     live: Mutex<HashMap<GameId, Handle>>,
     /// Your Lichess username, shown on your seat when linked.
     your_name: Mutex<Option<String>>,
+    levels: Levels,
 }
 
 /// The games being played. Cheap to clone.
@@ -175,6 +244,12 @@ pub struct Games {
 
 impl Games {
     pub fn new(hub: Arc<Hub>, binaries: Arc<dyn Binaries>, timing: Timing) -> Self {
+        let levels = Levels::new(hub.clone());
+        Self::with_levels(hub, binaries, timing, levels)
+    }
+
+    /// With these levels (another ladder, for tests).
+    pub fn with_levels(hub: Arc<Hub>, binaries: Arc<dyn Binaries>, timing: Timing, levels: Levels) -> Self {
         Self {
             inner: Arc::new(Inner {
                 hub,
@@ -182,8 +257,14 @@ impl Games {
                 timing,
                 live: Mutex::new(HashMap::new()),
                 your_name: Mutex::new(None),
+                levels,
             }),
         }
+    }
+
+    /// Dameless's levels: their ratings, the refit, calibration.
+    pub fn levels(&self) -> &Levels {
+        &self.inner.levels
     }
 
     pub(crate) fn hub(&self) -> &Arc<Hub> {
@@ -387,10 +468,16 @@ impl Games {
             ..EngineOptions::default()
         };
         let adjudicate = req.adjudicate && seats.iter().all(|s| **s != SeatRequest::You);
+        // Levels are checked before any engine starts.
+        let levels: Vec<Option<Level>> = seats
+            .iter()
+            .map(|s| s.level().map(|id| self.inner.levels.level(id).cloned()).transpose())
+            .collect::<Result<_, _>>()?;
+        let seed = req.seed.unwrap_or_else(random_u64);
 
         let mut players: Vec<(Seat, Box<dyn SeatController>, Sitter)> = Vec::new();
         let mut moves: Option<MoveSender> = None;
-        for request in seats {
+        for (index, request) in seats.into_iter().enumerate() {
             match request.version() {
                 None => {
                     let (seat, tx) = LocalSeat::new();
@@ -408,10 +495,19 @@ impl Games {
                     )
                     .await?
                     .pace(self.inner.timing.info_every, self.inner.timing.unclocked_movetime_ms);
-                    let seat = Seat {
+                    let mut seat = Seat {
                         version: Some(binary.version.id),
                         build: Some(binary.build),
                         ..Seat::new(PlayerKey::Dameless, binary.version.name.clone())
+                    };
+                    let engine = match &levels[index] {
+                        Some(level) => {
+                            let (name, rating) = self.inner.levels.seat_name(level).await;
+                            seat.name = name;
+                            seat.rating = Some(rating);
+                            engine.at_level(level.clone(), None, seat_seed(seed, index)).await?
+                        }
+                        None => engine,
                     };
                     players.push((seat, Box::new(engine), Sitter::Engine));
                 }
@@ -433,6 +529,23 @@ impl Games {
         let mut new = NewGame::starting(white, black, Source::Local, req.time, now());
         new.start_fen = start_fen.clone();
         let record = Record::create(&self.inner.hub, new, referee.turn()).await?;
+        // A game at a level counts for the levels' fit when every seat is a level or you.
+        let entrants: Vec<Option<Entrant>> = [&req.white, &req.black]
+            .iter()
+            .map(|r| match r {
+                SeatRequest::You => Some(Entrant::You),
+                SeatRequest::Dameless { level, .. } => level.map(Entrant::Level),
+            })
+            .collect();
+        let at_level = levels.iter().any(Option::is_some);
+        let refit = at_level
+            && match entrants[..] {
+                [Some(w), Some(b)] => {
+                    self.inner.hub.store.record_level_game(record.id, w, b, false).await?;
+                    true
+                }
+                _ => false,
+            };
         let (commands_tx, commands) = mpsc::unbounded_channel();
         let cancel = CancellationToken::new();
         self.register(
@@ -453,6 +566,7 @@ impl Games {
             commands,
             cancel,
             you,
+            refit,
         }));
         Ok(view)
     }
@@ -506,9 +620,19 @@ impl Games {
 
 /// A random number below `n` (at least 1).
 pub(crate) fn random_below(n: usize) -> usize {
+    (random_u64() % n.max(1) as u64) as usize
+}
+
+/// A random 64-bit number.
+pub(crate) fn random_u64() -> u64 {
     let mut bytes = [0u8; 8];
     let _ = getrandom::fill(&mut bytes);
-    (u64::from_le_bytes(bytes) % n.max(1) as u64) as usize
+    u64::from_le_bytes(bytes)
+}
+
+/// Each seat's own seed from the game's, so the two sides of a game between levels do not choose alike.
+pub(crate) fn seat_seed(seed: u64, index: usize) -> u64 {
+    seed ^ (index as u64 + 1).wrapping_mul(0xD1B5_4A32_D192_ED03)
 }
 
 #[cfg(test)]

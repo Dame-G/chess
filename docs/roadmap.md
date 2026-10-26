@@ -133,7 +133,7 @@ These are guesses that calibration replaces. The UI shows a level's calibrated r
 
 - `drills`: one row per position key (UNIQUE), the schedule in plain columns, indexed on `due`.
 - `drill_answers (drill, at, answer, outcome, first)`: `first` marks a drill's first answer, for the daily cap of new drills.
-- `level_games (game PRIMARY KEY, white, black, calibration)`: the entrant at each seat of a game played at a level. `play` writes it when a local game with a level starts, and `work` writes it for calibration games.
+- `level_games (game PRIMARY KEY, white, black, calibration)`: the entrant at each seat of a game played at a level. `play` writes it when a local game with a level starts, and for calibration games.
 - `level_ratings (entrant PRIMARY KEY, elo, low, high, games, updated_at)`: the last fit.
 - Methods:
   - `insert_drills`, `drill`, `drills`, `drill_keys`, `record_drill_answer(graded, answer)` (one transaction), `drill_answers(since)`, `drills_started_since`, `delete_drill`
@@ -145,24 +145,65 @@ These are guesses that calibration replaces. The UI shows a level's calibrated r
 GET    /api/levels                        { levels: [{ level: Level, rating: Estimate | null, games }], you: EntrantRating | null,
                                             suggested: level id | null (nearest your rating), updated_at }
 GET    /api/levels/plan?count=3           PlannedMatch[]
-POST   /api/levels/calibrate              { matches?: PlannedMatch[] } → Work (default: plan(…, 3)); refits when done
-POST   /api/games                         gains `level` on a Dameless seat: { white: "you", black: { player: "dameless", level: 5 }, time, … }
-                                            (a bare "dameless" is full strength, as today); the game's seats go to level_games
+POST   /api/levels/calibrate              { matches?: PlannedMatch[], count?, games_per_pair?, version? } → Work (default: plan(…, 3));
+                                            refits after each match
+POST   /api/games                         a Dameless seat at a level: "dameless@5" (or { player: "dameless", level: 5 }), optional `seed`;
+                                            a bare "dameless" is full strength, as today; the game's seats go to level_games
 GET    /api/drills                        Drill[] (all, soonest due first)
 POST   /api/drills                        { limit? } → Drill[] made from your profile's weak spots (new ones only)
 GET    /api/drills/today?new_per_day=&limit=   { drills: Drill[], due, new, started_today }
 POST   /api/drills/{id}/answer            { move } (UCI or SAN) → { outcome, drill: Drill (rescheduled), best_moves, best_san, line, played_san }
 DELETE /api/drills/{id}
 GET    /api/drills/trend?window=50        HitRatePoint[]
-GET    /api/players/you/repertoire?side=white|black&max_plies=&min_games=   Repertoire (409 fair_play while assist ≠ allowed)
+GET    /api/players/you/repertoire?side=white|black&max_plies=&min_games=&limit=   Repertoire (409 fair_play while the explorer is not allowed)
 GET    /api/progress?window=10            Progress
 ```
 
 - **Seeing a drill** (`GET /api/drills/today`) shows `fen`, `side` and `theme`. The web client must not show `best_moves`, `best_san` or `line` before the answer; the answer route returns them.
-- **Fair play.** Drills are not refused by the server. The web client hides them while `policy.assist ≠ allowed`. The repertoire is refused with 409 while you play.
+- **Fair play.** Drills are not refused by the server. The web client hides them while `policy.assist ≠ allowed`. The repertoire is refused with 409 while you play (it is assistance, like the explorer: allowed when every live game is correspondence).
 - **Theory for the repertoire.** By default a position is theory when it was reached within the named opening's plies (`opening.ply`) in any of your Lichess games: free, and Lichess's own book. The explorer (masters) can refine it later, outside live games.
-- **Calibration** is background work at `Priority::Idea`, the lowest priority. It plays fastchess at fixed nodes per level with the tests' book, and level 1 to 6 seats use `choose_move`. It needs a level-aware engine wrapper (fastchess cannot apply a softmax), so the first version can calibrate levels 7 to 12 (MultiPV 1) with fastchess and levels 1 to 6 with the Referee's engine seats.
+- **Calibration** is background work at `Priority::Idea`, the lowest priority. Every level plays at fixed nodes with the tests' book, and level 1 to 6 seats use `choose_move` (fastchess cannot), so all calibration games are played by `play`'s engine seats.
 - **When the fit runs.** The server refits (`fit` over `level_games` with `priors(ladder, your Lichess rating)`) after each calibration match and after each finished game of yours against a level, then stores it.
+
+**Services and wiring** (built: `play::levels`, `play::calibrate`, `analysis::drills`, `analysis::repertoire`, `analysis::progress`). Each route calls one function.
+
+- **Construction** (in the server's app):
+  - `Games::new(hub, binaries, timing)` makes its own `Levels` (the default ladder): `games.levels()`. Set the anchor once the connections exist: `games.levels().set_anchor(Arc::new(move || play::your_anchor(&connections.status(ConnectionKey::You))))`. It uses your rapid rating, else blitz, classical, bullet, an established rating before a provisional one.
+  - `scheduler.register(Arc::new(play::Calibrate::new(games.clone())))` for `WorkKind::Calibrate` (the trials' lane, priority Idea).
+  - `let drills = analysis::Drills::new(hub.clone())`, and the review executor registered as `Reviews::new(eval).with_drills(drills.clone())`: each review of one of your games then makes drills from it.
+  - Repertoire and progress are methods of the existing `analysis::Profiles`.
+- **Routes → calls:**
+
+```
+GET    /api/levels                 games.levels().overview()                    → play::LevelsOverview
+GET    /api/levels/plan?count=3    games.levels().plan(count)                   → PlannedMatch[]
+POST   /api/levels/calibrate       body play::CalibrateRequest { matches?, count?, games_per_pair?, version? }
+                                   scheduler.submit(games.levels().prepare_calibration(&*binaries, req).await?) → Work
+POST   /api/games                  games.start(NewGameRequest)  (level seats below; optional `seed`)
+GET    /api/drills                 drills.list()                                → Drill[]
+POST   /api/drills                 body analysis::MakeDrillsRequest { limit? }  drills.make_from_weak_spots(limit) → Drill[]
+GET    /api/drills/today           ?new_per_day=&limit=  drills.today(&now(), new_per_day, limit) → analysis::DrillsToday
+POST   /api/drills/{id}/answer     body analysis::AnswerRequest { move }  drills.answer_now(id, &move) → analysis::DrillAnswerResult
+DELETE /api/drills/{id}            drills.delete(id)   (204; 404 for none)
+GET    /api/drills/trend?window=50 drills.trend(window)                         → HitRatePoint[]
+GET    /api/players/you/repertoire ?side=&max_plies=&min_games=&limit= (analysis::RepertoireRequest, IntoParams)
+                                   profiles.repertoire(req) → Repertoire (409 fair_play while the explorer is not allowed)
+GET    /api/progress?window=10     profiles.progress(window)                    → core::progress::Progress
+```
+
+- **Level seats** (`play::SeatRequest`): `dameless@<level>` and `dameless:<version>@<level>` (a trailing `@` and digits; a version name with another `@` stays a name), or the object `{ "player": "dameless", "version"?: "v14", "level"?: 5 }`. A bare `dameless` is full strength on the clock, as before. An unknown level is 400.
+  - A seat at a level searches the level's nodes per move, whatever the game's clock (full strength, `nodes: None`, plays the clock), with its MultiPV. It plays `choose_move`'s pick, drawn from a SplitMix64 seeded by `NewGameRequest.seed` (random when none; the seed is not stored).
+  - Its name is "Dameless <rating>" (calibrated once the level has games, else nominal), with `rating` set.
+  - When every seat is a level or you, the game goes to `level_games` (not calibration), and the ladder is refitted when it ends.
+- **Calibration work:** the spec is `play::CalibrateSpec { matches, version }`, resolved when queued: the plan when no matches are given, `games_per_pair` applied, the version's name.
+  - It plays each match's games, as many at once as `cx.cores(2, all)` grants (two cores a game). Its engines start without ledger reservations, so they never pause other work as live play does.
+  - Colours alternate. Games start from a random line of the trials' book, or four random plies without one. Each level plays at `calibration_nodes()` (full strength 1,000,000), with adjudication on.
+  - Levels 7 to 12 are played the same way as 1 to 6 (engine seats, not fastchess): simpler, and exact.
+  - Games are stored as finished local games named "Dameless <rating> (level N)", with `level_games.calibration` set. They are not announced one by one (no `game.upserted`); game lists should leave calibration games out once they have a filter for it.
+  - It checkpoints after each batch (`CalibrateCheckpoint { done per match, failed }`), stops at a safe point before each batch, refits after each match (`levels.updated`), and fails when every game of a batch fails. Its result is `{ games, failed, matches }`.
+- **The fit:** `Levels::refit()` runs `fit(priors(ladder, anchor), pair_results(level_games))`, stores it and emits `levels.updated`. Without your Lichess rating, You has no prior, so your games are left out of the fit and the ladder keeps its nominal scale.
+- **Drills** are made from your reviewed games' mistakes and blunders: the weak spots of each game, with the reviewed move's best and second lines, deduplicated by key, biggest swing first. `make_from_weak_spots` reads your newest 500 games. Every change is announced on `player:you`.
+- **Progress:** your trend over your newest 1,000 games, the drill hit rate (window 50), and every champion version in the store, anchored at full strength's calibrated rating once it has games.
 
 **Events:**
 
@@ -173,7 +214,7 @@ GET    /api/progress?window=10            Progress
 | `drill.deleted`  | `{ id }`                                   | `player:you`      | yes             |
 | `levels.updated` | `{ ratings: EntrantRating[], updated_at }` | `player:dameless` | yes             |
 
-These kinds are not yet in `core::events::EventKind`, a closed enum the server owns. Adding them is the server's first R3 change, together with a `WorkKind::Calibrate`.
+These kinds are in `core::events::EventKind` (payloads `Drill`, `DrillAnswered`, `DrillDeleted`, `LevelsUpdated`), with `WorkKind::Calibrate`.
 
 ### R4: training, the foundation
 
