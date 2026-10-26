@@ -282,9 +282,9 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
     <template v-if="staged" #stage-head>
       <h2 class="title">{{ title }}</h2>
       <span class="grow"></span>
-      <EButton class="to-library" variant="quiet" size="sm" :icon="PhList" @click="toLibrary('Library')"
-        >Library</EButton
-      >
+      <EButton class="to-library" variant="quiet" size="sm" :icon="PhList" @click="toLibrary('Library')">
+        Library
+      </EButton>
       <template v-if="experiment">
         <EButton v-if="testActive" variant="outline" size="sm" :icon="PhStop" :loading="busy" @click="stopTest">
           Stop
