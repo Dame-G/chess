@@ -106,7 +106,7 @@ pub enum Score { Cp(i32), Mate(i32) }            // {"cp": 31} | {"mate": -3}; m
 
 ```rust
 pub enum TimeControl {
-    Clock { initial_ms: u64, increment_ms: u64 },      // written "3+2" in the UI and CLI
+    Clock { initial_ms: u64, increment_ms: u64 },      // games write "3+2" (minutes+seconds); test presets "8+0.08" (seconds+seconds)
     Correspondence { days: u32 },
     Movetime { ms: u64 },
     Nodes { nodes: u64 },
@@ -227,8 +227,9 @@ pub struct Trial {
     pub time: Option<TimeControl>,    // as written (8+0.08)
     pub played: Option<TimeControl>,  // after scaling (11+0.11)
     pub scaling: Option<Scaling>,     // {copies, dev_nps, base_nps, measured_nps, reference_nps, scale}
-    pub bounds: Option<(f64, f64)>,   // nElo
-    pub penta: [u32; 5],              // LL, LD, DD|WL, WD, WW pairs
+    pub bounds: Option<[f64; 2]>,     // nElo, [lower, upper]
+    pub pairs: Option<u32>,           // a fixed number of pairs instead of an SPRT (custom trials)
+    pub penta: Pentanomial,           // [LL, LD, DD+WL, WD, WW] pairs (u64 counts, as stats uses)
     pub wdl: [u32; 3],
     pub llr: Option<Llr>,             // {value, lower, upper}
     pub elo: Option<Estimate>,        // logistic Elo ± 95 %
@@ -336,7 +337,7 @@ Kinds (a closed enum in `core::events`, each with a typed payload in the OpenAPI
 | `game.thinking`    | `{ id, ply, side, depth, score, nodes, nps, pv }`, at most 5/s              | no              |
 | `idea.upserted`    | `Idea`                                                                      | yes             |
 | `trial.upserted`   | `Trial`                                                                     | yes             |
-| `trial.progress`   | `{ id, penta, wdl, llr, elo }` (throttled 1/s)                              | yes             |
+| `trial.progress`   | `{ id, idea, penta, wdl, llr, elo }` (throttled 1/s, topic `idea:<id>`)      | yes             |
 | `tune.progress`    | `{ idea, iteration, values, result }`                                       | yes             |
 | `work.upserted`    | `Work`                                                                      | yes             |
 | `work.log`         | `{ id, line }`                                                              | no              |
@@ -429,7 +430,7 @@ Trial games are read from fastchess's PGN after each round into `games` (`source
 
 ## API (`crates/server`)
 
-Resource routes; actions are `POST` sub-routes. Every route has a `utoipa` path, and `scripts/api-types.mjs` regenerates `apps/web/src/api/schema.d.ts` from `openapi.json`. Errors are `{ error: { code, message } }` with codes `bad_request` 400, `unauthorized` 401, `not_found` 404, `conflict` 409, `fair_play` 409, `rate_limited` 429, `upstream` 502.
+Resource routes; actions are `POST` sub-routes. Every route has a `utoipa` path, and `scripts/api-types.mjs` regenerates `apps/web/src/api/schema.d.ts` from `openapi.json`. Errors are `{ error: { code, message } }` with codes `bad_request` 400, `unauthorized` 401, `not_found` 404, `conflict` 409, `fair_play` 409, `rate_limited` 429, `upstream` 502, and `internal` 500 for anything unexpected (core::error::Error carries one of these codes, so every crate shares the vocabulary).
 
 ```
 GET    /api/health                                   no token
