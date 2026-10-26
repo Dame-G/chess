@@ -2,7 +2,11 @@
 //! stops the experiment, so most bad ideas cost seconds or minutes, and only survivors reach the long tests.
 //!
 //! The match presets copy Reckless's own testing (its OpenBench instance): time controls, hash sizes, book, engine
-//! options, adjudication and SPRT bounds in normalized Elo, so results here compare directly with upstream's.
+//! options, adjudication and SPRT bounds in normalized Elo. One thing differs: OpenBench scales each worker's clock
+//! to a reference speed (Reckless's is 660,000 nps of `bench`, measured with every game slot busy), and these clocks
+//! are not scaled. On this machine, with a game in every slot, an engine searches well under that, so "8+0.08" here
+//! is a shorter test in nodes than upstream's STC. Results are valid comparisons of dev against base at the clock
+//! played; they are not upstream's numbers.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -113,7 +117,12 @@ pub enum Kind {
 ///
 /// The screen is a wide non-regression SPRT, [-5, 0] nElo at VSTC: it rejects a clearly harmful change in a few
 /// hundred game pairs and lets anything plausibly neutral or better through, which a gainer SPRT with wide bounds
-/// would not (it would reject most real but small gains). The confirmation is what decides.
+/// would not (it would reject most real but small gains). The confirmation is what decides. (Upstream, by contrast,
+/// sometimes runs VSTC at the gainer's own [0, 3]: stricter, and slower to reject.)
+///
+/// So a screen accepts a change that does nothing about 90% of the time (that is its power at 0, 1 − beta): a passed
+/// screen says only "not clearly worse". A check for false accepts must use the gainer bounds, where a change that
+/// does nothing is accepted at most 5% of the time (alpha).
 pub fn default_funnel(kind: Kind, ltc: bool) -> Vec<Stage> {
     match kind {
         Kind::Gainer => functional(bounds(0.0, 3.0), ltc),

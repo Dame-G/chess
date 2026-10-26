@@ -39,7 +39,12 @@ The funnels mirror Reckless's own OpenBench settings:
 - **nonregression** (simplifications, refactors that change search): the same, with STC at [-2.75, 0.25].
 - **nonfunctional:** bench must be identical, then a paired speed comparison. No games.
 
-Bounds are normalized Elo; the test is a pentanomial GSPRT with alpha 0.05 and beta 0.10. Presets for `chess test`: vstc, stc, ltc, stc-hash, ltc-hash (2 MB / 8 MB hash pressure), smp (6 threads) and nodes (25k per move). Games are in each test's PGN, with eval, depth, nodes and time per move: `GET /api/tests/<id>/games/<index>`.
+Bounds are normalized Elo; the test is a pentanomial GSPRT with alpha 0.05 and beta 0.10. The bench stage also fails when either build's bench differs from its commit's `Bench:` line.
+
+Two things the screen and the clocks do not mean:
+
+- **A passed screen is not evidence of a gain.** At [-5, 0] a change that does nothing passes about 90% of the time; the screen only throws out clear losses. The STC stage decides.
+- **The clocks are not scaled.** OpenBench scales each worker's clock to 660,000 nps of `bench` with every slot busy; this machine runs slower than that with 14 games at once, so "8+0.08" here is a shorter test in nodes than upstream's STC. Results compare dev with base at the clock played, not with upstream's numbers. Presets for `chess test`: vstc, stc, ltc, stc-hash, ltc-hash (2 MB / 8 MB hash pressure), smp (6 threads) and nodes (25k per move). Games are in each test's PGN, with eval, depth, nodes and time per move: `GET /api/tests/<id>/games/<index>`.
 
 How to work with them:
 
@@ -47,6 +52,14 @@ How to work with them:
 - Pick the kind honestly. A change meant to be neutral (a simplification) is nonregression; only a change that cannot alter search is nonfunctional, and the bench stage checks it.
 - An accepted STC result is evidence, not proof: a gain under about 2 Elo needs LTC before it is merged.
 - A rejected screen means the idea, as written, loses. Read a few games and the nElo estimate before trying a variant.
+- **Check the harness for false accepts** on a new machine, or after changing the runner, fastchess or the book. Play `main` against a branch with the same bench (a comment-only change, such as `test/comment`) at the gainer's bounds, which a change that does nothing passes at most 5% of the time:
+
+  ```bash
+  chess test --dev test/comment --base main --preset vstc --bounds 0,3 --wait   # expect rejected, Elo within its ± of 0
+  chess test --dev test/comment --base main --preset vstc --pairs 2000 --wait   # optional: pentanomial roughly symmetric (LL≈WW, LD≈WD)
+  ```
+
+  Not an experiment: the bench stage would stop it, as the bench does not change. Not the screen either, which passes such a change most of the time. One run catches a gross bug (colour or order bias, a mixed-up dev and base); it cannot measure a 5% rate. An accept is a reason to stop and investigate before trusting any result.
 
 Live progress is a server-sent event stream: `curl -N http://127.0.0.1:7878/api/events?since=<last id>`. Each event has an `id`, a `kind` and JSON `data`; pass the last id you saw to resume without gaps.
 
@@ -68,6 +81,8 @@ chess tune apply <id> [--branch tune/<id>] [--base main] [--no-experiment] [--lt
 - **What is kept.** Every iteration is stored: the values after it and its game pairs. `GET /api/tunes/{id}` returns `{ tune, history }`, and `history[i].values` follow the order of `tune.params`. A cancelled tune keeps its iterations, and so does one that was running when the runner stopped (that one is marked failed). `resume` carries on from the last iteration.
 - **Applying a tune.** `apply` writes the current values, rounded, into `src/parameters.rs` as the new defaults, on a new branch made from the tune's commit. It builds that branch and commits with its `Bench:` line. Unless you pass `--no-experiment`, it also queues a gainer experiment against `--base`: bench, the screen, then STC at **[0, 4]** (and LTC at [0, 4] with `--ltc`), the bounds Reckless confirms its tunes with. Apply is a job. Its result is `{ tune, branch, commit, bench, experiment }`.
 - **Events.** `tune.updated` sends the whole tune on each change of status. `tune.progress` sends `{ id, iteration, values, result, penta }` after each iteration, where `result` is θ+'s games won minus games lost. `tune.finished` sends `{ id, status, summary, iteration }`.
+- **Rounding.** As OpenBench does, θ± are rounded stochastically (`floor(θ ± c_k + u)`, one `u` for both sides) and `c_k` never drops under 0.5, so the two sides always differ and average exactly θ ± c_k.
+- **How long.** The default, 1,000 iterations of 8 pairs, is 16,000 games: enough to see that a tune works, short for 38 parameters. Reckless's own SPSA sessions run 95,000 to 200,000 games (its commits #956, #988, #1072). For a real tune of every tunable, use 5,000 iterations or more (`--iterations`), or tune fewer parameters. The schedule is fixed by the iteration count, so choose it at the start: a tune cannot be lengthened later.
 - **What to trust.** A tune is only as good as its games. Even a long tune can drift on noise, so trust the [0, 4] confirmation, not the trajectory. Tune at the time control you care about, and use `--nodes` only to check that everything works.
 
 ## Matches you can watch

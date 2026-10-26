@@ -39,7 +39,7 @@ The app is **Dameless** (repo `Dame-G/dameless`, deployed to chess.dame.gg on pu
 
 ## Open items, in order
 
-1. **False-accept check (do this first on Linux).** Run one screen of `main` against a functionally identical copy (e.g. a comment-only branch tested as a gainer) and confirm it does not accept. About an hour. Nothing should be trusted before it passes.
+1. **False-accept check (do this first on Linux).** `chess test --dev test/comment --base main --preset vstc --bounds 0,3 --wait`: `main` against a functionally identical copy at the gainer's bounds, and confirm it is rejected (see "Check the harness for false accepts" in `AGENTS.md`). Not the [-5, 0] screen, which passes a do-nothing change about 90% of the time by design, and not an experiment, whose bench stage stops it. About an hour. Nothing should be trusted before it passes.
 2. **`Bench:` lines:** check that the harness writes the `Bench:` line into experiment commits; the early test branches had none.
 3. **First real tune:** `spsa/tunables`, 1,000 iterations overnight, then Apply and let the [0, 4] test decide.
 4. **Ideas batch:** the user asks for engine ideas (or brings their own); each becomes a branch and they run as a batch.
