@@ -364,6 +364,7 @@ dependencies = [
  "dameless-hub",
  "dameless-lichess",
  "dameless-store",
+ "dameless-work",
  "futures",
  "getrandom 0.4.3",
  "reqwest",
