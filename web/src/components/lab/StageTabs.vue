@@ -83,7 +83,7 @@ onMounted(reveal);
             <span v-else class="live" aria-hidden="true"></span>
             <span class="sr-only">, {{ words[s.state] }}</span>
           </span>
-          <span class="fig num">
+          <span :class="['fig', 'num', { 'fig--word': !/\d/.test(s.figure) }]">
             <span class="fig-main">{{ s.figure }}</span>
             <span v-if="s.spread" class="fig-spread">{{ s.spread }}</span>
             <span v-if="s.unit" class="fig-unit">{{ s.unit }}</span>
@@ -165,9 +165,8 @@ a.tab:focus-visible {
 }
 
 .kick-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  text-wrap: balance;
 }
 
 .mark {
@@ -196,6 +195,12 @@ a.tab:focus-visible {
 .fig-main {
   font: var(--e-type-numeral-l);
   letter-spacing: var(--e-tracking-tight);
+}
+
+/* A word, not a measurement ("changed", "passed"): quiet, so the Elo and the speed are what the eye lands on. */
+.fig--word .fig-main.fig-main {
+  color: var(--e-muted);
+  font: var(--e-type-numeral);
 }
 
 .fig-spread,

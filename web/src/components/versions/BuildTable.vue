@@ -6,10 +6,11 @@ import { EButton } from "@eos-ui/vue/components/EButton";
 import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { EIcon } from "@eos-ui/vue/components/EIcon";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
+import { ETag } from "@eos-ui/vue/components/ETag";
 import { ETable } from "@eos-ui/vue/components/ETable";
 import { EVisuallyHidden } from "@eos-ui/vue/components/EVisuallyHidden";
 import { api } from "../../api/runner";
-import { unwrap, type Version, type VersionBuild } from "../../api/queries";
+import { unwrap, useExperiments, type Version, type VersionBuild } from "../../api/queries";
 import { ago, speed } from "../../format";
 import { checkOf, type Check } from "./versions";
 
@@ -22,11 +23,16 @@ const marks: Record<Check, { icon: typeof PhCheckCircle; label: string; class: s
   unchecked: { icon: PhMinusCircle, label: "The commit has no Bench line to compare with", class: "none" },
 };
 
-/** Why a build cannot be deleted right now, when that is already known. */
+const { state: tests } = useExperiments();
+
+/** Why a build cannot be deleted right now, when that is already known: a short tag shown in its row. */
 function reason(b: VersionBuild): string {
-  if (!b.on_disk) return "Its binary is already deleted.";
-  if (props.version.on_lichess && b.id === props.version.latest_build_id) return "The Lichess bot plays this build.";
-  return "";
+  if (!b.on_disk) return "";
+  if (props.version.on_lichess && b.id === props.version.latest_build_id) return "On Lichess";
+  const using = tests.value.data?.find(
+    (e) => (e.status === "queued" || e.status === "running") && (e.dev_build === b.id || e.base_build === b.id),
+  );
+  return using ? `In use by test ${using.id}` : "";
 }
 
 const cache = useQueryCache();
@@ -91,18 +97,20 @@ async function remove() {
         <td data-label="Speed" class="e-num num">{{ speed(b.nps) }}</td>
         <td data-label="Built" :title="new Date(b.created_at).toLocaleString('en')">{{ ago(b.created_at) }}</td>
         <td class="act">
-          <EButton
-            v-if="b.on_disk"
-            variant="quiet"
-            size="sm"
-            :icon="PhTrash"
-            :disabled="!!reason(b)"
-            :title="reason(b) || `Delete the binary of build #${b.id}`"
-            :aria-label="`Delete build #${b.id}`"
-            @click="ask(b)"
-          >
-            Delete
-          </EButton>
+          <template v-if="b.on_disk">
+            <ETag v-if="reason(b)" size="sm" :label="reason(b)" />
+            <EButton
+              v-else
+              variant="quiet"
+              size="sm"
+              :icon="PhTrash"
+              :title="`Delete the binary of build #${b.id}`"
+              :aria-label="`Delete build #${b.id}`"
+              @click="ask(b)"
+            >
+              Delete
+            </EButton>
+          </template>
         </td>
       </tr>
     </tbody>
@@ -114,7 +122,7 @@ async function remove() {
     <ENotice v-if="error" class="fail" tone="danger" title="It was not deleted" :role="false">{{ error }}</ENotice>
     <template #actions>
       <EButton variant="danger" :loading="busy" @click="remove">Delete build</EButton>
-      <EButton variant="quiet" @click="open = false">Keep it</EButton>
+      <EButton variant="outline" @click="open = false">Keep it</EButton>
     </template>
   </EDialog>
 </template>

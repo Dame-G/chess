@@ -67,6 +67,7 @@ const leaning = computed(() => (at.value >= zero.value ? "up" : "down"));
       <span class="gauge-scale-zero" :style="{ insetInlineStart: `${zero * 100}%` }">0</span>
       <span>{{ signed(b.accept) }}</span>
     </div>
+    <p class="gauge-cap">Evidence needed to decide: the ends of the track.</p>
   </div>
 </template>
 
@@ -174,6 +175,12 @@ const leaning = computed(() => (at.value >= zero.value ? "up" : "down"));
   position: relative;
   display: flex;
   justify-content: space-between;
+  color: var(--e-muted);
+  font-size: var(--e-text-xs, 0.75rem);
+}
+
+.gauge-cap {
+  margin: 0;
   color: var(--e-muted);
   font-size: var(--e-text-xs, 0.75rem);
 }

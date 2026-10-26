@@ -85,7 +85,7 @@ async function submit() {
     </EForm>
     <template #actions>
       <EButton type="submit" form="apply-tune" :loading="submitting" :disabled="!branch.trim()">Apply</EButton>
-      <EButton variant="quiet" @click="open = false">Cancel</EButton>
+      <EButton variant="outline" @click="open = false">Cancel</EButton>
     </template>
   </EDialog>
 </template>

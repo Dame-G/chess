@@ -44,7 +44,7 @@ const about = {
       <EButton type="submit" :form="mode === 'test' ? 'new-test' : 'new-tune'" :loading="busy" :disabled="!valid">
         {{ mode === "test" ? "Start test" : "Start tune" }}
       </EButton>
-      <EButton variant="quiet" @click="open = false">Cancel</EButton>
+      <EButton variant="outline" @click="open = false">Cancel</EButton>
     </template>
   </EDialog>
 </template>

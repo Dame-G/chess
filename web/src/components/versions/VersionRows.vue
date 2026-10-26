@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { PhCrown, PhGitBranch } from "@phosphor-icons/vue";
-import { RouterLink } from "vue-router";
-import { EHighlight } from "@eos-ui/vue/components/EHighlight";
 import { versionPath, type Version } from "../../api/queries";
-import { toneToken } from "../improve/improve";
+import LibraryRow from "../improve/LibraryRow.vue";
 import StatusLine from "../improve/StatusLine.vue";
-import { highlight, shortAgo } from "../lab/lab";
+import { shortAgo } from "../lab/lab";
 import { tuneBadge, verdictStatus } from "./versions";
 
 /** The library list: one row per version, the chosen one marked. */
@@ -21,37 +19,29 @@ defineProps<{
 <template>
   <ol class="rows">
     <li v-for="v in versions" :key="v.name">
-      <RouterLink
-        class="row"
+      <LibraryRow
         :to="versionPath(v.name)"
-        :aria-current="v.name === current ? 'page' : undefined"
-        :class="{ 'row--upstream': v.upstream, 'row--hidden': v.hidden }"
-        :title="`${v.name}: ${v.subject}`"
+        :current="v.name === current"
+        :tone="v.is_main ? 'info' : verdictStatus(v).tone"
+        :icon="PhGitBranch"
+        :title="v.subject"
+        :refs="v.name"
+        :time="shortAgo(v.date)"
+        :hint="`${v.name}: ${v.subject} (${v.sha.slice(0, 7)})`"
+        :query="query"
+        :muted="v.upstream || v.hidden"
       >
-        <span
-          class="mark"
-          :style="{ background: `var(--e-${toneToken(v.is_main ? 'info' : verdictStatus(v).tone)})` }"
-          aria-hidden="true"
-        ></span>
-        <span class="top">
-          <PhGitBranch class="kind" aria-hidden="true" />
-          <span class="name">
-            <template v-for="(p, i) in highlight(v.name, query)" :key="i">
-              <EHighlight v-if="p.hit">{{ p.text }}</EHighlight>
-              <template v-else>{{ p.text }}</template>
-            </template>
-          </span>
-          <span v-if="v.is_main" class="tag">reference</span>
-          <span v-else-if="v.hidden" class="tag">hidden</span>
+        <template #after>
+          <span v-if="v.hidden" class="tag">hidden</span>
           <PhCrown v-if="v.on_lichess" class="lichess" aria-label="Plays on Lichess" role="img" />
-          <span class="time num">{{ shortAgo(v.date) }}</span>
-        </span>
-        <span class="subject">{{ v.subject }}</span>
-        <span v-if="!v.is_main && !v.upstream" class="status">
+        </template>
+        <StatusLine v-if="v.is_main" :status="{ label: 'Baseline', figure: '', tone: 'neutral' }" />
+        <StatusLine v-else-if="v.upstream" :status="{ label: 'Upstream', figure: '', tone: 'neutral' }" />
+        <span v-else class="status">
           <StatusLine :status="verdictStatus(v)" />
           <span v-if="v.tune" class="badge num">{{ tuneBadge(v) }}</span>
         </span>
-      </RouterLink>
+      </LibraryRow>
     </li>
   </ol>
 </template>
@@ -61,66 +51,6 @@ defineProps<{
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-.row {
-  position: relative;
-  display: grid;
-  gap: var(--e-gap-tight);
-  padding: var(--e-gap-base) var(--ws-pad, var(--e-pad-control-sm));
-  padding-inline-start: calc(var(--ws-pad, var(--e-pad-control-sm)) + 0.25rem);
-  border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 35%, transparent);
-  color: inherit;
-  text-decoration: none;
-}
-
-.row:hover {
-  background: var(--e-surface-tint);
-}
-
-.row[aria-current] {
-  background: var(--e-primary-soft);
-}
-
-.row[aria-current] .mark {
-  width: 4px;
-}
-
-.row:focus-visible {
-  outline: 2px solid var(--e-primary);
-  outline-offset: -2px;
-}
-
-.row--upstream .name,
-.row--hidden .name {
-  color: var(--e-muted);
-}
-
-.mark {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 0;
-  width: 3px;
-}
-
-.top {
-  display: flex;
-  align-items: center;
-  gap: var(--e-gap-snug);
-}
-
-.kind {
-  flex: none;
-  color: var(--e-muted);
-}
-
-.name {
-  min-width: 0;
-  overflow: hidden;
-  font-family: var(--e-font-mono);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .tag {
@@ -136,26 +66,13 @@ defineProps<{
   color: var(--e-primary);
 }
 
-.time {
-  flex: none;
-  margin-inline-start: auto;
-  color: var(--e-muted);
-  font-size: var(--e-text-xs, 0.75rem);
-}
-
-.subject,
-.status {
-  overflow: hidden;
-  color: var(--e-muted);
-  font-size: var(--e-text-xs, 0.75rem);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .status {
   display: flex;
   flex-wrap: wrap;
   gap: 0 var(--e-gap-base);
+  overflow: hidden;
+  font-size: var(--e-text-xs, 0.75rem);
+  white-space: nowrap;
 }
 
 .badge {

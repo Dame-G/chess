@@ -9,7 +9,7 @@ import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { EProgress } from "@eos-ui/vue/components/EProgress";
 import { api } from "../../api/runner";
-import { unwrap, useJobs, useLichess, type Version } from "../../api/queries";
+import { unwrap, useJobs, useLichess, useVersions, type Version } from "../../api/queries";
 import type { LichessStatus } from "../../lichess";
 import { useRunnerEvent } from "../../api/events";
 import { ago, failure } from "../../format";
@@ -22,6 +22,7 @@ const router = useRouter();
 const cache = useQueryCache();
 const { state: jobs } = useJobs();
 const { state: lichess } = useLichess();
+const { state: versions } = useVersions();
 
 const plain = computed(() => !props.version.is_main && !props.version.upstream);
 const built = computed(() => props.version.latest_build_id != null);
@@ -41,25 +42,26 @@ const headline = computed(() => {
   const v = props.version;
   if (v.is_main)
     return {
-      tone: "info",
-      title: "The reference",
-      text: "Every change is tested against main. When one passes, it is merged into main.",
+      tone: "neutral",
+      title: "The baseline every version is tested against",
+      text: "When a change passes, it is merged into main.",
     } as const;
   if (v.upstream)
     return {
-      tone: "info",
+      tone: "neutral",
       title: "Upstream's branch",
       text: "It belongs to the Reckless project, not to this fork. You can still test it against main.",
     } as const;
   const t = tested.value;
   if (!t)
     return {
-      tone: "info",
+      tone: "neutral",
       title: "Not tested yet",
       text: "Test it against main to find out whether it plays stronger.",
     } as const;
   const s = verdict.value;
-  const tone = s.tone === "success" ? "success" : s.tone === "danger" ? "danger" : "info";
+  const tone =
+    s.tone === "success" ? "success" : s.tone === "danger" ? "danger" : s.tone === "info" ? "info" : "neutral";
   const title = `${s.label}${s.figure ? ` · ${s.figure}` : ""} against ${v.tested_against ?? "main"}`;
   return { tone, title, text: outcome[t.status] ?? "" } as const;
 });
@@ -125,12 +127,51 @@ async function putOnLichess() {
   }
 }
 
+/** Whether its fingerprint equals main's: the same search, so a test against main would play the same games. */
+const sameAsMain = computed(() => {
+  const mine = props.version.builds.find((b) => !b.spsa);
+  const main = versions.value.data?.find((v) => v.is_main)?.builds.find((b) => !b.spsa);
+  return !props.version.is_main && !!mine && !!main && mine.bench === main.bench;
+});
+
+type Action = "test" | "tune" | "watch" | "play" | "lichess" | "build";
+
 /** The primary action is the next step of the loop for this version. */
-const primary = computed(() => {
+const primary = computed<Action>(() => {
   const v = props.version;
   if (v.is_main) return built.value ? "play" : "build";
   if (v.verdict?.status === "passed" && built.value && !v.on_lichess) return "lichess";
+  if (v.tunables && sameAsMain.value) return "tune";
   return "test";
+});
+
+/** The actions that apply, the primary first and always in the same order after it. */
+const actions = computed(() => {
+  const v = props.version;
+  const all: {
+    key: Action;
+    label: string;
+    icon: typeof PhFlask;
+    show: boolean;
+    run: () => void;
+    disabled?: boolean;
+  }[] = [
+    { key: "test", label: "Test it", icon: PhFlask, show: !v.is_main, run: test },
+    { key: "tune", label: "Tune it", icon: PhSlidersHorizontal, show: !!v.tunables, run: tune },
+    { key: "watch", label: "Watch it play", icon: PhSword, show: !v.is_main && built.value, run: watchIt },
+    { key: "play", label: "Play it", icon: PhUser, show: built.value, run: playIt },
+    {
+      key: "lichess",
+      label: "Put it on Lichess",
+      icon: PhCrown,
+      show: built.value && !v.on_lichess,
+      run: () => (asking.value = true),
+      disabled: !bot.value?.configured,
+    },
+    { key: "build", label: "Build now", icon: PhHammer, show: !built.value, run: () => void build() },
+  ];
+  const shown = all.filter((a) => a.show);
+  return [...shown.filter((a) => a.key === primary.value), ...shown.filter((a) => a.key !== primary.value)];
 });
 </script>
 
@@ -172,39 +213,21 @@ const primary = computed(() => {
       <h3 id="actions-title" class="section-title">What next</h3>
       <div class="actions">
         <EButton
-          v-if="!version.is_main"
-          :variant="primary === 'test' ? 'primary' : 'outline'"
-          :icon="PhFlask"
-          @click="test"
+          v-for="a in actions"
+          :key="a.key"
+          :variant="a.key === primary ? 'primary' : 'outline'"
+          :icon="a.icon"
+          :disabled="a.disabled"
+          :loading="a.key === 'build' && (busy === 'build' || !!building)"
+          @click="a.run"
         >
-          Test it
-        </EButton>
-        <EButton v-if="version.tunables" variant="outline" :icon="PhSlidersHorizontal" @click="tune">Tune it</EButton>
-        <EButton v-if="!version.is_main && built" variant="outline" :icon="PhSword" @click="watchIt">
-          Watch it play
-        </EButton>
-        <EButton v-if="built" :variant="primary === 'play' ? 'primary' : 'outline'" :icon="PhUser" @click="playIt">
-          Play it
-        </EButton>
-        <EButton
-          v-if="built && !version.on_lichess"
-          :variant="primary === 'lichess' ? 'primary' : 'outline'"
-          :icon="PhCrown"
-          :disabled="!bot?.configured"
-          @click="asking = true"
-        >
-          Put it on Lichess
-        </EButton>
-        <EButton
-          v-if="!built"
-          :variant="primary === 'build' ? 'primary' : 'outline'"
-          :icon="PhHammer"
-          :loading="busy === 'build' || !!building"
-          @click="build"
-        >
-          Build now
+          {{ a.label }}
         </EButton>
       </div>
+      <p v-if="primary === 'tune' && !version.is_main" class="note">
+        Its fingerprint equals main's, so it plays the same games until its numbers are tuned. Testing it now would show
+        nothing.
+      </p>
       <p v-if="!built && !building" class="note">
         Not built yet. Build it to play it, watch it play or put it on Lichess. A test builds it by itself.
       </p>
@@ -243,7 +266,7 @@ const primary = computed(() => {
       Lichess settings.
       <template #actions>
         <EButton :loading="busy === 'lichess'" @click="putOnLichess">Put it on Lichess</EButton>
-        <EButton variant="quiet" @click="asking = false">Cancel</EButton>
+        <EButton variant="outline" @click="asking = false">Cancel</EButton>
       </template>
     </EDialog>
   </div>

@@ -10,8 +10,8 @@ import { ETag } from "@eos-ui/vue/components/ETag";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import { ETextarea } from "@eos-ui/vue/components/ETextarea";
 import { api } from "../../api/runner";
-import { unwrap, useBranches } from "../../api/queries";
-import { kinds, stageLabel } from "../../format";
+import { unwrap, useBranches, useVersions } from "../../api/queries";
+import { kinds, stageTitle } from "../../format";
 import BranchPicker from "../BranchPicker.vue";
 import { pathOf } from "./improve";
 
@@ -22,6 +22,7 @@ const valid = defineModel<boolean>("valid", { default: false });
 const busy = defineModel<boolean>("busy", { default: false });
 const router = useRouter();
 const { state: branches } = useBranches();
+const { state: versions } = useVersions();
 
 const dev = ref(props.branch ?? "");
 watch(
@@ -37,12 +38,16 @@ const hypothesis = ref("");
 const ltc = ref(false);
 const error = ref("");
 
-// The newest branch of the fork that is not the base is the likely one to test.
+// A change under test is on a test/ branch of the fork: the newest one that has not been tested yet is the likely one.
+// With none, the field stays empty rather than guessing.
 watch(
-  () => branches.value.data,
+  () => versions.value.data,
   (list) => {
-    if (!dev.value)
-      dev.value = list?.find((b) => b.name !== base.value && !b.name.startsWith("upstream/") && !b.hidden)?.name ?? "";
+    if (dev.value) return;
+    dev.value =
+      list
+        ?.filter((v) => v.name.startsWith("test/") && !v.hidden && !v.upstream && !v.verdict)
+        .toSorted((a, b) => b.date.localeCompare(a.date))[0]?.name ?? "";
   },
   { immediate: true },
 );
@@ -53,7 +58,7 @@ watch([dev, base], () => (valid.value = !!dev.value.trim() && !!base.value.trim(
 /** The stages it will go through, in words. */
 const plan = computed(() =>
   (kind.value === "nonfunctional" ? ["bench", "speed"] : ["bench", "screen", "stc", ...(ltc.value ? ["ltc"] : [])]).map(
-    stageLabel,
+    stageTitle,
   ),
 );
 
@@ -95,6 +100,7 @@ async function submit() {
         :exclude="[base]"
         allow-ref
         required
+        placeholder="Pick the branch with your change"
         hint="The version with your change."
       />
       <BranchPicker v-model="base" label="Compare with" :exclude="[dev]" allow-ref required hint="Usually main." />

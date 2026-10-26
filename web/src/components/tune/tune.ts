@@ -1,5 +1,5 @@
 import type { Param, Tune, TuneDetail } from "../../api/queries";
-import { duration, signed, timeControl } from "../../format";
+import { duration, signed, stageTitle, timeControl } from "../../format";
 
 export type Iteration = TuneDetail["history"][number];
 
@@ -17,7 +17,7 @@ const progressText = (t: Pick<Tune, "iteration" | "iterations">) => `${t.iterati
 export function statusWord(t: Tune): string {
   switch (t.status) {
     case "queued":
-      return "Waiting";
+      return "Queued";
     case "running":
       return `Iteration ${progressText(t)}`;
     case "done":
@@ -102,12 +102,12 @@ export function tuneLine(t: Tune, remaining?: string): string {
 
 /** The time controls a tune offers: each is a runner preset, or a node count. */
 export const controls = [
-  { value: "stc", label: "Short games (8+0.08)", detail: "The default, as the tests use." },
+  { value: "stc", label: stageTitle("stc"), detail: "The default, as the tests use." },
   {
     value: "vstc",
-    label: "Very short games (4+0.04)",
+    label: stageTitle("screen"),
     detail: "Twice as many iterations per hour; noisier for search tuning.",
   },
-  { value: "ltc", label: "Long games (40+0.4)", detail: "Tune at the time control you care about; slow." },
+  { value: "ltc", label: stageTitle("ltc"), detail: "Tune at the time control you care about; slow." },
   { value: "nodes", label: "Fixed nodes per move", detail: "Only to check that everything works." },
 ] as const;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { stageTitle } from "../../format";
 import Term from "../Term.vue";
 
 /** The loop in three steps, and with `detail`, how a test and a tune work. */
@@ -20,9 +21,9 @@ const loop = [
 ];
 const funnel = [
   { title: "Fingerprint", text: "Seconds. Fixed positions show whether play really changed." },
-  { title: "Quick screen", text: "Minutes. Very fast games throw out ideas that clearly lose." },
+  { title: stageTitle("screen"), text: "Minutes. Throws out ideas that clearly lose." },
   {
-    title: "Short games, then long",
+    title: `${stageTitle("stc")}, then long games (40+0.4)`,
     text: "Up to hours. Thousands of games, until the statistics say stronger or not.",
   },
 ];

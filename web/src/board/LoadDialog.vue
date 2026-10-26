@@ -24,6 +24,11 @@ watch(text, (t) => {
   if (!t.trim()) read.value = "";
   else reading = setTimeout(() => (read.value = t), 180);
 });
+/** "8 moves" for 16 plies: a move is one turn of each side. */
+const fullMoves = (plies: number) => {
+  const n = Math.ceil(plies / 2);
+  return `${n} move${n === 1 ? "" : "s"}`;
+};
 // A file of several games lists them, and the one picked is what loads.
 const games = computed(() => listGames(read.value));
 const game = ref("0");
@@ -32,7 +37,7 @@ const gameOptions = computed(() =>
   games.value.map((g, i) => ({
     value: String(i),
     label: g.label,
-    description: `${g.result} · ${g.moves} move${g.moves === 1 ? "" : "s"}`,
+    description: `${g.result} · ${fullMoves(g.moves)}`,
   })),
 );
 const inspected = computed(() => inspectPosition(read.value, Number(game.value)));
@@ -45,7 +50,7 @@ const facts = computed(() => {
   const p = preview.value;
   if (!f || !p) return "";
   const n = f.line.moves.length;
-  const moves = f.kind === "pgn" && n ? `${n} move${n === 1 ? "" : "s"}. ` : "";
+  const moves = f.kind === "pgn" && n ? `${fullMoves(n)}. ` : "";
   return `${moves}${p.turn === "white" ? "White" : "Black"} to move${p.check ? ", in check" : ""}.`;
 });
 // Reading is pending while the text and what was read differ.
@@ -140,7 +145,7 @@ function load() {
     </div>
     <template #actions>
       <EButton :disabled="!ready" @click="load">Load</EButton>
-      <EButton variant="quiet" @click="open = false">Cancel</EButton>
+      <EButton variant="outline" @click="open = false">Cancel</EButton>
     </template>
   </EDialog>
 </template>

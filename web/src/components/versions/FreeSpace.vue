@@ -130,7 +130,7 @@ const builds = (n: number) => `${n} ${n === 1 ? "build" : "builds"}`;
       >
         Delete {{ preview ? builds(preview.deleted.length) : "builds" }}
       </EButton>
-      <EButton variant="quiet" @click="open = false">{{ done ? "Close" : "Cancel" }}</EButton>
+      <EButton variant="outline" @click="open = false">{{ done ? "Close" : "Cancel" }}</EButton>
     </template>
   </EDialog>
 </template>

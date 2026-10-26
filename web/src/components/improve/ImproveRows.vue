@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { PhFlask, PhSlidersHorizontal } from "@phosphor-icons/vue";
-import { RouterLink } from "vue-router";
-import { EHighlight } from "@eos-ui/vue/components/EHighlight";
-import { highlight, shortAgo } from "../lab/lab";
-import { keyOf, pathOf, toneToken, type Item, type Status } from "./improve";
+import { shortAgo } from "../lab/lab";
+import { keyOf, pathOf, type Item, type Status } from "./improve";
+import LibraryRow from "./LibraryRow.vue";
 import StatusLine from "./StatusLine.vue";
 
 /** The library list: every test and tune in one column, the chosen one marked. */
@@ -19,36 +18,34 @@ defineProps<{
 <template>
   <ol class="rows">
     <li v-for="{ item, status } in rows" :key="keyOf(item)">
-      <RouterLink
-        class="row"
-        :to="pathOf(item.kind, item.id)"
-        :aria-current="keyOf(item) === current ? 'page' : undefined"
-        :title="
-          item.kind === 'test'
-            ? `${item.test.name}: ${item.test.dev} vs ${item.test.base}`
-            : `${item.tune.name}: tune of ${item.tune.ref}`
-        "
+      <LibraryRow
+        v-if="item.kind === 'test'"
+        :to="pathOf('test', item.id)"
+        :current="keyOf(item) === current"
+        :tone="status.tone"
+        :icon="PhFlask"
+        :title="item.test.name"
+        :refs="`#${item.id} · ${item.test.dev} vs ${item.test.base}`"
+        :time="shortAgo(item.at)"
+        :hint="`${item.test.name}: ${item.test.dev} vs ${item.test.base}`"
+        :query="query"
       >
-        <span class="mark" :style="{ background: `var(--e-${toneToken(status.tone)})` }" aria-hidden="true"></span>
-        <span class="top">
-          <component :is="item.kind === 'test' ? PhFlask : PhSlidersHorizontal" class="kind" aria-hidden="true" />
-          <span class="name">
-            <template
-              v-for="(p, i) in highlight(item.kind === 'test' ? item.test.name : item.tune.name, query)"
-              :key="i"
-            >
-              <EHighlight v-if="p.hit">{{ p.text }}</EHighlight>
-              <template v-else>{{ p.text }}</template>
-            </template>
-          </span>
-          <span class="time num">{{ shortAgo(item.at) }}</span>
-        </span>
-        <span class="refs num">
-          <template v-if="item.kind === 'test'">{{ item.test.dev }} vs {{ item.test.base }}</template>
-          <template v-else>Tune · {{ item.tune.ref }}</template>
-        </span>
         <StatusLine :status="status" />
-      </RouterLink>
+      </LibraryRow>
+      <LibraryRow
+        v-else
+        :to="pathOf('tune', item.id)"
+        :current="keyOf(item) === current"
+        :tone="status.tone"
+        :icon="PhSlidersHorizontal"
+        :title="item.tune.name"
+        :refs="`#${item.id} · tune of ${item.tune.ref}`"
+        :time="shortAgo(item.at)"
+        :hint="`${item.tune.name}: tune of ${item.tune.ref}`"
+        :query="query"
+      >
+        <StatusLine :status="status" />
+      </LibraryRow>
     </li>
   </ol>
 </template>
@@ -58,78 +55,5 @@ defineProps<{
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-.row {
-  position: relative;
-  display: grid;
-  gap: var(--e-gap-tight);
-  padding: var(--e-gap-base) var(--ws-pad, var(--e-pad-control-sm));
-  padding-inline-start: calc(var(--ws-pad, var(--e-pad-control-sm)) + 0.25rem);
-  border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 35%, transparent);
-  color: inherit;
-  text-decoration: none;
-}
-
-.row:hover {
-  background: var(--e-surface-tint);
-}
-
-.row[aria-current] {
-  background: var(--e-primary-soft);
-}
-
-.row[aria-current] .mark {
-  width: 4px;
-}
-
-.row[aria-current] .name {
-  color: var(--e-ink);
-}
-
-.row:focus-visible {
-  outline: 2px solid var(--e-primary);
-  outline-offset: -2px;
-}
-
-.mark {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 0;
-  width: 3px;
-}
-
-.top {
-  display: flex;
-  align-items: center;
-  gap: var(--e-gap-snug);
-}
-
-.kind {
-  flex: none;
-  color: var(--e-muted);
-}
-
-.name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.time {
-  flex: none;
-  color: var(--e-muted);
-  font-size: var(--e-text-xs, 0.75rem);
-}
-
-.refs {
-  overflow: hidden;
-  color: var(--e-muted);
-  font-size: var(--e-text-xs, 0.75rem);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 </style>

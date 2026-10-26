@@ -10,9 +10,9 @@ export function verdictStatus(v: Version): Status {
   const figure = e ? `${signed(e.elo, 1)} ± ${e.elo_error.toFixed(1)} Elo` : "";
   switch (verdict.status) {
     case "queued":
-      return { label: "Waiting", figure: "", tone: "neutral" };
+      return { label: "Queued", figure: "", tone: "neutral" };
     case "running":
-      return { label: "Testing…", figure, tone: "info" };
+      return { label: "Running", figure, tone: "info" };
     case "cancelled":
       return { label: "Stopped", figure, tone: "neutral" };
     case "passed":
@@ -28,7 +28,7 @@ export function tuneBadge(v: Pick<Version, "tune">): string {
   if (!t) return "";
   switch (t.status) {
     case "queued":
-      return "Tune waiting";
+      return "Tune queued";
     case "running":
       return `Tuning ${t.iteration}/${t.iterations}`;
     case "done":

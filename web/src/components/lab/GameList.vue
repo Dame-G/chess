@@ -10,7 +10,11 @@ import { ending } from "../../format";
 import { outcome, record } from "./lab";
 
 /** A test's games, newest first, with how the new version did and a filter by result. */
-const props = defineProps<{ test: number }>();
+const props = defineProps<{
+  test: number;
+  /** The games the verdict counts (the test's own figure), once it has finished. A game played after the last full pair is not one. */
+  counted?: number;
+}>();
 const { state } = useGames(() => props.test);
 
 /** Stacked on a phone the list pushes the library far down the page, so it opens shorter there. */
@@ -27,7 +31,9 @@ watch(
 );
 
 /** Newest first: a running test's latest games are the ones being played. */
-const games = computed(() => (state.value.data ?? []).slice().reverse());
+const games = computed(() =>
+  (state.value.data ?? []).filter((g) => props.counted === undefined || g.index < props.counted).reverse(),
+);
 const score = computed(() => record(games.value));
 const total = computed(() => games.value.length);
 const matching = computed(() =>

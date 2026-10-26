@@ -93,7 +93,7 @@ async function remove() {
       <EButton type="submit" form="delete-version" variant="danger" :disabled="!sure" :loading="busy">
         Delete branch
       </EButton>
-      <EButton variant="quiet" @click="open = false">Keep it</EButton>
+      <EButton variant="outline" @click="open = false">Keep it</EButton>
     </template>
   </EDialog>
 </template>

@@ -14,14 +14,13 @@ import { ESearchBar } from "@eos-ui/vue/components/ESearchBar";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { api } from "../api/runner";
 import { unwrap, useBuilds, useVersions, versionPath } from "../api/queries";
-import { speed } from "../format";
 import { stored } from "../stored";
 import Workspace from "../components/Workspace.vue";
 import Term from "../components/Term.vue";
 import DeleteVersion from "../components/versions/DeleteVersion.vue";
 import FreeSpace from "../components/versions/FreeSpace.vue";
-import SpeedBars from "../components/versions/SpeedBars.vue";
 import LibraryHead from "../components/improve/LibraryHead.vue";
+import LibraryTools from "../components/improve/LibraryTools.vue";
 import { stepTarget, toLibrary } from "../components/improve/libraryNav";
 import VersionRows from "../components/versions/VersionRows.vue";
 import VersionStage from "../components/versions/VersionStage.vue";
@@ -121,20 +120,20 @@ const stageMenu = computed<EMenuItem[]>(() => {
 });
 const libraryMenu = computed<EMenuItem[]>(() => [{ label: "Free disk space…", onClick: () => (freeing.value = true) }]);
 
-// ---- Inspector: speed of each version's newest build, and what the fingerprint is
-const bars = computed(() =>
-  sortVersions(all.value)
-    .filter((v) => (!v.hidden && !v.upstream) || v.name === current.value?.name)
-    .flatMap((v) => {
-      const b = liveBuilds(v)[0];
-      return b ? [{ name: v.name, nps: b.nps }] : [];
-    }),
-);
+// ---- Inspector: what the checks say about this version
+const mainBuild = computed(() => {
+  const m = all.value.find((v) => v.is_main);
+  return m ? liveBuilds(m)[0] : undefined;
+});
 const pace = computed(() => {
-  const mine = bars.value.find((b) => b.name === current.value?.name);
-  if (!mine || bars.value.length < 2) return "";
-  const gap = 1 - mine.nps / Math.max(...bars.value.map((b) => b.nps));
-  return gap < 0.01 ? "The fastest version." : `${Math.round(gap * 100)}% slower than the fastest.`;
+  const v = current.value;
+  const mine = v ? liveBuilds(v)[0] : undefined;
+  if (!v || !mine) return "";
+  if (v.is_main) return "Every version is timed against this one.";
+  if (!mainBuild.value) return "";
+  const gap = mine.nps / mainBuild.value.nps - 1;
+  if (Math.abs(gap) < 0.01) return "As fast as main.";
+  return `${Math.round(Math.abs(gap) * 100)}% ${gap < 0 ? "slower" : "faster"} than main.`;
 });
 const latest = computed(() => {
   const id = current.value?.latest_build_id;
@@ -150,7 +149,7 @@ const fingerprint = computed(() => {
 </script>
 
 <template>
-  <Workspace library-label="Versions" inspector-label="Speed">
+  <Workspace library-label="Versions" inspector-label="Checks">
     <template #library-head>
       <LibraryHead title="Versions">
         <template #action>
@@ -160,12 +159,14 @@ const fingerprint = computed(() => {
             </template>
           </EMenu>
         </template>
-        <ESearchBar v-model="search" label="Search versions" placeholder="Search" size="sm" hide-action />
-        <ECheckbox v-if="hiddenCount" v-model="showHidden" :label="`Show hidden and upstream (${hiddenCount})`" />
       </LibraryHead>
     </template>
 
     <template #library>
+      <LibraryTools>
+        <ESearchBar v-model="search" label="Search versions" placeholder="Search" size="sm" hide-action />
+        <ECheckbox v-if="hiddenCount" v-model="showHidden" :label="`Show hidden and upstream (${hiddenCount})`" />
+      </LibraryTools>
       <ESkeleton v-if="versions.status === 'pending'" :lines="5" label="Loading versions" />
       <ENotice
         v-else-if="versions.status === 'error'"
@@ -217,16 +218,15 @@ const fingerprint = computed(() => {
     </div>
 
     <template v-if="current" #inspector-head>
-      <h2 class="ins-title">Speed</h2>
+      <h2 class="ins-title">Checks</h2>
     </template>
     <template v-if="current" #inspector>
       <div class="ins">
         <section class="part" aria-labelledby="ins-speed">
-          <h3 id="ins-speed" class="part-title">Newest build of each version</h3>
-          <p v-if="bars.length" class="note">
-            <b v-if="pace">{{ pace }}</b> Measured on this machine; runs of the same commit differ by a few percent.
+          <h3 id="ins-speed" class="part-title">Speed</h3>
+          <p v-if="pace" class="note">
+            <b>{{ pace }}</b> Measured on this machine; runs of the same commit differ by a few percent.
           </p>
-          <SpeedBars v-if="bars.length" :bars="bars" :selected="current.name" />
           <p v-else class="note">Nothing is built yet.</p>
         </section>
         <section v-if="fingerprint" class="part" aria-labelledby="ins-print">
@@ -237,8 +237,7 @@ const fingerprint = computed(() => {
           </p>
           <p v-if="latest" class="note num">
             {{ latest.network ?? "No network embedded" }} ·
-            {{ latest.features.includes("no-syzygy") ? "no tablebases" : "tablebases" }} ·
-            {{ speed(latest.nps) }}
+            {{ latest.features.includes("no-syzygy") ? "no tablebases" : "tablebases" }}
           </p>
         </section>
       </div>
@@ -260,7 +259,6 @@ const fingerprint = computed(() => {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  font: var(--e-type-h4);
   font-family: var(--e-font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -296,6 +294,15 @@ const fingerprint = computed(() => {
   display: grid;
   gap: var(--e-gap-base);
   min-inline-size: 0;
+}
+
+.part-title {
+  margin: 0;
+  color: var(--e-muted);
+  font: var(--e-type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .note {

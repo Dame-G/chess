@@ -9,7 +9,7 @@ import DecisionGauge from "./DecisionGauge.vue";
 import PairBar from "./PairBar.vue";
 import Term from "./Term.vue";
 import { useTest } from "../api/queries";
-import { bounds, signed, timeControl } from "../format";
+import { bounds, signed } from "../format";
 
 /** One match of an experiment: how far the evidence has come, and the numbers behind it. */
 const props = defineProps<{ id: number }>();
@@ -41,11 +41,6 @@ const est = computed(() => test.value?.estimate);
       <EMetric label="Chance stronger" :value="est ? `${Math.round(est.los * 100)}%` : '–'">
         <template #help><Term of="los" inline>how sure?</Term></template>
       </EMetric>
-      <EMetric
-        label="Time control"
-        :value="timeControl(test.spec.tc)"
-        :help="`${test.spec.hash} MB hash · ${test.spec.threads} thread${test.spec.threads > 1 ? 's' : ''}`"
-      />
     </EGrid>
 
     <PairBar :penta="test.penta" />
@@ -65,8 +60,11 @@ const est = computed(() => test.value?.estimate);
     </figure>
 
     <div class="settings" aria-label="Test settings">
-      <ETag v-if="sprt" size="sm" :label="`bounds [${signed(sprt.elo0, 0)}, ${signed(sprt.elo1, 0)}]`" />
-      <Term v-if="sprt" of="bounds" inline>What are bounds?</Term>
+      <ETag v-if="sprt" size="sm" :label="`Elo range tested: ${signed(sprt.elo0, 0)} to ${signed(sprt.elo1, 0)}`" />
+      <span class="num">
+        {{ test.spec.hash }} MB hash · {{ test.spec.threads }} thread{{ test.spec.threads > 1 ? "s" : "" }}
+      </span>
+      <Term v-if="sprt" of="bounds" inline>What is the Elo range?</Term>
       <Term of="elo" inline>What is Elo?</Term>
     </div>
   </section>

@@ -1,5 +1,5 @@
 import type { Experiment, Test } from "../../api/queries";
-import { duration, forecast, signed, stageLabel, verdict } from "../../format";
+import { duration, forecast, signed, stageLabel, stageTitle, verdict } from "../../format";
 
 type Result = Experiment["results"][number];
 type StageState = "done" | "error" | "current" | "stopped" | "upcoming";
@@ -51,7 +51,7 @@ export function funnelOf(e: Experiment, tests: readonly Test[]): FunnelStage[] {
         : test
           ? "stopped"
           : "upcoming";
-    return { name, label: stageLabel(name), state, result, ...stageFigure(name, state, result, test) };
+    return { name, label: stageTitle(name), state, result, ...stageFigure(name, state, result, test) };
   });
 }
 

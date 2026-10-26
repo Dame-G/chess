@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { PhArrowClockwise, PhCheck, PhList, PhPlus, PhStop } from "@phosphor-icons/vue";
+import { PhArrowClockwise, PhCheck, PhList, PhPlus, PhQuestion, PhStop } from "@phosphor-icons/vue";
 import { useShortcuts } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EDialog } from "@eos-ui/vue/components/EDialog";
-import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
+import { EIconButton } from "@eos-ui/vue/components/EIconButton";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ESearchBar } from "@eos-ui/vue/components/ESearchBar";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
@@ -22,6 +22,7 @@ import { defaultStage } from "../components/lab/lab";
 import HowItWorks from "../components/improve/HowItWorks.vue";
 import ImproveRows from "../components/improve/ImproveRows.vue";
 import LibraryHead from "../components/improve/LibraryHead.vue";
+import LibraryTools from "../components/improve/LibraryTools.vue";
 import { stepTarget, toLibrary } from "../components/improve/libraryNav";
 import NewWork from "../components/improve/NewWork.vue";
 import {
@@ -107,6 +108,32 @@ watch(current, async () => {
   await nextTick();
   listEl.value?.querySelector("[aria-current]")?.scrollIntoView({ block: "nearest" });
 });
+
+/** What an empty Tests or Tunes filter says when nothing of that kind exists, with the way to make one. */
+const lacks = computed(() => {
+  if (show.value === "tune" && !everything.value.some((i) => i.kind === "tune"))
+    return {
+      title: "No tunes yet",
+      text: "A tune adjusts the engine's numbers and writes them to a new branch.",
+      action: "Tune numbers",
+      start: () => startFor("tune"),
+    };
+  if (show.value === "test" && !everything.value.some((i) => i.kind === "test"))
+    return {
+      title: "No tests yet",
+      text: "A test plays a branch against main until the result is clear.",
+      action: "Test a change",
+      start: () => startFor("test"),
+    };
+  return undefined;
+});
+
+function startFor(what: "test" | "tune") {
+  mode.value = what;
+  prefill.value = "";
+  creating.value = true;
+}
+const startTest = () => startFor("test");
 
 function clear() {
   search.value = "";
@@ -195,6 +222,7 @@ const resume = () => act(() => unwrap(api.POST("/api/tunes/{id}/resume", { param
 
 // ---- New: the command palette sends ?new=1 (a test), ?new=test or ?new=tune
 const creating = ref(false);
+const learning = ref(false);
 const mode = ref<"test" | "tune">("test");
 /** A branch to start from, sent by the Versions page: ?new=test&dev=<branch> or ?new=tune&branch=<branch>. */
 const prefill = ref("");
@@ -233,8 +261,16 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
     <template #library-head>
       <LibraryHead title="Improve">
         <template #action>
-          <EButton size="sm" :icon="PhPlus" @click="creating = true">Test a change</EButton>
+          <span class="acts">
+            <EIconButton :icon="PhQuestion" label="How it works" size="sm" @click="learning = true" />
+            <EButton size="sm" :icon="PhPlus" @click="startTest">Test a change</EButton>
+          </span>
         </template>
+      </LibraryHead>
+    </template>
+
+    <template #library>
+      <LibraryTools v-if="everything.length">
         <ESearchBar v-model="search" label="Search" placeholder="Search" size="sm" hide-action />
         <ESegmented
           v-model="show"
@@ -257,13 +293,19 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
           placeholder="All batches"
           clearable
         />
-      </LibraryHead>
-    </template>
-
-    <template #library>
+      </LibraryTools>
       <ESkeleton v-if="loading && !everything.length" :lines="5" label="Loading" />
       <EEmptyState v-else-if="!everything.length" bare size="sm" title="Nothing tried yet">
         Test a change to start. Tuning the engine's numbers is in the same dialog.
+        <template #action>
+          <EButton variant="quiet" size="sm" @click="learning = true">How it works</EButton>
+        </template>
+      </EEmptyState>
+      <EEmptyState v-else-if="!rows.length && !search.trim() && !batch && lacks" bare size="sm" :title="lacks.title">
+        {{ lacks.text }}
+        <template #action>
+          <EButton variant="outline" size="sm" :icon="PhPlus" @click="lacks.start">{{ lacks.action }}</EButton>
+        </template>
       </EEmptyState>
       <EEmptyState v-else-if="!rows.length" bare size="sm" title="Nothing matches">
         Try another word, or a different filter.
@@ -274,9 +316,6 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
       <div v-else ref="listEl">
         <ImproveRows :rows="rows" :current="current" :query="search" />
       </div>
-      <EDisclosure v-if="everything.length" class="how" title="How it works">
-        <HowItWorks detail />
-      </EDisclosure>
     </template>
 
     <template v-if="staged" #stage-head>
@@ -330,7 +369,7 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
       <EEmptyState title="Nothing tried yet" icon="info">
         Improving the engine is a loop: change it, test it, keep what wins.
         <template #action>
-          <EButton :icon="PhPlus" @click="creating = true">Test a change</EButton>
+          <EButton :icon="PhPlus" @click="startTest">Test a change</EButton>
         </template>
       </EEmptyState>
       <HowItWorks />
@@ -340,7 +379,9 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
     <template v-if="staged" #inspector-head>
       <h2 class="ins-title">{{ kind === "tune" ? "Iterations" : "Games" }}</h2>
       <span v-if="kind === 'tune' && tune" class="ins-count num">{{ tune.iteration.toLocaleString("en") }}</span>
-      <span v-else-if="test" class="ins-count num">{{ (games.data?.length ?? test.games).toLocaleString() }}</span>
+      <span v-else-if="test" class="ins-count num">{{
+        (test.running ? (games.data?.length ?? test.games) : test.games).toLocaleString()
+      }}</span>
       <span class="grow"></span>
     </template>
     <template v-if="staged" #inspector>
@@ -349,7 +390,7 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
         <ESkeleton v-else class="pad" :lines="6" label="Loading iterations" />
       </template>
       <template v-else>
-        <GameList v-if="test" :test="test.id" />
+        <GameList v-if="test" :test="test.id" :counted="test.running ? undefined : test.games" />
         <ESkeleton v-else-if="!experiment" class="pad" :lines="6" label="Loading games" />
         <EEmptyState v-else bare size="sm" title="No games here">
           {{
@@ -362,13 +403,19 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
     </template>
   </Workspace>
 
+  <EDialog v-model:open="learning" title="How it works" size="md">
+    <HowItWorks detail />
+    <template #actions>
+      <EButton variant="outline" @click="learning = false">Close</EButton>
+    </template>
+  </EDialog>
   <NewWork v-model:open="creating" v-model:mode="mode" :branch="prefill" />
   <ApplyTune v-if="tune" v-model:open="applying" :tune="tune" />
   <EDialog v-model:open="stoppingTune" title="Stop this tune?" size="sm">
     Its iterations so far are kept, and it can resume later.
     <template #actions>
       <EButton :loading="busy" @click="stopTune">Stop tune</EButton>
-      <EButton variant="quiet" @click="stoppingTune = false">Keep going</EButton>
+      <EButton variant="outline" @click="stoppingTune = false">Keep going</EButton>
     </template>
   </EDialog>
 </template>
@@ -384,7 +431,6 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  font: var(--e-type-h4);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -403,8 +449,10 @@ const title = computed(() => experiment.value?.name ?? tune.value?.name ?? "");
   }
 }
 
-.how {
-  margin: var(--e-gap-base) var(--ws-pad);
+.acts {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e-gap-tight);
 }
 
 .pad {

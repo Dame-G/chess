@@ -92,9 +92,9 @@ describe("tune dialogs", { timeout: 30_000 }, () => {
 });
 
 describe("improve dialogs", { timeout: 30_000 }, () => {
-  it("starts a test of the newest fork branch against main", async () => {
+  it("starts a test of the chosen branch against main", async () => {
     const { default: NewWork } = await import("../src/components/improve/NewWork.vue");
-    await mount({ render: () => h(NewWork, { open: true }) });
+    await mount({ render: () => h(NewWork, { open: true, branch: "test/comment" }) });
     expect(document.body.textContent).toContain("Tune numbers");
     expect(document.body.textContent).toContain("Branch to test");
     await click(/Start test/);

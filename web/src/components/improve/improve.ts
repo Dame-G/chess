@@ -66,7 +66,7 @@ export function testStatus(e: Experiment): Status {
   const { figure } = headline(e);
   switch (e.status) {
     case "queued":
-      return { label: "Waiting", figure: "", tone: "neutral" };
+      return { label: "Queued", figure: "", tone: "neutral" };
     case "running":
       return { label: "Running", figure: e.current ? stageLabel(e.current).toLowerCase() : "", tone: "info" };
     case "cancelled":
@@ -80,7 +80,7 @@ export function testStatus(e: Experiment): Status {
 
 /** A tune: how far along it is, and once applied, how its test went. */
 export function tuneStatus(t: Tune, test?: Experiment, applied = false): Status {
-  if (t.status === "queued") return { label: "Waiting", figure: "", tone: "neutral" };
+  if (t.status === "queued") return { label: "Queued", figure: "", tone: "neutral" };
   if (t.status === "running") return { label: "Tuning", figure: `${t.iteration}/${t.iterations}`, tone: "info" };
   if (test) {
     const s = testStatus(test);
