@@ -69,20 +69,14 @@ const facts = computed(() => {
         </EButton>
       </template>
       <template v-else>
-        <EButton v-if="running" variant="danger" size="sm" :icon="PhStop" :loading="busy" @click="$emit('stop')">
+        <EButton v-if="running" variant="danger" size="sm" :icon="PhStop" :loading="busy" @click="emit('stop')">
           Stop match
         </EButton>
         <template v-else>
-          <EButton
-            variant="outline"
-            size="sm"
-            :icon="PhArrowCounterClockwise"
-            :loading="busy"
-            @click="$emit('rematch')"
-          >
+          <EButton variant="outline" size="sm" :icon="PhArrowCounterClockwise" :loading="busy" @click="emit('rematch')">
             Rematch
           </EButton>
-          <EButton variant="outline" size="sm" :icon="PhSwap" :loading="busy" @click="$emit('swap')">
+          <EButton variant="outline" size="sm" :icon="PhSwap" :loading="busy" @click="emit('swap')">
             Swap colours
           </EButton>
         </template>

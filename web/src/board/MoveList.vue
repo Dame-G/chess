@@ -13,6 +13,8 @@ const props = defineProps<{
   start: string;
   /** A game is on its way: placeholders instead of "no moves". */
   loading?: boolean;
+  /** The line is yours to make, on the free board: the empty list says how to start one. */
+  free?: boolean;
 }>();
 const emit = defineEmits<{ go: [ply: number] }>();
 
@@ -59,7 +61,9 @@ followCurrent(list, () => props.cursor);
       @go="emit('go', $event)"
     />
     <ESkeleton v-if="loading && !sans.length" :lines="8" label="Loading moves" class="none" />
-    <p v-else-if="!sans.length" class="none">No moves yet. Move a piece, or paste a game.</p>
+    <p v-else-if="!sans.length" class="none">
+      {{ free ? "No moves yet. Move a piece, or paste a game." : "No moves yet." }}
+    </p>
   </div>
 </template>
 

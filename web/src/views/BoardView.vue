@@ -1319,7 +1319,7 @@ const filters = [
             </section>
 
             <section class="pane-moves" aria-label="Moves">
-              <MoveList :sans="sans" :cursor="cursor" :start="start" :loading="loading" @go="go" />
+              <MoveList :free="!inGame" :sans="sans" :cursor="cursor" :start="start" :loading="loading" @go="go" />
             </section>
 
             <footer class="tools">

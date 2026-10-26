@@ -92,7 +92,10 @@ export function useMatch(id: Ref<number>) {
       queue = undefined;
       for (const q of pending) handle(q);
     } catch {
-      if (ticket === wanted && !quiet) failed.value = true;
+      if (ticket !== wanted) return;
+      // Nothing to apply the waiting events to: let them go rather than pile up.
+      queue = undefined;
+      if (!quiet) failed.value = true;
     }
   }
 
