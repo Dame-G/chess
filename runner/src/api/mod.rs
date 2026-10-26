@@ -15,11 +15,15 @@ mod tunes;
 mod versions;
 mod web;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
-use axum::{Router, http::HeaderValue, middleware};
-use tower_http::cors::CorsLayer;
+use axum::{
+    Router,
+    http::{HeaderName, HeaderValue, Method, header},
+    middleware,
+};
+use tower_http::{cors::CorsLayer, set_header::SetResponseHeaderLayer};
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -128,17 +132,7 @@ pub async fn serve(config: Config) -> Result<()> {
 
     let (api, _) = api();
     let api = api.layer(middleware::from_fn_with_state(state.clone(), guard::guard));
-    let app = Router::new()
-        .merge(api)
-        .fallback(web::web)
-        .layer(
-            CorsLayer::new()
-                .allow_origin(HeaderValue::from_static(HOSTED_ORIGIN))
-                .allow_methods(tower_http::cors::Any)
-                .allow_headers(tower_http::cors::Any)
-                .allow_private_network(true),
-        )
-        .with_state(state.clone());
+    let app = protect(Router::new().merge(api).fallback(web::web)).with_state(state.clone());
 
     // Clients following the stream see restarts, and drop state that only lived in the old process.
     state.events.emit("runner.started", serde_json::json!({ "version": env!("CARGO_PKG_VERSION") }));
@@ -161,6 +155,31 @@ pub async fn serve(config: Config) -> Result<()> {
     Ok(())
 }
 
+/// What every response carries, around the routes and the UI:
+///
+/// - CORS for the hosted UI only. `Authorization` is named: a `*` in `Access-Control-Allow-Headers` never covers it,
+///   so browsers refuse the token's preflight. Preflights are cached for an hour (Chrome keeps them at most two).
+/// - `Access-Control-Allow-Private-Network`, which older Chromes ask of a public page calling a loopback address.
+/// - No framing (the UI on its own origin needs no token, so a page that framed it could click its buttons), no MIME
+///   sniffing and no referrer.
+fn protect<S: Clone + Send + Sync + 'static>(router: Router<S>) -> Router<S> {
+    let fixed = |name, value| SetResponseHeaderLayer::if_not_present(name, HeaderValue::from_static(value));
+    // The last layer is the outermost: CORS answers a preflight itself, and the headers go on that answer too.
+    router
+        .layer(
+            CorsLayer::new()
+                .allow_origin(HeaderValue::from_static(HOSTED_ORIGIN))
+                .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+                .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, HeaderName::from_static("last-event-id")])
+                .max_age(Duration::from_secs(3600))
+                .allow_private_network(true),
+        )
+        .layer(fixed(header::X_FRAME_OPTIONS, "DENY"))
+        .layer(fixed(header::CONTENT_SECURITY_POLICY, "frame-ancestors 'none'"))
+        .layer(fixed(header::X_CONTENT_TYPE_OPTIONS, "nosniff"))
+        .layer(fixed(header::REFERRER_POLICY, "no-referrer"))
+}
+
 /// Ctrl-C, or SIGTERM on Unix (systemd, `kill`).
 async fn shutdown_signal() {
     #[cfg(unix)]
@@ -176,4 +195,30 @@ async fn shutdown_signal() {
     }
     #[cfg(not(unix))]
     let _ = tokio::signal::ctrl_c().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{body::Body, http::Request, routing::get};
+    use tower::ServiceExt;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn the_hosted_ui_may_send_its_token() {
+        let app = protect(Router::new().route("/api/status", get(|| async { "ok" })));
+        let preflight = Request::options("/api/status")
+            .header(header::ORIGIN, HOSTED_ORIGIN)
+            .header(header::ACCESS_CONTROL_REQUEST_METHOD, "GET")
+            .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "authorization")
+            .header("access-control-request-private-network", "true")
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(preflight).await.unwrap();
+        let h = |name: &str| res.headers().get(name).and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+        assert_eq!(h("access-control-allow-origin"), HOSTED_ORIGIN);
+        assert!(h("access-control-allow-headers").contains("authorization"), "{}", h("access-control-allow-headers"));
+        assert_eq!(h("access-control-allow-private-network"), "true");
+        assert_eq!(h("x-frame-options"), "DENY");
+    }
 }
