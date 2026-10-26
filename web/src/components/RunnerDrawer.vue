@@ -6,11 +6,12 @@ import { ECodeBlock } from "@eos-ui/vue/components/ECodeBlock";
 import { EDescriptionList } from "@eos-ui/vue/components/EDescriptionList";
 import { EDrawer } from "@eos-ui/vue/components/EDrawer";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
+import { EProgress } from "@eos-ui/vue/components/EProgress";
 import { EStamp } from "@eos-ui/vue/components/EStamp";
 import { ETable } from "@eos-ui/vue/components/ETable";
 import { useRunnerEvent } from "../api/events";
 import { api, isRemote } from "../api/runner";
-import { unwrap, useExperiments, useJobs, useLichess, useStatus, type Job } from "../api/queries";
+import { unwrap, useExperiments, useJobs, useLichess, useStatus, useTunes, type Job } from "../api/queries";
 import { ago, failure, jobTone } from "../format";
 import { useActivity } from "../activity";
 import ConnectRunner from "./ConnectRunner.vue";
@@ -20,6 +21,7 @@ const open = defineModel<boolean>("open", { default: false });
 const { state: status, refetch } = useStatus();
 const { state: jobs } = useJobs();
 const { state: experiments } = useExperiments();
+const { state: tunes } = useTunes();
 
 const { live } = useActivity();
 const router = useRouter();
@@ -40,6 +42,10 @@ function openBot() {
   void router.push("/lichess");
 }
 const running = computed(() => jobs.value.data?.find((j) => j.status === "running"));
+const runningTune = computed(() => {
+  const spec = running.value?.spec;
+  return spec?.kind === "tune" ? tunes.value.data?.find((t) => t.id === spec.id) : undefined;
+});
 const queued = computed(() => (jobs.value.data ?? []).filter((j) => j.status === "queued").reverse());
 const recent = computed(() => (jobs.value.data ?? []).filter((j) => j.finished_at).slice(0, 6));
 
@@ -67,8 +73,11 @@ useRunnerEvent("job.log", (data) => {
 
 function describe(job: Job): string {
   if (job.spec.kind === "build") return `Build ${job.spec.ref}`;
-  if (job.spec.kind === "tune") return `Tune ${job.spec.id}`;
-  if (job.spec.kind === "apply_tune") return `Apply tune ${job.spec.id}`;
+  if (job.spec.kind === "tune" || job.spec.kind === "apply_tune") {
+    const id = job.spec.id;
+    const name = tunes.value.data?.find((t) => t.id === id)?.name ?? `#${id}`;
+    return job.spec.kind === "tune" ? `Tune ${name}` : `Apply ${name}`;
+  }
   const id = job.spec.id;
   const e = experiments.value.data?.find((x) => x.id === id);
   return e ? `Test ${e.name}` : `Test ${id}`;
@@ -136,6 +145,13 @@ const machine = computed(() => {
           </p>
           <EButton variant="outline" size="sm" @click="cancel(running)">Stop</EButton>
         </div>
+        <EProgress
+          v-if="runningTune?.iteration"
+          :label="`Tuning ${runningTune.name}`"
+          :value="runningTune.iteration"
+          :max="runningTune.iterations"
+          :value-text="`iteration ${runningTune.iteration}/${runningTune.iterations}`"
+        />
         <p v-if="live" class="now now--live">
           <span class="now-text">
             <b>Live match</b>

@@ -4,7 +4,7 @@ Dameless is a workbench for one chess engine: look at positions with it, change 
 
 ## The shell (`App.vue`)
 
-- **Header:** logo, three places (Board, Lab, Engines) and Search (`Ctrl K`, an `ECommandPalette` listing places, actions, experiments and engines).
+- **Header:** logo, five places (Board, Lab, Engines, Tune, Lichess) and Search (`Ctrl K`, an `ECommandPalette` listing places, actions, experiments and engines).
 - **Status bar** (the `EAppFooter`): what the runner is doing, live, in mono. Clicking it opens the runner drawer. This is the only place runner status appears. Don't repeat it on a page.
 - **Workspace routes** (`meta.workspace`) lock to the window (`100dvh`). Nothing outside the panes scrolls. The home page is a cover and scrolls normally.
 
@@ -34,6 +34,10 @@ Selection lives in the URL (`/lab/3`, `/engines/2`, `/games/7/12`), so every vie
   - **Stage:** the chosen experiment, with a verdict sentence, the funnel, the live test with gauge, Elo and the LLR chart.
   - **Inspector:** that test's games, opening `/games/...`.
   - `?new=1` opens the new-experiment dialog.
+- **Tune `/tune`, `/tune/:id`** is where the engine tunes its own search constants (SPSA):
+  - **Library:** tunes, the live one first, with its iteration progress; "New tune" is the one filled button (`?new=1` opens it).
+  - **Stage:** a sentence on where the tune stands, a trajectory chart (every parameter as a share of its own range; point at a line to read its real value, pick one in the table to highlight it) and the parameter table. Actions in the bar: Stop (confirmed), Resume, Apply (a dialog: branch, experiment, LTC, push; the result links to the lab).
+  - **Inspector:** the tune's settings and its recent iterations.
 - **Engines `/engines`, `/engines/:id`**:
   - **Library:** builds, plus the build form.
   - **Stage:** the chosen build: fingerprint check, speed compared with the others, network, compile log, "Analyse with it".

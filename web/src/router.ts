@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from "vue-router";
 const board = () => import("./views/BoardView.vue");
 const lab = () => import("./views/LabView.vue");
 const engines = () => import("./views/EnginesView.vue");
+const tune = () => import("./views/TuneView.vue");
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -20,6 +21,10 @@ export const router = createRouter({
 
     { path: "/engines", name: "engines", component: engines, meta: { title: "Engines", workspace: true } },
     { path: "/engines/:id", name: "engine", component: engines, meta: { title: "Engines", workspace: true } },
+
+    // Tunes: SPSA runs that nudge the engine's search constants.
+    { path: "/tune", name: "tune", component: tune, meta: { title: "Tune", workspace: true } },
+    { path: "/tune/:id", name: "tune-run", component: tune, meta: { title: "Tune", workspace: true } },
 
     // The Lichess bot: its games, rules and challenges.
     {

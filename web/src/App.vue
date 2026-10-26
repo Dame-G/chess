@@ -11,6 +11,7 @@ import {
   PhClockCounterClockwise,
   PhCpu,
   PhFlask,
+  PhSlidersHorizontal,
   PhGraph,
   PhHammer,
   PhKeyboard,
@@ -33,9 +34,10 @@ import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENavList } from "@eos-ui/vue/components/ENavList";
 import { EToastProvider } from "@eos-ui/vue/components/EToastProvider";
 import { dispatch, followEvents } from "./api/events";
-import { useBuilds, useExperiments } from "./api/queries";
+import { applyTuneEvent, useBuilds, useExperiments, useTunes } from "./api/queries";
 import { useActivity } from "./activity";
 import { ago, verdict } from "./format";
+import { statusWord } from "./components/tune/tune";
 import { recordChallenge } from "./lichess";
 import { stored } from "./stored";
 import Logo from "./components/Logo.vue";
@@ -50,6 +52,7 @@ const items = [
   { label: "Board", to: "/board", icon: PhGraph },
   { label: "Lab", to: "/lab", icon: PhFlask },
   { label: "Engines", to: "/engines", icon: PhWrench },
+  { label: "Tune", to: "/tune", icon: PhSlidersHorizontal },
   { label: "Lichess", to: "/lichess", icon: PhCrown },
 ];
 const isCurrent = (item: { to?: unknown }) =>
@@ -91,10 +94,12 @@ watch(
 // ---- Titles: the place, then what is open in it.
 const { state: experiments } = useExperiments();
 const { state: builds } = useBuilds();
+const { state: tunes } = useTunes();
 watchEffect(() => {
   const id = Number(route.params.id);
   let what = route.meta.title;
   if (route.name === "experiment") what = experiments.value.data?.find((e) => e.id === id)?.name ?? what;
+  if (route.name === "tune-run") what = tunes.value.data?.find((t) => t.id === id)?.name ?? what;
   if (route.name === "engine") {
     const b = builds.value.data?.find((x) => x.id === id);
     what = b ? `${b.ref} #${b.id} · Engines` : what;
@@ -107,7 +112,7 @@ const recent = stored<string[]>("recent", []);
 watch(
   () => route.path,
   (path) => {
-    if (!/^\/(lab|engines)\/\d+$/.test(path)) return;
+    if (!/^\/(lab|engines|tune)\/\d+$/.test(path)) return;
     recent.value = [path, ...recent.value.filter((p) => p !== path)].slice(0, 4);
   },
   { immediate: true },
@@ -119,6 +124,7 @@ const touch = matchMedia("(hover: none) and (pointer: coarse)").matches;
 const commands = computed<CommandItem[]>(() => {
   const exps = experiments.value.data ?? [];
   const blds = builds.value.data ?? [];
+  const tns = tunes.value.data ?? [];
   const seen = new Set<string>();
   const recents: CommandItem[] = [];
   for (const path of recent.value) {
@@ -133,6 +139,17 @@ const commands = computed<CommandItem[]>(() => {
           group: "Recent",
           icon: PhClockCounterClockwise,
           keywords: [e.dev, e.base, "experiment"],
+        });
+    } else if (path.startsWith("/tune/")) {
+      const t = tns.find((x) => x.id === id);
+      if (t)
+        recents.push({
+          id: `go:${path}`,
+          label: t.name,
+          description: `Tune · ${statusWord(t)} · ${ago(t.created_at)}`,
+          group: "Recent",
+          icon: PhClockCounterClockwise,
+          keywords: [t.ref, "tune", "spsa"],
         });
     } else {
       const b = blds.find((x) => x.id === id);
@@ -153,8 +170,16 @@ const commands = computed<CommandItem[]>(() => {
     { id: "go:/board", label: "Open the board", group: "Go to", icon: PhGraph, keywords: ["analysis", "analyse"] },
     { id: "go:/lab", label: "Open the lab", group: "Go to", icon: PhFlask, keywords: ["experiments", "tests"] },
     { id: "go:/engines", label: "Open engines", group: "Go to", icon: PhWrench, keywords: ["builds"] },
+    {
+      id: "go:/tune",
+      label: "Open tunes",
+      group: "Go to",
+      icon: PhSlidersHorizontal,
+      keywords: ["spsa", "parameters"],
+    },
     { id: "go:/lichess", label: "Open Lichess", group: "Go to", icon: PhCrown, keywords: ["bot", "online", "play"] },
     { id: "go:/lab?new=1", label: "Test an idea", group: "Do", icon: PhPlus, keywords: ["new experiment"] },
+    { id: "go:/tune?new=1", label: "New tune", group: "Do", icon: PhPlus, keywords: ["spsa", "parameters", "tuning"] },
     { id: "go:/board?paste=1", label: "Load a game or FEN", group: "Do", icon: PhClipboardText, keywords: ["pgn"] },
     {
       id: "go:/board?mode=play",
@@ -246,6 +271,7 @@ const stop = followEvents((event) => {
     cache.invalidateQueries({ key: ["experiments"] });
     cache.invalidateQueries({ key: ["experiment", id] });
   }
+  if (event.kind.startsWith("tune.")) applyTuneEvent(cache, event.kind, event.data);
   if (event.kind === "match.started" || event.kind === "match.ended") cache.invalidateQueries({ key: ["matches"] });
   if (event.kind === "test.progress") {
     const { id } = event.data as { id: number };
@@ -419,7 +445,7 @@ onUnmounted(stop);
     gap: var(--e-gap-base);
   }
 
-  /* Four places fit a phone only when each is as wide as its word. */
+  /* Five places fit a phone only when each is as wide as its word. */
   .top :deep(.e-nav-item) {
     padding-inline: var(--e-gap-snug);
     font-size: var(--e-text-sm);
@@ -430,10 +456,21 @@ onUnmounted(stop);
   }
 }
 
-/* The theme is one command away in Search: on a phone the header keeps room for the four places. */
+/* The theme is one command away in Search: on a phone the header keeps room for the five places. */
 @media (width < 30rem) {
   .top :deep(.theme) {
     display: none;
+  }
+
+  .top :deep(.e-nav-item) {
+    padding-inline: var(--e-gap-tight);
+    font-size: var(--e-text-xs, 0.75rem);
+  }
+
+  .top :deep(.e-appheader-bar),
+  .top :deep(.e-appheader-logo),
+  .top :deep(.e-appheader-logo .e-nav > ul) {
+    gap: var(--e-gap-tight);
   }
 }
 

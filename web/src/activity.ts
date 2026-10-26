@@ -1,5 +1,14 @@
 import { computed } from "vue";
-import { useExperiment, useExperiments, useJobs, useLichess, useMatches, useStatus, useTest } from "./api/queries";
+import {
+  useExperiment,
+  useExperiments,
+  useJobs,
+  useLichess,
+  useMatches,
+  useStatus,
+  useTest,
+  useTunes,
+} from "./api/queries";
 import { forecast, stageLabel } from "./format";
 import { opponentOf } from "./lichess";
 
@@ -8,6 +17,7 @@ export function useActivity() {
   const { state: status } = useStatus();
   const { state: jobs } = useJobs();
   const { state: experiments } = useExperiments();
+  const { state: tunes } = useTunes();
 
   const running = computed(() => jobs.value.data?.find((j) => j.status === "running"));
   const experiment = computed(() => {
@@ -49,6 +59,14 @@ export function useActivity() {
     if (!job && live.value) return { state: "busy", label: "Live match", detail: [liveName.value] } as const;
     if (!job) return { state: "idle", label: "Idle", detail: [] } as const;
     if (job.spec.kind === "build") return { state: "busy", label: `Building ${job.spec.ref}`, detail: [] } as const;
+    if (job.spec.kind === "tune" || job.spec.kind === "apply_tune") {
+      const id = job.spec.id;
+      const t = tunes.value.data?.find((x) => x.id === id);
+      if (job.spec.kind === "apply_tune")
+        return { state: "busy", label: "Applying tune", detail: t ? [t.name] : [] } as const;
+      const progress = t?.iteration ? `iteration ${t.iteration}/${t.iterations}` : "starting";
+      return { state: "busy", label: "Tuning", detail: t ? [t.name, progress] : [progress] } as const;
+    }
     const e = experiment.value;
     const stage = e?.current ? stageLabel(e.current) : "Preparing";
     if (!e) return { state: "busy", label: "Testing", detail: [] } as const;
