@@ -1,0 +1,11 @@
+{
+  "configured": false,
+  "challenges": { "incoming": [], "outgoing": [] },
+  "elsewhere": [],
+  "fair_play_lock": false,
+  "missing_scopes": [],
+  "playing": [],
+  "scopes": [],
+  "seek": { "seeking": null },
+  "state": "off"
+}

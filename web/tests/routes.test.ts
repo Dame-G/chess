@@ -56,6 +56,7 @@ function runner(input: RequestInfo | URL): Promise<Response> {
     [/^\/api\/matches\/4$/, () => json("match-4.json")],
     [/^\/api\/lichess$/, () => json(lichess)],
     [/^\/api\/lichess\/bots$/, () => json("bots.json")],
+    [/^\/api\/lichess\/me$/, () => json("lichess-me-off.json")],
   ];
   const hit = routes.find(([pattern]) => pattern.test(path));
   if (!hit) missing.push(`${path}`);
