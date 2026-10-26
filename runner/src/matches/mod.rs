@@ -98,11 +98,11 @@ pub struct MatchRequest {
     pub hash: Option<u32>,
     /// Search threads for each engine. Default 1, so a match uses two threads and can run beside a test.
     pub threads: Option<u32>,
-    /// End decided games early, as the tests do: a side that has scored -4 or worse for three moves loses, and a
-    /// level game drawn from move 30. Off by default, so the game is played out.
     /// Reckless's `Minimal` option, which the tests set: the engine then reports only its final line, so there is nothing
     /// to watch while it thinks. Off by default, so `match.info` events flow; it does not change how the engine plays.
     pub minimal: Option<bool>,
+    /// End decided games early, as the tests do: a side that has scored -4 or worse for three moves loses, and a
+    /// level game drawn from move 30. Off by default, so the game is played out.
     pub adjudicate: Option<bool>,
 }
 
@@ -367,13 +367,16 @@ struct Request {
 pub struct Matches {
     /// The one local match.
     live: Mutex<Option<Live>>,
+    /// Held while a local match starts (its engines load before it takes `live`), so two starts cannot both pass the
+    /// check that none is running.
+    starting: tokio::sync::Mutex<()>,
     /// Games recorded from elsewhere (the Lichess bot's), any number at once, beside the local one.
     external: Mutex<HashMap<i64, Live>>,
 }
 
 impl Matches {
     pub fn new() -> Self {
-        Self { live: Mutex::new(None), external: Mutex::new(HashMap::new()) }
+        Self { live: Mutex::new(None), starting: tokio::sync::Mutex::new(()), external: Mutex::new(HashMap::new()) }
     }
 
     fn shared(&self, id: i64) -> Option<Arc<Mutex<Shared>>> {
@@ -464,6 +467,9 @@ struct Plan {
 const ANSWER: Duration = Duration::from_secs(5);
 
 pub async fn start(state: &Arc<AppState>, req: MatchRequest) -> Result<Match, ApiError> {
+    let Ok(_starting) = state.matches.starting.try_lock() else {
+        return Err(ApiError::conflict("a match is already starting"));
+    };
     if state.matches.live.lock().unwrap().is_some() {
         return Err(ApiError::conflict("a match is already running: stop it first"));
     }
@@ -1353,7 +1359,11 @@ mod tests {
             minimal: None,
             adjudicate: None,
         };
-        assert_eq!(start(&state, req).await.unwrap_err().status, StatusCode::BAD_REQUEST);
+        assert_eq!(start(&state, req.clone()).await.unwrap_err().status, StatusCode::BAD_REQUEST);
+        // While another match is starting (its engines loading), a second start is refused rather than racing it.
+        let starting = state.matches.starting.lock().await;
+        assert_eq!(start(&state, req).await.unwrap_err().status, StatusCode::CONFLICT);
+        drop(starting);
     }
 
     #[test]

@@ -1227,6 +1227,10 @@ export interface components {
             uci: string;
         };
         MatchRequest: {
+            /**
+             * @description End decided games early, as the tests do: a side that has scored -4 or worse for three moves loses, and a
+             *     level game drawn from move 30. Off by default, so the game is played out.
+             */
             adjudicate?: boolean | null;
             /** @description Who plays Black: a build id, or `"human"` for you. At least one side must be a build. */
             black: components["schemas"]["Seat"];
@@ -1236,9 +1240,7 @@ export interface components {
              */
             hash?: number | null;
             /**
-             * @description End decided games early, as the tests do: a side that has scored -4 or worse for three moves loses, and a
-             *     level game drawn from move 30. Off by default, so the game is played out.
-             *     Reckless's `Minimal` option, which the tests set: the engine then reports only its final line, so there is nothing
+             * @description Reckless's `Minimal` option, which the tests set: the engine then reports only its final line, so there is nothing
              *     to watch while it thinks. Off by default, so `match.info` events flow; it does not change how the engine plays.
              */
             minimal?: boolean | null;
