@@ -68,8 +68,8 @@ export function useActivity() {
       return { state: "busy", label: "Tuning", detail: t ? [t.name, progress] : [progress] } as const;
     }
     const e = experiment.value;
-    const stage = e?.current ? stageLabel(e.current) : "Preparing";
     if (!e) return { state: "busy", label: "Testing", detail: [] } as const;
+    const stage = e.current ? stageLabel(e.current) : "Preparing";
     const detailParts: string[] = [e.name];
     const t = playing.value;
     let progress: number | undefined;
@@ -93,5 +93,5 @@ export function useActivity() {
     return { ...b, detail: [...b.detail, x.playing ? `Lichess ${x.text}` : x.text] };
   });
 
-  return { status, running, experiment, live, queued, summary };
+  return { live, queued, summary };
 }

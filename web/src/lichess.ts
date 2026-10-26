@@ -115,7 +115,10 @@ export type ChallengeEvent = {
   variant: string;
   clock?: { initial: number; increment: number } | null;
   decision: "accepted" | "declined" | "canceled";
+  /** The Lichess decline key: ours for an incoming challenge, theirs for one we sent. */
   reason?: string | null;
+  /** A few words more, such as why the daily limit of bot games declined it. */
+  detail?: string | null;
 };
 
 /** What challenges did this session: the newest first. Kept here so it survives leaving the page. */
