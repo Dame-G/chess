@@ -54,7 +54,7 @@ export function outcomeText(m: Ended, names?: { white: string; black: string }):
     case "checkmate":
       return `${winner} won by checkmate`;
     case "time":
-      return `${winner} won on time`;
+      return winner ? `${winner} won on time` : "Draw: a clock ran out, but the other side could not mate";
     case "resignation":
       return `${winner} won, ${loser} was losing by too much (adjudicated)`;
     case "crash":
@@ -112,7 +112,7 @@ export function youOutcome(m: Ended & Pick<Match, "white" | "black">): string {
     case "checkmate":
       return won ? "You won by checkmate" : "You were checkmated";
     case "time":
-      return won ? "You won on time" : "You lost on time";
+      return m.result === "1/2-1/2" ? outcomeText(m) : won ? "You won on time" : "You lost on time";
     case "crash":
     case "illegal_move":
       return won ? "You won, the engine stopped" : "You lost, the engine stopped";

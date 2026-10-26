@@ -73,9 +73,11 @@ fn by_key(c: &Connection, key: &str) -> Result<Option<Build>> {
     Ok(c.query_row(&format!("SELECT {COLUMNS} FROM builds WHERE key = ?1"), [key], from_row).optional()?)
 }
 
-/// The newest build of a ref (or of a commit prefix) that still has its binary.
+/// The newest plain build of a ref (or of a commit prefix) that still has its binary; a tune's `spsa` build of the same ref never counts.
 pub fn newest_of(c: &Connection, spec: &str) -> Result<Option<Build>> {
-    Ok(list(c)?.into_iter().find(|b| b.deleted_at.is_none() && (b.refname == spec || b.commit.starts_with(spec))))
+    Ok(list(c)?
+        .into_iter()
+        .find(|b| b.deleted_at.is_none() && !is_spsa(b) && (b.refname == spec || b.commit.starts_with(spec))))
 }
 
 /// What still needs a build's binary, in words, or `None` when nothing does: a running experiment or test that plays
