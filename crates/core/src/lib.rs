@@ -5,14 +5,18 @@
 //! `docs/design.md` is the contract for every type here.
 
 pub mod chess;
+pub mod drills;
 pub mod error;
 pub mod events;
 pub mod game;
 pub mod ideas;
 pub mod ids;
+pub mod levels;
 pub mod lichess;
 pub mod profile;
+pub mod progress;
 pub mod referee;
+pub mod repertoire;
 pub mod review;
 pub mod scaling;
 pub mod score;
@@ -67,6 +71,14 @@ mod schema_tests {
         spsa::TuneStep,
         scaling::ScalingSettings,
         stats::EloEstimate,
+        levels::Level,
+        levels::EntrantRating,
+        levels::PlannedMatch,
+        drills::Drill,
+        drills::DrillAnswer,
+        drills::HitRatePoint,
+        repertoire::Repertoire,
+        progress::Progress,
     )))]
     struct Doc;
 
