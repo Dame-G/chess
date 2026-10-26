@@ -47,10 +47,6 @@ const won = (m: MatchSummary, side: "white" | "black") =>
       :aria-label="`${m.white.name} against ${m.black.name}${m.status === 'running' ? ', live' : m.status === 'aborted' ? ', stopped' : ''}`"
       @click="emit('open', m.id)"
     >
-      <span v-if="m.status === 'running'" class="res res--live num"
-        ><span class="dot" aria-hidden="true"></span>Live</span
-      >
-      <span v-else class="res num">{{ shown(m) }}</span>
       <span class="what">
         <span class="names">
           <span :class="['n', won(m, 'white')]">{{ m.white.name }}</span>
@@ -59,6 +55,10 @@ const won = (m: MatchSummary, side: "white" | "black") =>
         </span>
         <span class="tc num">{{ detail(m) }}</span>
       </span>
+      <span v-if="m.status === 'running'" class="res res--live num"
+        ><span class="dot" aria-hidden="true"></span>Live</span
+      >
+      <span v-else class="res num">{{ shown(m) }}</span>
     </EButton>
   </div>
 </template>
@@ -71,10 +71,12 @@ const won = (m: MatchSummary, side: "white" | "black") =>
 
 .row {
   display: grid;
-  grid-template-columns: 3rem minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
   gap: var(--e-gap-snug);
-  min-height: 2.75rem;
+  /* A row holds two lines, so it grows with them: the button's own fixed control height would let the text spill over the next row. */
+  block-size: auto;
+  min-block-size: 2.75rem;
   padding: var(--e-gap-snug) var(--ws-pad);
   border-radius: 0;
   text-align: start;
@@ -94,6 +96,7 @@ const won = (m: MatchSummary, side: "white" | "black") =>
 }
 
 .res {
+  justify-self: end;
   line-height: 1.25rem;
   color: var(--e-muted);
   font-size: var(--e-text-sm);
