@@ -240,22 +240,6 @@ pub fn token_path(data: &Path) -> PathBuf {
     data.join("lichess-token")
 }
 
-/// Writes the token where only this user can read it: mode 0600 on Unix. On Windows the per-user data folder is
-/// already private to the user.
-fn write_token(path: &Path, token: &str) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::{io::Write, os::unix::fs::OpenOptionsExt, os::unix::fs::PermissionsExt};
-        let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path)?;
-        // A file that was already there keeps its mode on open, so it is set again.
-        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-        f.write_all(token.as_bytes())?;
-    }
-    #[cfg(not(unix))]
-    std::fs::write(path, token)?;
-    Ok(())
-}
-
 async fn meta_get(state: &AppState, key: &'static str) -> Result<Option<String>> {
     state
         .store
@@ -368,7 +352,7 @@ pub async fn set_token(state: &Arc<AppState>, token: &str) -> Result<LichessStat
         }
         e => call_error(e),
     })?;
-    write_token(&token_path(&state.config.data), token).context("store the Lichess token")?;
+    crate::config::write_private(&token_path(&state.config.data), token).context("store the Lichess token")?;
     let restart = {
         let mut inner = state.lichess.inner.lock().unwrap();
         inner.token = Some(token.to_owned());
