@@ -2,6 +2,7 @@
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ago } from "../format";
 import { gameClock } from "../lichess";
+import { isMine } from "./lichessMe";
 import { matchTimeText, movesText, sideScore, youSide, type MatchSummary, type Side } from "./matchText";
 
 defineProps<{
@@ -33,6 +34,11 @@ const shown = (m: MatchSummary) => {
 /** Who a side is: our bot on Lichess is `Dameless (main)`, not just the build's ref. */
 const nameOf = (m: MatchSummary, side: Side) =>
   m.lichess && m[side].build != null ? `Dameless (${m[side].name})` : m[side].name;
+/** In a game of your own on Lichess the row names the opponent, with the rating they had that game. */
+const opponent = (m: MatchSummary) => {
+  const p = m[ours(m) === "black" ? "white" : "black"];
+  return { name: p.title ? `${p.title} ${p.name}` : p.name, rating: p.rating ? String(p.rating) : "" };
+};
 /** Which side won, for the row to set the winner in bold and the loser back. */
 const won = (m: MatchSummary, side: "white" | "black") =>
   m.result === (side === "white" ? "1-0" : "0-1") ? "win" : m.result === "*" || m.result === "1/2-1/2" ? "" : "lose";
@@ -49,11 +55,16 @@ const won = (m: MatchSummary, side: "white" | "black") =>
       block
       class="row"
       :aria-current="m.id === current ? 'true' : undefined"
-      :aria-label="`${nameOf(m, 'white')} against ${nameOf(m, 'black')}${m.status === 'running' ? ', live' : m.status === 'aborted' ? ', stopped' : ''}`"
+      :aria-label="`${isMine(m) ? `You against ${opponent(m).name}` : `${nameOf(m, 'white')} against ${nameOf(m, 'black')}`}${m.status === 'running' ? ', live' : m.status === 'aborted' ? ', stopped' : ''}`"
       @click="emit('open', m.id)"
     >
       <span class="what">
-        <span class="names">
+        <span v-if="isMine(m)" class="names">
+          <span class="vs">vs</span>
+          <span class="n">{{ opponent(m).name }}</span>
+          <span v-if="opponent(m).rating" class="vs num">{{ opponent(m).rating }}</span>
+        </span>
+        <span v-else class="names">
           <span :class="['n', won(m, 'white')]">{{ nameOf(m, "white") }}</span>
           <span class="vs">vs</span>
           <span :class="['n', won(m, 'black')]">{{ nameOf(m, "black") }}</span>

@@ -1,5 +1,5 @@
-/** The sounds of a move, made with WebAudio so there is nothing to bundle or license. */
-export type MoveSound = "move" | "capture" | "check";
+/** The sounds of a move, and of a game starting or a clock running low, made with WebAudio so there is nothing to bundle or license. */
+export type MoveSound = "move" | "capture" | "check" | "start" | "low";
 
 let context: AudioContext | undefined;
 let noise: AudioBuffer | undefined;
@@ -77,7 +77,13 @@ export function playMoveSound(kind: MoveSound) {
   if (!ctx) return;
   if (ctx.state === "suspended") void ctx.resume();
   const at = ctx.currentTime + 0.005;
-  if (kind === "capture") {
+  if (kind === "start") {
+    ping(ctx, at);
+  } else if (kind === "low") {
+    // Two short, high ticks: a clock running out.
+    knock(ctx, at, 0.25, 1800, 0.04);
+    knock(ctx, at + 0.12, 0.25, 1800, 0.04);
+  } else if (kind === "capture") {
     knock(ctx, at, 0.5, 900, 0.1);
     knock(ctx, at + 0.035, 0.3, 600, 0.09);
   } else {

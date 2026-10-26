@@ -4,6 +4,7 @@ import { computed, ref } from "vue";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
+import { isMine } from "./lichessMe";
 import MatchList from "./MatchList.vue";
 import type { MatchSummary } from "./matchText";
 
@@ -15,17 +16,18 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ open: [id: number] }>();
 
-/** Whose game it is: one you played, one on Lichess, or two of our engines. */
-const kindOf = (m: MatchSummary) => (m.lichess ? "lichess" : m.white.human || m.black.human ? "yours" : "engines");
+/** Whose game it is: one you played (here or on Lichess), one of the bot's on Lichess, or two of our engines. */
+const kindOf = (m: MatchSummary) =>
+  isMine(m) || (!m.lichess && (m.white.human || m.black.human)) ? "mine" : m.lichess ? "bot" : "engines";
 const filter = ref("all");
 const options = computed(() => {
   const kinds = new Set(props.matches.map(kindOf));
   return [
     { value: "all", label: "All" },
     ...[
-      { value: "yours", label: "Yours" },
+      { value: "mine", label: "Mine" },
       { value: "engines", label: "Engines" },
-      { value: "lichess", label: "Lichess" },
+      { value: "bot", label: "Bot" },
     ].filter((o) => kinds.has(o.value as ReturnType<typeof kindOf>)),
   ];
 });

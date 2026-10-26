@@ -59,6 +59,8 @@ export function useMatch(id: Ref<number>) {
   const thinking = shallowRef<Record<Side, Thinking | undefined>>({ white: undefined, black: undefined });
   /** Counts takebacks, which shorten the game: the board watches it to follow the line back. */
   const takebacks = ref(0);
+  /** In a game of yours on Lichess: whether the opponent has left, and when the win can be claimed (as of `at`). */
+  const gone = shallowRef<{ gone: boolean; claimIn: number | null; at: number }>();
 
   let queue: Queued[] | undefined = [];
   let wanted = 0;
@@ -155,7 +157,30 @@ export function useMatch(id: Ref<number>) {
     if ((d as { id?: number }).id === id.value) void load(true).then(() => takebacks.value++);
   });
 
-  watch(id, () => void load(), { immediate: true });
+  // Offers change in a Lichess game: the record carries them, and the panel answers them.
+  useRunnerEvent("match.offer", (d) => {
+    const o = d as { id?: number; draw_offer?: Side | null; takeback_offer?: Side | null };
+    const m = match.value;
+    if (o.id !== id.value || !m?.lichess) return;
+    match.value = {
+      ...m,
+      lichess: { ...m.lichess, draw_offer: o.draw_offer ?? null, takeback_offer: o.takeback_offer ?? null },
+    };
+  });
+  useRunnerEvent("match.opponent_gone", (d) => {
+    const g = d as { id?: number; gone?: boolean; claim_win_in_seconds?: number | null };
+    if (g.id !== id.value) return;
+    gone.value = { gone: !!g.gone, claimIn: g.claim_win_in_seconds ?? null, at: performance.now() };
+  });
+
+  watch(
+    id,
+    () => {
+      gone.value = undefined;
+      void load();
+    },
+    { immediate: true },
+  );
 
   // A runner that restarted or a stream that dropped cannot say what it missed: check on a live match now and then.
   const watchdog = setInterval(() => {
@@ -166,5 +191,5 @@ export function useMatch(id: Ref<number>) {
     wanted++;
   });
 
-  return { match, failed, clock, thinking, takebacks };
+  return { match, failed, clock, thinking, takebacks, gone };
 }

@@ -42,9 +42,11 @@ import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import ChessBoard from "../board/ChessBoard.vue";
 import EngineLines from "../board/EngineLines.vue";
 import EvalBar from "../board/EvalBar.vue";
+import FairPlayNote from "../board/FairPlayNote.vue";
 import GameList from "../board/GameList.vue";
 import GameSetup from "../board/GameSetup.vue";
 import LoadDialog from "../board/LoadDialog.vue";
+import MyGamePanel from "../board/MyGamePanel.vue";
 import MatchEngines, { type EngineRow } from "../board/MatchEngines.vue";
 import MatchStatus from "../board/MatchStatus.vue";
 import MoveList from "../board/MoveList.vue";
@@ -56,6 +58,7 @@ import Term from "../components/Term.vue";
 import Workspace from "../components/Workspace.vue";
 import { readGame, type Game } from "../board/game";
 import { clockAt, movesText, sideScore, youSide, type Side } from "../board/matchText";
+import { isMine, useFairPlay, useMyGameActions, useMyLichessGames } from "../board/lichessMe";
 import { useMatch } from "../board/useMatch";
 import { outcome, type Outcome } from "../board/playlist";
 import { play, sanLine, sanMoves, toPgn, whitePawns, whiteScore } from "../board/position";
@@ -197,17 +200,28 @@ watch(isGame, (g) => {
 
 // A match from the runner, kept current by its events. Moving to another match keeps the last on show until the new one
 // arrives, as games do.
-const { match: matchRaw, failed: matchFailed, clock, thinking, takebacks } = useMatch(matchId);
+const { match: matchRaw, failed: matchFailed, clock, thinking, takebacks, gone } = useMatch(matchId);
 const matchData = computed(() => (matchRaw.value?.id === matchId.value ? matchRaw.value : undefined));
 const matchLive = computed(() => matchData.value?.status === "running");
 /** The side you play, in a game against a build. */
 const humanSide = computed(() => (matchData.value ? youSide(matchData.value) : undefined));
 /** Your game is on, and you move on the board. */
 const humanLive = computed(() => matchLive.value && !!humanSide.value);
+/** One of your own games on Lichess, live or kept: its seat is yours, but it is Lichess's game, not a local one. */
+const mine = computed(() => isMine(matchData.value));
+/**
+ * Lichess forbids help during a game, so while one of yours is on (here, or elsewhere: the runner's lock) the board shows
+ * no engine, evaluation, arrows or explorer. The runner refuses analysis then too.
+ */
+const { locked: lockOn, known: lockKnown } = useFairPlay();
+const fairPlay = computed(() => lockOn.value || (mine.value && matchLive.value));
 /** Whether the engine's analysis of a game of yours has been asked for: until then, and while it is on, it stays hidden. */
 const analysed = ref(false);
 watch(matchId, () => (analysed.value = false));
-const veiled = computed(() => !!humanSide.value && (matchLive.value || !analysed.value));
+/** A local game of yours keeps the engine's verdict back until it is asked for; a game of Lichess's own shows what it recorded. */
+const veiled = computed(
+  () => fairPlay.value || (!!humanSide.value && !mine.value && (matchLive.value || !analysed.value)),
+);
 /** The match as a game, so the move list, the timeline and the evaluation bar read it like any other. */
 const matchGame = computed<Game | undefined>(() => {
   const m = matchData.value;
@@ -366,10 +380,11 @@ const engineOn = computed({
   get: () =>
     !matchLive.value &&
     !setup.value &&
-    (inGame.value ? (humanSide.value ? analysed.value : gameEngine.value) : freeEngine.value),
+    !fairPlay.value &&
+    (inGame.value ? (humanSide.value && !mine.value ? analysed.value : gameEngine.value) : freeEngine.value),
   set: (v) => {
-    if (matchLive.value) return;
-    if (humanSide.value) analysed.value = v;
+    if (matchLive.value || fairPlay.value) return;
+    if (humanSide.value && !mine.value) analysed.value = v;
     else if (inGame.value) gameEngine.value = v;
     else freeEngine.value = v;
   },
@@ -379,8 +394,10 @@ const engineChoice = computed(() => !matchLive.value && !setup.value && !veiled.
 const multipv = stored("board.lines", "3");
 
 // The engine rests while the moves play on their own.
-const searching = computed(() => engineOn.value && !playing.value && !loading.value);
-const { lines, error, evals } = useAnalysis({ start, position, build, multipv, active: searching });
+const searching = computed(() => engineOn.value && lockKnown.value && !playing.value && !loading.value);
+const { lines, error: analysisError, evals } = useAnalysis({ start, position, build, multipv, active: searching });
+// The runner refuses analysis while a game of yours is on at Lichess: that is the rule at work, never an error to show.
+const error = computed(() => (/playing on lichess/i.test(analysisError.value) ? "" : analysisError.value));
 const best = computed(() => lines.value[0]);
 
 const analysisArrows = computed<DrawShape[]>(() =>
@@ -482,8 +499,10 @@ const matchEval = computed<Seen | undefined>(() => {
   if (!t || t.ply !== moves.value.length + 1) return undefined;
   return { pawns: whitePawns(t.score, m.turn), text: whiteScore(t.score, m.turn), depth: t.depth };
 });
-const shown = computed(
-  () => matchEval.value ?? (engineOn.value && live.value ? live.value : (recorded.value ?? live.value)),
+const shown = computed(() =>
+  fairPlay.value
+    ? undefined
+    : (matchEval.value ?? (engineOn.value && live.value ? live.value : (recorded.value ?? live.value))),
 );
 /** Whether the eval bar has a place: not while your game hides it, and not when no engine or game has anything to show. */
 const evalShown = computed(() => !veiled.value && !setup.value && (engineOn.value || !!shown.value));
@@ -606,7 +625,13 @@ function openGame(i: number | undefined, replace = false) {
 // ---------------------------------------------------------------------------------------------------------------------
 
 const { state: matchesState } = useMatches();
-const matchList = computed(() => matchesState.value.data ?? []);
+const { state: mineState } = useMyLichessGames();
+/** Every game kept here, newest first: the recent ones, and your games on Lichess (which may be older than those). */
+const matchList = computed(() => {
+  const recent = matchesState.value.data ?? [];
+  const known = new Set(recent.map((m) => m.id));
+  return [...recent, ...(mineState.value.data ?? []).filter((m) => !known.has(m.id))].sort((a, b) => b.id - a.id);
+});
 const matchAt = computed(() => matchList.value.findIndex((m) => m.id === matchId.value));
 const nextMatch = computed(() => matchList.value[matchAt.value + 1]?.id);
 const previousMatch = computed(() => (matchAt.value > 0 ? matchList.value[matchAt.value - 1]?.id : undefined));
@@ -779,6 +804,7 @@ async function sendMove(uci: string) {
     toast.show({ key: "move", title: "That move was not played", message: (e as Error).message, tone: "danger" });
   }
 }
+const lichessGame = useMyGameActions(() => matchId.value);
 async function takeback() {
   matchError.value = "";
   try {
@@ -807,7 +833,8 @@ async function offerDraw() {
 }
 /** Turns the engine on for a finished game of yours, which shows its verdict where the board stands. */
 function analyseGame() {
-  analysed.value = true;
+  if (mine.value) gameEngine.value = true;
+  else analysed.value = true;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1000,6 +1027,28 @@ watch(cursor, (to, from) => {
   if (!sound.value || Math.abs(to - from) !== 1) return;
   playMoveSound(to > from ? soundOf(sans.value[to - 1]) : "move");
 });
+// Opening a game that is on makes the start sound; a clock under ten seconds (or a sixth of the game, if shorter) ticks once.
+watch(
+  () => matchData.value?.id,
+  (id) => {
+    if (id && sound.value && humanLive.value) playMoveSound("start");
+  },
+);
+let lowFor = 0;
+const lowTimer = setInterval(() => {
+  const m = matchData.value;
+  const me = humanSide.value;
+  const c = clock.value;
+  if (!sound.value || !m || !me || !c || !matchLive.value || m.time.type !== "clock" || lowFor === m.id) return;
+  const ms = c[me];
+  if (ms == null) return;
+  const left = ms - (c.ticking && c.turn === me ? performance.now() - c.at : 0);
+  if (left < Math.min(10_000, m.time.seconds * 150)) {
+    lowFor = m.id;
+    playMoveSound("low");
+  }
+}, 500);
+onBeforeUnmount(() => clearInterval(lowTimer));
 function toggleSound() {
   sound.value = !sound.value;
   if (sound.value) playMoveSound("move");
@@ -1219,8 +1268,25 @@ const filters = [
 
           <div class="insp">
             <div class="insp-body">
+              <MyGamePanel
+                v-if="isMatch && matchData && mine"
+                :match="matchData"
+                :busy="lichessGame.busy.value"
+                :gone="gone"
+                :locked="fairPlay"
+                :analysing="gameEngine"
+                @abort="lichessGame.abort"
+                @resign="lichessGame.resign"
+                @draw="lichessGame.draw"
+                @decline-draw="lichessGame.declineDraw"
+                @takeback="lichessGame.takeback"
+                @decline-takeback="lichessGame.declineTakeback"
+                @claim-victory="lichessGame.claimVictory"
+                @claim-draw="lichessGame.claimDraw"
+                @analyse="analyseGame"
+              />
               <PlayPanel
-                v-if="isMatch && matchData && humanSide"
+                v-else-if="isMatch && matchData && humanSide"
                 :match="matchData"
                 :attached="attached"
                 :busy="matchBusy"
@@ -1288,6 +1354,8 @@ const filters = [
               >
                 It may have been removed, or the runner is not reachable.
               </ENotice>
+
+              <FairPlayNote v-if="fairPlay && !setup" />
 
               <GameSetup v-if="setup" :mode="setup" :fen="start" :moves="moves.slice(0, cursor)" />
 
