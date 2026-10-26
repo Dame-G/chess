@@ -32,7 +32,8 @@ import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENavList } from "@eos-ui/vue/components/ENavList";
 import { EToastProvider } from "@eos-ui/vue/components/EToastProvider";
 import { dispatch, followEvents } from "./api/events";
-import { applyTuneEvent, useExperiments, useTunes, useVersions, versionPath } from "./api/queries";
+import { applyRunnerEvent } from "./api/cache";
+import { useExperiments, useTunes, useVersions, versionPath } from "./api/queries";
 import { useActivity } from "./activity";
 import { ago, verdict } from "./format";
 import { statusWord } from "./components/tune/tune";
@@ -246,38 +247,10 @@ function run(item: CommandItem) {
   else if (item.id.startsWith("go:")) void router.push(item.id.slice(3));
 }
 
-// One live stream for the whole app. A restarted runner may have a new build or schema, so everything refetches.
+// One live stream for the whole app: the cache follows it, then whatever listens for an event kind gets it.
 const cache = useQueryCache();
 const stop = followEvents((event) => {
-  if (event.kind === "runner.started") cache.invalidateQueries();
-  if (event.kind === "job.updated") {
-    cache.invalidateQueries({ key: ["jobs"] });
-    const status = (event.data as { status?: string }).status;
-    if (status === "done") cache.invalidateQueries({ key: ["builds"] });
-    if (status === "done" || status === "failed") cache.invalidateQueries({ key: ["versions"] });
-  }
-  if (event.kind === "versions.changed") {
-    cache.invalidateQueries({ key: ["versions"] });
-    cache.invalidateQueries({ key: ["branches"] });
-    cache.invalidateQueries({ key: ["builds"] });
-  }
-  if (event.kind === "experiment.updated") {
-    const { id } = event.data as { id: number };
-    cache.invalidateQueries({ key: ["experiments"] });
-    cache.invalidateQueries({ key: ["experiment", id] });
-    cache.invalidateQueries({ key: ["versions"] });
-  }
-  if (event.kind.startsWith("tune.")) {
-    applyTuneEvent(cache, event.kind, event.data);
-    cache.invalidateQueries({ key: ["versions"] });
-  }
-  if (event.kind === "match.started" || event.kind === "match.ended") cache.invalidateQueries({ key: ["matches"] });
-  if (event.kind === "test.progress") {
-    const { id } = event.data as { id: number };
-    cache.invalidateQueries({ key: ["test", id] });
-    cache.invalidateQueries({ key: ["games", id] });
-  }
-  if (event.kind === "lichess.status") cache.setQueryData(["lichess"], event.data);
+  applyRunnerEvent(cache, event);
   if (event.kind === "lichess.challenge") recordChallenge(event.data);
   dispatch(event);
 });

@@ -1,4 +1,4 @@
-import { useQuery, type EntryKey } from "@pinia/colada";
+import { useQuery } from "@pinia/colada";
 import type { MaybeRefOrGetter } from "vue";
 import { toValue } from "vue";
 import { api } from "./runner";
@@ -128,62 +128,3 @@ export const useTunables = (build: MaybeRefOrGetter<number>) =>
     staleTime: 60_000,
     query: () => unwrap(api.GET("/api/builds/{id}/tunables", { params: { path: { id: toValue(build) } } })),
   });
-
-/** The part of the query cache the tune events touch. */
-interface TuneCache {
-  getQueryData(key: EntryKey): unknown;
-  setQueryData(key: EntryKey, data: unknown): void;
-  invalidateQueries(filters: { key: EntryKey }): unknown;
-}
-
-/** Folds a tune event into the cached list and detail, so the page follows a running tune without refetching. */
-export function applyTuneEvent(cache: TuneCache, kind: string, data: unknown) {
-  const patchList = (id: number, patch: (t: Tune) => Tune) => {
-    const list = cache.getQueryData(["tunes"]) as Tune[] | undefined;
-    if (list?.some((t) => t.id === id)) {
-      cache.setQueryData(
-        ["tunes"],
-        list.map((t) => (t.id === id ? patch(t) : t)),
-      );
-    } else cache.invalidateQueries({ key: ["tunes"] });
-  };
-  const patchDetail = (id: number, patch: (d: TuneDetail) => TuneDetail) => {
-    const detail = cache.getQueryData(["tune", id]) as TuneDetail | undefined;
-    if (detail) cache.setQueryData(["tune", id], patch(detail));
-  };
-
-  if (kind === "tune.updated") {
-    const tune = data as Tune;
-    patchList(tune.id, () => tune);
-    patchDetail(tune.id, (d) => ({ ...d, tune }));
-    cache.invalidateQueries({ key: ["tune", tune.id] });
-  } else if (kind === "tune.progress") {
-    const p = data as { id: number; iteration: number; values: number[]; result: number; penta: number[] };
-    const move = (t: Tune): Tune => ({
-      ...t,
-      iteration: Math.max(t.iteration, p.iteration),
-      params: t.params.map((param, i) => ({ ...param, value: p.values[i] ?? param.value })),
-    });
-    patchList(p.id, move);
-    patchDetail(p.id, (d) =>
-      d.history.some((h) => h.iteration === p.iteration)
-        ? d
-        : {
-            tune: move(d.tune),
-            history: [...d.history, { iteration: p.iteration, values: p.values, result: p.result, penta: p.penta }],
-          },
-    );
-  } else if (kind === "tune.finished") {
-    const f = data as { id: number; status: Tune["status"]; summary?: string | null; iteration: number };
-    const end = (t: Tune): Tune => ({
-      ...t,
-      status: f.status,
-      summary: f.summary ?? t.summary,
-      iteration: f.iteration,
-    });
-    patchList(f.id, end);
-    patchDetail(f.id, (d) => ({ ...d, tune: end(d.tune) }));
-    cache.invalidateQueries({ key: ["tune", f.id] });
-    cache.invalidateQueries({ key: ["tunes"] });
-  }
-}

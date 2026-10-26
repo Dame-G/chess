@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyTuneEvent, type Tune, type TuneDetail } from "../src/api/queries";
+import { applyTuneEvent } from "../src/api/cache";
+import type { Tune, TuneDetail } from "../src/api/queries";
 import { change, eta, fmt, normalised, pairs, resumable, trajectory, tuneLine } from "../src/components/tune/tune";
 import list from "./fixtures/tunes.json";
 import detail from "./fixtures/tune-1.json";
@@ -16,7 +17,7 @@ function cache(entries: Record<string, unknown>) {
     invalidated,
     getQueryData: (key: readonly unknown[]) => store.get(JSON.stringify(key)),
     setQueryData: (key: readonly unknown[], data: unknown) => void store.set(JSON.stringify(key), data),
-    invalidateQueries: ({ key }: { key: readonly unknown[] }) => void invalidated.push(JSON.stringify(key)),
+    invalidateQueries: (filters?: { key: readonly unknown[] }) => void invalidated.push(JSON.stringify(filters?.key)),
   };
 }
 
