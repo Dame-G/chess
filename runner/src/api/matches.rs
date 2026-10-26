@@ -9,25 +9,28 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use super::{ApiError, AppState};
-use crate::matches::{self, Action, Match, MatchRequest, MatchSummary, Reply, Source};
+use crate::matches::{self, Action, LichessAccount, Match, MatchRequest, MatchSummary, Reply, Source};
 
 #[derive(Deserialize, IntoParams)]
 pub struct ListQuery {
     /// How many matches, newest first. Default 50.
     limit: Option<u32>,
-    /// Only local matches (`local`) or only the bot's Lichess games (`lichess`). Both when absent.
+    /// Only local matches (`local`) or only Lichess games (`lichess`). Both when absent.
     #[param(inline)]
     source: Option<Source>,
+    /// Only the Lichess games of one account: the bot's (`bot`) or your own (`me`), played here or imported.
+    #[param(inline)]
+    account: Option<LichessAccount>,
 }
 
-/// Recent matches, newest first, without their moves: local ones and the bot's Lichess games alike, unless `source`
-/// picks one kind.
+/// Recent matches, newest first, without their moves: local ones and Lichess games alike, unless `source` picks one
+/// kind or `account` one Lichess account.
 #[utoipa::path(get, path = "/api/matches", operation_id = "list_matches", tag = "matches", params(ListQuery), responses((status = 200, body = Vec<MatchSummary>)))]
 pub async fn list(
     State(state): State<Arc<AppState>>,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Vec<MatchSummary>>, ApiError> {
-    Ok(Json(matches::list(&state, q.limit.unwrap_or(50).clamp(1, 1000), q.source).await?))
+    Ok(Json(matches::list(&state, q.limit.unwrap_or(50).clamp(1, 1000), q.source, q.account).await?))
 }
 
 /// Starts a match between two builds and returns it. The moves arrive as `match.move` events, the thinking engine's
@@ -75,12 +78,16 @@ pub struct MoveRequest {
 
 #[derive(Serialize, ToSchema)]
 pub struct DrawAnswer {
-    /// Whether the engine took the draw. If it did, the game is over.
+    /// Whether the draw was agreed (the engine took it, or you accepted your Lichess opponent's offer). If so, the game
+    /// is over.
     accepted: bool,
+    /// In your own Lichess game: your offer was made and waits for the opponent (`lichess.draw_offer`).
+    offered: bool,
 }
 
-/// Plays your move in a match where you hold a seat (`"human"`). Your clock is charged like an engine's, from the start
-/// of your turn to the arrival of the move. The answer is the match with the move on the board. 400 when the move is
+/// Plays your move in a match where you hold a seat (`"human"`), or in your own Lichess game, where it goes through
+/// the Board API and the answer comes once Lichess has played it. Your clock is charged like an engine's, from the
+/// start of your turn to the arrival of the move; on Lichess the clocks are Lichess's. The answer is the match with the move on the board. 400 when the move is
 /// not legal or the match has no human player, 409 when it is not your turn or the match is over.
 #[utoipa::path(post, path = "/api/matches/{id}/moves", operation_id = "play_move", tag = "matches", request_body = MoveRequest, responses((status = 200, body = Match), (status = 400), (status = 404), (status = 409)))]
 pub async fn play_move(
@@ -94,7 +101,8 @@ pub async fn play_move(
 
 /// Takes back your last move and the engine's reply to it, on your turn, in a game without a clock. A `match.takeback`
 /// event carries the number of plies left. 409 in a timed game, when there is nothing to take back or it is not your
-/// turn.
+/// turn. In your own Lichess game it accepts the opponent's takeback proposal, or proposes one
+/// (`lichess.takeback_offer`), with or without a clock.
 #[utoipa::path(post, path = "/api/matches/{id}/takeback", operation_id = "takeback_move", tag = "matches", responses((status = 200, body = Match), (status = 400), (status = 404), (status = 409)))]
 pub async fn takeback(State(state): State<Arc<AppState>>, Path(id): Path<i64>) -> Result<Json<Match>, ApiError> {
     matches::act(&state, id, Action::Takeback).await?;
@@ -102,11 +110,13 @@ pub async fn takeback(State(state): State<Arc<AppState>>, Path(id): Path<i64>) -
 }
 
 /// Offers the engine a draw, on your turn. It accepts once twenty plies are played and its own last score is no more
-/// than +0.10; the game then ends as a draw by agreement. Otherwise it declines and the game goes on.
+/// than +0.10; the game then ends as a draw by agreement. Otherwise it declines and the game goes on. In your own
+/// Lichess game it accepts the opponent's offer, or offers one (`offered`), on either side's turn.
 #[utoipa::path(post, path = "/api/matches/{id}/draw", operation_id = "offer_draw", tag = "matches", responses((status = 200, body = DrawAnswer), (status = 400), (status = 404), (status = 409)))]
 pub async fn offer_draw(State(state): State<Arc<AppState>>, Path(id): Path<i64>) -> Result<Json<DrawAnswer>, ApiError> {
     match matches::act(&state, id, Action::Draw).await? {
-        Reply::Draw { accepted } => Ok(Json(DrawAnswer { accepted })),
+        Reply::Draw { accepted } => Ok(Json(DrawAnswer { accepted, offered: false })),
+        Reply::Offered => Ok(Json(DrawAnswer { accepted: false, offered: true })),
         _ => Err(ApiError::conflict("the game moved on")),
     }
 }

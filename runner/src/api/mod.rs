@@ -9,6 +9,7 @@ mod experiments;
 mod guard;
 mod jobs;
 mod lichess;
+mod lichess_me;
 mod matches;
 mod status;
 mod tunes;
@@ -45,12 +46,15 @@ pub struct AppState {
     pub live: crate::analysis::Live,
     pub matches: crate::matches::Matches,
     pub lichess: crate::lichess::Bot,
+    /// Your own Lichess account, beside the bot.
+    pub me: crate::lichess::me::Me,
 }
 
 impl AppState {
     pub fn new(config: Config, store: Store, brains: crate::lichess::Brains) -> Self {
         Self {
             lichess: crate::lichess::Bot::new(&config.lichess_url, brains),
+            me: crate::lichess::me::Me::new(&config.lichess_url),
             config,
             store,
             events: Events::new(),
@@ -97,6 +101,22 @@ fn api() -> (Router<Arc<AppState>>, utoipa::openapi::OpenApi) {
         .routes(routes!(lichess::challenge))
         .routes(routes!(lichess::bots))
         .routes(routes!(lichess::seek, lichess::stop_seek))
+        .routes(routes!(lichess_me::status, lichess_me::logout))
+        .routes(routes!(lichess_me::login))
+        .routes(routes!(lichess_me::set_token))
+        .routes(routes!(lichess_me::seek, lichess_me::stop_seek))
+        .routes(routes!(lichess_me::challenge))
+        .routes(routes!(lichess_me::accept))
+        .routes(routes!(lichess_me::decline))
+        .routes(routes!(lichess_me::cancel_challenge))
+        .routes(routes!(lichess_me::import))
+        .routes(routes!(lichess_me::explorer))
+        .routes(routes!(lichess_me::tablebase))
+        .routes(routes!(lichess_me::abort))
+        .routes(routes!(lichess_me::claim_victory))
+        .routes(routes!(lichess_me::claim_draw))
+        .routes(routes!(lichess_me::decline_draw))
+        .routes(routes!(lichess_me::decline_takeback))
         .routes(routes!(experiments::list, experiments::create))
         .routes(routes!(experiments::batch))
         .routes(routes!(experiments::get, experiments::cancel))
@@ -133,7 +153,7 @@ pub async fn serve(config: Config) -> Result<()> {
     let (api, _) = api();
     let api = api.layer(middleware::from_fn_with_state(state.clone(), guard::guard));
     // Requests are logged at debug level (`RUST_LOG=debug`); a 500 is logged as an error.
-    let app = protect(Router::new().merge(api).fallback(web::web))
+    let app = protect(Router::new().merge(api).merge(lichess_me::callback_router()).fallback(web::web))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state.clone());
 

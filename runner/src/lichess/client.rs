@@ -82,6 +82,21 @@ impl Lichess {
         Ok(serde_json::from_str(&text).unwrap_or(Value::Null))
     }
 
+    /// A DELETE, answered with nothing that matters (`/api/token` revokes the token sent).
+    pub async fn delete(&self, path: &str) -> Result<(), CallError> {
+        self.send(self.request(reqwest::Method::DELETE, path).timeout(Duration::from_secs(20))).await.map(drop)
+    }
+
+    /// A POST with a form body answered with a stream of JSON lines, such as a seek (`/api/board/seek`), which lasts
+    /// as long as the connection.
+    pub async fn post_stream(&self, path: &str, form: &[(&str, String)]) -> Result<Ndjson, CallError> {
+        let req = self
+            .request(reqwest::Method::POST, path)
+            .header(reqwest::header::ACCEPT, "application/x-ndjson")
+            .form(form);
+        Ok(Ndjson { res: self.send(req).await?, buffer: Vec::new(), idle: STREAM_IDLE })
+    }
+
     /// A GET answered with a stream of JSON lines, such as `/api/stream/event`.
     pub async fn stream(&self, path: &str) -> Result<Ndjson, CallError> {
         let req = self.request(reqwest::Method::GET, path).header(reqwest::header::ACCEPT, "application/x-ndjson");

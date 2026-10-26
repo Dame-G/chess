@@ -388,7 +388,7 @@ async fn play_out(mode: Mode, crash: bool) -> (Arc<AppState>, Arc<Mock>, crate::
 async fn finished(state: &AppState, id: &str) -> crate::matches::Match {
     tokio::time::timeout(Duration::from_secs(20), async {
         loop {
-            if let Some(m) = matches::find_lichess(state, id).await.unwrap()
+            if let Some(m) = matches::find_lichess(state, id, matches::LichessAccount::Bot).await.unwrap()
                 && m.status != MatchStatus::Running
             {
                 break m;
@@ -470,9 +470,9 @@ async fn accepts_a_challenge_declines_another_and_plays_the_game_into_a_match() 
     assert!(matches!(game.time, crate::matches::MatchTime::Clock { seconds: 180.0, increment: 2.0 }));
 
     // It lists among the Lichess games, not the local ones, and the bot is no longer playing it.
-    let lichess = matches::list(&state, 10, Some(Source::Lichess)).await.unwrap();
+    let lichess = matches::list(&state, 10, Some(Source::Lichess), None).await.unwrap();
     assert_eq!(lichess.len(), 1);
-    assert!(matches::list(&state, 10, Some(Source::Local)).await.unwrap().is_empty());
+    assert!(matches::list(&state, 10, Some(Source::Local), None).await.unwrap().is_empty());
     assert!(state.lichess.status().playing.is_empty());
     assert_eq!(state.lichess.status().state, BotState::Online);
 

@@ -321,6 +321,210 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lichess/explorer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The opening explorer at a position: Lichess games (`db=lichess`, by speed and rating), masters' games
+         *     (`db=masters`) or one player's (`db=player`, with `player` and `color`). Lichess's own answer, cached for ten
+         *     minutes. It needs your login (409 without one), and is refused (409) while you play a game other than
+         *     correspondence.
+         */
+        get: operations["lichess_explorer"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Your account: whether you are logged in and as whom (with your ratings), the token's scopes, the connection, the
+         *     games you are playing (matches here, and games that can only be played on lichess.org), open challenges both ways,
+         *     your seek, and `fair_play_lock`, true while a game runs (analysis, explorer and tablebase are then refused).
+         */
+        get: operations["get_lichess_me"];
+        put?: never;
+        post?: never;
+        /** Logs out: revokes the token at Lichess and forgets it. Games in progress go on at Lichess, unfollowed. */
+        delete: operations["logout_lichess_me"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/me/challenge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Challenges a player (`username`), your own bot (`my_bot`) or Lichess's AI (`ai_level` 1-8, casual, starts at
+         *     once). Blitz or slower (initial + 40 × increment at least 3 minutes), as the Board API plays; 400 otherwise.
+         */
+        post: operations["create_lichess_me_challenge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/me/challenges/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Withdraws a challenge of yours. */
+        delete: operations["cancel_lichess_me_challenge"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/me/challenges/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accepts a challenge to you; the game starts as a match in `playing`. 400 for one the Board API cannot play
+         *     (bullet, variants): accept that on lichess.org.
+         */
+        post: operations["accept_lichess_me_challenge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/me/challenges/{id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Declines a challenge to you. */
+        post: operations["decline_lichess_me_challenge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/me/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Imports your finished Lichess games as matches (`GET /api/matches?account=me`), with clocks, the opening and
+         *     Lichess's evaluations where a game was analysed. A job that starts at once, beside the queue; its result is
+         *     `{ imported, skipped, other, newest }`. Each game is stored once; without `since`, it carries on after the newest
+         *     game imported before. 409 when not logged in.
+         */
+        post: operations["import_lichess_me_games"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/me/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Starts logging in: the answer's `url` is the Lichess page to open, where you allow access (scopes `board:play`,
+         *     `challenge:read`, `challenge:write`). Lichess then sends the browser to `/api/lichess/me/callback`, which stores the
+         *     token and sends the browser on to `return_to` with `?lichess=connected` (or `?lichess=error&message=...`). The link
+         *     works for ten minutes, once.
+         */
+        post: operations["start_lichess_me_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/me/seek": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Opens a seek in the lobby, open until someone takes it (the game then starts, as a match in `playing`) or it is
+         *     cancelled. The Board API seeks only rapid and slower: initial + 40 × increment at least 8 minutes, else 400 (for
+         *     blitz, challenge someone). 409 while not connected or while a seek is open.
+         */
+        post: operations["start_lichess_me_seek"];
+        /** Cancels your seek. */
+        delete: operations["stop_lichess_me_seek"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/me/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Logs in with a personal token instead of the login page. Lichess checks it: 400 if it refuses it, if it cannot
+         *     play (`board:play`), or if it is a BOT account or the bot's own.
+         */
+        put: operations["set_lichess_me_token"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/lichess/seek": {
         parameters: {
             query?: never;
@@ -401,6 +605,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lichess/tablebase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The tablebase at a position of at most seven pieces: Lichess's own answer (`category`, `dtz`, `dtm`, the moves
+         *     ranked). Refused (409) while you play.
+         */
+        get: operations["lichess_tablebase"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/lichess/token": {
         parameters: {
             query?: never;
@@ -451,8 +675,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Recent matches, newest first, without their moves: local ones and the bot's Lichess games alike, unless `source`
-         *     picks one kind.
+         * Recent matches, newest first, without their moves: local ones and Lichess games alike, unless `source` picks one
+         *     kind or `account` one Lichess account.
          */
         get: operations["list_matches"];
         put?: never;
@@ -494,6 +718,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/matches/{id}/abort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Your Lichess game: aborts it, which Lichess allows before both sides have moved. */
+        post: operations["abort_match"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/matches/{id}/claim-draw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Your Lichess game: claims a draw once the opponent has been gone long enough. */
+        post: operations["claim_match_draw"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/matches/{id}/claim-victory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Your Lichess game: claims the win once the opponent has been gone long enough (`match.opponent_gone` says when). */
+        post: operations["claim_match_victory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/matches/{id}/decline-draw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Your Lichess game: declines the opponent's draw offer. 409 when there is none. */
+        post: operations["decline_match_draw"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/matches/{id}/decline-takeback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Your Lichess game: declines the opponent's takeback proposal. 409 when there is none. */
+        post: operations["decline_match_takeback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/matches/{id}/draw": {
         parameters: {
             query?: never;
@@ -505,7 +814,8 @@ export interface paths {
         put?: never;
         /**
          * Offers the engine a draw, on your turn. It accepts once twenty plies are played and its own last score is no more
-         *     than +0.10; the game then ends as a draw by agreement. Otherwise it declines and the game goes on.
+         *     than +0.10; the game then ends as a draw by agreement. Otherwise it declines and the game goes on. In your own
+         *     Lichess game it accepts the opponent's offer, or offers one (`offered`), on either side's turn.
          */
         post: operations["offer_draw"];
         delete?: never;
@@ -524,8 +834,9 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Plays your move in a match where you hold a seat (`"human"`). Your clock is charged like an engine's, from the start
-         *     of your turn to the arrival of the move. The answer is the match with the move on the board. 400 when the move is
+         * Plays your move in a match where you hold a seat (`"human"`), or in your own Lichess game, where it goes through
+         *     the Board API and the answer comes once Lichess has played it. Your clock is charged like an engine's, from the
+         *     start of your turn to the arrival of the move; on Lichess the clocks are Lichess's. The answer is the match with the move on the board. 400 when the move is
          *     not legal or the match has no human player, 409 when it is not your turn or the match is over.
          */
         post: operations["play_move"];
@@ -564,7 +875,8 @@ export interface paths {
         /**
          * Takes back your last move and the engine's reply to it, on your turn, in a game without a clock. A `match.takeback`
          *     event carries the number of plies left. 409 in a timed game, when there is nothing to take back or it is not your
-         *     turn.
+         *     turn. In your own Lichess game it accepts the opponent's takeback proposal, or proposes one
+         *     (`lichess.takeback_offer`), with or without a clock.
          */
         post: operations["takeback_move"];
         delete?: never;
@@ -932,6 +1244,31 @@ export interface components {
         };
         /** @enum {string} */
         ChallengeColor: "random" | "white" | "black";
+        /** @description A challenge waiting for an answer, yours or someone's. */
+        ChallengeInfo: {
+            clock?: components["schemas"]["Clock"] | null;
+            /** @description The colour you would play. */
+            color: components["schemas"]["ChallengeColor"];
+            /**
+             * Format: int32
+             * @description Days per move, for correspondence.
+             */
+            days?: number | null;
+            direction: components["schemas"]["Direction"];
+            /** @description The challenge id, which becomes the game id if it is accepted. */
+            id: string;
+            opponent: components["schemas"]["Opponent"];
+            /**
+             * @description Whether the game could be played here, through the Board API: blitz and slower. A bullet challenge has to be
+             *     played on lichess.org.
+             */
+            playable: boolean;
+            rated: boolean;
+            /** @description `blitz`, `rapid`, `classical`, `correspondence`, ... as Lichess names it. */
+            speed: string;
+            url: string;
+            variant: string;
+        };
         ChallengeRequest: {
             /**
              * Format: int32
@@ -961,6 +1298,24 @@ export interface components {
             url: string;
             username: string;
         };
+        Challenges: {
+            incoming: components["schemas"]["ChallengeInfo"][];
+            outgoing: components["schemas"]["ChallengeInfo"][];
+        };
+        /** @description A clock, in seconds. */
+        Clock: {
+            /** Format: int32 */
+            increment: number;
+            /** Format: int32 */
+            initial: number;
+        };
+        DeclineRequest: {
+            /**
+             * @description One of Lichess's reasons: `generic` (default), `later`, `tooFast`, `tooSlow`, `timeControl`, `rated`, `casual`,
+             *     `standard`, `variant`, `noBot`, `onlyBot`.
+             */
+            reason?: string | null;
+        };
         /** @description What deleting a version asks for. */
         DeleteVersion: {
             /** @description The branch name again, as a guard against deleting the wrong one. */
@@ -974,9 +1329,25 @@ export interface components {
             /** @description It was deleted on `origin` too (false when not asked, or when `origin` did not have it). */
             remote: boolean;
         };
+        /** @enum {string} */
+        Direction: "incoming" | "outgoing";
         DrawAnswer: {
-            /** @description Whether the engine took the draw. If it did, the game is over. */
+            /**
+             * @description Whether the draw was agreed (the engine took it, or you accepted your Lichess opponent's offer). If so, the game
+             *     is over.
+             */
             accepted: boolean;
+            /** @description In your own Lichess game: your offer was made and waits for the opponent (`lichess.draw_offer`). */
+            offered: boolean;
+        };
+        /**
+         * @description A game of yours that cannot be played here (a bullet game, a variant, started on lichess.org): it still locks
+         *     analysis.
+         */
+        ElsewhereGame: {
+            id: string;
+            speed: string;
+            url: string;
         };
         /** @description Elo and normalized Elo with 95% intervals (`±`), from game pairs. */
         Estimate: {
@@ -1067,6 +1438,19 @@ export interface components {
          * @enum {string}
          */
         HumanSeat: "human";
+        ImportRequest: {
+            /**
+             * Format: int32
+             * @description At most this many games, newest first. All when absent.
+             */
+            max?: number | null;
+            /**
+             * Format: int64
+             * @description Only games started at or after this time, in milliseconds since 1970. When absent: after the newest game
+             *     imported before, or all of them the first time.
+             */
+            since?: number | null;
+        };
         /** @description One `info` line with a principal variation. */
         Info: {
             /** Format: int32 */
@@ -1121,6 +1505,9 @@ export interface components {
         } & {
             /** @enum {string} */
             kind: "apply_tune";
+        }) | (components["schemas"]["ImportRequest"] & {
+            /** @enum {string} */
+            kind: "lichess_import";
         });
         /** @enum {string} */
         JobStatus: "queued" | "running" | "done" | "failed" | "cancelled";
@@ -1129,15 +1516,26 @@ export interface components {
          * @enum {string}
          */
         Kind: "gainer" | "nonregression" | "nonfunctional";
+        /**
+         * @description One of our two Lichess accounts.
+         * @enum {string}
+         */
+        LichessAccount: "bot" | "me";
         /** @description What a game played on Lichess adds to the record. */
         LichessGame: {
+            /** @description Which of our Lichess accounts played it: the BOT account (`bot`, a build plays) or your own (`me`, you play). */
+            account?: components["schemas"]["LichessAccount"];
+            draw_offer?: components["schemas"]["Side"] | null;
             /** @description The Lichess game id, such as `q7ZvsdUF`. */
             id: string;
-            /** @description The side our build played. */
+            /** @description The opening as Lichess names it, such as `B01 Scandinavian Defense`, for games imported from your history. */
+            opening?: string | null;
+            /** @description The side our account played: the bot's build, or you. */
             our_side: components["schemas"]["Side"];
             rated: boolean;
             /** @description `bullet`, `blitz`, `rapid` or `classical`, as Lichess names the game's speed. */
             speed: string;
+            takeback_offer?: components["schemas"]["Side"] | null;
             /** @description `https://lichess.org/<id>`. */
             url: string;
         };
@@ -1189,6 +1587,23 @@ export interface components {
              * @description Events of this search carry this id.
              */
             session: number;
+        };
+        LoginRequest: {
+            /**
+             * @description Where to send the browser once Lichess has answered: a page of this runner (any loopback address) or of
+             *     https://chess.dame.gg. Default the runner's `/lichess` page. It gets `?lichess=connected`, or
+             *     `?lichess=error&message=...`.
+             */
+            return_to?: string | null;
+        };
+        LoginStarted: {
+            /**
+             * Format: int64
+             * @description How long the link works.
+             */
+            expires_in_seconds: number;
+            /** @description The Lichess page to open, where you log in and allow access. */
+            url: string;
         };
         /** @description The machine the runner is on, read once at start. */
         Machine: {
@@ -1343,6 +1758,99 @@ export interface components {
             /** @enum {string} */
             type: "movetime";
         };
+        /** @description Your Lichess account. */
+        MeAccount: {
+            /** @description The lower-case id, as games name players. */
+            id: string;
+            /** @description Your rating at each speed you have played. */
+            ratings: components["schemas"]["Ratings"];
+            /** @description A Lichess title such as `FM`; never `BOT`, which is refused. */
+            title?: string | null;
+            username: string;
+        };
+        MeChallengeRequest: {
+            /**
+             * Format: int32
+             * @description Lichess's own AI (Stockfish) at level 1 to 8. The game starts at once, casual.
+             */
+            ai_level?: number | null;
+            /**
+             * Format: int32
+             * @description The initial clock in seconds: 0, 15, 30, 45, 90 or whole minutes up to 180. Blitz or slower (initial + 40 ×
+             *     increment at least 3 minutes), as the Board API plays.
+             */
+            clock_seconds: number;
+            /** @description The colour you play. Default random. */
+            color?: components["schemas"]["ChallengeColor"];
+            /** Format: int32 */
+            increment?: number;
+            /** @description Your own bot (the BOT account the runner plays with). It answers by its own settings. */
+            my_bot?: boolean;
+            rated?: boolean;
+            /** @description A Lichess username to challenge. Give exactly one of `username`, `ai_level` and `my_bot`. */
+            username?: string | null;
+        };
+        /** @description A seek you have open in the lobby. */
+        MeSeek: {
+            /** Format: int32 */
+            clock_seconds: number;
+            color: components["schemas"]["ChallengeColor"];
+            /** Format: int32 */
+            increment: number;
+            rated: boolean;
+            rating_range?: string | null;
+        };
+        MeSeekRequest: {
+            /**
+             * Format: int32
+             * @description The initial clock in seconds. A seek must be rapid or slower: initial + 40 × increment at least 8 minutes.
+             */
+            clock_seconds: number;
+            /** @description The colour you want. Default random. */
+            color?: components["schemas"]["ChallengeColor"];
+            /**
+             * Format: int32
+             * @description Seconds added after every move.
+             */
+            increment?: number;
+            rated?: boolean;
+            /** @description Opponents' ratings, such as `1500-1800`. Lichess advises leaving it empty. */
+            rating_range?: string | null;
+        };
+        MeSeekStatus: {
+            /** @description How the last seek went, for people. */
+            note?: string | null;
+            seeking?: components["schemas"]["MeSeek"] | null;
+        };
+        MeStatus: {
+            account?: components["schemas"]["MeAccount"] | null;
+            challenges: components["schemas"]["Challenges"];
+            /** @description Whether a token is stored. */
+            configured: boolean;
+            /** @description Games you are playing that cannot be played here. */
+            elsewhere: components["schemas"]["ElsewhereGame"][];
+            error?: string | null;
+            /** @description When the token expires (ISO 8601, UTC), if Lichess said. A login lasts a year. */
+            expires_at?: string | null;
+            /** @description True while you have a game running on Lichess: engine analysis, the tablebase and the explorer are refused. */
+            fair_play_lock: boolean;
+            /** @description Scopes the runner asks for that the token lacks (a personal token made without them). */
+            missing_scopes: string[];
+            /** @description The matches of the games you are playing here now. */
+            playing: number[];
+            /** @description The scopes the token has, as Lichess reports them. */
+            scopes: string[];
+            seek: components["schemas"]["MeSeekStatus"];
+            /** @description The event stream: `off` without a token, else `connecting`, `online` or `error` (with `error`). */
+            state: components["schemas"]["BotState"];
+        };
+        MeTokenRequest: {
+            /**
+             * @description A personal Lichess token of your own (not a BOT) account, with `board:play`, `challenge:read` and
+             *     `challenge:write`, made at https://lichess.org/account/oauth/token.
+             */
+            token: string;
+        };
         MoveRequest: {
             /** @description The move in UCI notation, such as `e2e4` or `e7e8q`. */
             uci: string;
@@ -1442,6 +1950,13 @@ export interface components {
         } | {
             /** @enum {string} */
             type: "book";
+        };
+        /** @description Who a challenge is with. */
+        Opponent: {
+            name: string;
+            /** Format: int32 */
+            rating?: number | null;
+            title?: string | null;
         };
         /** @description One tunable: its range and step sizes, and where it starts. */
         Param: {
@@ -2637,6 +3152,399 @@ export interface operations {
             };
         };
     };
+    lichess_explorer: {
+        parameters: {
+            query?: {
+                /** @description `lichess` (default), `masters` or `player`. */
+                db?: "lichess" | "masters" | "player";
+                /** @description The position as FEN. Default the start position. */
+                fen?: string;
+                /** @description Moves played from `fen`, in UCI notation, separated by commas. */
+                play?: string;
+                /** @description `lichess` and `player`: speeds, separated by commas (`blitz,rapid`). */
+                speeds?: string;
+                /** @description `lichess`: rating groups, separated by commas (`1600,1800,2000`). */
+                ratings?: string;
+                /** @description `player`: `rated` and/or `casual`, separated by commas. */
+                modes?: string;
+                /** @description From this month (`2020-01`), or year for `masters`. */
+                since?: string;
+                /** @description Until this month (`2024-12`), or year for `masters`. */
+                until?: string;
+                /** @description How many moves to list. Default 12. */
+                moves?: number;
+                /** @description How many top games to list (at most 4 for `lichess`, 15 for `masters`). */
+                top_games?: number;
+                /** @description How many recent games to list (at most 4, or 8 for `player`). */
+                recent_games?: number;
+                /** @description `player`: whose games, a Lichess username. */
+                player?: string;
+                /** @description `player`: `white` or `black`. */
+                color?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_lichess_me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeStatus"];
+                };
+            };
+        };
+    };
+    logout_lichess_me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeStatus"];
+                };
+            };
+        };
+    };
+    create_lichess_me_challenge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeChallengeRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChallengeSent"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancel_lichess_me_challenge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeStatus"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    accept_lichess_me_challenge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeStatus"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    decline_lichess_me_challenge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeclineRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeStatus"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    import_lichess_me_games: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportRequest"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    start_lichess_me_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginStarted"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    start_lichess_me_seek: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeSeekRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeStatus"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    stop_lichess_me_seek: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeStatus"];
+                };
+            };
+        };
+    };
+    set_lichess_me_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeTokenRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeStatus"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     start_lichess_seek: {
         parameters: {
             query?: never;
@@ -2777,6 +3685,52 @@ export interface operations {
             };
         };
     };
+    lichess_tablebase: {
+        parameters: {
+            query: {
+                /** @description The position as FEN: standard chess with at most 7 pieces. */
+                fen: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     set_lichess_token: {
         parameters: {
             query?: never;
@@ -2871,8 +3825,10 @@ export interface operations {
             query?: {
                 /** @description How many matches, newest first. Default 50. */
                 limit?: number | null;
-                /** @description Only local matches (`local`) or only the bot's Lichess games (`lichess`). Both when absent. */
+                /** @description Only local matches (`local`) or only Lichess games (`lichess`). Both when absent. */
                 source?: ("local" | "lichess") | null;
+                /** @description Only the Lichess games of one account: the bot's (`bot`) or your own (`me`), played here or imported. */
+                account?: ("bot" | "me") | null;
             };
             header?: never;
             path?: never;
@@ -2970,6 +3926,201 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Match"];
                 };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    abort_match: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Match"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    claim_match_draw: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Match"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    claim_match_victory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Match"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    decline_match_draw: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Match"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    decline_match_takeback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Match"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             404: {
                 headers: {

@@ -195,6 +195,10 @@ mod tests {
             rated: true,
             speed: "blitz".into(),
             our_side: Side::White,
+            account: crate::matches::LichessAccount::Bot,
+            opening: None,
+            draw_offer: None,
+            takeback_offer: None,
         });
         g.black = Player {
             name: "someone".into(),

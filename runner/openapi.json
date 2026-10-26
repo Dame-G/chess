@@ -715,6 +715,481 @@
         }
       }
     },
+    "/api/lichess/explorer": {
+      "get": {
+        "tags": [
+          "lichess-me"
+        ],
+        "summary": "The opening explorer at a position: Lichess games (`db=lichess`, by speed and rating), masters' games\n(`db=masters`) or one player's (`db=player`, with `player` and `color`). Lichess's own answer, cached for ten\nminutes. It needs your login (409 without one), and is refused (409) while you play a game other than\ncorrespondence.",
+        "operationId": "lichess_explorer",
+        "parameters": [
+          {
+            "name": "db",
+            "in": "query",
+            "description": "`lichess` (default), `masters` or `player`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Which games the explorer counts.",
+              "enum": [
+                "lichess",
+                "masters",
+                "player"
+              ]
+            }
+          },
+          {
+            "name": "fen",
+            "in": "query",
+            "description": "The position as FEN. Default the start position.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "play",
+            "in": "query",
+            "description": "Moves played from `fen`, in UCI notation, separated by commas.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "speeds",
+            "in": "query",
+            "description": "`lichess` and `player`: speeds, separated by commas (`blitz,rapid`).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ratings",
+            "in": "query",
+            "description": "`lichess`: rating groups, separated by commas (`1600,1800,2000`).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "modes",
+            "in": "query",
+            "description": "`player`: `rated` and/or `casual`, separated by commas.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "From this month (`2020-01`), or year for `masters`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "description": "Until this month (`2024-12`), or year for `masters`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "moves",
+            "in": "query",
+            "description": "How many moves to list. Default 12.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "top_games",
+            "in": "query",
+            "description": "How many top games to list (at most 4 for `lichess`, 15 for `masters`).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "recent_games",
+            "in": "query",
+            "description": "How many recent games to list (at most 4, or 8 for `player`).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "player",
+            "in": "query",
+            "description": "`player`: whose games, a Lichess username.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "color",
+            "in": "query",
+            "description": "`player`: `white` or `black`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {},
+          "409": {},
+          "429": {},
+          "502": {}
+        }
+      }
+    },
+    "/api/lichess/me": {
+      "get": {
+        "tags": [
+          "lichess-me"
+        ],
+        "summary": "Your account: whether you are logged in and as whom (with your ratings), the token's scopes, the connection, the\ngames you are playing (matches here, and games that can only be played on lichess.org), open challenges both ways,\nyour seek, and `fair_play_lock`, true while a game runs (analysis, explorer and tablebase are then refused).",
+        "operationId": "get_lichess_me",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "lichess-me"
+        ],
+        "summary": "Logs out: revokes the token at Lichess and forgets it. Games in progress go on at Lichess, unfollowed.",
+        "operationId": "logout_lichess_me",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lichess/me/challenge": {
+      "post": {
+        "tags": [
+          "lichess-me"
+        ],
+        "summary": "Challenges a player (`username`), your own bot (`my_bot`) or Lichess's AI (`ai_level` 1-8, casual, starts at\nonce). Blitz or slower (initial + 40 × increment at least 3 minutes), as the Board API plays; 400 otherwise.",
+        "operationId": "create_lichess_me_challenge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeChallengeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChallengeSent"
+                }
+              }
+            }
+          },
+          "400": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/lichess/me/challenges/{id}": {
+      "delete": {
+        "tags": [
+          "lichess-me"
+        ],
+        "summary": "Withdraws a challenge of yours.",
+        "operationId": "cancel_lichess_me_challenge",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeStatus"
+                }
+              }
+            }
+          },
+          "400": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/lichess/me/challenges/{id}/accept": {
+      "post": {
+        "tags": [
+          "lichess-me"
+        ],
+        "summary": "Accepts a challenge to you; the game starts as a match in `playing`. 400 for one the Board API cannot play\n(bullet, variants): accept that on lichess.org.",
+        "operationId": "accept_lichess_me_challenge",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeStatus"
+                }
+              }
+            }
+          },
+          "400": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/lichess/me/challenges/{id}/decline": {
+      "post": {
+        "tags": [
+          "lichess-me"
+        ],
+        "summary": "Declines a challenge to you.",
+        "operationId": "decline_lichess_me_challenge",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeclineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeStatus"
+                }
+              }
+            }
+          },
+          "400": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/lichess/me/import": {
+      "post": {
+        "tags": [
+          "lichess-me"
+        ],
+        "summary": "Imports your finished Lichess games as matches (`GET /api/matches?account=me`), with clocks, the opening and\nLichess's evaluations where a game was analysed. A job that starts at once, beside the queue; its result is\n`{ imported, skipped, other, newest }`. Each game is stored once; without `since`, it carries on after the newest\ngame imported before. 409 when not logged in.",
+        "operationId": "import_lichess_me_games",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "409": {}
+        }
+      }
+    },
+    "/api/lichess/me/login": {
+      "post": {
+        "tags": [
+          "lichess-me"
+        ],
+        "summary": "Starts logging in: the answer's `url` is the Lichess page to open, where you allow access (scopes `board:play`,\n`challenge:read`, `challenge:write`). Lichess then sends the browser to `/api/lichess/me/callback`, which stores the\ntoken and sends the browser on to `return_to` with `?lichess=connected` (or `?lichess=error&message=...`). The link\nworks for ten minutes, once.",
+        "operationId": "start_lichess_me_login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginStarted"
+                }
+              }
+            }
+          },
+          "400": {}
+        }
+      }
+    },
+    "/api/lichess/me/seek": {
+      "post": {
+        "tags": [
+          "lichess-me"
+        ],
+        "summary": "Opens a seek in the lobby, open until someone takes it (the game then starts, as a match in `playing`) or it is\ncancelled. The Board API seeks only rapid and slower: initial + 40 × increment at least 8 minutes, else 400 (for\nblitz, challenge someone). 409 while not connected or while a seek is open.",
+        "operationId": "start_lichess_me_seek",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeSeekRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeStatus"
+                }
+              }
+            }
+          },
+          "400": {},
+          "409": {}
+        }
+      },
+      "delete": {
+        "tags": [
+          "lichess-me"
+        ],
+        "summary": "Cancels your seek.",
+        "operationId": "stop_lichess_me_seek",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lichess/me/token": {
+      "put": {
+        "tags": [
+          "lichess-me"
+        ],
+        "summary": "Logs in with a personal token instead of the login page. Lichess checks it: 400 if it refuses it, if it cannot\nplay (`board:play`), or if it is a BOT account or the bot's own.",
+        "operationId": "set_lichess_me_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeStatus"
+                }
+              }
+            }
+          },
+          "400": {},
+          "502": {}
+        }
+      }
+    },
     "/api/lichess/seek": {
       "post": {
         "tags": [
@@ -854,6 +1329,41 @@
         }
       }
     },
+    "/api/lichess/tablebase": {
+      "get": {
+        "tags": [
+          "lichess-me"
+        ],
+        "summary": "The tablebase at a position of at most seven pieces: Lichess's own answer (`category`, `dtz`, `dtm`, the moves\nranked). Refused (409) while you play.",
+        "operationId": "lichess_tablebase",
+        "parameters": [
+          {
+            "name": "fen",
+            "in": "query",
+            "description": "The position as FEN: standard chess with at most 7 pieces.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {},
+          "409": {},
+          "429": {},
+          "502": {}
+        }
+      }
+    },
     "/api/lichess/token": {
       "put": {
         "tags": [
@@ -941,7 +1451,7 @@
         "tags": [
           "matches"
         ],
-        "summary": "Recent matches, newest first, without their moves: local ones and the bot's Lichess games alike, unless `source`\npicks one kind.",
+        "summary": "Recent matches, newest first, without their moves: local ones and Lichess games alike, unless `source` picks one\nkind or `account` one Lichess account.",
         "operationId": "list_matches",
         "parameters": [
           {
@@ -961,7 +1471,7 @@
           {
             "name": "source",
             "in": "query",
-            "description": "Only local matches (`local`) or only the bot's Lichess games (`lichess`). Both when absent.",
+            "description": "Only local matches (`local`) or only Lichess games (`lichess`). Both when absent.",
             "required": false,
             "schema": {
               "oneOf": [
@@ -971,6 +1481,27 @@
                   "enum": [
                     "local",
                     "lichess"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          {
+            "name": "account",
+            "in": "query",
+            "description": "Only the Lichess games of one account: the bot's (`bot`) or your own (`me`), played here or imported.",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "One of our two Lichess accounts.",
+                  "enum": [
+                    "bot",
+                    "me"
                   ]
                 },
                 {
@@ -1089,12 +1620,182 @@
         }
       }
     },
+    "/api/matches/{id}/abort": {
+      "post": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "Your Lichess game: aborts it, which Lichess allows before both sides have moved.",
+        "operationId": "abort_match",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Match"
+                }
+              }
+            }
+          },
+          "400": {},
+          "404": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/matches/{id}/claim-draw": {
+      "post": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "Your Lichess game: claims a draw once the opponent has been gone long enough.",
+        "operationId": "claim_match_draw",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Match"
+                }
+              }
+            }
+          },
+          "400": {},
+          "404": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/matches/{id}/claim-victory": {
+      "post": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "Your Lichess game: claims the win once the opponent has been gone long enough (`match.opponent_gone` says when).",
+        "operationId": "claim_match_victory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Match"
+                }
+              }
+            }
+          },
+          "400": {},
+          "404": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/matches/{id}/decline-draw": {
+      "post": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "Your Lichess game: declines the opponent's draw offer. 409 when there is none.",
+        "operationId": "decline_match_draw",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Match"
+                }
+              }
+            }
+          },
+          "400": {},
+          "404": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/matches/{id}/decline-takeback": {
+      "post": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "Your Lichess game: declines the opponent's takeback proposal. 409 when there is none.",
+        "operationId": "decline_match_takeback",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Match"
+                }
+              }
+            }
+          },
+          "400": {},
+          "404": {},
+          "409": {}
+        }
+      }
+    },
     "/api/matches/{id}/draw": {
       "post": {
         "tags": [
           "matches"
         ],
-        "summary": "Offers the engine a draw, on your turn. It accepts once twenty plies are played and its own last score is no more\nthan +0.10; the game then ends as a draw by agreement. Otherwise it declines and the game goes on.",
+        "summary": "Offers the engine a draw, on your turn. It accepts once twenty plies are played and its own last score is no more\nthan +0.10; the game then ends as a draw by agreement. Otherwise it declines and the game goes on. In your own\nLichess game it accepts the opponent's offer, or offers one (`offered`), on either side's turn.",
         "operationId": "offer_draw",
         "parameters": [
           {
@@ -1128,7 +1829,7 @@
         "tags": [
           "matches"
         ],
-        "summary": "Plays your move in a match where you hold a seat (`\"human\"`). Your clock is charged like an engine's, from the start\nof your turn to the arrival of the move. The answer is the match with the move on the board. 400 when the move is\nnot legal or the match has no human player, 409 when it is not your turn or the match is over.",
+        "summary": "Plays your move in a match where you hold a seat (`\"human\"`), or in your own Lichess game, where it goes through\nthe Board API and the answer comes once Lichess has played it. Your clock is charged like an engine's, from the\nstart of your turn to the arrival of the move; on Lichess the clocks are Lichess's. The answer is the match with the move on the board. 400 when the move is\nnot legal or the match has no human player, 409 when it is not your turn or the match is over.",
         "operationId": "play_move",
         "parameters": [
           {
@@ -1204,7 +1905,7 @@
         "tags": [
           "matches"
         ],
-        "summary": "Takes back your last move and the engine's reply to it, on your turn, in a game without a clock. A `match.takeback`\nevent carries the number of plies left. 409 in a timed game, when there is nothing to take back or it is not your\nturn.",
+        "summary": "Takes back your last move and the engine's reply to it, on your turn, in a game without a clock. A `match.takeback`\nevent carries the number of plies left. 409 in a timed game, when there is nothing to take back or it is not your\nturn. In your own Lichess game it accepts the opponent's takeback proposal, or proposes one\n(`lichess.takeback_offer`), with or without a clock.",
         "operationId": "takeback_move",
         "parameters": [
           {
@@ -2024,6 +2725,74 @@
           "black"
         ]
       },
+      "ChallengeInfo": {
+        "type": "object",
+        "description": "A challenge waiting for an answer, yours or someone's.",
+        "required": [
+          "id",
+          "url",
+          "direction",
+          "opponent",
+          "rated",
+          "speed",
+          "variant",
+          "color",
+          "playable"
+        ],
+        "properties": {
+          "clock": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Clock",
+                "description": "The clock, or none for correspondence and unlimited games."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "color": {
+            "$ref": "#/components/schemas/ChallengeColor",
+            "description": "The colour you would play."
+          },
+          "days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Days per move, for correspondence.",
+            "minimum": 0
+          },
+          "direction": {
+            "$ref": "#/components/schemas/Direction"
+          },
+          "id": {
+            "type": "string",
+            "description": "The challenge id, which becomes the game id if it is accepted."
+          },
+          "opponent": {
+            "$ref": "#/components/schemas/Opponent"
+          },
+          "playable": {
+            "type": "boolean",
+            "description": "Whether the game could be played here, through the Board API: blitz and slower. A bullet challenge has to be\nplayed on lichess.org."
+          },
+          "rated": {
+            "type": "boolean"
+          },
+          "speed": {
+            "type": "string",
+            "description": "`blitz`, `rapid`, `classical`, `correspondence`, ... as Lichess names it."
+          },
+          "url": {
+            "type": "string"
+          },
+          "variant": {
+            "type": "string"
+          }
+        }
+      },
       "ChallengeRequest": {
         "type": "object",
         "required": [
@@ -2096,6 +2865,59 @@
           }
         }
       },
+      "Challenges": {
+        "type": "object",
+        "required": [
+          "incoming",
+          "outgoing"
+        ],
+        "properties": {
+          "incoming": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChallengeInfo"
+            }
+          },
+          "outgoing": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChallengeInfo"
+            }
+          }
+        }
+      },
+      "Clock": {
+        "type": "object",
+        "description": "A clock, in seconds.",
+        "required": [
+          "initial",
+          "increment"
+        ],
+        "properties": {
+          "increment": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "initial": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "DeclineRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "One of Lichess's reasons: `generic` (default), `later`, `tooFast`, `tooSlow`, `timeControl`, `rated`, `casual`,\n`standard`, `variant`, `noBot`, `onlyBot`."
+          }
+        }
+      },
       "DeleteVersion": {
         "type": "object",
         "description": "What deleting a version asks for.",
@@ -2135,15 +2957,47 @@
           }
         }
       },
+      "Direction": {
+        "type": "string",
+        "enum": [
+          "incoming",
+          "outgoing"
+        ]
+      },
       "DrawAnswer": {
         "type": "object",
         "required": [
-          "accepted"
+          "accepted",
+          "offered"
         ],
         "properties": {
           "accepted": {
             "type": "boolean",
-            "description": "Whether the engine took the draw. If it did, the game is over."
+            "description": "Whether the draw was agreed (the engine took it, or you accepted your Lichess opponent's offer). If so, the game\nis over."
+          },
+          "offered": {
+            "type": "boolean",
+            "description": "In your own Lichess game: your offer was made and waits for the opponent (`lichess.draw_offer`)."
+          }
+        }
+      },
+      "ElsewhereGame": {
+        "type": "object",
+        "description": "A game of yours that cannot be played here (a bullet game, a variant, started on lichess.org): it still locks\nanalysis.",
+        "required": [
+          "id",
+          "url",
+          "speed"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "speed": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
           }
         }
       },
@@ -2408,6 +3262,28 @@
           "human"
         ]
       },
+      "ImportRequest": {
+        "type": "object",
+        "properties": {
+          "max": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "At most this many games, newest first. All when absent.",
+            "minimum": 0
+          },
+          "since": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Only games started at or after this time, in milliseconds since 1970. When absent: after the newest game\nimported before, or all of them the first time."
+          }
+        }
+      },
       "Info": {
         "type": "object",
         "description": "One `info` line with a principal variation.",
@@ -2605,6 +3481,29 @@
               }
             ],
             "description": "Bake a tune's values into a branch of the fork, and queue its confirmation."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImportRequest"
+              },
+              {
+                "type": "object",
+                "description": "Import your finished Lichess games as matches. It needs the network, not the CPU, so it runs at once beside\nthe queue.",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "lichess_import"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Import your finished Lichess games as matches. It needs the network, not the CPU, so it runs at once beside\nthe queue."
           }
         ],
         "description": "What a job does."
@@ -2628,6 +3527,14 @@
           "nonfunctional"
         ]
       },
+      "LichessAccount": {
+        "type": "string",
+        "description": "One of our two Lichess accounts.",
+        "enum": [
+          "bot",
+          "me"
+        ]
+      },
       "LichessGame": {
         "type": "object",
         "description": "What a game played on Lichess adds to the record.",
@@ -2639,13 +3546,35 @@
           "our_side"
         ],
         "properties": {
+          "account": {
+            "$ref": "#/components/schemas/LichessAccount",
+            "description": "Which of our Lichess accounts played it: the BOT account (`bot`, a build plays) or your own (`me`, you play)."
+          },
+          "draw_offer": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Side",
+                "description": "While your own game runs: the side offering a draw now, if any."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "type": "string",
             "description": "The Lichess game id, such as `q7ZvsdUF`."
           },
+          "opening": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The opening as Lichess names it, such as `B01 Scandinavian Defense`, for games imported from your history."
+          },
           "our_side": {
             "$ref": "#/components/schemas/Side",
-            "description": "The side our build played."
+            "description": "The side our account played: the bot's build, or you."
           },
           "rated": {
             "type": "boolean"
@@ -2653,6 +3582,17 @@
           "speed": {
             "type": "string",
             "description": "`bullet`, `blitz`, `rapid` or `classical`, as Lichess names the game's speed."
+          },
+          "takeback_offer": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Side",
+                "description": "While your own game runs: the side proposing a takeback now, if any."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "url": {
             "type": "string",
@@ -2778,6 +3718,37 @@
             "format": "int64",
             "description": "Events of this search carry this id.",
             "minimum": 0
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "return_to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where to send the browser once Lichess has answered: a page of this runner (any loopback address) or of\nhttps://chess.dame.gg. Default the runner's `/lichess` page. It gets `?lichess=connected`, or\n`?lichess=error&message=...`."
+          }
+        }
+      },
+      "LoginStarted": {
+        "type": "object",
+        "required": [
+          "url",
+          "expires_in_seconds"
+        ],
+        "properties": {
+          "expires_in_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How long the link works.",
+            "minimum": 0
+          },
+          "url": {
+            "type": "string",
+            "description": "The Lichess page to open, where you log in and allow access."
           }
         }
       },
@@ -3262,6 +4233,270 @@
         ],
         "description": "How a match is timed."
       },
+      "MeAccount": {
+        "type": "object",
+        "description": "Your Lichess account.",
+        "required": [
+          "id",
+          "username",
+          "ratings"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The lower-case id, as games name players."
+          },
+          "ratings": {
+            "$ref": "#/components/schemas/Ratings",
+            "description": "Your rating at each speed you have played."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A Lichess title such as `FM`; never `BOT`, which is refused."
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "MeChallengeRequest": {
+        "type": "object",
+        "required": [
+          "clock_seconds"
+        ],
+        "properties": {
+          "ai_level": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Lichess's own AI (Stockfish) at level 1 to 8. The game starts at once, casual.",
+            "minimum": 0
+          },
+          "clock_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The initial clock in seconds: 0, 15, 30, 45, 90 or whole minutes up to 180. Blitz or slower (initial + 40 ×\nincrement at least 3 minutes), as the Board API plays.",
+            "minimum": 0
+          },
+          "color": {
+            "$ref": "#/components/schemas/ChallengeColor",
+            "description": "The colour you play. Default random."
+          },
+          "increment": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "my_bot": {
+            "type": "boolean",
+            "description": "Your own bot (the BOT account the runner plays with). It answers by its own settings."
+          },
+          "rated": {
+            "type": "boolean"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A Lichess username to challenge. Give exactly one of `username`, `ai_level` and `my_bot`."
+          }
+        }
+      },
+      "MeSeek": {
+        "type": "object",
+        "description": "A seek you have open in the lobby.",
+        "required": [
+          "clock_seconds",
+          "increment",
+          "rated",
+          "color"
+        ],
+        "properties": {
+          "clock_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "color": {
+            "$ref": "#/components/schemas/ChallengeColor"
+          },
+          "increment": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "rated": {
+            "type": "boolean"
+          },
+          "rating_range": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MeSeekRequest": {
+        "type": "object",
+        "required": [
+          "clock_seconds"
+        ],
+        "properties": {
+          "clock_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The initial clock in seconds. A seek must be rapid or slower: initial + 40 × increment at least 8 minutes.",
+            "minimum": 0
+          },
+          "color": {
+            "$ref": "#/components/schemas/ChallengeColor",
+            "description": "The colour you want. Default random."
+          },
+          "increment": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Seconds added after every move.",
+            "minimum": 0
+          },
+          "rated": {
+            "type": "boolean"
+          },
+          "rating_range": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opponents' ratings, such as `1500-1800`. Lichess advises leaving it empty."
+          }
+        }
+      },
+      "MeSeekStatus": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How the last seek went, for people."
+          },
+          "seeking": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MeSeek",
+                "description": "The seek open now, until someone takes it (the game then starts) or it is cancelled."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "MeStatus": {
+        "type": "object",
+        "required": [
+          "configured",
+          "scopes",
+          "missing_scopes",
+          "state",
+          "playing",
+          "elsewhere",
+          "challenges",
+          "seek",
+          "fair_play_lock"
+        ],
+        "properties": {
+          "account": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MeAccount"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "challenges": {
+            "$ref": "#/components/schemas/Challenges"
+          },
+          "configured": {
+            "type": "boolean",
+            "description": "Whether a token is stored."
+          },
+          "elsewhere": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ElsewhereGame"
+            },
+            "description": "Games you are playing that cannot be played here."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the token expires (ISO 8601, UTC), if Lichess said. A login lasts a year."
+          },
+          "fair_play_lock": {
+            "type": "boolean",
+            "description": "True while you have a game running on Lichess: engine analysis, the tablebase and the explorer are refused."
+          },
+          "missing_scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Scopes the runner asks for that the token lacks (a personal token made without them)."
+          },
+          "playing": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The matches of the games you are playing here now."
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The scopes the token has, as Lichess reports them."
+          },
+          "seek": {
+            "$ref": "#/components/schemas/MeSeekStatus"
+          },
+          "state": {
+            "$ref": "#/components/schemas/BotState",
+            "description": "The event stream: `off` without a token, else `connecting`, `online` or `error` (with `error`)."
+          }
+        }
+      },
+      "MeTokenRequest": {
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "A personal Lichess token of your own (not a BOT) account, with `board:play`, `challenge:read` and\n`challenge:write`, made at https://lichess.org/account/oauth/token."
+          }
+        }
+      },
       "MoveRequest": {
         "type": "object",
         "required": [
@@ -3555,6 +4790,32 @@
           }
         ],
         "description": "Where the game starts."
+      },
+      "Opponent": {
+        "type": "object",
+        "description": "Who a challenge is with.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "rating": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       },
       "Param": {
         "type": "object",

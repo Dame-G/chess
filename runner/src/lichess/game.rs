@@ -30,7 +30,7 @@ use crate::{
         uci::{Engine, Info, Search},
     },
     matches::{
-        self, INFO_EVERY, LichessGame, Match, MatchMove, MatchStatus, MatchTime, Player, Recorder,
+        self, INFO_EVERY, LichessAccount, LichessGame, Match, MatchMove, MatchStatus, MatchTime, Player, Recorder,
         rules::{self, Ending, GameResult, Side},
     },
 };
@@ -311,7 +311,7 @@ async fn run(state: &Arc<AppState>, id: &str, cancel: &CancellationToken) -> Res
     ours.lichess = Some(me.username.clone());
     let theirs = if our == Side::White { full.black.player() } else { full.white.player() };
     let (white, black) = if our == Side::White { (ours, theirs) } else { (theirs, ours) };
-    let previous = matches::find_lichess(state, id).await?;
+    let previous = matches::find_lichess(state, id, LichessAccount::Bot).await?;
     let time = match full.clock {
         Some(c) => MatchTime::Clock { seconds: c.initial as f64 / 1000.0, increment: c.increment as f64 / 1000.0 },
         None => MatchTime::Movetime { ms: UNCLOCKED_MOVETIME },
@@ -343,6 +343,10 @@ async fn run(state: &Arc<AppState>, id: &str, cancel: &CancellationToken) -> Res
             rated: full.rated,
             speed: full.speed.clone(),
             our_side: our,
+            account: LichessAccount::Bot,
+            opening: None,
+            draw_offer: None,
+            takeback_offer: None,
         }),
     };
     if let Some(prev) = previous {

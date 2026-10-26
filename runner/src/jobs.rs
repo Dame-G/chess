@@ -35,6 +35,12 @@ pub enum JobSpec {
         #[serde(flatten)]
         options: tune::ApplyTune,
     },
+    /// Import your finished Lichess games as matches. It needs the network, not the CPU, so it runs at once beside
+    /// the queue.
+    LichessImport {
+        #[serde(flatten)]
+        options: crate::lichess::me::import::ImportRequest,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -127,12 +133,31 @@ fn set_status(c: &Connection, id: i64, status: JobStatus) -> Result<Job> {
 pub struct Queue {
     wake: Notify,
     running: Mutex<Option<(i64, CancellationToken)>>,
+    /// Jobs that run at once beside the queue (they use the network, not the CPU), by id.
+    beside: Mutex<std::collections::HashMap<i64, CancellationToken>>,
 }
 
 impl Queue {
     pub fn new() -> Self {
-        Self { wake: Notify::new(), running: Mutex::new(None) }
+        Self { wake: Notify::new(), running: Mutex::new(None), beside: Mutex::new(Default::default()) }
     }
+}
+
+/// Starts a job at once, beside the queue, for work that does not load the CPU (an import). It is listed, logged,
+/// cancelled and announced like any other.
+pub async fn run_now(state: &Arc<AppState>, spec: JobSpec) -> Result<Job> {
+    let job = state
+        .store
+        .call(move |c| {
+            c.execute("INSERT INTO jobs (spec, status) VALUES (?1, 'queued')", [serde_json::to_string(&spec)?])?;
+            set_status(c, c.last_insert_rowid(), JobStatus::Running)
+        })
+        .await?;
+    let token = CancellationToken::new();
+    state.queue.beside.lock().unwrap().insert(job.id, token.clone());
+    let (state, started) = (state.clone(), job.clone());
+    tokio::spawn(async move { run(&state, started, token).await });
+    Ok(job)
 }
 
 pub fn log_path(state: &AppState, id: i64) -> PathBuf {
@@ -173,6 +198,8 @@ pub async fn cancel(state: &Arc<AppState>, id: i64) -> Result<Option<Job>> {
         && let Some((running, token)) = &*state.queue.running.lock().unwrap()
         && *running == id
     {
+        token.cancel();
+    } else if let Some(token) = state.queue.beside.lock().unwrap().get(&id) {
         token.cancel();
     }
     Ok(Some(job))
@@ -296,9 +323,16 @@ async fn run(state: &Arc<AppState>, job: Job, token: CancellationToken) {
         JobSpec::ApplyTune { id, options } => {
             tune::apply(tune::Run { state, cancel: &token, log: &log }, *id, options).await
         }
+        JobSpec::LichessImport { options } => crate::lichess::me::import::run(state, &token, &log, options).await,
     };
 
-    *state.queue.running.lock().unwrap() = None;
+    {
+        let mut running = state.queue.running.lock().unwrap();
+        if running.as_ref().is_some_and(|(r, _)| *r == id) {
+            *running = None;
+        }
+    }
+    state.queue.beside.lock().unwrap().remove(&id);
     let finished = state
         .store
         .call(move |c| {

@@ -10,6 +10,7 @@
 
 pub mod client;
 mod game;
+pub mod me;
 pub mod quota;
 pub mod rules;
 pub mod seek;
@@ -316,6 +317,8 @@ pub async fn resume(state: &Arc<AppState>) -> Result<()> {
     let online = meta_get(state, ONLINE_KEY).await?.as_deref() == Some("true");
     let always = meta_get(state, seek::SEEK_KEY).await?.as_deref() == Some("always");
     quota::load(state).await?;
+    // Your own account, if connected, comes back too, independently of the bot.
+    me::resume(state).await;
     {
         let mut inner = state.lichess.inner.lock().unwrap();
         inner.token = token.filter(|t| !t.is_empty());

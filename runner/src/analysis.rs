@@ -103,6 +103,8 @@ fn record(lines: &mut Vec<Info>, info: Info, multipv: u32) {
 }
 
 pub async fn analyse(state: &AppState, mut req: AnalysisRequest) -> Result<AnalysisResult, ApiError> {
+    // Lichess forbids engine help while you play there.
+    crate::lichess::me::check_fair_play(state)?;
     let l = &req.limits;
     if l.depth.is_none() && l.nodes.is_none() && l.movetime.is_none() {
         req.limits.depth = Some(20);
@@ -144,6 +146,8 @@ pub struct LiveSession {
 /// also stops by itself once no event stream has been open for [`UNWATCHED`].
 pub async fn start_live(state: &Arc<AppState>, req: AnalysisRequest) -> Result<LiveSession, ApiError> {
     stop_live(state);
+    // Lichess forbids engine help while you play there; a game that starts later stops this search too.
+    crate::lichess::me::check_fair_play(state)?;
     let (b, mut engine) = start(state, &req).await?;
     let session = state.live.next.fetch_add(1, Ordering::Relaxed);
     let token = CancellationToken::new();
@@ -151,6 +155,10 @@ pub async fn start_live(state: &Arc<AppState>, req: AnalysisRequest) -> Result<L
     // search forever with nothing left to stop it.
     if let Some((_, replaced)) = state.live.current.lock().unwrap().replace((session, token.clone())) {
         replaced.cancel();
+    }
+    // A Lichess game that started while the engine loaded found nothing to stop yet.
+    if state.me.locked() {
+        token.cancel();
     }
 
     let state = state.clone();

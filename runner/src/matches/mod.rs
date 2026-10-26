@@ -139,8 +139,40 @@ pub struct LichessGame {
     pub rated: bool,
     /// `bullet`, `blitz`, `rapid` or `classical`, as Lichess names the game's speed.
     pub speed: String,
-    /// The side our build played.
+    /// The side our account played: the bot's build, or you.
     pub our_side: Side,
+    /// Which of our Lichess accounts played it: the BOT account (`bot`, a build plays) or your own (`me`, you play).
+    #[serde(default)]
+    pub account: LichessAccount,
+    /// The opening as Lichess names it, such as `B01 Scandinavian Defense`, for games imported from your history.
+    #[serde(default)]
+    pub opening: Option<String>,
+    /// While your own game runs: the side offering a draw now, if any.
+    #[serde(default)]
+    pub draw_offer: Option<Side>,
+    /// While your own game runs: the side proposing a takeback now, if any.
+    #[serde(default)]
+    pub takeback_offer: Option<Side>,
+}
+
+/// One of our two Lichess accounts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum LichessAccount {
+    /// The BOT account a build plays as.
+    #[default]
+    Bot,
+    /// Your own account, which you play with.
+    Me,
+}
+
+impl LichessAccount {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Bot => "bot",
+            Self::Me => "me",
+        }
+    }
 }
 
 /// Which matches a list holds.
@@ -149,7 +181,7 @@ pub struct LichessGame {
 pub enum Source {
     /// Matches between two builds on this machine.
     Local,
-    /// Games the bot played on Lichess.
+    /// Games played on Lichess, by the bot or by you.
     Lichess,
 }
 
@@ -278,12 +310,28 @@ fn load(c: &Connection, id: i64) -> Result<Option<Match>> {
     data.map(|d| serde_json::from_str(&d).context("read a stored match")).transpose()
 }
 
-fn recent(c: &Connection, limit: u32, source: Option<Source>) -> Result<Vec<MatchSummary>> {
-    let filter = match source {
-        None => "",
-        Some(Source::Local) => "WHERE json_extract(data, '$.lichess') IS NULL",
-        Some(Source::Lichess) => "WHERE json_extract(data, '$.lichess') IS NOT NULL",
-    };
+fn recent(
+    c: &Connection,
+    limit: u32,
+    source: Option<Source>,
+    account: Option<LichessAccount>,
+) -> Result<Vec<MatchSummary>> {
+    let mut filters = Vec::new();
+    match source {
+        None => {}
+        Some(Source::Local) => filters.push("json_extract(data, '$.lichess') IS NULL"),
+        Some(Source::Lichess) => filters.push("json_extract(data, '$.lichess') IS NOT NULL"),
+    }
+    // Records from before there were two accounts have no `account`: they are the bot's.
+    match account {
+        None => {}
+        Some(LichessAccount::Bot) => filters.push(
+            "json_extract(data, '$.lichess') IS NOT NULL \
+             AND ifnull(json_extract(data, '$.lichess.account'), 'bot') = 'bot'",
+        ),
+        Some(LichessAccount::Me) => filters.push("json_extract(data, '$.lichess.account') = 'me'"),
+    }
+    let filter = if filters.is_empty() { String::new() } else { format!("WHERE {}", filters.join(" AND ")) };
     let mut stmt = c.prepare(&format!("SELECT data FROM matches {filter} ORDER BY id DESC LIMIT ?1"))?;
     let rows = stmt.query_map([limit], |r| r.get::<_, String>(0))?;
     let mut out = Vec::new();
@@ -343,10 +391,22 @@ struct Live {
 pub enum Action {
     /// A move in UCI notation.
     Move(String),
-    /// Take back the last move of each side. Only in a game without a clock, on your own turn.
+    /// Take back the last move of each side. Locally: only in a game without a clock, on your own turn. On Lichess:
+    /// accept the opponent's proposal, or propose one.
     Takeback,
-    /// Offer a draw, which the engine accepts or declines by [`rules::accepts_draw`].
+    /// Offer a draw. Locally the engine accepts or declines by [`rules::accepts_draw`]; on Lichess this accepts the
+    /// opponent's offer, or makes one.
     Draw,
+    /// Lichess only: decline the opponent's draw offer.
+    DeclineDraw,
+    /// Lichess only: decline the opponent's takeback proposal.
+    DeclineTakeback,
+    /// Lichess only: abort a game that has not got going.
+    Abort,
+    /// Lichess only: claim the win once the opponent has been gone long enough.
+    ClaimVictory,
+    /// Lichess only: claim a draw once the opponent has been gone long enough.
+    ClaimDraw,
 }
 
 /// How the game answered an [`Action`].
@@ -354,14 +414,22 @@ pub enum Action {
 pub enum Reply {
     Moved,
     TakenBack,
-    Draw { accepted: bool },
+    Draw {
+        accepted: bool,
+    },
+    /// On Lichess: the offer or proposal was made and waits for the opponent.
+    Offered,
+    /// On Lichess: done (declined, aborted, claimed); the game's events say what followed.
+    Done,
 }
 
-type Ack = oneshot::Sender<Result<Reply, ApiError>>;
+/// Where the game answers a request.
+pub type Ack = oneshot::Sender<Result<Reply, ApiError>>;
 
-struct Request {
-    action: Action,
-    ack: Ack,
+/// A human player's request, with where to answer it.
+pub struct Request {
+    pub action: Action,
+    pub ack: Ack,
 }
 
 pub struct Matches {
@@ -411,8 +479,15 @@ pub async fn get(state: &AppState, id: i64) -> Result<Option<Match>> {
     state.store.call(move |c| load(c, id)).await
 }
 
-pub async fn list(state: &AppState, limit: u32, source: Option<Source>) -> Result<Vec<MatchSummary>> {
-    state.store.call(move |c| recent(c, limit, source)).await
+/// Recent matches, newest first. `source` picks local games or Lichess games, `account` the Lichess games of one of
+/// our accounts.
+pub async fn list(
+    state: &AppState,
+    limit: u32,
+    source: Option<Source>,
+    account: Option<LichessAccount>,
+) -> Result<Vec<MatchSummary>> {
+    state.store.call(move |c| recent(c, limit, source, account)).await
 }
 
 /// Stops the running match, which is recorded as aborted, and returns it. 409 when that match is not running.
@@ -601,6 +676,20 @@ async fn begin(
 /// it is on the board and stored. 400 when the match has no human player or the move is not legal, 409 when the match
 /// is over or it is not your turn (or, for a takeback, there is nothing to take back or the game has a clock).
 pub async fn act(state: &AppState, id: i64, action: Action) -> Result<Reply, ApiError> {
+    // A game you play on Lichess: its player task checks turns and answers by Lichess's rules.
+    let external = state.matches.external.lock().unwrap().get(&id).map(|l| l.human.clone());
+    if let Some(human) = external {
+        let Some(human) = human else {
+            return Err(ApiError::bad_request("that match has no human player"));
+        };
+        let (ack, answer) = oneshot::channel();
+        human.send(Request { action, ack }).map_err(|_| ApiError::conflict("that match is not running"))?;
+        // Lichess is asked and must confirm, which takes longer than a local game.
+        return match tokio::time::timeout(ANSWER * 2, answer).await {
+            Ok(Ok(reply)) => reply,
+            _ => Err(ApiError::conflict("the game moved on")),
+        };
+    }
     let found = {
         let live = state.matches.live.lock().unwrap();
         live.as_ref().filter(|l| l.id == id).map(|l| (l.human.clone(), l.shared.clone()))
@@ -1077,6 +1166,9 @@ async fn wait_for_human(
                     return Think::DrawAgreed;
                 }
             }
+            _ => {
+                let _ = ack.send(Err(ApiError::bad_request("that is only for a game on Lichess")));
+            }
         }
     }
 }
@@ -1096,15 +1188,17 @@ pub struct Recorder {
 
 /// The stored match of a Lichess game, so a game the bot comes back to (after a restart, or a dropped stream) goes on
 /// in the same record.
-pub async fn find_lichess(state: &AppState, game: &str) -> Result<Option<Match>> {
+/// A game between our two accounts has a record for each, told apart by `account`.
+pub async fn find_lichess(state: &AppState, game: &str, account: LichessAccount) -> Result<Option<Match>> {
     let game = game.to_owned();
     state
         .store
         .call(move |c| {
             let data: Option<String> = c
                 .query_row(
-                    "SELECT data FROM matches WHERE json_extract(data, '$.lichess.id') = ?1 ORDER BY id DESC LIMIT 1",
-                    [game],
+                    "SELECT data FROM matches WHERE json_extract(data, '$.lichess.id') = ?1
+                     AND ifnull(json_extract(data, '$.lichess.account'), 'bot') = ?2 ORDER BY id DESC LIMIT 1",
+                    [game, account.key().to_owned()],
                     |r| r.get(0),
                 )
                 .optional()?;
@@ -1116,7 +1210,27 @@ pub async fn find_lichess(state: &AppState, game: &str) -> Result<Option<Match>>
 impl Recorder {
     /// Starts recording `game`, running: a new record when its id is 0, else the stored one it continues. `cancel` is
     /// what `DELETE /api/matches/{id}` triggers; the game's player decides what stopping means.
-    pub async fn open(state: &Arc<AppState>, mut game: Match, cancel: CancellationToken) -> Result<Self> {
+    pub async fn open(state: &Arc<AppState>, game: Match, cancel: CancellationToken) -> Result<Self> {
+        Self::open_with(state, game, cancel, None).await
+    }
+
+    /// As [`open`](Self::open), for a game a person plays: what they ask of it through the match routes (moves,
+    /// draws, takebacks) comes out of the receiver.
+    pub async fn open_human(
+        state: &Arc<AppState>,
+        game: Match,
+        cancel: CancellationToken,
+    ) -> Result<(Self, mpsc::UnboundedReceiver<Request>)> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        Ok((Self::open_with(state, game, cancel, Some(tx)).await?, rx))
+    }
+
+    async fn open_with(
+        state: &Arc<AppState>,
+        mut game: Match,
+        cancel: CancellationToken,
+        human: Option<mpsc::UnboundedSender<Request>>,
+    ) -> Result<Self> {
         game.status = MatchStatus::Running;
         game.result = GameResult::Unfinished;
         game.reason = None;
@@ -1135,7 +1249,7 @@ impl Recorder {
             .await?;
         let id = game.id;
         let shared = Arc::new(Mutex::new(Shared { game: game.clone(), thinking: None }));
-        state.matches.external.lock().unwrap().insert(id, Live { id, cancel, shared: shared.clone(), human: None });
+        state.matches.external.lock().unwrap().insert(id, Live { id, cancel, shared: shared.clone(), human });
         state.events.emit("match.started", serde_json::json!({ "id": id, "match": game }));
         Ok(Self { state: state.clone(), shared, id })
     }
@@ -1180,6 +1294,14 @@ impl Recorder {
         emit_move(&self.state, id, &mv);
     }
 
+    /// Changes the record in place (stored with the next move or the end), and says whether anything changed.
+    pub fn update(&self, f: impl FnOnce(&mut Match)) -> bool {
+        let mut s = self.shared.lock().unwrap();
+        let before = serde_json::to_value(&s.game).ok();
+        f(&mut s.game);
+        before != serde_json::to_value(&s.game).ok()
+    }
+
     /// Drops the recorded moves from `len` on, when the host's game and the record part ways (a takeback).
     pub fn truncate(&self, len: usize) {
         self.shared.lock().unwrap().game.moves.truncate(len);
@@ -1197,6 +1319,41 @@ impl Recorder {
         emit_ended(&self.state, &game);
         game
     }
+}
+
+/// Stores finished games from elsewhere (your Lichess history), skipping any whose Lichess game is already recorded
+/// for the same account. Answers how many were stored and how many skipped.
+pub async fn import(state: &AppState, games: Vec<Match>) -> Result<(usize, usize)> {
+    state
+        .store
+        .call(move |c| {
+            let tx = c.transaction()?;
+            let (mut stored, mut skipped) = (0, 0);
+            for mut game in games {
+                let Some(l) = game.lichess.as_ref() else { continue };
+                let known: bool = tx.query_row(
+                    "SELECT EXISTS (SELECT 1 FROM matches WHERE json_extract(data, '$.lichess.id') = ?1
+                     AND ifnull(json_extract(data, '$.lichess.account'), 'bot') = ?2)",
+                    [l.id.clone(), l.account.key().to_owned()],
+                    |r| r.get(0),
+                )?;
+                if known {
+                    skipped += 1;
+                    continue;
+                }
+                let status = serde_json::to_value(game.status)?;
+                tx.execute(
+                    "INSERT INTO matches (status, data, created_at) VALUES (?1, '{}', ?2)",
+                    params![status.as_str().unwrap_or_default(), game.created_at],
+                )?;
+                game.id = tx.last_insert_rowid();
+                save(&tx, &game)?;
+                stored += 1;
+            }
+            tx.commit()?;
+            Ok((stored, skipped))
+        })
+        .await
 }
 
 impl Drop for Recorder {
