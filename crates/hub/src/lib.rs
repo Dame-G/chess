@@ -14,12 +14,14 @@ pub mod config;
 pub mod ledger;
 pub mod policy;
 pub mod secrets;
+pub mod work;
 
 pub use bus::{Bus, Next, Subscription, TopicFilter};
 pub use config::{Config, LichessUrls};
 pub use ledger::{Grant, Ledger, LedgerSnapshot, Reservation};
 pub use policy::PolicyState;
 pub use secrets::Secrets;
+pub use work::{Control, Executor, WorkContext};
 
 /// What every service shares.
 pub struct Hub {

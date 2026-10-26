@@ -53,7 +53,7 @@ crates/                                                    ▼
   lichess    adapter: HTTP client with Lichess's rate rules, OAuth PKCE, NDJSON streams, Bot/Board API, import, explorer
   play       the Referee runtime: game tasks, seat controllers (engine, local, Lichess board, Lichess bot)
   analysis   the evaluation service (warm engine pool, position cache), reviews, profiles and comparisons
-  work       the scheduler, ideas and trials (funnel), tunes (SPSA), imports as work
+  work       the scheduler, versions and builds, ideas and trials (funnel), tunes (SPSA), promoting
   server     axum API (utoipa → OpenAPI), SSE, wiring, the `dameless` binary (serve + CLI)
 ```
 
@@ -63,8 +63,18 @@ Dependencies only point down this list's layers:
 - `engine` and `lichess` are **adapters**: they know their outside world (UCI, git, cargo, fastchess; Lichess's HTTP API) and keep their own wire types (a UCI `info` line, a Lichess game JSON). They do not depend on `core`, the store or the bus; `play`, `analysis` and `work` map their types to `core`'s.
 - `store` depends on `core` only. `hub` depends on `core` and `store` and owns the bundle every service gets, `Hub { config, store, bus, policy, ledger, secrets, token }`: the store stays a plain library a test can open alone, and the hub is the runtime that wires it to the rest.
 - Lichess's business rules (which challenges the bot takes, how it seeks, the daily bot limit, the Board API's speed rules) are domain logic: their pure parts live in `core::lichess`, their running parts in `play`.
-- `play`, `analysis`, `work` depend on `core`, `hub`, `store`, and the adapters they use.
-- `server` depends on everything and holds no domain logic: routes translate HTTP to service calls.
+- `work` depends on `core`, `hub`, `store` and `engine`. It owns the scheduler and **versions and builds** (`work::versions::Versions`), which `play` and `analysis` need to turn a version into a binary. So `play` and `analysis` depend on `work` (and on `core`, `hub`, `store` and their adapters); `work` never depends on them.
+- `server` depends on everything and holds no domain logic: routes translate HTTP to service calls, and it wires the services together (registers every executor with the scheduler, starts the connections).
+
+### Interfaces between the services
+
+These are the seams `play`, `analysis` and `work` share; they are built at the same time against these shapes.
+
+- **Running work** (`hub::work`, written): `trait Executor { fn kind() -> WorkKind; async fn run(&self, cx: WorkContext) -> Result<serde_json::Value, Error> }`. `WorkContext` gives the spec (`cx.spec::<T>()`), the last checkpoint (`cx.checkpoint::<T>()`, `cx.save_checkpoint(&t)`), progress (`cx.progress(p)`, throttled; `cx.progress_now(p)`), the log (`cx.log(line)`), cores (`cx.cores(min, max).await -> Option<Grant>`, held only while used), safe points (`cx.safe_point(Some(AssistKind::Review)).await -> bool`: waits while paused or while fair play forbids the assistance; `false` means stopped), and `cx.stopped()` to return when stopped. Executors: `Build`, `Trial`, `Tune`, `Promote` in `work`; `Review` in `analysis`; `Import` (your history, another player's) in `play`. The server registers them all with `work::Scheduler`.
+- **Queueing work**: `work::Scheduler::submit(NewWork) -> Work` (any crate holding the scheduler; the routes do), `stop`, `pause`, `resume`. `Scheduler` is cheap to clone.
+- **Versions and builds** (`work::versions::Versions`, cheap to clone): `resolve(&VersionRef) -> Version` where `VersionRef` is `Champion | Id(VersionId) | Name(String)` (a name may be a branch, tag or commit, making a version of it on first use); `binary(&VersionRef, features: &[&str]) -> (Build, PathBuf)` returns a ready binary, building it first (as `Build` work, awaited) when there is none; `champion() -> Version`; `list(...)`.
+- **Evaluation** (`analysis::Eval`, cheap to clone): `start_session(EvalRequest) -> SessionId` streaming `eval.info` on `eval:<session>`, `stop_session`; `evaluate(fen_key, &Version, nodes, multipv) -> EvalResult` through the position cache. `play` uses the engine pool directly for its engine seats (it needs clocks and `go wtime btime`), not `Eval`.
+- **Connections** (`play::Connections`): owns the two Lichess clients (`you`, `bot`), one each, shared by everything that talks to Lichess for that account (imports, the explorer, seat controllers), and `anonymous()` for public calls. It keeps `hub.policy` current from your live games.
 
 The binary is `dameless` (crate `server`). `dameless serve` runs the app; every other subcommand is a client of a running app over HTTP, one subcommand per route.
 
