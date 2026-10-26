@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RouteLocationRaw } from "vue-router";
+import type { RouteLocationNormalizedLoaded, RouteLocationRaw } from "vue-router";
 import { router } from "../src/router";
 
 /** Where an address ends up, following redirects without loading any view. */
@@ -8,7 +8,8 @@ function land(path: string): string {
   for (let hops = 0; hops < 5; hops++) {
     const redirect = to.matched.at(-1)?.redirect;
     if (!redirect) return to.fullPath;
-    const next = typeof redirect === "function" ? redirect(to, to) : redirect;
+    const loaded = to as unknown as RouteLocationNormalizedLoaded;
+    const next = typeof redirect === "function" ? redirect(loaded, loaded) : redirect;
     to = router.resolve(next as RouteLocationRaw);
   }
   throw new Error(`${path} redirects in a loop`);
