@@ -4,18 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <!-- Before the first paint: the saved choice (chess.scheme: "light", "dark", or absent for System) decides data-scheme. -->
-    <script>
-      (function () {
-        try {
-          var c = JSON.parse(localStorage.getItem("chess.scheme"));
-          var d = c === "dark" || (c !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
-          var r = document.documentElement;
-          r.dataset.scheme = d ? "dark" : "light";
-          r.style.colorScheme = d ? "dark" : "light";
-        } catch (e) {}
-      })();
-    </script>
+    <!--
+      Scripts only from this origin, and the API only on this origin or a runner on this machine (the hosted UI's case).
+      Styles may be inline: the theme is a <style> element. Frame-ancestors cannot be set here; it is a header
+      (web/public/_headers on Cloudflare, the runner's own responses locally).
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <script src="/scheme.js"></script>
     <!-- Page ground until the stylesheet arrives: Saddle's background in each scheme. -->
     <style>
       html {
