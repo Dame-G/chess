@@ -1614,6 +1614,16 @@ const filters = [
   }
 }
 
+/* On a wide screen the board is height-limited: the panel grows to a readable width and no further, and the board and
+   panel sit together in the middle, as on Lichess, instead of the panel taking all the slack. */
+@media (width >= 64rem) {
+  .board-ws:deep(.ws--fit.ws--inspector),
+  .board-ws.ws--fit.ws--inspector {
+    grid-template-columns: auto minmax(var(--ws-inspector), 30rem);
+    justify-content: center;
+  }
+}
+
 /* A match puts a player's strip above and below the board. */
 .board-ws--match {
   --extra: calc(2 * (var(--strip) + var(--gap)));
