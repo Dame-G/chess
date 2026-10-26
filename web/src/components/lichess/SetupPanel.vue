@@ -103,7 +103,7 @@ const upgrade = () =>
     >
       <template #actions>
         <EButton variant="danger" :loading="busy" @click="upgrade">Make it a bot, for good</EButton>
-        <EButton variant="quiet" @click="upgrading = false">Cancel</EButton>
+        <EButton variant="outline" @click="upgrading = false">Cancel</EButton>
       </template>
     </EDialog>
   </div>

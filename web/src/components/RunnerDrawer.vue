@@ -84,7 +84,7 @@ function describe(job: Job): string {
 }
 
 const outcome = {
-  queued: "Waiting",
+  queued: "Queued",
   running: "Running",
   done: "Done",
   failed: "Failed",
@@ -175,7 +175,7 @@ const machine = computed(() => {
 
       <section v-if="queued.length" class="part" aria-labelledby="r-next">
         <h3 id="r-next" class="part-title">Up next</h3>
-        <ETable caption="Waiting jobs" dense hide-caption>
+        <ETable caption="Queued jobs" dense hide-caption>
           <tbody>
             <tr v-for="j in queued" :key="j.id">
               <td>{{ describe(j) }}</td>

@@ -68,7 +68,7 @@ export function useActivity() {
       return { state: "busy", label: "Tuning", detail: t ? [t.name, progress] : [progress] } as const;
     }
     const e = experiment.value;
-    if (!e) return { state: "busy", label: "Testing", detail: [] } as const;
+    if (!e) return { state: "busy", label: "Running", detail: [] } as const;
     const stage = e.current ? stageLabel(e.current) : "Preparing";
     const detailParts: string[] = [e.name];
     const t = playing.value;

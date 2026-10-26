@@ -118,7 +118,7 @@ function resign() {
   >
     <template #actions>
       <EButton variant="danger" @click="resign">{{ early ? "Cancel game" : "Resign" }}</EButton>
-      <EButton variant="quiet" @click="resigning = false">Keep playing</EButton>
+      <EButton variant="outline" @click="resigning = false">Keep playing</EButton>
     </template>
   </EDialog>
 </template>
