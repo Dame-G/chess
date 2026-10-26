@@ -1,6 +1,6 @@
 dist
 node_modules
-target
+target*/
 pnpm-lock.yaml
 web/src/api/schema.d.ts
 runner/openapi.json

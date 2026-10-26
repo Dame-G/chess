@@ -6,7 +6,7 @@ import globals from "globals";
 
 // The same rules as the eos library, so code reads the same in both repositories.
 export default tseslint.config(
-  { ignores: ["**/dist/**", "**/node_modules/**", "**/target/**", "web/src/api/schema.d.ts", "**/.claude/**"] },
+  { ignores: ["**/dist/**", "**/node_modules/**", "**/target*/**", "web/src/api/schema.d.ts", "**/.claude/**"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   ...vue.configs["flat/recommended"],
