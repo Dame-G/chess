@@ -8,7 +8,8 @@ use rusqlite::Connection;
 use crate::DbResult;
 
 /// Every migration, in order. A new one is appended here, never edited in place once released.
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001_init.sql")];
+const MIGRATIONS: &[&str] =
+    &[include_str!("../migrations/0001_init.sql"), include_str!("../migrations/0002_player.sql")];
 
 /// Applies the migrations the database has not seen, each in its own transaction.
 pub(crate) fn apply(conn: &mut Connection) -> DbResult<()> {
@@ -44,14 +45,21 @@ mod tests {
     fn applies_every_migration_from_empty() {
         let mut conn = Connection::open_in_memory().unwrap();
         apply(&mut conn).unwrap();
-        assert_eq!(conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(
+            conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(),
+            MIGRATIONS.len() as i64
+        );
         assert_eq!(
             names(&conn, "table"),
             [
                 "builds",
                 "connections",
+                "drill_answers",
+                "drills",
                 "games",
                 "ideas",
+                "level_games",
+                "level_ratings",
                 "meta",
                 "players",
                 "positions",
@@ -73,12 +81,17 @@ mod tests {
             "reviews_newest",
             "builds_cache",
             "work_status",
+            "drills_due",
+            "drill_answers_at",
         ] {
             assert!(indexes.iter().any(|i| i == index), "{index} is missing");
         }
         // Applying again changes nothing.
         apply(&mut conn).unwrap();
-        assert_eq!(conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(
+            conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(),
+            MIGRATIONS.len() as i64
+        );
     }
 
     #[test]

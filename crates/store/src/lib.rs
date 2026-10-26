@@ -7,7 +7,8 @@
 //!
 //! Repositories are typed with `core`'s types; no SQL leaves this crate. Each repository is a module of `impl Store`
 //! methods: [`games`], [`reviews`], [`positions`], [`versions`] (and builds), [`ideas`] (and trials and tune steps),
-//! [`work`], and [`records`] (connections, players, meta).
+//! [`work`], [`records`] (connections, players, meta), and for the player side [`drills`] (and their answers) and
+//! [`levels`] (games at a level, calibrated ratings).
 
 use std::{
     path::{Path, PathBuf},
@@ -20,8 +21,10 @@ use rusqlite::{Connection, Transaction};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::{Semaphore, oneshot};
 
+pub mod drills;
 pub mod games;
 pub mod ideas;
+pub mod levels;
 mod migrate;
 pub mod positions;
 pub mod records;
