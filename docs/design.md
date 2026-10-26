@@ -61,7 +61,7 @@ Dependencies only point down this list's layers:
 
 - `core` depends on nothing of ours and does no I/O (no tokio, no filesystem, no network). Everything in it is unit tested.
 - `engine` and `lichess` are **adapters**: they know their outside world (UCI, git, cargo, fastchess; Lichess's HTTP API) and keep their own wire types (a UCI `info` line, a Lichess game JSON). They do not depend on `core`, the store or the bus; `play`, `analysis` and `work` map their types to `core`'s.
-- `hub` and `store` depend on `core`.
+- `store` depends on `core` only. `hub` depends on `core` and `store` and owns the bundle every service gets, `Hub { config, store, bus, policy, ledger, secrets, token }`: the store stays a plain library a test can open alone, and the hub is the runtime that wires it to the rest.
 - Lichess's business rules (which challenges the bot takes, how it seeks, the daily bot limit, the Board API's speed rules) are domain logic: their pure parts live in `core::lichess`, their running parts in `play`.
 - `play`, `analysis`, `work` depend on `core`, `hub`, `store`, and the adapters they use.
 - `server` depends on everything and holds no domain logic: routes translate HTTP to service calls.
@@ -404,29 +404,41 @@ pub trait SeatController: Send {
 
 ## Storage (`crates/store`)
 
-SQLite in WAL mode, one writer task, readers on a small pool. Migrations are numbered SQL files with a test that applies them from empty. Timestamps are ISO-8601 UTC strings. JSON columns hold structured values the database never queries.
+SQLite in WAL mode with foreign keys on: one writer thread owning the only write connection (each write a transaction, fed by a channel of closures), readers on a small pool of query-only connections. Migrations are numbered SQL files (`crates/store/migrations/`) embedded in the binary and tracked by `PRAGMA user_version`, with a test that applies them from empty. Tables are `STRICT`. Timestamps are ISO-8601 UTC strings. JSON columns hold structured values the database never queries; what it filters or sorts on is a plain column beside them (`line_kind`, `champion`, `live`, the accuracies).
 
 ```sql
 players     (key TEXT PRIMARY KEY, name, title, lichess, ratings JSON, updated_at)
-versions    (id INTEGER PRIMARY KEY, name UNIQUE, commit_sha, branch, line JSON, parent, bench, elo JSON, created_at)
+versions    (id INTEGER PRIMARY KEY, name UNIQUE, commit_sha, branch, line JSON, line_kind, champion, parent, bench,
+             elo JSON, created_at)
+             -- line_kind (champion|idea|upstream|other) and champion (the number, unique) are copied out of `line`
 builds      (id INTEGER PRIMARY KEY, version, commit_sha, features, bench, nps, path, status, log_path, created_at, deleted_at)
-games       (id INTEGER PRIMARY KEY, source_kind, source JSON, white JSON, black JSON, white_key, black_key,
-             time JSON, speed, rated, status, outcome, ending, opening JSON, start_fen, plies,
+             -- features: sorted, comma-joined ("" or "spsa"); the cache key is (commit_sha, features)
+games       (id INTEGER PRIMARY KEY, source_kind, source JSON, source_owner, white JSON, black JSON, white_key, black_key,
+             time JSON, speed, rated, status, live, outcome, ending, opening JSON, start_fen, plies,
              moves BLOB,             -- zstd JSON of Vec<Move>; one row per game, never a row per move
-             you_side, lichess_id, trial, started_at, ended_at)
-             -- indexes: (white_key), (black_key), (source_kind, started_at), (trial), (lichess_id, source_kind)
-reviews     (id INTEGER PRIMARY KEY, game, version, nodes, summary JSON, plies BLOB, created_at)
+             you_side, lichess_id, trial, url, started_at, ended_at)
+             -- source_owner: the connection (lichess) or the player key (import): a Lichess game is stored once per owner
+             -- live: status is starting or live, for "live first" lists; url: the lichess.org link, made by the caller
+             -- indexes: (live, started_at, id), (white_key, started_at), (black_key, started_at),
+             --          (source_kind, started_at), (trial), (lichess_id, source_kind, source_owner)
+reviews     (id INTEGER PRIMARY KEY, game, version, nodes, white_accuracy, black_accuracy, summary JSON, plies BLOB,
+             created_at, UNIQUE (game, version, nodes))
+             -- the accuracies are copied out of the summary so game lists show them without reading it
 positions   (key TEXT, commit_sha TEXT, nodes INTEGER, multipv INTEGER, result JSON, PRIMARY KEY (key, commit_sha, nodes, multipv))
 ideas       (id INTEGER PRIMARY KEY, title, hypothesis, kind, author, branch, base, version, status, verdict, tags JSON,
              notes, spec JSON, created_at, ended_at)
 trials      (id INTEGER PRIMARY KEY, idea, stage, ord, status, preset, time JSON, played JSON, scaling JSON, bounds JSON,
-             penta JSON, wdl JSON, llr JSON, elo JSON, nelo JSON, detail, rounds INTEGER, pgn_path, started_at, ended_at)
-tune_steps  (idea, iteration, values JSON, result, penta JSON, PRIMARY KEY (idea, iteration))
+             pairs, penta JSON, wdl JSON, llr JSON, elo JSON, nelo JSON, detail, rounds INTEGER, pgn_path, started_at,
+             ended_at, UNIQUE (idea, ord))
+tune_steps  (idea, iteration, theta JSON, result, penta JSON, PRIMARY KEY (idea, iteration))
+             -- theta: the values after the step (`values` is an SQL keyword)
 work        (id INTEGER PRIMARY KEY, kind, status, priority, title, subject JSON, spec JSON, checkpoint JSON,
-             progress JSON, error, created_at, started_at, ended_at)
+             progress JSON, cores, paused_for, error, created_at, started_at, ended_at)
 connections (key TEXT PRIMARY KEY, account JSON, settings JSON, state JSON, updated_at)   -- tokens are files, never rows
 meta        (key TEXT PRIMARY KEY, value JSON)
 ```
+
+A game's offers, clocks and actions are not columns: they belong to the game being played, which `play` holds in memory and overlays on the stored record.
 
 Trial games are read from fastchess's PGN after each round into `games` (`source_kind = 'trial'`), so any test game opens on the board. Tune games are not stored as games (tens of thousands of near-identical pairs); a tune keeps its steps.
 
