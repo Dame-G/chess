@@ -20,7 +20,7 @@ use utoipa::ToSchema;
 use super::{
     Bot, BotState, LichessStatus, OnlineBot, Ratings,
     client::{CallError, Lichess},
-    meta_set, need_client, read_bot,
+    meta_set, need_client, quota, read_bot,
     rules::{SeekClock, Speed},
 };
 use crate::api::{ApiError, AppState};
@@ -123,6 +123,10 @@ pub(super) struct Seeking {
     note: Option<String>,
     /// Bots that declined or ignored us, by lower-case id, and when.
     shunned: HashMap<String, Instant>,
+    /// Bots that have played their bot games for the day, by lower-case id, and until when.
+    resting: HashMap<String, Instant>,
+    /// The end of the daily limit on bot games the note tells of, once it does (ms since the epoch).
+    limit_noted: Option<i64>,
     /// Our account's `perfs`, until a game ends and changes them.
     perfs: Option<Value>,
     /// No challenge before this.
@@ -141,6 +145,11 @@ impl Seeking {
             pending: self.pending.as_ref().map(|p| p.challenge.clone()),
             note: self.note.clone(),
         }
+    }
+
+    /// The id of the challenge waiting for an answer.
+    pub fn pending_id(&self) -> Option<&str> {
+        self.pending.as_ref().map(|p| p.challenge.id.as_str())
     }
 
     /// Applies what became of challenge `id`, if it is the pending one: `true` then. An outcome for a challenge not
@@ -290,6 +299,7 @@ pub async fn start(state: &Arc<AppState>, mode: SeekMode) -> Result<LichessStatu
             seek.note = Some("Looking for a bot to play.".into());
             seek.next_at = None;
             seek.early.clear();
+            seek.limit_noted = None;
         }
         seek.mode = mode;
     }
@@ -314,6 +324,7 @@ pub(super) async fn halt(state: &AppState) {
         seek.mode = SeekMode::Off;
         seek.note = None;
         seek.early.clear();
+        seek.limit_noted = None;
         seek.pending.take()
     };
     if let Some(p) = pending
@@ -398,6 +409,10 @@ enum Step {
     Wait(Option<Instant>),
     /// The pending challenge went unanswered.
     Expired(Pending),
+    /// The daily limit on bot games is reached until this time (ms since the epoch), and the note does not say so yet.
+    Limited(i64),
+    /// The daily limit has lifted: the status changes.
+    Lifted,
     Go,
 }
 
@@ -408,6 +423,8 @@ impl Bot {
         let busy = inner.games.len() + inner.accepted.len();
         let max = inner.settings.max_games as usize;
         let (online, connected) = (inner.online, inner.state == BotState::Online);
+        let wall = quota::now_ms();
+        let limit = inner.quota.until(wall);
         let seek = &mut inner.seek;
         if seek.mode == SeekMode::Off || !online {
             seek.mode = SeekMode::Off;
@@ -416,6 +433,16 @@ impl Bot {
         }
         if let Some(p) = &seek.pending {
             return if now >= p.expires { Step::Expired(p.clone()) } else { Step::Wait(Some(p.expires)) };
+        }
+        match limit {
+            Some(until) if seek.limit_noted != Some(until) => return Step::Limited(until),
+            // The search stays on, and goes on when the limit lifts.
+            Some(until) => return Step::Wait(Some(now + Duration::from_millis((until - wall).max(1) as u64))),
+            None if seek.limit_noted.take().is_some() => {
+                seek.note = Some("Looking for a bot to play again.".into());
+                return Step::Lifted;
+            }
+            None => {}
         }
         if !connected || busy >= max {
             return Step::Wait(None);
@@ -440,6 +467,19 @@ async fn run(state: Arc<AppState>) {
                 }
             }
             Step::Expired(p) => expired(&state, p).await,
+            Step::Limited(until) => {
+                let at = quota::local_clock(&state, until).await;
+                {
+                    let seek = &mut bot.inner.lock().unwrap().seek;
+                    seek.limit_noted = Some(until);
+                    seek.note = Some(format!(
+                        "Played {} games against bots today; looking again at {at}.",
+                        quota::BOT_GAMES_PER_DAY
+                    ));
+                }
+                bot.announce(&state);
+            }
+            Step::Lifted => bot.announce(&state),
             Step::Go => attempt(&state).await,
         }
     }
@@ -469,11 +509,16 @@ async fn expired(state: &AppState, p: Pending) {
 }
 
 /// Why no challenge went out, and when to try again.
+#[derive(Default)]
 struct Retry {
     note: String,
     after: Duration,
     /// A bot not to try again for a while.
     shun: Option<String>,
+    /// A bot that has played its bot games for the day, and how long until it may play again.
+    rest: Option<(String, Duration)>,
+    /// We have played ours: how long until we may play again.
+    limited: Option<Duration>,
 }
 
 fn unreachable(e: CallError, timing: Timing) -> Retry {
@@ -481,9 +526,12 @@ fn unreachable(e: CallError, timing: Timing) -> Retry {
         CallError::RateLimited => Retry {
             note: "Lichess asked us to slow down; trying again in a minute.".into(),
             after: timing.rate_limited,
-            shun: None,
+            ..Retry::default()
         },
-        e => Retry { note: format!("{e}; trying again in a minute."), after: timing.retry, shun: None },
+        CallError::BotDailyLimit { ours: true, retry_after, message } => {
+            Retry { note: message, limited: Some(retry_after), ..Retry::default() }
+        }
+        e => Retry { note: format!("{e}; trying again in a minute."), after: timing.retry, ..Retry::default() },
     }
 }
 
@@ -494,7 +542,7 @@ async fn challenge(state: &AppState) -> Result<Pending, Retry> {
         let inner = bot.inner.lock().unwrap();
         (inner.settings.clone(), inner.seek.timing, inner.seek.perfs.clone())
     };
-    let wait = |note: &str| Retry { note: note.to_owned(), after: timing.retry, shun: None };
+    let wait = |note: &str| Retry { note: note.to_owned(), after: timing.retry, ..Retry::default() };
     let (Some(client), Some(me)) = (bot.client(), bot.account()) else {
         return Err(wait("Not signed in to Lichess; trying again in a minute."));
     };
@@ -524,7 +572,8 @@ async fn challenge(state: &AppState) -> Result<Pending, Retry> {
         let mut inner = bot.inner.lock().unwrap();
         let now = Instant::now();
         inner.seek.shunned.retain(|_, at| now.duration_since(*at) < SHUN);
-        inner.seek.shunned.keys().cloned().collect()
+        inner.seek.resting.retain(|_, until| now < *until);
+        inner.seek.shunned.keys().chain(inner.seek.resting.keys()).cloned().collect()
     };
     let Some((opponent, rating)) = pick(&bots, &me.id, speed, ours, settings.seek_range, &shunned, &mut roll) else {
         return Err(wait(&format!("No bots to play at {clock} are online; trying again in a minute.")));
@@ -537,10 +586,21 @@ async fn challenge(state: &AppState) -> Result<Pending, Retry> {
         ("variant", "standard".to_owned()),
     ];
     let v = client.post(&format!("/api/challenge/{}", opponent.name), &form).await.map_err(|e| match e {
+        CallError::BotDailyLimit { ours: false, retry_after, .. } => Retry {
+            note: format!(
+                "{} has played its {} games against bots today. Trying another bot.",
+                opponent.name,
+                quota::BOT_GAMES_PER_DAY
+            ),
+            after: timing.polite,
+            rest: Some((opponent.name.to_lowercase(), retry_after)),
+            ..Retry::default()
+        },
         CallError::Status { status: 400..=499, message } => Retry {
             note: format!("Could not challenge {}: {message}. Trying another bot.", opponent.name),
             after: timing.polite,
             shun: Some(opponent.name.to_lowercase()),
+            ..Retry::default()
         },
         e => unreachable(e, timing),
     })?;
@@ -562,6 +622,10 @@ async fn challenge(state: &AppState) -> Result<Pending, Retry> {
 async fn attempt(state: &AppState) {
     let bot = &state.lichess;
     let result = challenge(state).await;
+    if let Err(Retry { limited: Some(after), .. }) = &result {
+        // The next step tells of it, and waits it out.
+        quota::limited(state, *after).await;
+    }
     if let Some(stale) = settle_attempt(bot, result) {
         // Stopped while the challenge was on its way.
         if let Some(client) = bot.client() {
@@ -582,6 +646,9 @@ fn settle_attempt(bot: &Bot, result: Result<Pending, Retry>) -> Option<String> {
         Err(retry) => {
             if let Some(id) = retry.shun {
                 seek.shunned.insert(id, now);
+            }
+            if let Some((id, after)) = retry.rest {
+                seek.resting.insert(id, now + after);
             }
             if seek.mode != SeekMode::Off {
                 seek.note = Some(retry.note);

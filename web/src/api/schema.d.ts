@@ -1105,6 +1105,16 @@ export interface components {
         };
         LichessStatus: {
             account?: components["schemas"]["Account"] | null;
+            /**
+             * Format: int32
+             * @description Games against other bots started in the last 24 hours. Lichess allows 100 in any rolling day.
+             */
+            bot_games_today: number;
+            /**
+             * @description While no game against a bot can start (the daily limit is reached), when that ends (ISO 8601, UTC). Bot
+             *     challenges are neither sent nor accepted until then; people's still are.
+             */
+            bot_limit_until?: string | null;
             /** @description Whether a token is stored. */
             configured: boolean;
             /** @description What went wrong last, while `state` is `error`. */

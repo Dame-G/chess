@@ -272,6 +272,10 @@ async fn run(state: &Arc<AppState>, id: &str, cancel: &CancellationToken) -> Res
     } else {
         bail!("{} plays neither side", me.username);
     };
+    let their_seat = if our == Side::White { &full.black } else { &full.white };
+    if their_seat.title.as_deref() == Some("BOT") {
+        super::quota::bot_game_started(state, id).await;
+    }
     if !matches!(full.variant.key.as_str(), "standard" | "fromPosition") {
         leave(&client, id, plies).await;
         bail!("the {} variant is not played: left the game", full.variant.key);

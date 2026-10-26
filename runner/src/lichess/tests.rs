@@ -125,6 +125,11 @@ struct Mock {
     answers: Mutex<std::collections::VecDeque<Answer>>,
     /// Every challenge of ours, as `user initial+increment rated=...`.
     challenges: Mutex<Vec<String>>,
+    /// How many of our next challenges Lichess refuses because we have played our bot games for the day, with the
+    /// seconds until that lifts.
+    ours_limited: Mutex<(u32, u64)>,
+    /// How many of our next challenges Lichess refuses because the bot challenged has played its bot games.
+    theirs_limited: Mutex<u32>,
 }
 
 #[derive(Clone, Copy)]
@@ -143,9 +148,13 @@ fn ndjson(rx: mpsc::UnboundedReceiver<Value>) -> Body {
 }
 
 fn challenge(id: &str, variant: &str) -> Value {
+    challenge_from(id, variant, "Alice", None)
+}
+
+fn challenge_from(id: &str, variant: &str, name: &str, title: Option<&str>) -> Value {
     json!({ "type": "challenge", "challenge": {
         "id": id, "url": format!("https://lichess.org/{id}"), "status": "created",
-        "challenger": { "id": "alice", "name": "Alice", "rating": 1650, "title": null },
+        "challenger": { "id": name.to_lowercase(), "name": name, "rating": 1650, "title": title },
         "destUser": { "id": "recklessbot", "name": "RecklessBot", "title": "BOT", "rating": 2000 },
         "variant": { "key": variant, "name": variant }, "rated": true, "speed": "blitz",
         "timeControl": { "type": "clock", "limit": 180, "increment": 2, "show": "3+2" },
@@ -260,12 +269,32 @@ async fn send_challenge(
     State(m): State<Arc<Mock>>,
     Path(user): Path<String>,
     Form(form): Form<std::collections::HashMap<String, String>>,
-) -> axum::Json<Value> {
+) -> axum::response::Response {
+    use axum::{http::StatusCode, response::IntoResponse};
     let n = {
         let mut c = m.challenges.lock().unwrap();
         c.push(format!("{user} {}+{} rated={}", form["clock.limit"], form["clock.increment"], form["rated"]));
         c.len()
     };
+    // As lila's BotLimit answers.
+    {
+        let mut ours = m.ours_limited.lock().unwrap();
+        if ours.0 > 0 {
+            ours.0 -= 1;
+            let body = json!({
+                "error": "You played 100 games against other bots today, please wait before challenging another bot.",
+                "ratelimit": { "key": "bot.vsBot.day", "seconds": ours.1 } });
+            return (StatusCode::TOO_MANY_REQUESTS, axum::Json(body)).into_response();
+        }
+        let mut theirs = m.theirs_limited.lock().unwrap();
+        if *theirs > 0 {
+            *theirs -= 1;
+            let body = json!({
+                "error": format!("{user} played 100 games against other bots today, please wait until 2099-01-01T00:00:00Z to challenge them."),
+                "ratelimit": { "key": "bot.vsBot.day", "seconds": 3600 } });
+            return (StatusCode::BAD_REQUEST, axum::Json(body)).into_response();
+        }
+    }
     let id = format!("s{n}");
     let answer = m.answers.lock().unwrap().pop_front().unwrap_or(Answer::Ignore);
     let tx = m.events.lock().unwrap().clone().unwrap();
@@ -277,11 +306,13 @@ async fn send_challenge(
                 "declineReason": "Not now", "declineReasonKey": reason } }))
             .unwrap(),
         Answer::Accept => {
-            tx.send(json!({ "type": "gameStart", "game": { "gameId": id, "color": "white" } })).unwrap();
+            let opponent = json!({ "id": user.to_lowercase(), "username": user, "title": "BOT", "rating": 2000 });
+            tx.send(json!({ "type": "gameStart", "game": { "gameId": id, "color": "white", "opponent": opponent } }))
+                .unwrap();
         }
         Answer::Ignore => {}
     }
-    axum::Json(json!({ "id": id, "url": format!("https://lichess.org/{id}"), "status": "created" }))
+    axum::Json(json!({ "id": id, "url": format!("https://lichess.org/{id}"), "status": "created" })).into_response()
 }
 
 async fn cancel_challenge(State(m): State<Arc<Mock>>, Path(id): Path<String>) -> axum::Json<Value> {
@@ -473,13 +504,23 @@ async fn accepts_a_challenge_declines_another_and_plays_the_game_into_a_match() 
 /// The bot online against a quiet mock whose bots answer our challenges with `answers`, seeking at 3+2 with short
 /// pauses; `answer` is how long a challenge may go unanswered.
 async fn seeker(answers: &[Answer], answer: Duration) -> (Arc<AppState>, Arc<Mock>) {
+    seeker_with(answers, answer, |_| {}).await
+}
+
+/// As [`seeker`], with the mock changed by `setup` first.
+async fn seeker_with(
+    answers: &[Answer],
+    answer: Duration,
+    setup: impl FnOnce(&mut Mock),
+) -> (Arc<AppState>, Arc<Mock>) {
     let bots = vec![
         online_bot("RecklessBot", Some(2000)),
         online_bot("Alpha", Some(1950)),
         online_bot("Beta", Some(2080)),
         online_bot("Gamma", None),
     ];
-    let m = Mock { quiet: true, bots, answers: Mutex::new(answers.iter().copied().collect()), ..Mock::default() };
+    let mut m = Mock { quiet: true, bots, answers: Mutex::new(answers.iter().copied().collect()), ..Mock::default() };
+    setup(&mut m);
     let (url, mock) = serve(m).await;
     let state = runner(url, false).await;
     state.lichess.inner.lock().unwrap().seek.timing = seek::Timing {
@@ -600,5 +641,170 @@ async fn seeking_always_goes_on_after_a_game_until_stopped() {
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(challenged(&mock).len(), 2);
     stop(&state).await.unwrap();
+    let _ = std::fs::remove_dir_all(&state.config.data);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The daily limit on bot games
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// The `seek.note` of every `lichess.status` event received so far.
+fn seek_notes(events: &mut tokio::sync::broadcast::Receiver<crate::events::Event>) -> Vec<String> {
+    let mut notes = Vec::new();
+    while let Ok(e) = events.try_recv() {
+        if e.kind == "lichess.status"
+            && let Some(note) = e.data["seek"]["note"].as_str()
+        {
+            notes.push(note.to_owned());
+        }
+    }
+    notes
+}
+
+#[tokio::test]
+async fn our_daily_limit_pauses_seeking_for_as_long_as_lichess_says_then_goes_on() {
+    let (state, mock) =
+        seeker_with(&[Answer::Accept], Duration::from_secs(10), |m| m.ours_limited = Mutex::new((1, 2))).await;
+    let (_, mut events) = state.events.subscribe(0);
+    seek::start(&state, SeekMode::Always).await.unwrap();
+
+    until("the pause to be noted", || {
+        state.lichess.status().seek.note.is_some_and(|n| n.starts_with("Played 100 games against bots today"))
+    })
+    .await;
+    let paused_at = std::time::Instant::now();
+    let status = state.lichess.status();
+    let note = status.seek.note.unwrap();
+    assert!(note.contains("; looking again at ") && note.ends_with('.'), "{note}");
+    assert_eq!(status.seek.mode, SeekMode::Always, "the search stays on");
+    let until_iso = status.bot_limit_until.expect("limited");
+    assert!(quota::parse_iso(&until_iso).unwrap() > quota::now_ms(), "{until_iso}");
+    assert_eq!(challenged(&mock).len(), 1);
+
+    // Once the two seconds are up, the next challenge goes out, is accepted, and counts.
+    finished(&state, "s2").await;
+    assert!(paused_at.elapsed() >= Duration::from_millis(1000), "{:?}", paused_at.elapsed());
+    let status = state.lichess.status();
+    assert_eq!(status.bot_limit_until, None);
+    assert_eq!(status.bot_games_today, 1);
+    assert!(seek_notes(&mut events).iter().any(|n| n.starts_with("Played 100 games")));
+    stop(&state).await.unwrap();
+    let _ = std::fs::remove_dir_all(&state.config.data);
+}
+
+#[tokio::test]
+async fn a_bot_over_its_own_limit_is_left_alone_and_another_challenged() {
+    let (state, mock) =
+        seeker_with(&[Answer::Accept], Duration::from_secs(10), |m| m.theirs_limited = Mutex::new(1)).await;
+    let (_, mut events) = state.events.subscribe(0);
+    seek::start(&state, SeekMode::Once).await.unwrap();
+
+    finished(&state, "s2").await;
+    let sent = challenged(&mock);
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert_ne!(target(&sent[0]), target(&sent[1]), "the bot over its limit is not asked again");
+    let notes = seek_notes(&mut events);
+    let skipped = format!("{} has played its 100 games against bots today. Trying another bot.", target(&sent[0]));
+    assert!(notes.contains(&skipped), "{notes:?}");
+    // Their limit is not ours.
+    let status = state.lichess.status();
+    assert_eq!((status.bot_limit_until, status.bot_games_today), (None, 1));
+    stop(&state).await.unwrap();
+    let _ = std::fs::remove_dir_all(&state.config.data);
+}
+
+#[tokio::test]
+async fn while_limited_a_bots_challenge_is_declined_and_a_persons_taken() {
+    let m = Mock { quiet: true, ..Mock::default() };
+    let (url, mock) = serve(m).await;
+    let state = runner(url, false).await;
+    let now = quota::now_ms();
+    state.lichess.inner.lock().unwrap().quota.games = (0..100).map(|i| (format!("x{i}"), now - i * 1000)).collect();
+    let (_, mut events) = state.events.subscribe(0);
+    set_token(&state, "lip_test_token").await.unwrap();
+    put_settings(&state, Settings { build: Some("main".into()), ..Settings::default() }).await.unwrap();
+    start(&state).await.unwrap();
+    until("the event stream", || mock.events.lock().unwrap().is_some()).await;
+    let status = state.lichess.status();
+    assert_eq!(status.bot_games_today, 100);
+    assert!(status.bot_limit_until.is_some());
+
+    let tx = mock.events.lock().unwrap().clone().unwrap();
+    tx.send(challenge_from("b1", "standard", "OtherBot", Some("BOT"))).unwrap();
+    tx.send(challenge_from("h1", "standard", "Alice", None)).unwrap();
+    finished(&state, "g1").await;
+    let posts = mock.posts.lock().unwrap().clone();
+    assert!(posts.contains(&"decline b1 reason=later".to_owned()), "{posts:?}");
+    assert!(posts.contains(&"accept h1".to_owned()), "{posts:?}");
+
+    let mut seen = Vec::new();
+    while let Ok(e) = events.try_recv() {
+        if e.kind == "lichess.challenge" {
+            seen.push((
+                e.data["id"].clone(),
+                e.data["decision"].clone(),
+                e.data["reason"].clone(),
+                e.data["detail"].clone(),
+            ));
+        }
+    }
+    assert!(
+        seen.contains(&(json!("b1"), json!("declined"), json!("later"), json!("Played 100 games against bots today"))),
+        "{seen:?}"
+    );
+    assert!(seen.iter().any(|(id, d, ..)| *id == json!("h1") && *d == json!("accepted")), "{seen:?}");
+    // A game against a person does not count.
+    assert_eq!(state.lichess.status().bot_games_today, 100);
+    stop(&state).await.unwrap();
+    let _ = std::fs::remove_dir_all(&state.config.data);
+}
+
+#[tokio::test]
+async fn the_bot_game_count_is_kept_and_stops_seeking_at_100_until_the_oldest_ages_out() {
+    let (state, mock) = seeker(&[Answer::Accept, Answer::Ignore], Duration::from_secs(30)).await;
+    // 99 bot games in the last day, the oldest about to age out.
+    let now = quota::now_ms();
+    {
+        let mut games = vec![("old".to_owned(), now - quota::DAY_MS + 4000)];
+        games.extend((0..98).map(|i| (format!("x{i}"), now - 1000 - i)));
+        state.lichess.inner.lock().unwrap().quota.games = games;
+    }
+    quota::save(&state).await;
+    let (_, mut events) = state.events.subscribe(0);
+    seek::start(&state, SeekMode::Always).await.unwrap();
+
+    // The 100th game is played; then the search waits for the oldest to age out.
+    finished(&state, "s1").await;
+    until("the pause to be noted", || {
+        state.lichess.status().seek.note.is_some_and(|n| n.starts_with("Played 100 games against bots today"))
+    })
+    .await;
+    let status = state.lichess.status();
+    assert_eq!(status.bot_games_today, 100);
+    assert!(status.bot_limit_until.is_some());
+    assert_eq!(challenged(&mock).len(), 1);
+    // Kept in `meta`, so a restart remembers it.
+    let kept: quota::Quota = serde_json::from_str(&meta_get(&state, quota::QUOTA_KEY).await.unwrap().unwrap()).unwrap();
+    assert_eq!(kept.today(quota::now_ms()), 100);
+    assert!(kept.games.iter().any(|(id, _)| id == "s1"));
+
+    // Then the next challenge goes out.
+    until("a challenge once the oldest game has aged out", || state.lichess.status().seek.pending.is_some()).await;
+    let status = state.lichess.status();
+    assert_eq!((status.bot_games_today, status.bot_limit_until), (99, None));
+    assert!(seek_notes(&mut events).iter().any(|n| n.starts_with("Played 100 games")));
+    stop(&state).await.unwrap();
+    let _ = std::fs::remove_dir_all(&state.config.data);
+}
+
+#[tokio::test]
+async fn the_count_comes_back_after_a_restart() {
+    let state = runner("http://127.0.0.1:9".into(), false).await;
+    quota::bot_game_started(&state, "a").await;
+    quota::bot_game_started(&state, "a").await;
+    quota::bot_game_started(&state, "b").await;
+    state.lichess.inner.lock().unwrap().quota = quota::Quota::default();
+    resume(&state).await.unwrap();
+    assert_eq!(state.lichess.status().bot_games_today, 2);
     let _ = std::fs::remove_dir_all(&state.config.data);
 }

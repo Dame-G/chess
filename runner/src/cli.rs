@@ -1112,6 +1112,12 @@ fn lichess_text(s: &Value) -> String {
     if !playing.is_empty() {
         out += &format!("\n  playing {}", playing.join(", "));
     }
+    if let Some(n) = s["bot_games_today"].as_u64() {
+        out += &format!("\n  {n}/100 games against bots today");
+        if let Some(until) = s["bot_limit_until"].as_str() {
+            out += &format!(": no bot games until {until} (people's challenges are still taken)");
+        }
+    }
     let seek = &s["seek"];
     match seek["mode"].as_str() {
         Some("once") => out += "\n  looking for a game",

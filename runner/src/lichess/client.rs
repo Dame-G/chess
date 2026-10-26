@@ -16,6 +16,10 @@ pub enum CallError {
     /// HTTP 429: Lichess asks for at least a minute's pause before anything else.
     #[error("Lichess is rate-limiting this account: wait a minute")]
     RateLimited,
+    /// Lichess's daily limit on games between bots (`bot.vsBot.day`): ours when `ours`, else the opponent's. No game
+    /// against a bot (that one, or any when `ours`) can start before `retry_after` has passed.
+    #[error("{message}")]
+    BotDailyLimit { ours: bool, retry_after: Duration, message: String },
     /// HTTP 401: the token is wrong, revoked or expired.
     #[error("Lichess rejected the token")]
     Unauthorized,
@@ -57,23 +61,12 @@ impl Lichess {
         if status.is_success() {
             return Ok(res);
         }
-        Err(match status.as_u16() {
-            429 => CallError::RateLimited,
-            401 => CallError::Unauthorized,
-            code => {
-                let text = res.text().await.unwrap_or_default();
-                // Lichess answers errors as { "error": "..." }, sometimes with a map of field errors.
-                let message = serde_json::from_str::<Value>(&text)
-                    .ok()
-                    .and_then(|v| match &v["error"] {
-                        Value::String(s) => Some(s.clone()),
-                        Value::Null => None,
-                        other => Some(other.to_string()),
-                    })
-                    .unwrap_or_else(|| text.chars().take(200).collect());
-                CallError::Status { status: code, message }
-            }
-        })
+        let code = status.as_u16();
+        if code == 401 {
+            return Err(CallError::Unauthorized);
+        }
+        let text = res.text().await.unwrap_or_default();
+        Err(error_of(code, &text, super::quota::now_ms()))
     }
 
     /// A GET answered with JSON.
@@ -93,6 +86,29 @@ impl Lichess {
     pub async fn stream(&self, path: &str) -> Result<Ndjson, CallError> {
         let req = self.request(reqwest::Method::GET, path).header(reqwest::header::ACCEPT, "application/x-ndjson");
         Ok(Ndjson { res: self.send(req).await?, buffer: Vec::new(), idle: STREAM_IDLE })
+    }
+}
+
+/// What an error answer (`code`, other than 401, with body `text`) means. Lichess answers errors as
+/// `{ "error": "..." }`, sometimes with a map of field errors, and a rate limit with `ratelimit: { key, seconds }`.
+pub fn error_of(code: u16, text: &str, now_ms: i64) -> CallError {
+    let body = serde_json::from_str::<Value>(text).unwrap_or(Value::Null);
+    let message = match &body["error"] {
+        Value::String(s) => s.clone(),
+        Value::Null => text.chars().take(200).collect(),
+        other => other.to_string(),
+    };
+    let key = body["ratelimit"]["key"].as_str().unwrap_or_default();
+    if key == "bot.vsBot.day" || message.contains("games against other bots") {
+        // Ours: "You played 100 games against other bots today, please wait before challenging another bot."
+        // Theirs: "<name> played 100 games against other bots today, please wait until <time> to challenge them."
+        let ours = !message.contains("challenge them");
+        let retry_after = super::quota::retry_after(&body, &message, now_ms);
+        return CallError::BotDailyLimit { ours, retry_after, message };
+    }
+    match code {
+        429 => CallError::RateLimited,
+        code => CallError::Status { status: code, message },
     }
 }
 
@@ -177,6 +193,32 @@ mod tests {
         buffer.extend_from_slice(b"lenge\"}\r\n");
         assert_eq!(take_line(&mut buffer).as_deref(), Some("{\"type\":\"challenge\"}"));
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn tells_the_daily_bot_limit_from_other_errors() {
+        let ours = r#"{"error":"You played 100 games against other bots today, please wait before challenging another bot.","ratelimit":{"key":"bot.vsBot.day","seconds":3000}}"#;
+        match error_of(429, ours, 0) {
+            CallError::BotDailyLimit { ours: true, retry_after, .. } => assert_eq!(retry_after.as_secs(), 3000),
+            e => panic!("{e:?}"),
+        }
+        let theirs = r#"{"error":"Gamma played 100 games against other bots today, please wait until 1970-01-01T01:00:00Z to challenge them.","ratelimit":{"key":"bot.vsBot.day"}}"#;
+        match error_of(400, theirs, 0) {
+            CallError::BotDailyLimit { ours: false, retry_after, message } => {
+                assert_eq!(retry_after.as_secs(), 3600);
+                assert!(message.starts_with("Gamma played"));
+            }
+            e => panic!("{e:?}"),
+        }
+        assert!(matches!(error_of(429, "", 0), CallError::RateLimited));
+        assert!(matches!(
+            error_of(429, r#"{"error":"Too many requests","ratelimit":{"key":"api.x","seconds":5}}"#, 0),
+            CallError::RateLimited
+        ));
+        match error_of(400, r#"{"error":{"clock.limit":["bad"]}}"#, 0) {
+            CallError::Status { status: 400, message } => assert!(message.contains("clock.limit")),
+            e => panic!("{e:?}"),
+        }
     }
 
     #[test]

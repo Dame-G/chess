@@ -2599,7 +2599,8 @@
           "state",
           "playing",
           "settings",
-          "seek"
+          "seek",
+          "bot_games_today"
         ],
         "properties": {
           "account": {
@@ -2612,6 +2613,19 @@
                 "type": "null"
               }
             ]
+          },
+          "bot_games_today": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Games against other bots started in the last 24 hours. Lichess allows 100 in any rolling day.",
+            "minimum": 0
+          },
+          "bot_limit_until": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "While no game against a bot can start (the daily limit is reached), when that ends (ISO 8601, UTC). Bot\nchallenges are neither sent nor accepted until then; people's still are."
           },
           "configured": {
             "type": "boolean",

@@ -10,13 +10,14 @@
 
 pub mod client;
 mod game;
+pub mod quota;
 pub mod rules;
 pub mod seek;
 #[cfg(test)]
 mod tests;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
@@ -82,6 +83,11 @@ pub struct LichessStatus {
     /// Whether the bot is looking for games by challenging other bots, the challenge it is waiting on, and how the
     /// search last went.
     pub seek: SeekStatus,
+    /// Games against other bots started in the last 24 hours. Lichess allows 100 in any rolling day.
+    pub bot_games_today: u32,
+    /// While no game against a bot can start (the daily limit is reached), when that ends (ISO 8601, UTC). Bot
+    /// challenges are neither sent nor accepted until then; people's still are.
+    pub bot_limit_until: Option<String>,
 }
 
 struct Inner {
@@ -95,10 +101,12 @@ struct Inner {
     run: Option<CancellationToken>,
     /// The games being played, by Lichess id, with their records once they have one.
     games: HashMap<String, Option<i64>>,
-    /// Challenges accepted whose games have not started yet: they count against `max_games`.
-    accepted: HashSet<String>,
+    /// Challenges accepted whose games have not started yet, and whether from a bot: they count against `max_games`.
+    accepted: HashMap<String, bool>,
     /// Looking for games.
     seek: seek::Seeking,
+    /// The bot games of the last day, against Lichess's daily limit.
+    quota: quota::Quota,
 }
 
 pub struct Bot {
@@ -127,8 +135,9 @@ impl Bot {
                 error: None,
                 run: None,
                 games: HashMap::new(),
-                accepted: HashSet::new(),
+                accepted: HashMap::new(),
                 seek: seek::Seeking::default(),
+                quota: quota::Quota::default(),
             }),
             seek_wake: tokio::sync::Notify::new(),
         }
@@ -153,6 +162,7 @@ impl Bot {
         let inner = self.inner.lock().unwrap();
         let mut playing: Vec<i64> = inner.games.values().filter_map(|g| *g).collect();
         playing.sort_unstable();
+        let now = quota::now_ms();
         LichessStatus {
             configured: inner.token.is_some(),
             account: inner.account.clone(),
@@ -162,6 +172,8 @@ impl Bot {
             playing,
             settings: inner.settings.clone(),
             seek: inner.seek.status(),
+            bot_games_today: inner.quota.today(now),
+            bot_limit_until: inner.quota.until(now).map(quota::iso),
         }
     }
 
@@ -277,7 +289,7 @@ pub fn build_setting(state: &AppState) -> Option<String> {
 
 fn call_error(e: CallError) -> ApiError {
     match e {
-        CallError::RateLimited => ApiError::too_many_requests(&e.to_string()),
+        CallError::RateLimited | CallError::BotDailyLimit { .. } => ApiError::too_many_requests(&e.to_string()),
         CallError::Status { status: 400..=499, .. } => ApiError::bad_request(&e.to_string()),
         e => ApiError::bad_gateway(&e.to_string()),
     }
@@ -307,6 +319,7 @@ pub async fn resume(state: &Arc<AppState>) -> Result<()> {
     };
     let online = meta_get(state, ONLINE_KEY).await?.as_deref() == Some("true");
     let always = meta_get(state, seek::SEEK_KEY).await?.as_deref() == Some("always");
+    quota::load(state).await?;
     {
         let mut inner = state.lichess.inner.lock().unwrap();
         inner.token = token.filter(|t| !t.is_empty());
@@ -556,6 +569,20 @@ fn user_json(u: &Option<rules::LichessUser>) -> Value {
 }
 
 fn challenge_json(c: &Challenge, direction: &str, decision: &str, reason: Option<&str>) -> Value {
+    challenge_json_with(c, direction, decision, reason, None)
+}
+
+/// Why a bot's challenge is declined while the daily limit on bot games is reached.
+const LIMIT_DETAIL: &str = "Played 100 games against bots today";
+
+/// With `detail`, a few words on why, beyond the decline key.
+fn challenge_json_with(
+    c: &Challenge,
+    direction: &str,
+    decision: &str,
+    reason: Option<&str>,
+    detail: Option<&str>,
+) -> Value {
     let clock = match (&c.time_control.limit, &c.time_control.increment) {
         (Some(limit), Some(increment)) if c.time_control.kind == "clock" => {
             json!({ "initial": limit, "increment": increment })
@@ -573,6 +600,7 @@ fn challenge_json(c: &Challenge, direction: &str, decision: &str, reason: Option
         "clock": clock,
         "decision": decision,
         "reason": reason,
+        "detail": detail,
     })
 }
 
@@ -590,27 +618,38 @@ async fn handle(state: &Arc<AppState>, client: &Lichess, me: &Account, event: &V
                 Some(spec) => resolve_build(state, spec).await?.is_some(),
                 None => false,
             };
-            match rules::decide(&c, &settings, bot.busy(), playable) {
+            let from_bot = c.challenger.as_ref().and_then(|u| u.title.as_deref()) == Some("BOT");
+            // Over the daily limit on bot games, Lichess would refuse to start a bot's challenge: it is declined as
+            // busy instead. People's are still taken.
+            let decision = match rules::decide(&c, &settings, bot.busy(), playable) {
+                Ok(()) if from_bot && bot.bots_limited() => Err((rules::Decline::Later, Some(LIMIT_DETAIL))),
+                Ok(()) => Ok(()),
+                Err(reason) => Err((reason, None)),
+            };
+            match decision {
                 Ok(()) => {
                     match client.post(&format!("/api/challenge/{}/accept", c.id), &[]).await {
                         Ok(_) => {
-                            bot.inner.lock().unwrap().accepted.insert(c.id.clone());
+                            bot.inner.lock().unwrap().accepted.insert(c.id.clone(), from_bot);
                             state.events.emit("lichess.challenge", challenge_json(&c, "incoming", "accepted", None));
                             let name = c.challenger.as_ref().map_or("someone", |u| u.name.as_str());
                             seek::make_room(state, name).await;
+                        }
+                        Err(CallError::BotDailyLimit { ours: true, retry_after, .. }) => {
+                            tracing::info!("lichess: could not accept challenge {}: our bot games are used up", c.id);
+                            quota::limited(state, retry_after).await;
                         }
                         // Withdrawn meanwhile, most likely; `challengeCanceled` says so.
                         Err(e) => tracing::info!("lichess: could not accept challenge {}: {e}", c.id),
                     }
                 }
-                Err(reason) => {
+                Err((reason, detail)) => {
                     let form = [("reason", reason.key().to_owned())];
                     if let Err(e) = client.post(&format!("/api/challenge/{}/decline", c.id), &form).await {
                         tracing::info!("lichess: could not decline challenge {}: {e}", c.id);
                     }
-                    state
-                        .events
-                        .emit("lichess.challenge", challenge_json(&c, "incoming", "declined", Some(reason.key())));
+                    let json = challenge_json_with(&c, "incoming", "declined", Some(reason.key()), detail);
+                    state.events.emit("lichess.challenge", json);
                 }
             }
         }
@@ -635,16 +674,23 @@ async fn handle(state: &Arc<AppState>, client: &Lichess, me: &Account, event: &V
             let Some(id) = game["gameId"].as_str().or(game["id"].as_str()).map(str::to_owned) else {
                 return Ok(());
             };
-            let cancel = {
+            let (cancel, against_bot) = {
                 let mut inner = bot.inner.lock().unwrap();
-                inner.accepted.remove(&id);
+                // A bot's challenge we took, ours to a bot, or an opponent Lichess calls a bot. The game stream's
+                // `gameFull` counts it too (once), whatever the challenge was.
+                let against_bot = inner.accepted.remove(&id) == Some(true)
+                    || inner.seek.pending_id() == Some(id.as_str())
+                    || game["opponent"]["title"].as_str() == Some("BOT");
                 if inner.games.contains_key(&id) {
                     return Ok(());
                 }
                 inner.games.insert(id.clone(), None);
                 // What `DELETE /api/matches/{id}` triggers: the game's task resigns.
-                CancellationToken::new()
+                (CancellationToken::new(), against_bot)
             };
+            if against_bot {
+                quota::bot_game_started(state, &id).await;
+            }
             bot.seek_outcome(state, &id, Outcome::Started);
             tokio::spawn(game::play(state.clone(), id, cancel));
         }
@@ -730,7 +776,15 @@ pub async fn challenge(state: &Arc<AppState>, req: ChallengeRequest) -> Result<C
         ("color", req.color.key().to_owned()),
         ("variant", "standard".to_owned()),
     ];
-    let v = client.post(&format!("/api/challenge/{username}"), &form).await.map_err(call_error)?;
+    let v = match client.post(&format!("/api/challenge/{username}"), &form).await {
+        Ok(v) => v,
+        Err(e) => {
+            if let CallError::BotDailyLimit { ours: true, retry_after, .. } = &e {
+                quota::limited(state, *retry_after).await;
+            }
+            return Err(call_error(e));
+        }
+    };
     let c = if v["challenge"].is_object() { &v["challenge"] } else { &v };
     let id = c["id"].as_str().unwrap_or_default().to_owned();
     Ok(ChallengeSent {
