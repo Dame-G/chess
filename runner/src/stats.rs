@@ -69,10 +69,14 @@ impl Sprt {
         total * (0..5).map(|i| probs[i] * (p1[i].ln() - p0[i].ln())).sum::<f64>()
     }
 
+    /// The decision at this LLR. fastchess stops a match when its own LLR crosses a bound, and it finds the MLE with a
+    /// coarser root finder (ITP to 1e-7) than [`solve`] here, so the two can differ in the last digits: a match it
+    /// stopped right at a bound must read as decided here too, not as undecided (which fails the stage).
     pub fn verdict(&self, llr: f64) -> Verdict {
-        if llr >= self.upper() {
+        const SLACK: f64 = 1e-3;
+        if llr >= self.upper() - SLACK {
             Verdict::Accepted
-        } else if llr <= self.lower() {
+        } else if llr <= self.lower() + SLACK {
             Verdict::Rejected
         } else {
             Verdict::Continue
@@ -204,6 +208,10 @@ mod tests {
         assert_eq!(s.verdict(3.0), Verdict::Accepted);
         assert_eq!(s.verdict(-3.0), Verdict::Rejected);
         assert_eq!(s.verdict(0.0), Verdict::Continue);
+        // Right at a bound, as fastchess stops: decided, whatever the last digits.
+        assert_eq!(s.verdict(s.upper() - 1e-6), Verdict::Accepted);
+        assert_eq!(s.verdict(s.lower() + 1e-6), Verdict::Rejected);
+        assert_eq!(s.verdict(s.upper() - 0.01), Verdict::Continue);
     }
 
     #[test]

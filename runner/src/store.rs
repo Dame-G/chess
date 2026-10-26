@@ -144,14 +144,16 @@ impl Store {
         Ok(Self { conn: Arc::new(Mutex::new(conn)) })
     }
 
-    /// Runs `f` on the connection off the async threads.
+    /// Runs `f` on the connection off the async threads. A closure that panicked (an `expect` on a missing row) fails
+    /// its own call only: the lock is taken back from the poison, and a transaction it left open rolled back as it
+    /// unwound.
     pub async fn call<T, F>(&self, f: F) -> Result<T>
     where
         T: Send + 'static,
         F: FnOnce(&mut Connection) -> Result<T> + Send + 'static,
     {
         let conn = self.conn.clone();
-        tokio::task::spawn_blocking(move || f(&mut conn.lock().unwrap())).await?
+        tokio::task::spawn_blocking(move || f(&mut conn.lock().unwrap_or_else(|e| e.into_inner()))).await?
     }
 }
 
@@ -175,5 +177,12 @@ mod tests {
         let store = Store::memory().unwrap();
         let version: i64 = store.call(|c| Ok(c.pragma_query_value(None, "user_version", |r| r.get(0))?)).await.unwrap();
         assert_eq!(version as usize, MIGRATIONS.len());
+    }
+
+    #[tokio::test]
+    async fn a_call_that_panics_does_not_break_the_next() {
+        let store = Store::memory().unwrap();
+        assert!(store.call(|_| -> Result<()> { panic!("a missing row") }).await.is_err());
+        assert_eq!(store.call(|c| Ok(c.query_row("SELECT 1", [], |r| r.get::<_, i64>(0))?)).await.unwrap(), 1);
     }
 }
