@@ -222,15 +222,6 @@ const machine = computed(() => {
   gap: var(--e-gap-base);
 }
 
-.part-title {
-  margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
 .when {
   white-space: nowrap;
 }

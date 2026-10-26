@@ -23,6 +23,16 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The small uppercase title of a part of a pane: Doing now, Plays, Recent challenges. */
+.part-title {
+  margin: 0;
+  color: var(--e-muted);
+  font: var(--e-type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 /* Panes scroll on their own, so their bars should be quiet. */
 * {
   scrollbar-color: color-mix(in oklab, var(--e-muted) 45%, transparent) transparent;

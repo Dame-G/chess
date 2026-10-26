@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { PhArrowSquareOut } from "@phosphor-icons/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
+import OpponentName from "./OpponentName.vue";
 import { ago } from "../../format";
 import { gameClock, opponentOf, oursOf, oursText, speedName } from "../../lichess";
 import type { MatchSummary } from "../../board/matchText";
@@ -30,11 +31,7 @@ const rows = computed(() =>
           <span v-if="m.status === 'running'" class="dot" aria-hidden="true"></span>{{ oursText[oursOf(m)] }}
         </span>
         <span class="what">
-          <span class="opp">
-            <span v-if="opponentOf(m).player.title" class="title">{{ opponentOf(m).player.title }}</span>
-            <span class="name">{{ opponentOf(m).player.name }}</span>
-            <span v-if="opponentOf(m).player.rating" class="rating num">{{ opponentOf(m).player.rating }}</span>
-          </span>
+          <OpponentName v-bind="opponentOf(m).player" />
           <span class="meta num">
             As {{ opponentOf(m).side === "white" ? "white" : "black" }} · {{ speedName(m.lichess!.speed) }}
             {{ gameClock(m) }} · {{ m.lichess!.rated ? "rated" : "casual" }} · {{ ago(m.created_at) }}
@@ -129,34 +126,10 @@ const rows = computed(() =>
   min-width: 0;
 }
 
-.opp {
-  display: flex;
-  line-height: 1.25rem;
-  align-items: baseline;
-  gap: 0.375rem;
-  min-width: 0;
-}
-
-.name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.title {
-  color: var(--e-primary);
-  font: var(--e-type-small);
-  font-weight: 700;
-}
-
-.rating,
 .meta {
+  overflow: hidden;
   color: var(--e-muted);
   font: var(--e-type-small);
-}
-
-.meta {
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

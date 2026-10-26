@@ -115,51 +115,46 @@ watch(
 /** A touch screen has no keyboard to take shortcuts from. */
 const touch = matchMedia("(hover: none) and (pointer: coarse)").matches;
 
+type Exp = NonNullable<typeof experiments.value.data>[number];
+type Tune = NonNullable<typeof tunes.value.data>[number];
+type Version = NonNullable<typeof versions.value.data>[number];
+const experimentItem = (e: Exp, group: string): CommandItem => ({
+  id: `go:/improve/experiments/${e.id}`,
+  label: e.name,
+  description: `${verdict(e).label} · ${e.dev} vs ${e.base}`,
+  group,
+  keywords: [e.dev, e.base, "test", "experiment"],
+});
+const tuneItem = (t: Tune, group: string): CommandItem => ({
+  id: `go:/improve/tunes/${t.id}`,
+  label: t.name,
+  description: `Tune · ${statusWord(t)} · ${ago(t.created_at)}`,
+  group,
+  keywords: [t.ref, "tune", "spsa"],
+});
+const versionItem = (v: Version, group: string): CommandItem => ({
+  id: `go:${versionPath(v.name)}`,
+  label: v.name,
+  description: `Version · ${v.subject} · ${ago(v.date)}`,
+  group,
+  keywords: [v.sha, "branch", "build", "version"],
+});
+
 const commands = computed<CommandItem[]>(() => {
   const exps = experiments.value.data ?? [];
-  const vers = versions.value.data ?? [];
   const tns = tunes.value.data ?? [];
-  const seen = new Set<string>();
-  const recents: CommandItem[] = [];
-  for (const path of recent.value) {
-    const last = path.split("/").at(-1)!;
-    const id = Number(last);
-    if (path.startsWith("/improve/experiments/")) {
-      const e = exps.find((x) => x.id === id);
-      if (e)
-        recents.push({
-          id: `go:${path}`,
-          label: e.name,
-          description: `${verdict(e).label} · ${e.dev} vs ${e.base}`,
-          group: "Recent",
-          icon: PhClockCounterClockwise,
-          keywords: [e.dev, e.base, "test", "experiment"],
-        });
-    } else if (path.startsWith("/improve/tunes/")) {
-      const t = tns.find((x) => x.id === id);
-      if (t)
-        recents.push({
-          id: `go:${path}`,
-          label: t.name,
-          description: `Tune · ${statusWord(t)} · ${ago(t.created_at)}`,
-          group: "Recent",
-          icon: PhClockCounterClockwise,
-          keywords: [t.ref, "tune", "spsa"],
-        });
-    } else {
-      const v = vers.find((x) => x.name === decodeURIComponent(last));
-      if (v)
-        recents.push({
-          id: `go:${path}`,
-          label: v.name,
-          description: `Version · ${v.subject}`,
-          group: "Recent",
-          icon: PhClockCounterClockwise,
-          keywords: [v.sha, "branch", "build", "version"],
-        });
-    }
-  }
-  for (const r of recents) seen.add(r.id);
+  const vers = versions.value.data ?? [];
+  // What you opened last comes first, found among everything, not only what the lists below show.
+  const everything = [
+    ...exps.map((e) => experimentItem(e, "Tests")),
+    ...tns.map((t) => tuneItem(t, "Tunes")),
+    ...vers.map((v) => versionItem(v, "Versions")),
+  ];
+  const recents = recent.value.flatMap((path) => {
+    const item = everything.find((i) => i.id === `go:${path}`);
+    return item ? [{ ...item, group: "Recent", icon: PhClockCounterClockwise }] : [];
+  });
+  const seen = new Set(recents.map((r) => r.id));
   return [
     ...recents,
     { id: "go:/board", label: "Open the board", group: "Go to", icon: PhGraph, keywords: ["analysis", "analyse"] },
@@ -234,36 +229,14 @@ const commands = computed<CommandItem[]>(() => {
       icon: { system: PhDesktop, light: PhSun, dark: PhMoon }[value],
       keywords: ["colour", "color", "scheme", "appearance", "dark mode", "light mode"],
     })),
-    ...exps
-      .slice(0, 30)
-      .filter((e) => !seen.has(`go:/improve/experiments/${e.id}`))
-      .map((e) => ({
-        id: `go:/improve/experiments/${e.id}`,
-        label: e.name,
-        description: `${verdict(e).label} · ${e.dev} vs ${e.base}`,
-        group: "Tests",
-        keywords: [e.dev, e.base],
-      })),
-    ...tns
-      .slice(0, 15)
-      .filter((t) => !seen.has(`go:/improve/tunes/${t.id}`))
-      .map((t) => ({
-        id: `go:/improve/tunes/${t.id}`,
-        label: t.name,
-        description: `Tune · ${statusWord(t)} · ${ago(t.created_at)}`,
-        group: "Tunes",
-        keywords: [t.ref, "spsa"],
-      })),
-    ...vers
-      .filter((v) => !v.hidden && !seen.has(`go:${versionPath(v.name)}`))
-      .slice(0, 20)
-      .map((v) => ({
-        id: `go:${versionPath(v.name)}`,
-        label: v.name,
-        description: `Version · ${v.subject} · ${ago(v.date)}`,
-        group: "Versions",
-        keywords: [v.sha, "branch", "build"],
-      })),
+    ...[
+      ...exps.slice(0, 30).map((e) => experimentItem(e, "Tests")),
+      ...tns.slice(0, 15).map((t) => tuneItem(t, "Tunes")),
+      ...vers
+        .filter((v) => !v.hidden)
+        .slice(0, 20)
+        .map((v) => versionItem(v, "Versions")),
+    ].filter((i) => !seen.has(i.id)),
   ];
 });
 function run(item: CommandItem) {
@@ -426,7 +399,7 @@ onUnmounted(stop);
   }
 }
 
-/* One slim row: logo, the three places, search. */
+/* One slim row: logo, the places, search. */
 .top {
   --e-control-height: 2.25rem;
   --e-tap: 2.25rem;
@@ -471,7 +444,7 @@ onUnmounted(stop);
     gap: var(--e-gap-base);
   }
 
-  /* Five places fit a phone only when each is as wide as its word. */
+  /* Four places fit a phone only when each is as wide as its word. */
   .top :deep(.e-nav-item) {
     padding-inline: var(--e-gap-snug);
     font-size: var(--e-text-sm);
@@ -482,7 +455,7 @@ onUnmounted(stop);
   }
 }
 
-/* The theme is one command away in Search: on a phone the header keeps room for the five places. */
+/* The theme is one command away in Search: on a phone the header keeps room for the four places. */
 @media (width < 30rem) {
   .top :deep(.theme) {
     display: none;
@@ -515,6 +488,8 @@ onUnmounted(stop);
 .status {
   --status-height: 2rem;
 
+  /* The shell is a grid: without this a long status ("Live match · main vs main · ...") sets the width of the whole page. */
+  min-inline-size: 0;
   min-block-size: 2.5rem;
   padding-block: var(--e-gap-tight);
   box-sizing: border-box;

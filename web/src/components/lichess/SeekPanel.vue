@@ -8,6 +8,7 @@ import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
 import { ESpinner } from "@eos-ui/vue/components/ESpinner";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
+import OpponentName from "./OpponentName.vue";
 import { api } from "../../api/runner";
 import { unwrap } from "../../api/queries";
 import { clockLabel, clockOptions, type LichessStatus, type SeekMode, type SeekState } from "../../lichess";
@@ -153,11 +154,7 @@ onBeforeUnmount(() => {
     </div>
 
     <p v-if="pending" class="pending">
-      <span class="opp">
-        <span v-if="pending.opponent.title" class="title">{{ pending.opponent.title }}</span>
-        <span class="name">{{ pending.opponent.name }}</span>
-        <span class="rating num">{{ pending.opponent.rating }}</span>
-      </span>
+      <OpponentName v-bind="pending.opponent" />
       <span class="meta num">
         {{ clockLabel(pending.clock.initial, pending.clock.increment) }} · {{ pending.rated ? "rated" : "casual" }}
       </span>
@@ -206,15 +203,6 @@ onBeforeUnmount(() => {
   gap: var(--e-gap-base);
 }
 
-.part-title {
-  margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
 .act {
   display: flex;
   flex-wrap: wrap;
@@ -242,23 +230,6 @@ onBeforeUnmount(() => {
   background: color-mix(in oklab, var(--e-border) 25%, transparent);
 }
 
-.opp {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--e-gap-tight);
-}
-
-.title {
-  color: var(--e-primary);
-  font: var(--e-type-small);
-  font-weight: 700;
-}
-
-.name {
-  font-weight: 600;
-}
-
-.rating,
 .meta {
   color: var(--e-muted);
   font: var(--e-type-small);

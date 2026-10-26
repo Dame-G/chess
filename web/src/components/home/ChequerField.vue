@@ -3,37 +3,28 @@ import { onBeforeUnmount, onMounted, ref } from "vue";
 
 // A flat chequerboard drifting slowly along one diagonal, faded to nothing at the edges. It is pure CSS: the board is a
 // tiled gradient on a layer one period larger than the window, and the layer slides by exactly one period per loop, so
-// the loop has no seam and nothing pops in or out. Only a transform animates (on the compositor). It takes no input.
-// The script only pauses the animation while the field is off screen or the tab is hidden.
+// the loop has no seam. Only a transform animates (on the compositor), and nothing responds to input. The script only
+// pauses the animation while the field is off screen or the tab is hidden.
 
 const root = ref<HTMLElement | null>(null);
 const paused = ref(false);
-
-let cleanup: Array<() => void> = [];
+let stop = () => {};
 
 onMounted(() => {
-  const el = root.value;
-  if (!el) return;
   let onScreen = true;
-  const sync = () => {
-    paused.value = !onScreen || document.visibilityState === "hidden";
-  };
+  const sync = () => (paused.value = !onScreen || document.visibilityState === "hidden");
   const io = new IntersectionObserver((entries) => {
     onScreen = entries.some((entry) => entry.isIntersecting);
     sync();
   });
-  io.observe(el);
+  io.observe(root.value!);
   document.addEventListener("visibilitychange", sync);
-  cleanup.push(() => {
+  stop = () => {
     io.disconnect();
     document.removeEventListener("visibilitychange", sync);
-  });
+  };
 });
-
-onBeforeUnmount(() => {
-  cleanup.forEach((fn) => fn());
-  cleanup = [];
-});
+onBeforeUnmount(() => stop());
 </script>
 
 <template>

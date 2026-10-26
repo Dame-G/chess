@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { EStamp } from "@eos-ui/vue/components/EStamp";
+import OpponentName from "./OpponentName.vue";
 import { challengeWho, challenges, clockLabel, declineText, speedName, type ChallengeEvent } from "../../lichess";
 
-const who = (c: ChallengeEvent) => challengeWho(c);
 const meta = (c: ChallengeEvent) => {
   const parts = [
     c.clock ? `${speedName(c.speed)} ${clockLabel(c.clock.initial, c.clock.increment)}` : speedName(c.speed),
@@ -23,11 +23,11 @@ const stamp = {
   <ul v-if="challenges.length" class="log" aria-label="Recent challenges">
     <li v-for="c in challenges" :key="c.id" class="item">
       <span class="what">
-        <span class="opp">
-          <span v-if="who(c)?.title" class="title">{{ who(c)?.title }}</span>
-          <span class="name">{{ who(c)?.name ?? "Someone" }}</span>
-          <span v-if="who(c)?.rating" class="rating num">{{ who(c)?.rating }}</span>
-        </span>
+        <OpponentName
+          :name="challengeWho(c)?.name ?? 'Someone'"
+          :title="challengeWho(c)?.title"
+          :rating="challengeWho(c)?.rating"
+        />
         <span class="meta num">{{ meta(c) }}</span>
       </span>
       <EStamp size="sm" :tone="stamp[c.decision].tone" :label="stamp[c.decision].label" />
@@ -58,27 +58,6 @@ const stamp = {
   min-width: 0;
 }
 
-.opp {
-  display: flex;
-  align-items: baseline;
-  gap: 0.375rem;
-  min-width: 0;
-}
-
-.name {
-  overflow: hidden;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.title {
-  color: var(--e-primary);
-  font: var(--e-type-small);
-  font-weight: 700;
-}
-
-.rating,
 .meta {
   color: var(--e-muted);
   font: var(--e-type-small);

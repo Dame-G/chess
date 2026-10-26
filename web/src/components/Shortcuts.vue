@@ -4,12 +4,12 @@ import { EKbd } from "@eos-ui/vue/components/EKbd";
 
 const open = defineModel<boolean>("open", { default: false });
 
-/** Each group is a place; a shortcut is the keys that do it. Keep in step with the board's `useShortcuts`. */
+/** Each group is a place; a shortcut is the keys that do it. Keep in step with the `useShortcuts` calls of the board, Improve and Versions. */
 const groups = [
   {
     title: "Anywhere",
     rows: [
-      { keys: [["Ctrl", "K"]], does: "Search places, experiments and engines" },
+      { keys: [["Ctrl", "K"]], does: "Search places, tests, tunes and versions" },
       { keys: [["?"]], does: "Show these shortcuts" },
       { keys: [["Esc"]], does: "Close what is open" },
     ],
@@ -18,7 +18,7 @@ const groups = [
     title: "Board",
     rows: [
       { keys: [["←"], ["→"]], does: "Step back and forward" },
-      { keys: [["Home"], ["End"]], does: "Jump to the first and last move" },
+      { keys: [["Home"], ["End"]], does: "Jump to the first and last move (↑ ↓ too)" },
       { keys: [["Space"]], does: "Play or pause" },
       { keys: [["F"]], does: "Flip the board" },
       { keys: [["E"]], does: "Turn the engine on or off" },
@@ -26,6 +26,10 @@ const groups = [
       { keys: [["L"]], does: "Back to the live match (End does too)" },
       { keys: [["M"]], does: "Watch a match" },
     ],
+  },
+  {
+    title: "Improve and Versions",
+    rows: [{ keys: [["↑"], ["↓"]], does: "Open the previous and next in the list" }],
   },
 ] as const;
 </script>
@@ -39,8 +43,8 @@ const groups = [
   >
     <p class="touch">Shortcuts are for a keyboard. On a touch screen every one of these has a button.</p>
     <div class="groups">
-      <section v-for="g in groups" :key="g.title" class="group" :aria-labelledby="`sc-${g.title}`">
-        <h3 :id="`sc-${g.title}`" class="group-title">{{ g.title }}</h3>
+      <section v-for="(g, n) in groups" :key="g.title" class="group" :aria-labelledby="`sc-${n}`">
+        <h3 :id="`sc-${n}`" class="part-title">{{ g.title }}</h3>
         <dl class="rows">
           <div v-for="r in g.rows" :key="r.does" class="row">
             <dt class="keys">
@@ -85,15 +89,6 @@ const groups = [
 .group {
   display: grid;
   gap: var(--e-gap-snug);
-}
-
-.group-title {
-  margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .rows {

@@ -181,13 +181,4 @@ const open = (id: number) => void router.push(`/matches/${id}`);
   display: grid;
   gap: var(--e-gap-base);
 }
-
-.part-title {
-  margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
 </style>
