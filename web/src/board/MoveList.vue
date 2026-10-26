@@ -40,6 +40,9 @@ const rows = computed(() => {
   return out;
 });
 
+/** The one move a Tab stops on: the one on the board, else the first. The arrow keys step the board from anywhere. */
+const stop = computed(() => (props.cursor >= 1 ? props.cursor : 1));
+
 const list = ref<HTMLElement>();
 followCurrent(list, () => props.cursor);
 </script>
@@ -58,6 +61,8 @@ followCurrent(list, () => props.cursor);
       :cur-b="r.pb === cursor"
       :fut-a="r.pa > cursor"
       :fut-b="r.pb > cursor"
+      :stop-a="r.pa === stop"
+      :stop-b="r.pb === stop"
       @go="emit('go', $event)"
     />
     <ESkeleton v-if="loading && !sans.length" :lines="8" label="Loading moves" class="none" />

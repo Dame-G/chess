@@ -45,12 +45,14 @@ const rows = computed(() => {
 
 <template>
   <ol class="lines" aria-label="Engine lines">
-    <li v-for="r in rows" :key="r.id" v-memo="[r.sig]" class="line">
+    <li v-for="(r, row) in rows" :key="r.id" v-memo="[r.sig, row]" class="line">
       <span class="score num" :class="r.white ? 'score--white' : 'score--black'">{{ r.score }}</span>
       <span class="pv">
         <template v-for="(m, i) in r.moves" :key="i">
           <span v-if="m.label" class="no num">{{ m.label }}</span>
-          <EButton size="sm" variant="quiet" @click="emit('play', m.pv)">{{ m.san }}</EButton>
+          <EButton size="sm" variant="quiet" :tabindex="row === 0 && i === 0 ? 0 : -1" @click="emit('play', m.pv)">{{
+            m.san
+          }}</EButton>
         </template>
       </span>
     </li>

@@ -58,8 +58,13 @@ const options = computed(() => {
     description: [b.subject, shortAgo(b.date), props.note?.(b)].filter(Boolean).join(" · "),
     group: upstream(b) ? "Upstream" : "This fork",
   }));
-  if (model.value && !kept.value.some((b) => b.name === model.value) && state.value.status !== "pending")
-    out.unshift({ value: model.value, label: model.value, description: known.value ? "" : "commit or tag", group: "" });
+  if (model.value && !kept.value.some((b) => b.name === model.value))
+    out.unshift({
+      value: model.value,
+      label: model.value,
+      description: known.value || state.value.status === "pending" ? "" : "commit or tag",
+      group: "",
+    });
   return out;
 });
 // Groups are headings only when both kinds are listed.

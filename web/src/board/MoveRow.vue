@@ -18,6 +18,9 @@ defineProps<{
   curB: boolean;
   futA: boolean;
   futB: boolean;
+  /** Whether each move is the list's one tab stop: the others are reached with the arrow keys, which step the board. */
+  stopA: boolean;
+  stopB: boolean;
 }>();
 const emit = defineEmits<{ go: [ply: number] }>();
 </script>
@@ -30,6 +33,7 @@ const emit = defineEmits<{ go: [ply: number] }>();
     size="sm"
     variant="quiet"
     class="mv"
+    :tabindex="stopA ? 0 : -1"
     :aria-current="curA ? 'step' : undefined"
     :class="{ future: futA }"
     :data-ply="pa"
@@ -44,6 +48,7 @@ const emit = defineEmits<{ go: [ply: number] }>();
     size="sm"
     variant="quiet"
     class="mv"
+    :tabindex="stopB ? 0 : -1"
     :aria-current="curB ? 'step' : undefined"
     :class="{ future: futB }"
     :data-ply="pb"

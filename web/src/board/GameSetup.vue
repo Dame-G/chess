@@ -11,7 +11,6 @@ import { EIconButton } from "@eos-ui/vue/components/EIconButton";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
-import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { api } from "../api/runner";
 import { unwrap, useJobs, useMatches, useVersions, type Branch } from "../api/queries";
 import type { components } from "../api/schema";
@@ -82,8 +81,8 @@ async function build(name: string) {
 // You against a build.
 const colour = stored("play.colour", "random");
 const colours = [
-  { value: "white", label: "White" },
   { value: "random", label: "Random" },
+  { value: "white", label: "White" },
   { value: "black", label: "Black" },
 ];
 const clocks = [
@@ -95,6 +94,14 @@ const clocks = [
 ];
 const clock = stored("play.clock", "5+3");
 const casual = stored("play.casual", false);
+const timings = [
+  { value: "clock", label: "Clock" },
+  { value: "move", label: "Per move" },
+];
+const timing = computed({
+  get: () => (casual.value ? "move" : "clock"),
+  set: (v) => (casual.value = v === "move"),
+});
 const thinks = [
   { value: "500", label: "0.5 s" },
   { value: "1000", label: "1 s" },
@@ -105,10 +112,11 @@ const think = stored("play.think", "1000");
 
 // Two builds.
 const pace = stored("match.preset", "blitz");
+// Named by the clock itself: "bullet" and "rapid" mean other things on Lichess.
 const paces = [
-  { value: "bullet", label: "Bullet" },
-  { value: "blitz", label: "Blitz" },
-  { value: "rapid", label: "Rapid" },
+  { value: "bullet", label: "1+0.01" },
+  { value: "blitz", label: "10+0.1" },
+  { value: "rapid", label: "60+0.6" },
   { value: "custom", label: "Custom" },
 ];
 const paceClocks: Record<string, [number, number]> = { bullet: [1, 0.01], blitz: [10, 0.1], rapid: [60, 0.6] };
@@ -123,6 +131,14 @@ const paceHint = computed(() => `${paceSeconds.value} s each, plus ${paceIncreme
 // Where it starts.
 const away = computed(() => props.fen !== "startpos" || props.moves.length > 0);
 const fromBoard = stored("play.fromBoard", true);
+const playStart = computed({
+  get: () => (fromBoard.value ? "position" : "start"),
+  set: (v) => (fromBoard.value = v === "position"),
+});
+const playStartOptions = [
+  { value: "start", label: "Start" },
+  { value: "position", label: "Board" },
+];
 const chosenStart = stored("match.opening", "start");
 const startOptions = computed(() => [
   { value: "start", label: "Start" },
@@ -211,17 +227,24 @@ function swap() {
     <template v-if="mode === 'play'">
       <BranchPicker v-model="opponent" label="Play against" size="sm" :note="note" />
       <ESegmented v-model="colour" label="You play" size="sm" :options="colours" />
-      <ESegmented v-model="clock" label="Clock (minutes + seconds)" size="sm" :options="clocks" :disabled="casual" />
-      <ESwitch v-model="casual" label="No clock" />
+      <ESegmented v-model="timing" label="Time" size="sm" :options="timings" />
+      <ESegmented v-if="!casual" v-model="clock" label="Clock (minutes + seconds)" size="sm" :options="clocks" />
       <ESegmented
-        v-if="casual"
+        v-else
         v-model="think"
         label="Engine thinks per move"
         size="sm"
         :options="thinks"
         hint="You can take moves back in a game without a clock."
       />
-      <ESwitch v-if="away" v-model="fromBoard" label="Start from the board as it stands" />
+      <ESegmented
+        v-if="away"
+        v-model="playStart"
+        label="Opening"
+        size="sm"
+        :options="playStartOptions"
+        :hint="playStart === 'position' ? 'From the board as it stands.' : 'From the starting position.'"
+      />
     </template>
 
     <template v-else>

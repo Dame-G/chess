@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { gameClock, oursOf, oursText } from "../lichess";
-import { matchTimeText, youResult, type MatchSummary } from "./matchText";
+import { ago } from "../format";
+import { gameClock } from "../lichess";
+import { matchTimeText, movesText, sideScore, youSide, type MatchSummary, type Side } from "./matchText";
 
 defineProps<{
   matches: MatchSummary[];
@@ -13,21 +14,25 @@ const emit = defineEmits<{ open: [id: number] }>();
 /** The time control, and how long it went; a match still being played has no count worth showing. */
 const detail = (m: MatchSummary) => {
   const clock = m.lichess ? `Lichess · ${gameClock(m)}` : matchTimeText(m.time);
-  return m.status === "running"
-    ? clock
-    : `${clock} · ${Math.ceil(m.plies / 2)} moves${m.status === "aborted" ? " · stopped" : ""}`;
+  return m.status === "running" ? clock : `${clock} · ${movesText(m.plies)}`;
 };
-/** A local match reads as its score; a Lichess game as how it went for our bot. */
-const shown = (m: MatchSummary) =>
-  m.white.human || m.black.human
-    ? youResult(m)
-    : m.lichess
-      ? oursText[oursOf(m)]
-      : m.result === "1/2-1/2"
-        ? "½–½"
-        : m.result === "*"
-          ? ""
-          : m.result.replace("-", "–");
+
+/** The side of ours in a game with a person or a bot on the other side: you, or the build that plays on Lichess. */
+const ours = (m: MatchSummary): Side | undefined => youSide(m) ?? m.lichess?.our_side;
+/**
+ * One rule for the result: a game that has a side of ours (yours, or our bot's on Lichess) reads `Won`, `Lost` or
+ * `Draw`; a match of two engines reads as a score (`1–0`, `½–½`, `0–1`). A game that did not finish is `Stopped`.
+ */
+const shown = (m: MatchSummary) => {
+  if (m.status === "aborted" || m.result === "*") return "Stopped";
+  const mine = ours(m);
+  if (!mine) return `${sideScore(m.result, "white")}–${sideScore(m.result, "black")}`;
+  const score = sideScore(m.result, mine);
+  return score === "1" ? "Won" : score === "0" ? "Lost" : "Draw";
+};
+/** Who a side is: our bot on Lichess is `Dameless (main)`, not just the build's ref. */
+const nameOf = (m: MatchSummary, side: Side) =>
+  m.lichess && m[side].build != null ? `Dameless (${m[side].name})` : m[side].name;
 /** Which side won, for the row to set the winner in bold and the loser back. */
 const won = (m: MatchSummary, side: "white" | "black") =>
   m.result === (side === "white" ? "1-0" : "0-1") ? "win" : m.result === "*" || m.result === "1/2-1/2" ? "" : "lose";
@@ -44,21 +49,24 @@ const won = (m: MatchSummary, side: "white" | "black") =>
       block
       class="row"
       :aria-current="m.id === current ? 'true' : undefined"
-      :aria-label="`${m.white.name} against ${m.black.name}${m.status === 'running' ? ', live' : m.status === 'aborted' ? ', stopped' : ''}`"
+      :aria-label="`${nameOf(m, 'white')} against ${nameOf(m, 'black')}${m.status === 'running' ? ', live' : m.status === 'aborted' ? ', stopped' : ''}`"
       @click="emit('open', m.id)"
     >
       <span class="what">
         <span class="names">
-          <span :class="['n', won(m, 'white')]">{{ m.white.name }}</span>
+          <span :class="['n', won(m, 'white')]">{{ nameOf(m, "white") }}</span>
           <span class="vs">vs</span>
-          <span :class="['n', won(m, 'black')]">{{ m.black.name }}</span>
+          <span :class="['n', won(m, 'black')]">{{ nameOf(m, "black") }}</span>
         </span>
         <span class="tc num">{{ detail(m) }}</span>
       </span>
       <span v-if="m.status === 'running'" class="res res--live num"
         ><span class="dot" aria-hidden="true"></span>Live</span
       >
-      <span v-else class="res num">{{ shown(m) }}</span>
+      <span v-else class="res num">
+        {{ shown(m) }}
+        <span class="when">{{ ago(m.created_at) }}</span>
+      </span>
     </EButton>
   </div>
 </template>
@@ -98,11 +106,19 @@ const won = (m: MatchSummary, side: "white" | "black") =>
 
 .res {
   justify-self: end;
+  text-align: end;
   line-height: 1.25rem;
   color: var(--e-muted);
   font-size: var(--e-text-sm);
   font-weight: 700;
   white-space: nowrap;
+}
+
+.when {
+  display: block;
+  color: var(--e-muted);
+  font: var(--e-type-small);
+  font-weight: 400;
 }
 
 .res--live {
