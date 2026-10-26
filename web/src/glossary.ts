@@ -64,6 +64,44 @@ export const glossary = {
     term: "Build",
     text: "A compiled engine from one commit of a version (a branch). Each is built once and kept.",
   },
+  accuracy: {
+    term: "Accuracy",
+    text: "Lichess's measure of how close a player's moves were to the engine's best, from 0 to 100. Each move scores by how many winning chances it gave away; the game's accuracy weighs the moves where the position was sharpest. Here an engine of ours searches every position.",
+  },
+  acpl: {
+    term: "Average centipawn loss",
+    text: "On average, how much worse than the engine's best move each move was, in hundredths of a pawn. Lower is better; 20 is strong club play, and a master is under 15.",
+  },
+  performance: {
+    term: "Performance",
+    text: "The rating that would have scored this result against these opponents: their average rating plus 400 × (wins − losses) ÷ games.",
+  },
+  brilliant: {
+    term: "Brilliant !!",
+    text: "The engine's best move, or nearly, that gives up at least two pawns of material along its best line, when you were not already winning and are fine afterwards. A real sacrifice that works.",
+  },
+  great: {
+    term: "Great !",
+    text: "The only move that holds: the engine's best, while every other move gives away at least 15 points of winning chance. Not a simple recapture.",
+  },
+  best: { term: "Best ★", text: "The move the engine would have played." },
+  excellent: { term: "Excellent", text: "Within 2 points of winning chance of the best move." },
+  good: { term: "Good", text: "Not the best, but not an inaccuracy either." },
+  book: { term: "Book", text: "A move still inside the named opening." },
+  inaccuracy: {
+    term: "Inaccuracy ?!",
+    text: "Lichess's judgement: the move gave up 5 points of winning chance or more.",
+  },
+  mistake: { term: "Mistake ?", text: "Lichess's judgement: the move gave up 10 points of winning chance or more." },
+  blunder: { term: "Blunder ??", text: "Lichess's judgement: the move gave up 15 points of winning chance or more." },
+  miss: {
+    term: "Miss",
+    text: "A mistake or blunder right after the opponent's own, when you were clearly better: the chance was let go, but the game was not lost.",
+  },
+  timeTrouble: {
+    term: "Time-trouble blunders",
+    text: "Blunders played with less than a tenth of the starting clock left.",
+  },
 } as const;
 
 export type GlossaryKey = keyof typeof glossary;

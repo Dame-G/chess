@@ -140,3 +140,85 @@ export const useTunables = (build: MaybeRefOrGetter<number>) =>
     staleTime: 60_000,
     query: () => unwrap(api.GET("/api/builds/{id}/tunables", { params: { path: { id: toValue(build) } } })),
   });
+
+export type PlayerStats = components["schemas"]["PlayerStats"];
+export type Moment = components["schemas"]["Moment"];
+
+/** Who to compare, over which games. The address keeps it (`compare.ts`). */
+export interface CompareQuery {
+  players: readonly string[];
+  speeds: readonly string[];
+  rated: boolean;
+  limit: number;
+}
+
+/**
+ * Players side by side over their reviewed games. The last answer stays on screen while a new one loads, so changing a
+ * filter does not blank the sheet. `review.progress` refreshes it (see `cache.ts`).
+ */
+export const useCompare = (query: MaybeRefOrGetter<CompareQuery>) =>
+  useQuery({
+    key: () => {
+      const q = toValue(query);
+      return ["compare", q.players.join(","), q.speeds.join(","), q.rated, q.limit];
+    },
+    enabled: () => toValue(query).players.length > 0,
+    placeholderData: (previous) => previous,
+    query: () => {
+      const q = toValue(query);
+      return unwrap(
+        api.GET("/api/compare", {
+          params: {
+            query: {
+              players: q.players.join(","),
+              speeds: q.speeds.length ? q.speeds.join(",") : undefined,
+              rated: q.rated ? true : undefined,
+              limit: q.limit,
+            },
+          },
+        }),
+      );
+    },
+  });
+
+/** A Lichess player's profile, as the runner caches it. 404 (an error) when Lichess has no such player. */
+export const fetchLichessPlayer = (username: string) =>
+  unwrap(api.GET("/api/lichess/players/{username}", { params: { path: { username } } }));
+
+export const useLichessPlayer = (username: MaybeRefOrGetter<string>) =>
+  useQuery({
+    key: () => ["lichess-player", toValue(username).toLowerCase()],
+    enabled: () => toValue(username) !== "",
+    staleTime: 60_000,
+    query: () => fetchLichessPlayer(toValue(username)),
+  });
+
+/** Lichess's leaderboard at a speed. The runner keeps it ten minutes. */
+export const useTopPlayers = (perf: MaybeRefOrGetter<string>, nb = 10) =>
+  useQuery({
+    key: () => ["lichess", "top", toValue(perf), nb],
+    staleTime: 300_000,
+    query: () => unwrap(api.GET("/api/lichess/players/top", { params: { query: { perf: toValue(perf), nb } } })),
+  });
+
+/** Fetches a player's newest public games (a job beside the queue). */
+export const importPlayerGames = (username: string, max: number, filters: Pick<CompareQuery, "speeds" | "rated">) =>
+  unwrap(
+    api.POST("/api/lichess/players/{username}/import", {
+      params: { path: { username } },
+      body: { max, speeds: [...filters.speeds], rated: filters.rated ? true : undefined },
+    }),
+  );
+
+/** Queues a review of the newest games of `me`, `bot` or an imported player that are not reviewed yet. */
+export const reviewPlayerGames = (who: string, limit: number, filters: Pick<CompareQuery, "speeds" | "rated">) =>
+  unwrap(
+    api.POST("/api/reviews", {
+      body: {
+        ...(who === "me" || who === "bot" ? { account: who } : { player: who }),
+        limit,
+        speeds: [...filters.speeds],
+        rated: filters.rated ? true : undefined,
+      },
+    }),
+  );

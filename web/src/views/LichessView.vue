@@ -12,6 +12,7 @@ import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import Workspace from "../components/Workspace.vue";
+import IdentitySwitch from "../components/compare/IdentitySwitch.vue";
 import BotSettings from "../components/lichess/BotSettings.vue";
 import ChallengeForm from "../components/lichess/ChallengeForm.vue";
 import ChallengeLog from "../components/lichess/ChallengeLog.vue";
@@ -37,17 +38,6 @@ const { state: meState } = useLichessMe();
 
 // ---- Two identities: you, and your bot. The choice lives in the address (`?as=bot`).
 const who = computed<"me" | "bot">(() => (route.query.as === "bot" ? "bot" : "me"));
-const identities = [
-  { value: "me", label: "You" },
-  { value: "bot", label: "Your bot" },
-];
-const pick = computed({
-  get: () => who.value,
-  set: (v: string) => {
-    const query = { ...route.query, as: v === "bot" ? "bot" : undefined };
-    void router.replace({ query });
-  },
-});
 
 // ---- Games: both accounts, or one.
 const filter = stored<GameFilter>("lichess.games", "all");
@@ -154,7 +144,7 @@ const open = (id: number) => void router.push(`/matches/${id}`);
     </template>
 
     <template #stage-head>
-      <ESegmented v-model="pick" label="Account" hide-label size="sm" :options="identities" />
+      <IdentitySwitch />
       <template v-if="who === 'bot' && bot && account">
         <ELink :href="`https://lichess.org/@/${botName}`" external class="identity">
           {{ botName }}

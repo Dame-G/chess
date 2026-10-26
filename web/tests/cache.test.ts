@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyRunnerEvent, GAMES_EVERY_MS } from "../src/api/cache";
+import { applyRunnerEvent, GAMES_EVERY_MS, REVIEW_EVERY_MS } from "../src/api/cache";
 import type { Version } from "../src/api/queries";
 
 /** A query cache that is only a map, recording what was refetched ("*" for everything). */
@@ -120,6 +120,33 @@ describe("applyRunnerEvent", () => {
       // The end: the detail and the games are fetched as the runner has them.
       applyRunnerEvent(c, { id: 4, kind: "test.progress", data: progress(8, false) });
       expect(c.refetched.slice(2)).toEqual(['["test",9]', '["games",9]']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("reviews and compared players", () => {
+  it("refreshes the comparison and the game lists when a review or a player import ends", () => {
+    const keys = ['["jobs"]', '["compare"]', '["lichess-player"]', '["matches"]'];
+    for (const kind of ["review", "lichess_player_import"])
+      for (const status of ["done", "failed", "cancelled"])
+        expect(after("job.updated", { id: 9, status, spec: { kind } }).refetched).toEqual(expect.arrayContaining(keys));
+    expect(after("job.updated", { id: 9, status: "running", spec: { kind: "review" } }).refetched).toEqual([
+      '["jobs"]',
+    ]);
+  });
+
+  it("follows a review game by game, at most every few seconds", () => {
+    vi.useFakeTimers();
+    try {
+      const both = ['["compare"]', '["matches"]'];
+      vi.setSystemTime(1_000_000);
+      expect(after("review.progress", { job: 9, done: 1, total: 20 }).refetched).toEqual(both);
+      vi.setSystemTime(1_000_000 + REVIEW_EVERY_MS - 1);
+      expect(after("review.progress", { job: 9, done: 2, total: 20 }).refetched).toEqual([]);
+      vi.setSystemTime(1_000_000 + REVIEW_EVERY_MS);
+      expect(after("review.progress", { job: 9, done: 3, total: 20 }).refetched).toEqual(both);
     } finally {
       vi.useRealTimers();
     }

@@ -47,6 +47,14 @@ export const router = createRouter({
       meta: { title: "Lichess", workspace: true },
     },
 
+    // Players side by side over their reviewed games. The address keeps who and which games (?players=me,name).
+    {
+      path: "/lichess/compare",
+      name: "compare",
+      component: () => import("./views/CompareView.vue"),
+      meta: { title: "Compare", workspace: true },
+    },
+
     // Old addresses keep their query at the new path.
     { path: "/analysis", redirect: moved(() => "/board") },
     { path: "/lab", redirect: moved(() => "/improve") },

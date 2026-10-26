@@ -57,6 +57,10 @@ function runner(input: RequestInfo | URL): Promise<Response> {
     [/^\/api\/lichess$/, () => json(lichess)],
     [/^\/api\/lichess\/bots$/, () => json("bots.json")],
     [/^\/api\/lichess\/me$/, () => json(lichessMe)],
+    [/^\/api\/matches\/\d+\/review$/, () => new Response(JSON.stringify({ error: "no review" }), { status: 404 })],
+    [/^\/api\/compare$/, () => json("compare.json")],
+    [/^\/api\/lichess\/players\/top$/, () => json("top-players.json")],
+    [/^\/api\/lichess\/players\/cutemouse83$/, () => json("player-cutemouse83.json")],
   ];
   const hit = routes.find(([pattern]) => pattern.test(path));
   if (!hit) missing.push(`${path}`);
@@ -104,6 +108,8 @@ const routes: [string, string, string?, string?][] = [
   ["/lichess", "challenge:write", "lichess-connected.json", "lichess-me.json"],
   ["/lichess", "Playing on Lichess · vs Stockfish-Bot", "lichess-connected.json", "lichess-me-playing.json"],
   ["/board", "Analysis is off", "lichess-connected.json", "lichess-me-playing.json"],
+  ["/lichess/compare", "Moves per game", "lichess-connected.json", "lichess-me.json"],
+  ["/lichess/compare?players=me,cutemouse83", "Review 9 games", "lichess-connected.json", "lichess-me.json"],
   ["/lichess?as=bot", "Create the token"],
   ["/lichess?as=bot", "is not a bot account yet", "lichess-person.json"],
   ["/lichess?as=bot", "Stockfish-Bot", "lichess-connected.json"],

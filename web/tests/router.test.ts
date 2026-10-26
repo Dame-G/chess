@@ -37,5 +37,6 @@ describe("old addresses", () => {
   it("leaves current addresses alone", () => {
     expect(land("/versions/spsa%2Ftunables")).toBe("/versions/spsa%2Ftunables");
     expect(land("/matches/7")).toBe("/matches/7");
+    expect(land("/lichess/compare?players=me,Magnus")).toBe("/lichess/compare?players=me,Magnus");
   });
 });

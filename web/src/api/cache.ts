@@ -29,9 +29,21 @@ export function applyRunnerEvent(cache: RunnerCache, { kind, data }: RunnerEvent
       if (status === "done") refetch(["builds"], ["branches"], ["versions"]);
       // An import made matches.
       if (status === "done" && spec?.kind === "lichess_import") refetch(["matches"]);
+      // An imported player has games to compare, a finished review has numbers to show: a cancelled or failed one
+      // may have done part of the work.
+      else if (
+        (spec?.kind === "lichess_player_import" || spec?.kind === "review") &&
+        status !== "queued" &&
+        status !== "running"
+      )
+        refetch(["compare"], ["lichess-player"], ["matches"]);
       else if (status === "failed") refetch(["versions"]);
       break;
     }
+    // A review reports after every game: the comparison and the game lists follow at most every few seconds.
+    case "review.progress":
+      applyReviewProgress(cache);
+      break;
     case "versions.changed":
       refetch(["versions"], ["branches"], ["builds"]);
       break;
@@ -82,6 +94,18 @@ export function applyRunnerEvent(cache: RunnerCache, { kind, data }: RunnerEvent
       break;
     }
   }
+}
+
+/** How often a running review refreshes the comparison and the game lists: it reports once per game. */
+export const REVIEW_EVERY_MS = 4_000;
+let reviewFetched = -Infinity;
+
+function applyReviewProgress(cache: RunnerCache) {
+  const now = Date.now();
+  if (now - reviewFetched < REVIEW_EVERY_MS) return;
+  reviewFetched = now;
+  cache.invalidateQueries({ key: ["compare"] });
+  cache.invalidateQueries({ key: ["matches"] });
 }
 
 /** How often a running test's game list is fetched again: the runner reads its whole PGN for it. */
