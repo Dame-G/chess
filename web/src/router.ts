@@ -1,4 +1,10 @@
-import { createRouter, createWebHistory } from "vue-router";
+import { createRouter, createWebHistory, type RouteLocation } from "vue-router";
+
+/** A redirect from an old address: the new path, with the query kept. */
+const moved = (path: (params: Record<string, string>) => string) => (to: RouteLocation) => ({
+  path: path(to.params as Record<string, string>),
+  query: to.query,
+});
 
 const board = () => import("./views/BoardView.vue");
 const improve = () => import("./views/ImproveView.vue");
@@ -41,21 +47,22 @@ export const router = createRouter({
       meta: { title: "Lichess", workspace: true },
     },
 
-    // Old addresses.
-    { path: "/analysis", redirect: (to) => ({ path: "/board", query: to.query }) },
-    { path: "/lab", redirect: (to) => ({ path: "/improve", query: to.query }) },
-    { path: "/lab/:id", redirect: (to) => ({ path: `/improve/experiments/${String(to.params.id)}`, query: to.query }) },
-    { path: "/experiments", redirect: "/improve" },
-    { path: "/experiments/:id", redirect: (to) => `/improve/experiments/${String(to.params.id)}` },
+    // Old addresses keep their query at the new path.
+    { path: "/analysis", redirect: moved(() => "/board") },
+    { path: "/lab", redirect: moved(() => "/improve") },
+    { path: "/lab/:id", redirect: moved((p) => `/improve/experiments/${p.id}`) },
+    { path: "/experiments", redirect: moved(() => "/improve") },
+    { path: "/experiments/:id", redirect: moved((p) => `/improve/experiments/${p.id}`) },
     // A new tune was ?new=1 on the old tune page: it is ?new=tune here.
     {
       path: "/tune",
       redirect: (to) => ({ path: "/improve", query: to.query.new ? { ...to.query, new: "tune" } : to.query }),
     },
-    { path: "/tune/:id", redirect: (to) => ({ path: `/improve/tunes/${String(to.params.id)}`, query: to.query }) },
-    { path: "/engines", redirect: (to) => ({ path: "/versions", query: to.query }) },
-    { path: "/engines/:id", redirect: (to) => ({ path: `/versions/${String(to.params.id)}`, query: to.query }) },
-    { path: "/tests/:id/games/:index", redirect: (to) => `/games/${String(to.params.id)}/${String(to.params.index)}` },
+    { path: "/tune/:id", redirect: moved((p) => `/improve/tunes/${p.id}`) },
+    { path: "/engines", redirect: moved(() => "/versions") },
+    // An old engine was a build number; the Versions view finds its branch.
+    { path: "/engines/:id", redirect: moved((p) => `/versions/${p.id}`) },
+    { path: "/tests/:id/games/:index", redirect: moved((p) => `/games/${p.id}/${p.index}`) },
     { path: "/runner", redirect: "/" },
     { path: "/:rest(.*)*", redirect: "/" },
   ],
