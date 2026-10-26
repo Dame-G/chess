@@ -1,0 +1,16 @@
+# One grouped pull request per ecosystem a month, so dependencies stay current without a stream of small PRs. Security
+# updates come as soon as an advisory is published, whatever the schedule.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule: { interval: monthly }
+    groups: { cargo: { patterns: ["*"] } }
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: monthly }
+    groups: { npm: { patterns: ["*"] } }
+  - package-ecosystem: github-actions
+    directories: ["/", "/.github/actions/*"]
+    schedule: { interval: monthly }
+    groups: { actions: { patterns: ["*"] } }

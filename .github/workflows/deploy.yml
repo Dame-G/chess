@@ -18,9 +18,10 @@ permissions:
 
 jobs:
   deploy:
-    # Only CI runs of pushes to this repository's main: a pull request from a fork's own `main` also matches `branches`.
+    # Only CI runs of pushes to this repository's main (a pull request from a fork's own `main` also matches
+    # `branches`), or a manual run on main: a manual run on another branch would publish it.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
