@@ -33,7 +33,7 @@ pub enum TuneCommand {
         /// Hash in MiB instead of the preset's.
         #[arg(long)]
         hash: Option<u32>,
-        /// Games at once. Default: the machine's threads less two.
+        /// Games at once. Default: the machine's threads less two, divided by the preset's threads per engine.
         #[arg(long)]
         concurrency: Option<u32>,
         #[arg(long)]

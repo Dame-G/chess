@@ -302,7 +302,7 @@ pub fn build_setting(state: &AppState) -> Option<String> {
 fn call_error(e: CallError) -> ApiError {
     match e {
         CallError::RateLimited | CallError::BotDailyLimit { .. } => ApiError::too_many_requests(&e.to_string()),
-        CallError::Status { status: 400..=499, .. } => ApiError::bad_request(&e.to_string()),
+        CallError::Unauthorized | CallError::Status { status: 400..=499, .. } => ApiError::bad_request(&e.to_string()),
         e => ApiError::bad_gateway(&e.to_string()),
     }
 }
@@ -580,21 +580,11 @@ fn user_json(u: &Option<rules::LichessUser>) -> Value {
     }
 }
 
-fn challenge_json(c: &Challenge, direction: &str, decision: &str, reason: Option<&str>) -> Value {
-    challenge_json_with(c, direction, decision, reason, None)
-}
-
 /// Why a bot's challenge is declined while the daily limit on bot games is reached.
 const LIMIT_DETAIL: &str = "Played 100 games against bots today";
 
-/// With `detail`, a few words on why, beyond the decline key.
-fn challenge_json_with(
-    c: &Challenge,
-    direction: &str,
-    decision: &str,
-    reason: Option<&str>,
-    detail: Option<&str>,
-) -> Value {
+/// A `lichess.challenge` event. `reason` is the decline key; `detail`, a few words on why beyond it.
+fn challenge_json(c: &Challenge, direction: &str, decision: &str, reason: Option<&str>, detail: Option<&str>) -> Value {
     let clock = match (&c.time_control.limit, &c.time_control.increment) {
         (Some(limit), Some(increment)) if c.time_control.kind == "clock" => {
             json!({ "initial": limit, "increment": increment })
@@ -643,7 +633,9 @@ async fn handle(state: &Arc<AppState>, client: &Lichess, me: &Account, event: &V
                     match client.post(&format!("/api/challenge/{}/accept", c.id), &[]).await {
                         Ok(_) => {
                             bot.inner.lock().unwrap().accepted.insert(c.id.clone(), (from_bot, Instant::now()));
-                            state.events.emit("lichess.challenge", challenge_json(&c, "incoming", "accepted", None));
+                            state
+                                .events
+                                .emit("lichess.challenge", challenge_json(&c, "incoming", "accepted", None, None));
                             let name = c.challenger.as_ref().map_or("someone", |u| u.name.as_str());
                             seek::make_room(state, name).await;
                         }
@@ -660,7 +652,7 @@ async fn handle(state: &Arc<AppState>, client: &Lichess, me: &Account, event: &V
                     if let Err(e) = client.post(&format!("/api/challenge/{}/decline", c.id), &form).await {
                         tracing::info!("lichess: could not decline challenge {}: {e}", c.id);
                     }
-                    let json = challenge_json_with(&c, "incoming", "declined", Some(reason.key()), detail);
+                    let json = challenge_json(&c, "incoming", "declined", Some(reason.key()), detail);
                     state.events.emit("lichess.challenge", json);
                 }
             }
@@ -669,7 +661,7 @@ async fn handle(state: &Arc<AppState>, client: &Lichess, me: &Account, event: &V
             let c: Challenge = serde_json::from_value(event["challenge"].clone()).unwrap_or_default();
             bot.inner.lock().unwrap().accepted.remove(&c.id);
             let direction = if c.challenger.as_ref().is_some_and(|u| u.id == me.id) { "outgoing" } else { "incoming" };
-            state.events.emit("lichess.challenge", challenge_json(&c, direction, "canceled", None));
+            state.events.emit("lichess.challenge", challenge_json(&c, direction, "canceled", None, None));
             if direction == "outgoing" {
                 bot.seek_outcome(state, &c.id, Outcome::Canceled);
             }
@@ -678,7 +670,7 @@ async fn handle(state: &Arc<AppState>, client: &Lichess, me: &Account, event: &V
             // Someone declined one of ours.
             let c: Challenge = serde_json::from_value(event["challenge"].clone()).unwrap_or_default();
             let reason = event["challenge"]["declineReasonKey"].as_str().map(str::to_owned);
-            state.events.emit("lichess.challenge", challenge_json(&c, "outgoing", "declined", reason.as_deref()));
+            state.events.emit("lichess.challenge", challenge_json(&c, "outgoing", "declined", reason.as_deref(), None));
             bot.seek_outcome(state, &c.id, Outcome::Declined(reason));
         }
         "gameStart" => {

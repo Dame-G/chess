@@ -457,7 +457,7 @@ async fn update(state: &AppState, id: i64, f: impl FnOnce(&Connection) -> Result
         .store
         .call(move |c| {
             f(c)?;
-            Ok(get(c, id)?.expect("tune exists"))
+            get(c, id)?.context("no such tune")
         })
         .await?;
     announce(state, &t);

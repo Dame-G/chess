@@ -3,8 +3,8 @@
 //! `match.ended`). Like live analysis it runs outside the job queue, so a long experiment never holds it up. One match
 //! runs at a time, on two search threads. Every game is stored: finished ones replay, and `/pgn` exports them.
 //!
-//! The game itself is a plain record ([`Match`]) that the player task fills in; a later human-versus-build game can
-//! reuse it by supplying the moves of one side from somewhere other than an engine. Games played elsewhere (the
+//! The game itself is a plain record ([`Match`]) that the player task fills in, from an engine or, for a seat a person
+//! takes, from the moves the board sends (`POST /api/matches/{id}/moves`). Games played elsewhere (the
 //! Lichess bot's) fill the same record through a [`Recorder`], so they show on the same board and replay the same way.
 
 mod pgn;
@@ -682,8 +682,8 @@ async fn opening(state: &AppState, opening: &Opening) -> Result<(Chess, bool), A
 // Playing
 // ---------------------------------------------------------------------------------------------------------------------
 
-/// Progress reports per second, at most, for the engine that is thinking.
-const INFO_EVERY: Duration = Duration::from_millis(200);
+/// How often, at most, a thinking engine's progress is reported (`match.info`), here and for the Lichess bot's games.
+pub const INFO_EVERY: Duration = Duration::from_millis(200);
 
 /// How a search for one move came out.
 enum Think {

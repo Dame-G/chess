@@ -118,7 +118,7 @@ The routes:
 - `POST /api/matches/{id}/takeback`: takes back your last move and the reply, on your turn, in a game without a clock (`movetime` or `nodes`). The `match.takeback` event carries `{ id, plies }`.
 - `POST /api/matches/{id}/draw`: offers a draw on your turn; the engine takes it from ply 20 when its own last score is at most +0.10 (`{ accepted }`), and the game ends as `agreement`.
 
-The game record (`runner/src/matches/mod.rs`) is a plain `Match` filled in by a player task. A later human-versus-build game can fill the same record by taking one side's moves from the board instead of an engine.
+The game record (`runner/src/matches/mod.rs`) is a plain `Match` filled in by a player task, from an engine or, for a human seat, from the moves the board sends. The Lichess bot's games fill the same record through a `Recorder`.
 
 ## The Lichess bot
 

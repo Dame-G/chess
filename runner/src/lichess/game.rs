@@ -30,7 +30,7 @@ use crate::{
         uci::{Engine, Info, Search},
     },
     matches::{
-        self, LichessGame, Match, MatchMove, MatchStatus, MatchTime, Player, Recorder,
+        self, INFO_EVERY, LichessGame, Match, MatchMove, MatchStatus, MatchTime, Player, Recorder,
         rules::{self, Ending, GameResult, Side},
     },
 };
@@ -190,9 +190,6 @@ struct GameFull {
 // ---------------------------------------------------------------------------------------------------------------------
 // Playing
 // ---------------------------------------------------------------------------------------------------------------------
-
-/// Progress reports per second, at most, while our engine thinks.
-const INFO_EVERY: Duration = Duration::from_millis(200);
 
 /// A search without a clock (a correspondence or unlimited game that was already running) takes this long.
 const UNCLOCKED_MOVETIME: u64 = 5_000;
