@@ -33,19 +33,32 @@ export function parseEvents(buffer: string): [RunnerEvent[], string] {
   return [events, rest];
 }
 
+/** Asks the runner for no backlog: the stream starts with the next event. */
+const FROM_NOW = Number.MAX_SAFE_INTEGER;
+
 /**
- * Follows the runner's live events. A fetch stream rather than EventSource, so the token travels in a header; after a
- * dropped connection it reconnects from the last id seen, so nothing is missed. Returns a function that stops it.
+ * Follows the runner's live events. A fetch stream rather than EventSource, so the token travels in a header.
+ *
+ * The first connection starts from now: the page fetches what it shows, so the runner's backlog would only replay
+ * history (old log lines, a burst of refetches). After a dropped or refused connection it resumes from the last id
+ * seen, and first hands over a `runner.started` event (id 0): a runner that (re)started counts its ids from 1 again
+ * and what it said before the page reconnected is gone, so listeners refetch everything. Returns a function that
+ * stops it.
  */
-export function followEvents(onEvent: (event: RunnerEvent) => void): () => void {
+export function followEvents(onEvent: (event: RunnerEvent) => void, retryMs = 2000): () => void {
   const abort = new AbortController();
-  let last = 0;
+  let last: number | undefined;
+  let tries = 0;
 
   (async () => {
     while (!abort.signal.aborted) {
+      tries++;
       try {
-        const res = await runnerFetch(`${connection.url}/api/events?since=${last}`, { signal: abort.signal });
+        const res = await runnerFetch(`${connection.url}/api/events?since=${last ?? FROM_NOW}`, {
+          signal: abort.signal,
+        });
         if (!res.ok || !res.body) throw new Error(String(res.status));
+        if (tries > 1) onEvent({ id: 0, kind: "runner.started", data: { resumed: true } });
         const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
         let buffer = "";
         for (;;) {
@@ -54,12 +67,13 @@ export function followEvents(onEvent: (event: RunnerEvent) => void): () => void 
           const [events, rest] = parseEvents(buffer + value);
           buffer = rest;
           for (const event of events) {
-            last = Math.max(last, event.id);
+            // The newest id rather than the largest: after a restart the ids start again.
+            if (event.id) last = event.id;
             onEvent(event);
           }
         }
       } catch {}
-      if (!abort.signal.aborted) await new Promise((r) => setTimeout(r, 2000));
+      if (!abort.signal.aborted) await new Promise((r) => setTimeout(r, retryMs));
     }
   })();
 
