@@ -30,7 +30,6 @@ import { useCopy, useShortcuts, useToast } from "@eos-ui/vue";
 import { EBreadcrumb } from "@eos-ui/vue/components/EBreadcrumb";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EMenu, type EMenuItem } from "@eos-ui/vue/components/EMenu";
-import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
@@ -40,13 +39,12 @@ import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { EStamp } from "@eos-ui/vue/components/EStamp";
 import { ETabs } from "@eos-ui/vue/components/ETabs";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
-import { ETextarea } from "@eos-ui/vue/components/ETextarea";
-import { EUpload } from "@eos-ui/vue/components/EUpload";
 import ChessBoard from "../board/ChessBoard.vue";
 import EngineLines from "../board/EngineLines.vue";
 import EvalBar from "../board/EvalBar.vue";
 import GameList from "../board/GameList.vue";
 import GameSetup from "../board/GameSetup.vue";
+import LoadDialog from "../board/LoadDialog.vue";
 import MatchEngines, { type EngineRow } from "../board/MatchEngines.vue";
 import MatchStatus from "../board/MatchStatus.vue";
 import MoveList from "../board/MoveList.vue";
@@ -60,7 +58,7 @@ import { readGame, type Game } from "../board/game";
 import { clockAt, sideScore, youSide, type Side } from "../board/matchText";
 import { useMatch } from "../board/useMatch";
 import { outcome, type Outcome } from "../board/playlist";
-import { inspectPosition, listGames, play, sanLine, sanMoves, toPgn, whitePawns, whiteScore } from "../board/position";
+import { play, sanLine, sanMoves, toPgn, whitePawns, whiteScore } from "../board/position";
 import { playMoveSound, soundOf } from "../board/sound";
 import { useAnalysis, type Seen } from "../board/useAnalysis";
 import { api } from "../api/runner";
@@ -529,15 +527,20 @@ const timeline = computed(() => {
 // Moves, on the board and from the engine
 // ---------------------------------------------------------------------------------------------------------------------
 
+/** The address of the free board at a position. */
+function freeBoard(fen: string, line: string[], extra: Record<string, string> = {}) {
+  const query: Record<string, string> = { ...extra };
+  if (fen !== "startpos") query.fen = fen;
+  if (line.length) query.moves = line.join(",");
+  void router.push({ path: "/board", query });
+}
+
 /** A line played off the game becomes free analysis from the same position. */
 function fork(extra: string[], into?: Mode) {
-  const query: Record<string, string> = {};
-  if (into) query.mode = into;
-  if (start.value !== "startpos") query.fen = start.value;
-  const line = [...moves.value.slice(0, cursor.value), ...extra];
-  if (line.length) query.moves = line.join(",");
-  if (build.value) query.build = build.value;
-  void router.push({ path: "/board", query });
+  freeBoard(start.value, [...moves.value.slice(0, cursor.value), ...extra], {
+    ...(into && { mode: into }),
+    ...(build.value && { build: build.value }),
+  });
 }
 
 function playMoves(uci: string[]) {
@@ -607,12 +610,8 @@ function playFromHere(into: Mode) {
 function openPosition(fen: string, line: string[]) {
   mode.value = "analyse";
   tab.value = "moves";
-  if (inGame.value) {
-    const query: Record<string, string> = {};
-    if (fen !== "startpos") query.fen = fen;
-    if (line.length) query.moves = line.join(",");
-    void router.push({ path: "/board", query });
-  } else reset(fen, line);
+  if (inGame.value) freeBoard(fen, line);
+  else reset(fen, line);
 }
 
 const topSide = computed<Side>(() => (orientation.value === "white" ? "black" : "white"));
@@ -828,111 +827,10 @@ watch(fresh, () => {
 // ---------------------------------------------------------------------------------------------------------------------
 
 const importOpen = ref(false);
-const importText = ref("");
-// The text is read a moment after typing stops, so a long PGN is not parsed on every key.
-const importRead = ref("");
-let reading: ReturnType<typeof setTimeout> | undefined;
-watch(importText, (t) => {
-  clearTimeout(reading);
-  if (!t.trim()) importRead.value = "";
-  else reading = setTimeout(() => (importRead.value = t), 180);
-});
-onBeforeUnmount(() => clearTimeout(reading));
-// A file of several games lists them, and the one picked is what loads.
-const importGames = computed(() => listGames(importRead.value));
-const importGame = ref("0");
-watch(importRead, () => (importGame.value = "0"));
-const importGameOptions = computed(() =>
-  importGames.value.map((g, i) => ({
-    value: String(i),
-    label: g.label,
-    description: `${g.result} · ${g.moves} move${g.moves === 1 ? "" : "s"}`,
-  })),
-);
-const imported = computed(() => inspectPosition(importRead.value, Number(importGame.value)));
-
-/** A text from the clipboard or a file: opens the dialog on it, so what it holds shows before it loads. */
-function offer(text: string) {
-  importText.value = text;
-  importRead.value = text;
-  importOpen.value = true;
-}
-const picked = ref<File[]>([]);
-watch(picked, async (files) => {
-  const file = files[0];
-  if (!file) return;
-  offer(await file.text());
-  picked.value = [];
-});
-const looksLoadable = (text: string) => text.length < 2_000_000 && !("error" in inspectPosition(text));
-// Paste anywhere on the board loads a game or position; a .pgn dropped on it does the same.
-function onPaste(e: ClipboardEvent) {
-  if (
-    e.defaultPrevented ||
-    (e.target instanceof Element && e.target.closest("input, textarea, select, [contenteditable]"))
-  )
-    return;
-  const text = e.clipboardData?.getData("text/plain") ?? "";
-  if (text.trim() && looksLoadable(text)) {
-    e.preventDefault();
-    offer(text);
-  }
-}
-function onDragOver(e: DragEvent) {
-  if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
-}
-async function onDrop(e: DragEvent) {
-  const file = e.dataTransfer?.files[0];
-  if (!file) return;
-  e.preventDefault();
-  offer(await file.text());
-}
-onMounted(() => {
-  window.addEventListener("paste", onPaste);
-  window.addEventListener("dragover", onDragOver);
-  window.addEventListener("drop", onDrop);
-});
-onBeforeUnmount(() => {
-  window.removeEventListener("paste", onPaste);
-  window.removeEventListener("dragover", onDragOver);
-  window.removeEventListener("drop", onDrop);
-});
-/** What the text holds, when it holds a position, and that position for the preview. */
-const importLine = computed(() => ("line" in imported.value ? imported.value : undefined));
-const importError = computed(() => ("error" in imported.value ? imported.value.error : ""));
-const importPreview = computed(() => {
-  const l = importLine.value?.line;
-  return l ? play(l) : undefined;
-});
-const importFacts = computed(() => {
-  const l = importLine.value;
-  const p = importPreview.value;
-  if (!l || !p) return "";
-  const who = p.turn === "white" ? "White" : "Black";
-  const n = l.line.moves.length;
-  const what = l.kind === "pgn" && n ? `${n} move${n === 1 ? "" : "s"}. ` : "";
-  return `${what}${who} to move${p.check ? ", in check" : ""}.`;
-});
-// Reading is pending while the text and what was read differ.
-const importPending = computed(() => importText.value.trim() !== importRead.value.trim());
-const importReady = computed(() => !importPending.value && !!importLine.value);
-
-function load() {
-  const line = importLine.value?.line;
-  if (!line || importPending.value) return;
-  importOpen.value = false;
-  importText.value = "";
-  importRead.value = "";
-  mode.value = "analyse";
-  if (inGame.value) {
-    const query: Record<string, string> = {};
-    if (line.fen !== "startpos") query.fen = line.fen;
-    if (line.moves.length) query.moves = line.moves.join(",");
-    void router.push({ path: "/board", query });
-  } else {
-    reset(line.fen, line.moves);
-    remember();
-  }
+/** A game or position from the load dialog opens on the board. */
+function onLoad(fen: string, line: string[]) {
+  openPosition(fen, line);
+  remember();
 }
 
 // The command palette sends `paste=1`; the dialog opens and the parameter goes.
@@ -1018,6 +916,12 @@ async function copyAs(what: "FEN" | "PGN") {
     tone: ok ? "success" : "danger",
   });
 }
+/** What to do with the position on the board of a game: look at it, play it, or set two engines on it. */
+const continueItems = computed<EMenuItem[]>(() => [
+  { label: "Analyse", icon: PhMagnifyingGlass, onClick: () => fork([]) },
+  { label: "Play against an engine", icon: PhUser, onClick: () => playFromHere("play") },
+  { label: "Watch two engines", icon: PhSword, onClick: () => playFromHere("engines") },
+]);
 const copyItems = [
   { label: "Position (FEN)", onClick: () => void copyAs("FEN") },
   { label: "Game (PGN)", onClick: () => void copyAs("PGN") },
@@ -1040,8 +944,6 @@ const result = computed(() => {
 // The right panel: Moves and Games. Below 75rem the panes stack, the board first.
 // ---------------------------------------------------------------------------------------------------------------------
 
-const frame = ref<{ $el: HTMLElement }>();
-const stacked = ref(false);
 /** Which tab of the panel shows. */
 const tab = ref("moves");
 const liveGames = computed(() => matchList.value.filter((m) => m.status === "running").length);
@@ -1049,21 +951,6 @@ const tabs = computed(() => [
   { id: "moves", label: "Moves" },
   { id: "games", label: "Games", count: liveGames.value || undefined },
 ]);
-
-let observer: ResizeObserver | undefined;
-onMounted(() => {
-  const el = frame.value!.$el;
-  const rem = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-  const measure = () => {
-    const r = rem();
-    const w = el.clientWidth;
-    stacked.value = w < 64 * r;
-  };
-  observer = new ResizeObserver(measure);
-  observer.observe(el);
-  measure();
-});
-onBeforeUnmount(() => observer?.disconnect());
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Sound: off until asked for, a knock for a move, a heavier one for a capture, a ping for a check
@@ -1139,7 +1026,6 @@ const filters = [
 
 <template>
   <Workspace
-    ref="frame"
     fit
     :class="['board-ws', { 'board-ws--match': isMatch, 'board-ws--noeval': !evalShown }]"
     inspector-label="Moves and games"
@@ -1237,7 +1123,7 @@ const filters = [
         >
       </span>
       <ESegmented
-        v-if="!isMatch && !(stacked && !moves.length)"
+        v-if="!isMatch && (isGame || moves.length)"
         v-model="rate"
         label="Speed"
         hide-label
@@ -1373,7 +1259,11 @@ const filters = [
               <MatchEngines :rows="engineRows" />
             </section>
 
-            <section v-if="!setup && !humanLive && (!isMatch || engineOn)" class="engine" aria-label="Engine">
+            <section
+              v-if="!setup && !humanLive && (isMatch ? engineOn : engineOn || shown)"
+              class="engine"
+              aria-label="Engine"
+            >
               <EEmptyState v-if="noBuilds" title="No engine built yet" icon="info" size="sm" bare>
                 Build Reckless once and it analyses here.
                 <template #action>
@@ -1382,8 +1272,7 @@ const filters = [
               </EEmptyState>
 
               <template v-else>
-                <p v-if="!engineOn && !shown" class="off">Engine off</p>
-                <div v-else class="hero">
+                <div class="hero">
                   <div class="big num" :class="{ dim: !shown }">
                     <template v-if="shown">{{ shown.text }}</template>
                     <template v-else-if="searching">…</template>
@@ -1437,13 +1326,16 @@ const filters = [
                   <EButton variant="quiet" size="sm" :icon="PhCopy">Copy</EButton>
                 </template>
               </EMenu>
-              <template v-if="inGame && !humanLive && !(isMatch && matchLive)">
-                <EButton variant="quiet" size="sm" :icon="PhChartLine" @click="fork([])"> Analyse from here </EButton>
-                <EButton variant="quiet" size="sm" :icon="PhUser" @click="playFromHere('play')">Play from here</EButton>
-                <EButton variant="quiet" size="sm" :icon="PhSword" @click="playFromHere('engines')">
-                  Engines from here
-                </EButton>
-              </template>
+              <EMenu
+                v-if="inGame && !gameFailed && !humanLive && !(isMatch && matchLive)"
+                label="Continue from here"
+                :items="continueItems"
+                side="top"
+              >
+                <template #trigger>
+                  <EButton variant="quiet" size="sm" :icon="PhChartLine">Continue from here</EButton>
+                </template>
+              </EMenu>
               <EIconButton
                 :icon="sound ? PhSpeakerHigh : PhSpeakerSlash"
                 :label="sound ? 'Mute move sounds' : 'Play move sounds'"
@@ -1491,44 +1383,7 @@ const filters = [
     </template>
   </Workspace>
 
-  <EDialog
-    v-model:open="importOpen"
-    title="Load a game or position"
-    description="Paste a FEN or a PGN from Lichess, Chess.com or anywhere, or drop a .pgn file on the board."
-  >
-    <div class="paste">
-      <EUpload v-model="picked" label="PGN file" accept=".pgn,.txt" :preview="false" />
-      <ESelect
-        v-if="importGames.length"
-        v-model="importGame"
-        label="Game in the file"
-        size="sm"
-        :options="importGameOptions"
-      />
-      <ETextarea
-        v-model="importText"
-        label="FEN or PGN"
-        :rows="4"
-        :error="!importPending && importError ? importError : undefined"
-        :hint="importLine?.note"
-        placeholder="1. e4 e5 2. Nf3 Nc6 …"
-        data-autofocus
-        @keydown.ctrl.enter.prevent="load"
-        @keydown.meta.enter.prevent="load"
-      />
-      <!-- The result of reading it, so the person sees what Load will do before pressing it. -->
-      <div class="preview" :class="{ 'preview--on': importReady }" aria-live="polite">
-        <div class="preview-board">
-          <ChessBoard v-if="importPreview" still :position="importPreview" />
-        </div>
-        <p class="preview-facts">{{ importReady ? importFacts : "Paste or type to see the position." }}</p>
-      </div>
-    </div>
-    <template #actions>
-      <EButton :disabled="!importReady" @click="load">Load</EButton>
-      <EButton variant="quiet" @click="importOpen = false">Cancel</EButton>
-    </template>
-  </EDialog>
+  <LoadDialog v-model:open="importOpen" @load="onLoad" />
 </template>
 
 <style scoped>
@@ -1710,49 +1565,8 @@ const filters = [
   margin-inline-start: var(--e-gap-snug);
 }
 
-.off {
-  margin: 0;
-  padding-inline: var(--ws-pad);
-  color: var(--e-muted);
-  font: var(--e-type-small);
-}
-
 .live {
   margin-inline-start: var(--e-gap-snug);
-}
-
-/* Paste: the text, and under it what it was read as. */
-.paste {
-  display: grid;
-  gap: var(--e-gap-base);
-}
-
-.preview {
-  display: grid;
-  grid-template-columns: 6.5rem minmax(0, 1fr);
-  align-items: center;
-  gap: var(--e-gap-base);
-  min-height: 6.5rem;
-}
-
-.preview-board {
-  width: 6.5rem;
-  aspect-ratio: 1;
-  border-radius: var(--e-radius-sm);
-  background: color-mix(in oklab, var(--e-ink) 6%, var(--e-surface));
-  box-shadow: inset 0 0 0 1px var(--e-border);
-  opacity: 0.5;
-  transition: opacity 0.2s;
-}
-
-.preview--on .preview-board {
-  opacity: 1;
-}
-
-.preview-facts {
-  margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
 }
 
 /* Inspector: sections divided by hairlines, each with the card padding. */
@@ -1963,6 +1777,41 @@ const filters = [
     box-shadow: 0 -1px 0 var(--e-border);
   }
 
+  .panel {
+    height: auto;
+  }
+
+  .panel :deep(.e-tabpanel) {
+    flex: none;
+    overflow: visible;
+  }
+
+  .insp {
+    flex: none;
+  }
+
+  .pane-moves {
+    flex: none;
+    height: 18rem;
+  }
+
+  /* A long list scrolls inside its own box; the page keeps scrolling around it. */
+  .games {
+    height: auto;
+  }
+
+  .games :deep(.playlist) {
+    height: 20rem;
+  }
+}
+
+/* A phone: where we are and the speed above the timeline, then the buttons spread the width of the screen for thumbs. */
+@media (width < 40rem) {
+  .board-ws {
+    --pad: 0.5rem;
+    --col: 1.75rem;
+  }
+
   .counter {
     order: 1;
     flex: 1 1 auto;
@@ -1993,40 +1842,6 @@ const filters = [
 
   .live {
     margin-inline-start: 0;
-  }
-
-  .panel {
-    height: auto;
-  }
-
-  .panel :deep(.e-tabpanel) {
-    flex: none;
-    overflow: visible;
-  }
-
-  .insp {
-    flex: none;
-  }
-
-  .pane-moves {
-    flex: none;
-    height: 18rem;
-  }
-
-  /* A long list scrolls inside its own box; the page keeps scrolling around it. */
-  .games {
-    height: auto;
-  }
-
-  .games :deep(.playlist) {
-    height: 20rem;
-  }
-}
-
-@media (width < 40rem) {
-  .board-ws {
-    --pad: 0.5rem;
-    --col: 1.75rem;
   }
 }
 
