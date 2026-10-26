@@ -1761,8 +1761,8 @@ const filters = [
   --line: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
 
   display: flex;
+  flex: 1 1 0;
   flex-direction: column;
-  height: 100%;
   min-height: 0;
 }
 
@@ -1834,6 +1834,25 @@ const filters = [
   display: grid;
   gap: var(--e-gap-snug);
   padding-block: var(--e-gap-base) var(--e-gap-snug);
+}
+
+/* The two engine cards are sections of their own: they meet the rows above and below at the hairline. */
+.engine--match {
+  padding-block: 0;
+}
+
+/* eos bleeds the tab strip and panel by their focus ring; here the pane's edge is the edge. */
+.panel :deep(.e-tablist),
+.panel :deep(.e-tabpanel) {
+  margin-inline: 0;
+  padding-inline: 0;
+}
+
+/* The Moves tab is a header bar and the inspector under it: the inspector takes what the bar leaves, so the tools row
+   stays at the foot of the pane instead of below the fold. */
+.panel :deep(.e-tabpanel:not([hidden])) {
+  display: flex;
+  flex-direction: column;
 }
 
 .engine :deep(.e-empty) {
@@ -1982,7 +2001,7 @@ const filters = [
   }
 
   .insp {
-    height: auto;
+    flex: none;
   }
 
   .pane-moves {

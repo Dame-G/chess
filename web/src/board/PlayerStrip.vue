@@ -85,7 +85,7 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
   gap: var(--e-gap-snug);
   min-width: 0;
   height: 100%;
-  padding-inline: var(--e-gap-snug);
+  padding-inline: var(--e-pad-control);
   border-radius: var(--e-radius-sm);
   background: color-mix(in oklab, var(--e-ink) 4%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--e-border) 60%, transparent);

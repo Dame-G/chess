@@ -68,7 +68,7 @@ const emit = defineEmits<{ go: [ply: number] }>();
 .mv {
   justify-content: flex-start;
   min-height: 2.25rem;
-  padding-inline: var(--e-pad-control-sm);
+  padding-inline: var(--ws-pad, var(--e-pad-control));
   border-radius: 0;
   font-family: var(--e-font-mono);
   text-decoration: none;
@@ -96,7 +96,7 @@ const emit = defineEmits<{ go: [ply: number] }>();
 .gap {
   display: grid;
   align-items: center;
-  padding-inline: var(--e-pad-control-sm);
+  padding-inline: var(--ws-pad, var(--e-pad-control));
   color: var(--e-muted);
 }
 </style>

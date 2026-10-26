@@ -71,11 +71,11 @@ const won = (m: MatchSummary, side: "white" | "black") =>
 
 .row {
   display: grid;
-  grid-template-columns: 3.25rem minmax(0, 1fr);
-  align-items: center;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  align-items: baseline;
   gap: var(--e-gap-snug);
   min-height: 2.75rem;
-  padding-block: 0.25rem;
+  padding: var(--e-gap-snug) var(--ws-pad);
   border-radius: 0;
   text-align: start;
   text-decoration: none;
@@ -94,6 +94,7 @@ const won = (m: MatchSummary, side: "white" | "black") =>
 }
 
 .res {
+  line-height: 1.25rem;
   color: var(--e-muted);
   font-size: var(--e-text-sm);
   font-weight: 700;
@@ -134,6 +135,7 @@ const won = (m: MatchSummary, side: "white" | "black") =>
 
 .names {
   display: flex;
+  line-height: 1.25rem;
   gap: 0.375rem;
   align-items: baseline;
   min-width: 0;

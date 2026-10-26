@@ -99,11 +99,12 @@ const word: Record<Outcome, string> = { W: "Won", D: "Drew", L: "Lost", "": "Unf
 
 .row {
   display: grid;
-  grid-template-columns: 3rem 1.25rem 1.5rem 1fr;
+  grid-template-columns: 2.5rem 1.25rem 1.5rem 1fr;
   align-items: center;
   height: 32px;
   min-height: 0;
   padding-block: 0;
+  padding-inline: var(--ws-pad);
   border-radius: 0;
   font-family: var(--e-font-mono);
   text-align: start;

@@ -138,7 +138,7 @@ const open = (id: number) => void router.push(`/matches/${id}`);
 
 <style scoped>
 .head-title {
-  font: var(--e-type-h6);
+  font: var(--e-type-h5);
 }
 
 .count {
@@ -152,7 +152,7 @@ const open = (id: number) => void router.push(`/matches/${id}`);
 }
 
 .identity {
-  font: var(--e-type-h6);
+  font: var(--e-type-h5);
 }
 
 .power {

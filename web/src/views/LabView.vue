@@ -447,11 +447,11 @@ async function cancel() {
 }
 
 .how {
-  margin: var(--e-gap-base) var(--e-pad-control-sm);
+  margin: var(--e-gap-base) var(--ws-pad);
 }
 
 .pad {
-  margin: var(--e-gap-loose) var(--e-pad-control-sm);
+  margin: var(--e-gap-loose) var(--ws-pad);
   align-self: start;
 }
 
