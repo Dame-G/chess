@@ -44,7 +44,7 @@ Bounds are normalized Elo; the test is a pentanomial GSPRT with alpha 0.05 and b
 Two things the screen and the clocks do not mean:
 
 - **A passed screen is not evidence of a gain.** At [-5, 0] a change that does nothing passes about 90% of the time; the screen only throws out clear losses. The STC stage decides.
-- **The clocks are not scaled.** OpenBench scales each worker's clock to 660,000 nps of `bench` with every slot busy; this machine runs slower than that with 14 games at once, so "8+0.08" here is a shorter test in nodes than upstream's STC. Results compare dev with base at the clock played, not with upstream's numbers. Presets for `chess test`: vstc, stc, ltc, stc-hash, ltc-hash (2 MB / 8 MB hash pressure), smp (6 threads) and nodes (25k per move). Games are in each test's PGN, with eval, depth, nodes and time per move: `GET /api/tests/<id>/games/<index>`.
+- **The clocks are not scaled.** OpenBench scales each worker's clock to 660,000 nps of `bench` with every slot busy; this machine runs slower than that with 7 games at once (one per physical core but one, the default for tests and tunes), so "8+0.08" here is a shorter test in nodes than upstream's STC. Results compare dev with base at the clock played, not with upstream's numbers. Presets for `chess test`: vstc, stc, ltc, stc-hash, ltc-hash (2 MB / 8 MB hash pressure), smp (6 threads) and nodes (25k per move). Games are in each test's PGN, with eval, depth, nodes and time per move: `GET /api/tests/<id>/games/<index>`.
 
 How to work with them:
 

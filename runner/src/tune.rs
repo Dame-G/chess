@@ -418,10 +418,7 @@ pub async fn submit(state: &Arc<AppState>, new: NewTune) -> Result<Tune> {
     if let Some(hash) = new.hash {
         spec.hash = hash;
     }
-    let concurrency = new
-        .concurrency
-        .unwrap_or_else(|| (state.machine.threads.saturating_sub(2) as u32 / spec.threads).max(1))
-        .max(1);
+    let concurrency = new.concurrency.unwrap_or_else(|| state.machine.default_concurrency(spec.threads)).max(1);
     let (alpha, gamma, a_ratio) =
         (new.alpha.unwrap_or(spsa::ALPHA), new.gamma.unwrap_or(spsa::GAMMA), new.a_ratio.unwrap_or(spsa::A_RATIO));
     let name = new.name.clone().unwrap_or_else(|| new.build.clone());

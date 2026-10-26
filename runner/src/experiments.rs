@@ -415,7 +415,7 @@ async fn match_stage(
     let test = tests::create(state, experiment, name, spec, base.id, dev.id).await?;
     let dir = tests::dir(state, test);
     std::fs::create_dir_all(&dir)?;
-    let concurrency = (state.machine.threads.saturating_sub(2) as u32 / spec.threads).max(1);
+    let concurrency = state.machine.default_concurrency(spec.threads);
 
     let sprt = spec.sprt;
     // One task records progress in order, and the final record waits for it, so a late update never lands after it.

@@ -17,7 +17,7 @@ Everything below was checked against the state of the art as of 2026-10-25. Wher
 
 **Your machine:**
 
-- **CPU:** i7-10700K, 8 cores / 16 threads, AVX2. Default concurrency 14.
+- **CPU:** i7-10700K, 8 cores / 16 threads, AVX2. Default concurrency 7: one game per physical core but one, as Fishtest advises; hyperthreaded games are slower and noisier.
 - **RAM:** 32 GB.
 - **GPU:** RTX 3080 10 GB, but no CUDA toolkit installed yet.
 - **Rust:** 1.99.1.

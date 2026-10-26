@@ -34,6 +34,15 @@ impl Machine {
     }
 }
 
+impl Machine {
+    /// How many games run at once by default, each on `threads_per_game` threads: one per physical core but one, as
+    /// Fishtest advises (OpenBench's client takes every physical core). Games on both threads of a core each run slower
+    /// and noisier, and the spare core keeps the Lichess bot and the UI off the games' cores.
+    pub fn default_concurrency(&self, threads_per_game: u32) -> u32 {
+        (self.cores.saturating_sub(1) as u32 / threads_per_game.max(1)).max(1)
+    }
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct RunnerStatus {
     /// The runner's version.
@@ -59,4 +68,17 @@ pub async fn status(State(state): State<Arc<AppState>>) -> Result<Json<RunnerSta
         reckless_found: reckless.join("Cargo.toml").is_file(),
         schema,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn one_game_per_physical_core_but_one() {
+        let machine = Machine { name: String::new(), cores: 8, threads: 16, memory: 0 };
+        assert_eq!(machine.default_concurrency(1), 7);
+        assert_eq!(machine.default_concurrency(6), 1);
+        assert_eq!(Machine { cores: 1, ..machine }.default_concurrency(1), 1);
+    }
 }
