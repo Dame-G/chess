@@ -49,6 +49,115 @@ You get stronger at the same board.
 - **Your openings.** From your games: the lines you play as White and as Black, where you leave theory, and how you score in each. It is built from your games, with the explorer, and is shown on the You sheet and in Explore as "your repertoire". It is off while you play on Lichess.
 - **Progress.** One line on the You sheet: rating, accuracy and drill hit rate over time. You can see the two players' lines side by side: you and Dameless.
 
+#### The R3 contract
+
+The pure logic is in `core` and the tables in `store` (both built); `play`, `analysis`, `work`, the server and the web app build on these shapes.
+
+**Core modules** (each pure and unit tested):
+
+- `core::levels`
+  - `Level { id, name, nodes: Option<u64>, multipv, temperature, nominal }`: `id` 1 is the weakest; `nodes: None` is full strength, which plays on the clock (calibration gives it `FULL_CALIBRATION_NODES`, 1,000,000). `ladder()` is the default ladder.
+  - `weights(candidates, temperature)` and `choose_move(candidates: &[(uci, Score)], temperature, u) -> Option<uci>`. Candidates are the engine's MultiPV lines with scores **from the side to move**, as the engine reports them. It is a softmax on win%, `exp(−(best − win%) / T)`, and the same `u` always gives the same move. The engine seat draws `u` from the game's own seeded RNG.
+  - Calibration:
+    - `Entrant { Level(id), You }`, written `level:<id>` / `you`.
+    - `LevelGame { white, black, outcome }` and `pair_results(games) -> PairResult[]`.
+    - `priors(levels, you: Option<(rating, sd)>) -> Prior[]`: each level at its nominal rating with sd 350, You at your Lichess rating with sd 120 or Lichess's own deviation.
+    - `fit(priors, results) -> EntrantRating { entrant, estimate: {elo, low, high}, games }[]`: the MAP estimate of the Bradley–Terry (logistic Elo) model, a draw counting half, under Gaussian priors, found by Newton's method. The 95 % intervals come from the inverse curvature. Your results against levels and your Lichess rating are what put the ladder on the human scale. Without them it stays at the nominal ratings, which matter less and less as the games come in.
+  - `plan(levels, ratings, count) -> PlannedMatch { a, b, games, priority }[]`: neighbouring levels only, ranked by (width a + width b) × p(1 − p), so the widest and most even pairs come first.
+  - `nearest_level(ratings, target)` gives the level for your rating.
+- `core::drills`
+  - `Drill { id: DrillId, game, ply, fen, key, side, best_moves, best_san, line, played, played_san, swing, theme: {opening, phase}, due, interval_days, ease, reps, lapses, created_at, answered_at }`.
+  - Making drills:
+    - `new_drill(&WeakSpot, lines: &[EvalLine]) -> NewDrill`: every line within 5 win% of the best counts as correct, except the move played. The lines come from the position cache (MultiPV ≥ 2) or from `lines_of(&ReviewedMove)`, which gives the best and second best. Without lines, only the weak spot's best move counts.
+    - `dedupe(existing_keys, candidates)`: one drill per normalized FEN key.
+  - Answering:
+    - `check(drill, answer)` takes UCI or SAN and returns `Pass | Fail`.
+    - `grade(drill, outcome, now)` applies SM-2 with two answers (a pass is q 5, a miss q 2). A miss resets the run and comes back in 1 day. Passes come back in 1, then 6, then interval × ease days. The ease moves +0.10 on a pass and −0.32 on a miss, with a floor of 1.3.
+  - Today's set: `today(drills, now, new_per_day, started_today, limit)` lists due tried drills first, the most overdue first, then new ones by swing, capped at `NEW_PER_DAY` (10) a day. `day_start(now)` uses UTC days.
+  - The trend: `trend(answers, window) -> HitRatePoint { date, answers, passes, rate, rolling }[]`.
+- `core::repertoire`
+  - `RepertoireGame::from_game(&Game, &PlayerKey)` reads finished games from the standard start.
+  - `build(side, games, RepertoireOptions { max_plies: 20, min_games: 2 }, theory: Option<&dyn Fn(&key) -> bool>) -> Repertoire { side, games, options, nodes, departures }`.
+    - Nodes are keyed by FEN without counters, so transpositions meet: `{ key, fen, ply, games, your_turn, theory, moves: [{ uci, san, games, share, wins, draws, losses, score, next, leaves_theory }] }`.
+    - Departures are each game's first move out of theory, added up: `{ key, fen, ply, uci, san, by_you, games, score, example }`.
+    - `Repertoire::main_line()` and `your_deviations()`.
+- `core::progress`
+  - `Progress { series: Series[] }`, where `Series { player, metric: rating | accuracy | drill_hit_rate | elo, points: [{ at, value, low, high, game, version, label }] }`.
+  - `your_series(trend, drill_trend, window)` gives accuracy as a rolling mean of 10 games.
+  - `dameless_series(versions, anchor)` gives the champion line's cumulative Elo over `v1`, with the errors added in quadrature. With `anchor` set to full strength's calibrated rating, the line is shifted onto the human scale.
+  - `progress(...)` builds both.
+
+**The ladder** (nominal rating, nodes per move, MultiPV, temperature in win% points):
+
+| Level | Nominal | Nodes   | MultiPV | T   |
+| ----- | ------- | ------- | ------- | --- |
+| 1     | 800     | 300     | 8       | 15  |
+| 2     | 1000    | 300     | 6       | 10  |
+| 3     | 1200    | 500     | 5       | 6   |
+| 4     | 1400    | 800     | 4       | 3.5 |
+| 5     | 1600    | 1,500   | 3       | 2   |
+| 6     | 1800    | 3,000   | 2       | 1   |
+| 7     | 2000    | 6,000   | 1       | 0   |
+| 8     | 2200    | 15,000  | 1       | 0   |
+| 9     | 2400    | 40,000  | 1       | 0   |
+| 10    | 2600    | 120,000 | 1       | 0   |
+| 11    | 2800    | 400,000 | 1       | 0   |
+| 12    | full    | clock   | 1       | 0   |
+
+Why these numbers:
+
+- **Few nodes are still strong.** An NNUE engine at a few hundred nodes already completes depth 3 to 5 with quiescence, and that beats most club players. So nodes alone cannot reach 800 without searches too short to finish depth 1 for every root move.
+- **Below 1800, choice does the weakening.** Nodes stay at 300 or more, so every MultiPV line is a real search, and the weakening comes from choosing among the engine's own candidates. At T = 15, a move 10 win% worse is played half as often as the best. That is a beginner's inconsistency, with no move outside the engine's top 8, and the move is never a random blunder.
+- **Above 1800, only nodes change.** From 6,000 to 400,000 nodes is six doublings. At roughly +130 Elo per doubling at low budgets, falling to about +60 higher up, that is the 2000 to 2800 span.
+
+These are guesses that calibration replaces. The UI shows a level's calibrated rating once it has one (games > 0), else "about <nominal>".
+
+**Storage** (migration `0002_player.sql`; repositories `store::drills`, `store::levels`):
+
+- `drills`: one row per position key (UNIQUE), the schedule in plain columns, indexed on `due`.
+- `drill_answers (drill, at, answer, outcome, first)`: `first` marks a drill's first answer, for the daily cap of new drills.
+- `level_games (game PRIMARY KEY, white, black, calibration)`: the entrant at each seat of a game played at a level. `play` writes it when a local game with a level starts, and `work` writes it for calibration games.
+- `level_ratings (entrant PRIMARY KEY, elo, low, high, games, updated_at)`: the last fit.
+- Methods:
+  - `insert_drills`, `drill`, `drills`, `drill_keys`, `record_drill_answer(graded, answer)` (one transaction), `drill_answers(since)`, `drills_started_since`, `delete_drill`
+  - `record_level_game`, `level_seats`, `level_games` (finished only), `put_level_ratings` (replaces the fit), `level_ratings`
+
+**Routes** (the server's; every one with a CLI command of the same name):
+
+```
+GET    /api/levels                        { levels: [{ level: Level, rating: Estimate | null, games }], you: EntrantRating | null,
+                                            suggested: level id | null (nearest your rating), updated_at }
+GET    /api/levels/plan?count=3           PlannedMatch[]
+POST   /api/levels/calibrate              { matches?: PlannedMatch[] } → Work (default: plan(…, 3)); refits when done
+POST   /api/games                         gains `level` on a Dameless seat: { white: "you", black: { player: "dameless", level: 5 }, time, … }
+                                            (a bare "dameless" is full strength, as today); the game's seats go to level_games
+GET    /api/drills                        Drill[] (all, soonest due first)
+POST   /api/drills                        { limit? } → Drill[] made from your profile's weak spots (new ones only)
+GET    /api/drills/today?new_per_day=&limit=   { drills: Drill[], due, new, started_today }
+POST   /api/drills/{id}/answer            { move } (UCI or SAN) → { outcome, drill: Drill (rescheduled), best_moves, best_san, line, played_san }
+DELETE /api/drills/{id}
+GET    /api/drills/trend?window=50        HitRatePoint[]
+GET    /api/players/you/repertoire?side=white|black&max_plies=&min_games=   Repertoire (409 fair_play while assist ≠ allowed)
+GET    /api/progress?window=10            Progress
+```
+
+- **Seeing a drill** (`GET /api/drills/today`) shows `fen`, `side` and `theme`. The web client must not show `best_moves`, `best_san` or `line` before the answer; the answer route returns them.
+- **Fair play.** Drills are not refused by the server. The web client hides them while `policy.assist ≠ allowed`. The repertoire is refused with 409 while you play.
+- **Theory for the repertoire.** By default a position is theory when it was reached within the named opening's plies (`opening.ply`) in any of your Lichess games: free, and Lichess's own book. The explorer (masters) can refine it later, outside live games.
+- **Calibration** is background work at `Priority::Idea`, the lowest priority. It plays fastchess at fixed nodes per level with the tests' book, and level 1 to 6 seats use `choose_move`. It needs a level-aware engine wrapper (fastchess cannot apply a softmax), so the first version can calibrate levels 7 to 12 (MultiPV 1) with fastchess and levels 1 to 6 with the Referee's engine seats.
+- **When the fit runs.** The server refits (`fit` over `level_games` with `priors(ladder, your Lichess rating)`) after each calibration match and after each finished game of yours against a level, then stores it.
+
+**Events:**
+
+| Kind             | Payload                                    | Topic             | Kept for replay |
+| ---------------- | ------------------------------------------ | ----------------- | --------------- |
+| `drill.upserted` | `Drill`                                    | `player:you`      | yes             |
+| `drill.answered` | `{ drill, outcome, at }`                   | `player:you`      | yes             |
+| `drill.deleted`  | `{ id }`                                   | `player:you`      | yes             |
+| `levels.updated` | `{ ratings: EntrantRating[], updated_at }` | `player:dameless` | yes             |
+
+These kinds are not yet in `core::events::EventKind`, a closed enum the server owns. Adding them is the server's first R3 change, together with a `WorkKind::Calibrate`.
+
 ### R4: training, the foundation
 
 This is everything except training on big datasets, sized for 52 GB free on the Windows partition. The work happens once data and the GPU are ready.
