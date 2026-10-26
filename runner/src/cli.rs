@@ -786,7 +786,7 @@ fn experiment_text(d: &Value) -> String {
 // Matches
 // ---------------------------------------------------------------------------------------------------------------------
 
-/// A build id, or the newest build of a ref (or of a commit prefix).
+/// A build id, or the newest plain build of a ref (or of a commit prefix): never a tune's `spsa` build of it.
 async fn resolve_build(client: &Client, spec: &str) -> Result<i64> {
     if let Ok(id) = spec.parse::<i64>() {
         return Ok(id);
@@ -796,7 +796,7 @@ async fn resolve_build(client: &Client, spec: &str) -> Result<i64> {
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|b| b["deleted_at"].is_null())
+        .filter(|b| b["deleted_at"].is_null() && !b["features"].as_str().is_some_and(|f| f.ends_with("+spsa")))
         .find(|b| b["ref"].as_str() == Some(spec) || b["commit"].as_str().is_some_and(|c| c.starts_with(spec)))
         .and_then(|b| b["id"].as_i64())
         .ok_or_else(|| anyhow::anyhow!("no build of {spec}: build it first with `chess build {spec}`"))
