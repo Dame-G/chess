@@ -31,9 +31,11 @@ use crate::{
 /// The meta key holding the hidden versions, a JSON array of branch names.
 const HIDDEN_KEY: &str = "versions.hidden";
 
-/// The file whose `spsa` variant of `define!` makes a commit's tunables tunable, and what marks it.
+/// The file where a commit declares its tunables, and what marks a declaration: a `define!` block. Upstream Reckless
+/// already has the `spsa` feature and the macro, with nothing declared, so the feature alone does not make a branch
+/// tunable.
 const TUNABLES_FILE: &str = "src/parameters.rs";
-const TUNABLES_MARK: &str = "feature = \"spsa\"";
+const TUNABLES_MARK: &str = "define! {";
 
 /// One branch of the engine, with what has been done with it.
 #[derive(Clone, Debug, Serialize, ToSchema)]
