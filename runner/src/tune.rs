@@ -746,7 +746,7 @@ struct Draw {
 fn draw(n: usize) -> Result<Draw> {
     let mut bytes = vec![0u8; n * 8];
     getrandom::fill(&mut bytes).map_err(|e| anyhow::anyhow!("random draw: {e}"))?;
-    let words: Vec<u64> = bytes.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().expect("8 bytes"))).collect();
+    let words: Vec<u64> = bytes.as_chunks::<8>().0.iter().map(|c| u64::from_le_bytes(*c)).collect();
     Ok(Draw {
         // The top bit for the flip, the low 53 bits for u.
         flips: words.iter().map(|w| if w >> 63 == 1 { 1.0 } else { -1.0 }).collect(),
