@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Experiment, Test } from "../src/api/queries";
-import { duration, ending, forecast, signed, verdict, winChance } from "../src/format";
+import { duration, ending, failure, forecast, signed, speed, verdict, winChance } from "../src/format";
 
 const test = (over: Partial<Test>): Test =>
   ({
@@ -44,5 +44,35 @@ describe("words", () => {
     expect(duration(95)).toBe("1 h 35 min");
     expect(ending("adjudication")).toBe("Called early");
     expect(winChance(0)).toBe(0.5);
+  });
+});
+
+describe("rounding", () => {
+  it("gives no sign to a figure that rounds to zero", () => {
+    expect(signed(-0.04, 1)).toBe("0.0");
+    expect(signed(0.004)).toBe("0.00");
+    expect(signed(-0)).toBe("0.00");
+    expect(signed(0.05, 1)).toBe("+0.1");
+  });
+
+  it("carries a rounded minute or thousand into the next unit", () => {
+    expect(duration(59.6)).toBe("1 h");
+    expect(duration(119.7)).toBe("2 h");
+    expect(duration(0.5)).toBe("under a minute");
+    expect(speed(999_600)).toBe("1.00M nodes/s");
+    expect(speed(512_300)).toBe("512k nodes/s");
+  });
+});
+
+describe("failure", () => {
+  it("hides file paths on either system, but not branch names", () => {
+    const hidden = "It failed. The runner's log has the details.";
+    expect(failure("cannot open C:\\Users\\x\\engine.exe")).toBe(hidden);
+    expect(failure("cannot open /home/dame/reckless/target")).toBe(hidden);
+    expect(failure("cannot open '~/dev/reckless'")).toBe(hidden);
+    expect(failure("bench differs on test/no-nmp")).toBe("bench differs on test/no-nmp");
+    expect(failure("no commit named test/x in /home/dame/reckless")).toBe(
+      "There is no branch, tag or commit called test/x.",
+    );
   });
 });

@@ -11,9 +11,11 @@ export const jobTone = {
   cancelled: "neutral",
 } as const satisfies Record<string, Tone>;
 
-/** `+1.23` or `-0.50`. */
+/** `+1.23`, `−0.50` or `0.00`: a figure that rounds to zero has no sign. */
 export function signed(n: number, digits = 2): string {
-  return `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toFixed(digits)}`;
+  const text = Math.abs(n).toFixed(digits);
+  const zero = Number(text) === 0;
+  return `${zero ? "" : n > 0 ? "+" : "−"}${text}`;
 }
 
 /** A time control for people: `8+0.08` or `25k nodes`. */
@@ -25,7 +27,8 @@ export function timeControl(tc: { clock?: { seconds: number; increment: number }
 
 /** Search speed for people: `1.52M nodes/s`. */
 export function speed(nps: number): string {
-  return nps >= 1e6 ? `${(nps / 1e6).toFixed(2)}M nodes/s` : `${Math.round(nps / 1000)}k nodes/s`;
+  const k = Math.round(nps / 1000);
+  return k >= 1000 ? `${(nps / 1e6).toFixed(2)}M nodes/s` : `${k}k nodes/s`;
 }
 
 const relative = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -47,9 +50,10 @@ export function ago(iso: string, now = Date.now()): string {
 /** "3 min", "1 h 20 min". */
 export function duration(minutes: number): string {
   if (minutes < 1) return "under a minute";
-  if (minutes < 60) return `${Math.round(minutes)} min`;
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
+  const whole = Math.round(minutes);
+  if (whole < 60) return `${whole} min`;
+  const h = Math.floor(whole / 60);
+  const m = whole % 60;
   return m ? `${h} h ${m} min` : `${h} h`;
 }
 
@@ -175,7 +179,8 @@ export function failure(error: string | null | undefined, kind?: string): string
   const missing = /^no commit named (.+?) in /.exec(error);
   if (missing) return `There is no branch, tag or commit called ${missing[1]}.`;
   const first = (error.split("\n")[0] ?? "").replace(/\s*:?\s*git -C .*$/, "").trim();
-  return first && first.length <= 120 && !/[A-Za-z]:[\\/]/.test(first)
-    ? first
-    : "It failed. The runner's log has the details.";
+  return first && first.length <= 120 && !PATH.test(first) ? first : "It failed. The runner's log has the details.";
 }
+
+/** A file path on Windows (`C:\…`) or Unix (`/home/…`, `~/…`). A branch such as `test/x` is not one. */
+const PATH = /[A-Za-z]:[\\/]|(?:^|[\s'"(`])~?\/[\w.-]+\//;
