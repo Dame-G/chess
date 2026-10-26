@@ -908,6 +908,7 @@ fn match_outcome(m: &Value) -> String {
         (None, "fifty_moves") => "Draw by the fifty-move rule".into(),
         (None, "insufficient_material") => "Draw by insufficient material".into(),
         (None, "draw_adjudication") => "Draw by adjudication".into(),
+        (None, "time") => "Draw: a flag fell, but the other side could not mate".into(),
         (None, _) if m["status"].as_str() == Some("running") => "Running".into(),
         (None, _) => "Draw".into(),
     }

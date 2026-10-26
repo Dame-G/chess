@@ -198,6 +198,19 @@ impl Clock {
     }
 }
 
+/// `side`'s clock ran out in `pos`: it loses on time, unless the other side has too little material to ever mate, when
+/// it is a draw (as on Lichess and in the tests' fastchess).
+pub fn flagged(pos: &Chess, side: Side) -> Ending {
+    let other = match side.other() {
+        Side::White => Color::White,
+        Side::Black => Color::Black,
+    };
+    if pos.has_insufficient_material(other) {
+        return Ending { result: GameResult::Draw, reason: Reason::Time };
+    }
+    Ending::lost_by(side, Reason::Time)
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // The end of a game
 // ---------------------------------------------------------------------------------------------------------------------
@@ -318,6 +331,16 @@ mod tests {
 
     fn pos(fen: &str) -> Chess {
         fen.parse::<Fen>().unwrap().into_position(CastlingMode::Standard).unwrap()
+    }
+
+    #[test]
+    fn a_flag_against_a_side_that_cannot_mate_is_a_draw() {
+        // White flags; Black has only a knight: it could never mate, so the game is drawn.
+        let knight = pos("8/8/4k3/8/8/3K4/8/6n1 w - - 0 1");
+        assert_eq!(flagged(&knight, Side::White), Ending { result: GameResult::Draw, reason: Reason::Time });
+        // With a rook it could, so White loses.
+        let rook = pos("8/8/4k3/8/8/3K4/8/6r1 w - - 0 1");
+        assert_eq!(flagged(&rook, Side::White), Ending { result: GameResult::Black, reason: Reason::Time });
     }
 
     #[test]

@@ -927,7 +927,7 @@ async fn game_loop(
 
         let (uci, san, took, ack) = match think {
             Think::Aborted => return stopped(plan, played.len()),
-            Think::Flagged => return Ending::lost_by(side, Reason::Time),
+            Think::Flagged => return rules::flagged(&pos, side),
             Think::Crashed => return Ending::lost_by(side, Reason::Crash),
             Think::DrawAgreed => return Ending { result: GameResult::Draw, reason: Reason::Agreement },
             Think::Takeback(ack) => {
@@ -957,7 +957,7 @@ async fn game_loop(
                 if let Some(c) = clock.as_mut()
                     && c.spend(side, took) == Spent::Flagged
                 {
-                    return Ending::lost_by(side, Reason::Time);
+                    return rules::flagged(&pos, side);
                 }
                 let san = SanPlus::from_move_and_play_unchecked(&mut pos, m);
                 let uci = m.to_uci(CastlingMode::Standard).to_string();
