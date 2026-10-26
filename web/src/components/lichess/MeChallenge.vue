@@ -4,6 +4,7 @@ import { useToast } from "@eos-ui/vue";
 import { useQueryCache } from "@pinia/colada";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
+import { ERadioGroup } from "@eos-ui/vue/components/ERadioGroup";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
@@ -94,10 +95,10 @@ async function send() {
       hint="1 is the weakest, 8 the strongest."
     />
     <p v-else class="note">Your bot answers by its own settings, so it has to be online.</p>
-    <ESegmented
+    <ERadioGroup
       v-model="clock"
       label="Clock"
-      size="sm"
+      orientation="horizontal"
       :options="clocks"
       :hint="`${speed}, minutes plus seconds a move.`"
     />
@@ -134,5 +135,9 @@ async function send() {
   margin: 0;
   color: var(--e-muted);
   font: var(--e-type-small);
+}
+
+.form > :deep(.e-notice) {
+  justify-self: stretch;
 }
 </style>

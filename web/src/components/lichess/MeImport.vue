@@ -74,4 +74,8 @@ async function start() {
   color: var(--e-muted);
   font: var(--e-type-small);
 }
+
+.import > :deep(.e-notice) {
+  justify-self: stretch;
+}
 </style>

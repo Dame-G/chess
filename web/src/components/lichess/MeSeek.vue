@@ -5,6 +5,7 @@ import { EButton } from "@eos-ui/vue/components/EButton";
 import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
+import { ERadioGroup } from "@eos-ui/vue/components/ERadioGroup";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESpinner } from "@eos-ui/vue/components/ESpinner";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
@@ -79,10 +80,10 @@ const cancel = () => run(() => unwrap(api.DELETE("/api/lichess/me/seek")));
       <EButton variant="outline" :loading="busy" @click="cancel">Cancel</EButton>
     </template>
     <template v-else>
-      <ESegmented
+      <ERadioGroup
         v-model="clock"
         label="Clock"
-        size="sm"
+        orientation="horizontal"
         :options="clocks"
         :hint="`${speed}, minutes plus seconds a move.`"
       />
@@ -95,7 +96,7 @@ const cancel = () => run(() => unwrap(api.DELETE("/api/lichess/me/seek")));
         </div>
       </EDisclosure>
       <ENotice v-if="rangeProblem" tone="warning" title="Range not used" :role="false">{{ rangeProblem }}</ENotice>
-      <EButton type="submit" :loading="busy">Find a game</EButton>
+      <EButton type="submit" :loading="busy" :disabled="me.playing.length > 0">Find a game</EButton>
     </template>
     <ENotice v-if="error" tone="danger" title="That did not work" :role="false">{{ error }}</ENotice>
     <p class="why">
@@ -140,5 +141,9 @@ const cancel = () => run(() => unwrap(api.DELETE("/api/lichess/me/seek")));
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--e-gap-base);
+}
+
+.seek > :deep(.e-notice) {
+  justify-self: stretch;
 }
 </style>

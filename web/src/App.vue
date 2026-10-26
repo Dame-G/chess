@@ -559,6 +559,7 @@ onUnmounted(stop);
 }
 
 .status :deep(.e-shell-inner) {
+  justify-content: flex-start;
   gap: var(--e-gap-snug) var(--e-gap-loose);
   flex-wrap: nowrap;
 }
@@ -652,6 +653,10 @@ onUnmounted(stop);
 
 .status-runner--offline .status-dot {
   background: var(--e-danger);
+}
+
+.status .status-runner {
+  margin-inline-end: 0;
 }
 
 .status-live {
