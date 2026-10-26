@@ -74,6 +74,8 @@ useRunnerEvent("job.log", (data) => {
 function describe(job: Job): string {
   if (job.spec.kind === "build") return `Build ${job.spec.ref}`;
   if (job.spec.kind === "lichess_import") return "Import Lichess games";
+  if (job.spec.kind === "lichess_player_import") return `Import ${job.spec.username}'s games`;
+  if (job.spec.kind === "review") return "Review games";
   if (job.spec.kind === "tune" || job.spec.kind === "apply_tune") {
     const id = job.spec.id;
     const name = tunes.value.data?.find((t) => t.id === id)?.name ?? `#${id}`;
