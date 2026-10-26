@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import type { Color } from "@lichess-org/chessground/types";
 import { signed, winChance } from "../format";
 
@@ -16,14 +16,28 @@ const props = defineProps<{
  * White's share of the bar, from its chance to win. Rounded to a quarter of a percent so depths that agree to within a
  * hair do not retarget the easing while the engine streams.
  */
-const white = computed(() => (props.pawns === undefined ? 0.5 : Math.round(winChance(props.pawns * 100) * 400) / 400));
+const white = ref(0.5);
+/**
+ * The figure last shown. Both hold while a new position waits for its first depth, so the bar eases on from where it
+ * was instead of snapping back to the middle first.
+ */
+const held = ref("");
+watch(
+  () => [props.pawns, props.text] as const,
+  ([pawns, text]) => {
+    if (pawns === undefined) return;
+    white.value = Math.round(winChance(pawns * 100) * 400) / 400;
+    held.value = text ?? "";
+  },
+  { immediate: true },
+);
 const flipped = computed(() => props.orientation === "black");
 const leader = computed<Color>(() => (white.value >= 0.5 ? "white" : "black"));
 /** One decimal fits: `+0.3`, `-1.2`; a mate reads `M3`. */
 const short = computed(() => {
-  const t = props.text;
+  const t = held.value;
   if (!t) return "";
-  if (t.includes("M")) return `${/^[-−]/.test(t) ? "−" : ""}M${t.match(/d+/)?.[0] ?? ""}`;
+  if (t.includes("M")) return `${/^[-−]/.test(t) ? "−" : ""}M${t.match(/\d+/)?.[0] ?? ""}`;
   const n = Number(t.replace("−", "-"));
   return Number.isFinite(n) ? signed(n, 1) : t;
 });
@@ -40,7 +54,7 @@ const atBottom = computed(() => (leader.value === "white") !== flipped.value);
     aria-valuemin="0"
     aria-valuemax="100"
     :aria-valuenow="Math.round(white * 100)"
-    :aria-valuetext="text ? `${text}, White ${Math.round(white * 100)}%` : 'No evaluation yet'"
+    :aria-valuetext="held ? `${held}, White ${Math.round(white * 100)}%` : 'No evaluation yet'"
   >
     <span class="evalbar-label num" aria-hidden="true">{{ short && !atBottom ? short : "" }}</span>
     <div class="evalbar-track">
