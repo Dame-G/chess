@@ -10,6 +10,7 @@ use shakmaty::{CastlingMode, Chess, EnPassantMode, fen::Fen, san::SanPlus, uci::
 
 use crate::client::{Client, print};
 
+mod review;
 mod tune;
 
 #[derive(Subcommand)]
@@ -89,6 +90,24 @@ pub enum ClientCommand {
     Matches {
         #[arg(long, default_value_t = 20)]
         limit: u32,
+    },
+    /// Review games: search every position with a build and judge each move (`review show <match>` prints one).
+    Review(review::ReviewCommand),
+    /// Compare players side by side: `me`, `bot` or Lichess usernames whose games were imported.
+    Compare {
+        players: Vec<String>,
+        /// Only these speeds, comma-separated.
+        #[arg(long, value_delimiter = ',')]
+        speeds: Vec<String>,
+        /// Only rated games.
+        #[arg(long)]
+        rated: bool,
+        /// Only games since this date (2026-01-01).
+        #[arg(long)]
+        since: Option<String>,
+        /// The newest games per player, at most (default 200).
+        #[arg(long)]
+        limit: Option<u32>,
     },
     /// The Lichess bot: with no subcommand, its status. A build plays as your Lichess BOT account.
     Lichess(LichessCommand),
@@ -284,6 +303,9 @@ pub enum LichessAction {
     },
     /// Your own Lichess account (not the bot): with no subcommand, its status. Play your games with `chess move`.
     Me(MeCommand),
+    /// Other Lichess players: import their games, the leaderboards, a profile.
+    #[command(subcommand)]
+    Players(review::PlayersAction),
 }
 
 #[derive(Args)]
@@ -491,6 +513,10 @@ pub async fn run(client: Client, command: ClientCommand, json: bool) -> Result<(
                 if a["accepted"].as_bool() == Some(true) { "Draw by agreement".into() } else { "Draw declined".into() }
             });
             return Ok(());
+        }
+        ClientCommand::Review(cmd) => return review::review(&client, cmd, json).await,
+        ClientCommand::Compare { players, speeds, rated, since, limit } => {
+            return review::compare(&client, &players, &speeds, rated, since, limit, json).await;
         }
         ClientCommand::Lichess(cmd) => return lichess(&client, cmd, json).await,
         ClientCommand::Matches { limit } => {
@@ -1429,6 +1455,7 @@ async fn lichess(client: &Client, cmd: LichessCommand, json: bool) -> Result<()>
             print(&client.post("/api/lichess/upgrade", json!({ "confirm": true })).await?, json, lichess_text);
         }
         LichessAction::Me(cmd) => return lichess_me(client, cmd, json).await,
+        LichessAction::Players(action) => return review::players(client, action, json).await,
     }
     Ok(())
 }

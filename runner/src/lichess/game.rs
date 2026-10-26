@@ -347,6 +347,8 @@ async fn run(state: &Arc<AppState>, id: &str, cancel: &CancellationToken) -> Res
             opening: None,
             draw_offer: None,
             takeback_offer: None,
+            player: None,
+            opening_ply: None,
         }),
     };
     if let Some(prev) = previous {

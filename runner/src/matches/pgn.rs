@@ -199,6 +199,8 @@ mod tests {
             opening: None,
             draw_offer: None,
             takeback_offer: None,
+            player: None,
+            opening_ply: None,
         });
         g.black = Player {
             name: "someone".into(),

@@ -48,10 +48,10 @@ impl Lichess {
     }
 
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
-        self.http
-            .request(method, format!("{}{path}", self.base))
-            .bearer_auth(&self.token)
-            .header(reqwest::header::USER_AGENT, &self.agent)
+        let req =
+            self.http.request(method, format!("{}{path}", self.base)).header(reqwest::header::USER_AGENT, &self.agent);
+        // Without a token (public reads such as another player's games), no `Authorization` at all.
+        if self.token.is_empty() { req } else { req.bearer_auth(&self.token) }
     }
 
     async fn send(&self, req: reqwest::RequestBuilder) -> Result<reqwest::Response, CallError> {

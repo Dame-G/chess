@@ -11,6 +11,7 @@
 pub mod client;
 mod game;
 pub mod me;
+pub mod players;
 pub mod quota;
 pub mod rules;
 pub mod seek;
@@ -284,7 +285,7 @@ pub fn build_setting(state: &AppState) -> Option<String> {
 // Account and token
 // ---------------------------------------------------------------------------------------------------------------------
 
-fn call_error(e: CallError) -> ApiError {
+pub(crate) fn call_error(e: CallError) -> ApiError {
     match e {
         CallError::RateLimited | CallError::BotDailyLimit { .. } => ApiError::too_many_requests(&e.to_string()),
         CallError::Unauthorized | CallError::Status { status: 400..=499, .. } => ApiError::bad_request(&e.to_string()),

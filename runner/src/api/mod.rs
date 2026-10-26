@@ -11,6 +11,7 @@ mod jobs;
 mod lichess;
 mod lichess_me;
 mod matches;
+mod review;
 mod status;
 mod tunes;
 mod versions;
@@ -48,6 +49,8 @@ pub struct AppState {
     pub lichess: crate::lichess::Bot,
     /// Your own Lichess account, beside the bot.
     pub me: crate::lichess::me::Me,
+    /// Other Lichess players: leaderboards and profiles, cached.
+    pub players: crate::lichess::players::Players,
 }
 
 impl AppState {
@@ -55,6 +58,7 @@ impl AppState {
         Self {
             lichess: crate::lichess::Bot::new(&config.lichess_url, brains),
             me: crate::lichess::me::Me::new(&config.lichess_url),
+            players: crate::lichess::players::Players::new(&config.lichess_url),
             config,
             store,
             events: Events::new(),
@@ -92,6 +96,12 @@ fn api() -> (Router<Arc<AppState>>, utoipa::openapi::OpenApi) {
         .routes(routes!(matches::play_move))
         .routes(routes!(matches::takeback))
         .routes(routes!(matches::offer_draw))
+        .routes(routes!(review::create))
+        .routes(routes!(review::get))
+        .routes(routes!(review::compare_players))
+        .routes(routes!(review::top))
+        .routes(routes!(review::profile))
+        .routes(routes!(review::import))
         .routes(routes!(lichess::status))
         .routes(routes!(lichess::set_token, lichess::clear_token))
         .routes(routes!(lichess::settings, lichess::put_settings))

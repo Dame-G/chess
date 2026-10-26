@@ -329,6 +329,88 @@
         }
       }
     },
+    "/api/compare": {
+      "get": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "Players side by side over their finished games: results (overall and by colour), average accuracy (overall, by\nphase, by speed), ACPL, classifications per game, opponents' average and performance rating, top openings, time\nper move by phase and time-trouble blunders, longest win streak, and notable moments with match id and ply. Engine\nfigures count reviewed games only; `pending_review` says how many are not reviewed.",
+        "operationId": "compare_players",
+        "parameters": [
+          {
+            "name": "players",
+            "in": "query",
+            "description": "Comma-separated: `me` (your account), `bot`, or Lichess usernames whose games were imported.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "speeds",
+            "in": "query",
+            "description": "Comma-separated Lichess speeds; all when absent.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "rated",
+            "in": "query",
+            "description": "Only rated (true) or casual (false) games.",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "Only games played since then: an ISO date or time (`2026-01-01`), or milliseconds since 1970.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "The newest games per player, at most. Default 200, at most 5000.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Comparison"
+                }
+              }
+            }
+          },
+          "400": {}
+        }
+      }
+    },
     "/api/events": {
       "get": {
         "tags": [
@@ -1190,6 +1272,136 @@
         }
       }
     },
+    "/api/lichess/players/top": {
+      "get": {
+        "tags": [
+          "lichess-players"
+        ],
+        "summary": "Lichess's leaderboard at a speed, cached ten minutes.",
+        "operationId": "lichess_top_players",
+        "parameters": [
+          {
+            "name": "perf",
+            "in": "query",
+            "description": "`ultraBullet`, `bullet`, `blitz`, `rapid` or `classical`. Default `blitz`.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "nb",
+            "in": "query",
+            "description": "How many, at most 200. Default 10.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TopPlayer"
+                  }
+                }
+              }
+            }
+          },
+          "400": {},
+          "429": {},
+          "502": {}
+        }
+      }
+    },
+    "/api/lichess/players/{username}": {
+      "get": {
+        "tags": [
+          "lichess-players"
+        ],
+        "summary": "A Lichess player's profile (ratings, title, game counts; cached ten minutes) and how many of their games are\nimported and reviewed here. 404 when Lichess has no such player.",
+        "operationId": "lichess_player",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerProfile"
+                }
+              }
+            }
+          },
+          "400": {},
+          "404": {},
+          "429": {},
+          "502": {}
+        }
+      }
+    },
+    "/api/lichess/players/{username}/import": {
+      "post": {
+        "tags": [
+          "lichess-players"
+        ],
+        "summary": "Imports a Lichess player's newest public games (default 50) as matches with `account: \"player\"` and `player`\n(`GET /api/matches?player=<name>`), each Lichess game once. A job beside the queue; its result is\n`{ player, imported, skipped, other }`. 409 while you play on Lichess.",
+        "operationId": "import_lichess_player_games",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {},
+          "409": {}
+        }
+      }
+    },
     "/api/lichess/seek": {
       "post": {
         "tags": [
@@ -1451,7 +1663,7 @@
         "tags": [
           "matches"
         ],
-        "summary": "Recent matches, newest first, without their moves: local ones and Lichess games alike, unless `source` picks one\nkind or `account` one Lichess account.",
+        "summary": "Recent matches, newest first, without their moves: local ones and Lichess games alike, unless `source` picks one\nkind, `account` one Lichess account or `player` another player's imported games (left out otherwise). Each\nsummary carries its newest `review`, if any.",
         "operationId": "list_matches",
         "parameters": [
           {
@@ -1501,12 +1713,25 @@
                   "description": "One of our two Lichess accounts.",
                   "enum": [
                     "bot",
-                    "me"
+                    "me",
+                    "player"
                   ]
                 },
                 {
                   "type": "null"
                 }
+              ]
+            }
+          },
+          {
+            "name": "player",
+            "in": "query",
+            "description": "Only the imported games of this other Lichess player (see `POST /api/lichess/players/{username}/import`).",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
               ]
             }
           }
@@ -1900,6 +2125,65 @@
         }
       }
     },
+    "/api/matches/{id}/review": {
+      "get": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "A game's review: per side accuracy, ACPL, classification counts, phases and time trouble, and every move with its\nevaluations, best move, win percentages, accuracy and classification. 404 when the game has no review (yet).",
+        "operationId": "get_match_review",
+        "parameters": [
+          {
+            "name": "build",
+            "in": "query",
+            "description": "The review made with this build; the newest review when absent.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          },
+          {
+            "name": "nodes",
+            "in": "query",
+            "description": "The review made at this node budget.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Review"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
+    },
     "/api/matches/{id}/takeback": {
       "post": {
         "tags": [
@@ -1924,6 +2208,39 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Match"
+                }
+              }
+            }
+          },
+          "400": {},
+          "404": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/reviews": {
+      "post": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "Queues a review: every position of each game searched by a build (default: the newest build of `main`) at a node\nbudget (default 200,000), MultiPV 2, on several one-thread engines, and each move judged. Give `matches`, or\n`account` (`me`, `bot`) or `player` (an imported Lichess player) for their newest finished games not yet reviewed\nwith that build and budget. A game already reviewed so is skipped. Progress comes as `review.progress` events and\nthe job's log; the result is `{ reviewed, skipped, failed, positions_searched, positions_cached, build, nodes }`.\n409 while you play on Lichess (a running review pauses then), or with no build to review with.",
+        "operationId": "create_review",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
                 }
               }
             }
@@ -2422,6 +2739,40 @@
           }
         }
       },
+      "AccuracyStats": {
+        "type": "object",
+        "description": "Average game accuracy (each reviewed game counts once).",
+        "properties": {
+          "endgame": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "middlegame": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "opening": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "overall": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
+      },
       "AnalysisRequest": {
         "type": "object",
         "properties": {
@@ -2650,6 +3001,18 @@
             "type": "string"
           }
         }
+      },
+      "BuildRef": {
+        "oneOf": [
+          {
+            "type": "integer",
+            "format": "int64"
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "description": "A build by id, or a ref meaning its newest build."
       },
       "BuildRequest": {
         "type": "object",
@@ -2886,6 +3249,148 @@
           }
         }
       },
+      "ClassCounts": {
+        "type": "object",
+        "description": "How many moves got each classification.",
+        "required": [
+          "brilliant",
+          "great",
+          "best",
+          "excellent",
+          "good",
+          "book",
+          "inaccuracy",
+          "mistake",
+          "blunder",
+          "miss"
+        ],
+        "properties": {
+          "best": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "blunder": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "book": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "brilliant": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "excellent": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "good": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "great": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "inaccuracy": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "miss": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "mistake": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ClassRates": {
+        "type": "object",
+        "description": "Classifications per reviewed game.",
+        "required": [
+          "brilliant",
+          "great",
+          "best",
+          "excellent",
+          "good",
+          "book",
+          "inaccuracy",
+          "mistake",
+          "blunder",
+          "miss"
+        ],
+        "properties": {
+          "best": {
+            "type": "number",
+            "format": "double"
+          },
+          "blunder": {
+            "type": "number",
+            "format": "double"
+          },
+          "book": {
+            "type": "number",
+            "format": "double"
+          },
+          "brilliant": {
+            "type": "number",
+            "format": "double"
+          },
+          "excellent": {
+            "type": "number",
+            "format": "double"
+          },
+          "good": {
+            "type": "number",
+            "format": "double"
+          },
+          "great": {
+            "type": "number",
+            "format": "double"
+          },
+          "inaccuracy": {
+            "type": "number",
+            "format": "double"
+          },
+          "miss": {
+            "type": "number",
+            "format": "double"
+          },
+          "mistake": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "Classification": {
+        "type": "string",
+        "description": "What a review calls a move.",
+        "enum": [
+          "brilliant",
+          "great",
+          "best",
+          "excellent",
+          "good",
+          "book",
+          "inaccuracy",
+          "mistake",
+          "blunder",
+          "miss"
+        ]
+      },
       "Clock": {
         "type": "object",
         "description": "A clock, in seconds.",
@@ -2903,6 +3408,46 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "Comparison": {
+        "type": "object",
+        "required": [
+          "players",
+          "speeds",
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Newest games per player, at most.",
+            "minimum": 0
+          },
+          "players": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlayerStats"
+            }
+          },
+          "rated": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "speeds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -3194,6 +3739,72 @@
           "failed",
           "cancelled"
         ]
+      },
+      "GameCounts": {
+        "type": "object",
+        "required": [
+          "all",
+          "rated",
+          "wins",
+          "draws",
+          "losses"
+        ],
+        "properties": {
+          "all": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "draws": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "rated": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "wins": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "GameMoment": {
+        "type": "object",
+        "required": [
+          "match_id",
+          "accuracy",
+          "opponent",
+          "result",
+          "played_at"
+        ],
+        "properties": {
+          "accuracy": {
+            "type": "number",
+            "format": "double"
+          },
+          "match_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "opponent": {
+            "type": "string"
+          },
+          "played_at": {
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/GameResult"
+          }
+        }
       },
       "GameResult": {
         "type": "string",
@@ -3504,6 +4115,63 @@
               }
             ],
             "description": "Import your finished Lichess games as matches. It needs the network, not the CPU, so it runs at once beside\nthe queue."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReviewJob"
+              },
+              {
+                "type": "object",
+                "description": "Review games: search every position with a build and judge each move.",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "review"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Review games: search every position with a build and judge each move."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlayerImportRequest"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "username"
+                ],
+                "properties": {
+                  "username": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "description": "Import another Lichess player's recent public games, for comparison. Network only, so beside the queue.",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "lichess_player_import"
+                    ]
+                  }
+                }
+              }
+            ],
+            "description": "Import another Lichess player's recent public games, for comparison. Network only, so beside the queue."
           }
         ],
         "description": "What a job does."
@@ -3517,6 +4185,41 @@
           "failed",
           "cancelled"
         ]
+      },
+      "Judgement": {
+        "type": "string",
+        "description": "Lichess's judgement of a move.",
+        "enum": [
+          "inaccuracy",
+          "mistake",
+          "blunder"
+        ]
+      },
+      "JudgementCounts": {
+        "type": "object",
+        "description": "Lichess's own counts: misses count as the mistake or blunder they are.",
+        "required": [
+          "inaccuracy",
+          "mistake",
+          "blunder"
+        ],
+        "properties": {
+          "blunder": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "inaccuracy": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "mistake": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
       },
       "Kind": {
         "type": "string",
@@ -3532,7 +4235,8 @@
         "description": "One of our two Lichess accounts.",
         "enum": [
           "bot",
-          "me"
+          "me",
+          "player"
         ]
       },
       "LichessGame": {
@@ -3572,9 +4276,25 @@
             ],
             "description": "The opening as Lichess names it, such as `B01 Scandinavian Defense`, for games imported from your history."
           },
+          "opening_ply": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "How many plies of the game are the named opening (Lichess's `opening.ply`), for imported games: a review calls\nthem `book`.",
+            "minimum": 0
+          },
           "our_side": {
             "$ref": "#/components/schemas/Side",
             "description": "The side our account played: the bot's build, or you."
+          },
+          "player": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For `account: player`: the Lichess player (user id, lower case) whose imported history this game is from;\n`our_side` is then that player's side."
           },
           "rated": {
             "type": "boolean"
@@ -4147,6 +4867,17 @@
           "result": {
             "$ref": "#/components/schemas/GameResult"
           },
+          "review": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ReviewBrief",
+                "description": "The game's newest review, when it has one: accuracy, ACPL and classification counts per side."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "start_fen": {
             "type": "string"
           },
@@ -4497,6 +5228,68 @@
           }
         }
       },
+      "Moment": {
+        "type": "object",
+        "description": "A move worth linking to: the board opens `/matches/{match_id}` at `ply`.",
+        "required": [
+          "match_id",
+          "ply",
+          "san",
+          "side",
+          "classification",
+          "win_before",
+          "win_after",
+          "sacrifice",
+          "opponent",
+          "played_at"
+        ],
+        "properties": {
+          "classification": {
+            "$ref": "#/components/schemas/Classification"
+          },
+          "match_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "opponent": {
+            "type": "string"
+          },
+          "played_at": {
+            "type": "string"
+          },
+          "ply": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "sacrifice": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Pawns of material given up (brilliant moves)."
+          },
+          "san": {
+            "type": "string"
+          },
+          "side": {
+            "$ref": "#/components/schemas/Side"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The game on Lichess, at the move."
+          },
+          "win_after": {
+            "type": "number",
+            "format": "double"
+          },
+          "win_before": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "MoveRequest": {
         "type": "object",
         "required": [
@@ -4710,6 +5503,49 @@
           }
         }
       },
+      "Notable": {
+        "type": "object",
+        "required": [
+          "brilliant",
+          "blunders"
+        ],
+        "properties": {
+          "blunders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Moment"
+            },
+            "description": "The worst blunders by win percentage lost (at most 3)."
+          },
+          "brilliant": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Moment"
+            },
+            "description": "The brilliant moves with the most material given up (at most 3), else the great ones."
+          },
+          "least_accurate_game": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GameMoment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "most_accurate_game": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GameMoment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "OnlineBot": {
         "type": "object",
         "required": [
@@ -4791,6 +5627,22 @@
         ],
         "description": "Where the game starts."
       },
+      "OpeningStats": {
+        "type": "object",
+        "required": [
+          "name",
+          "results"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The opening family as Lichess names it, without the ECO code or the variation (\"Sicilian Defense\")."
+          },
+          "results": {
+            "$ref": "#/components/schemas/Wdl"
+          }
+        }
+      },
       "Opponent": {
         "type": "object",
         "description": "Who a challenge is with.",
@@ -4814,6 +5666,27 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "Opponents": {
+        "type": "object",
+        "properties": {
+          "average_rating": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The opponents' average rating, over the games where it is known."
+          },
+          "performance": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "A simple performance rating: the opponents' average plus 400 × (wins − losses) / games."
           }
         }
       },
@@ -4912,6 +5785,100 @@
         },
         "description": "Game-pair outcomes from the dev engine's side: `[LL, LD, WL+DD, WD, WW]`, i.e. pairs scoring 0, ½, 1, 1½ and 2."
       },
+      "PerfRating": {
+        "type": "object",
+        "required": [
+          "rating",
+          "games",
+          "provisional"
+        ],
+        "properties": {
+          "games": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "provisional": {
+            "type": "boolean",
+            "description": "Lichess's provisional flag: too few games for the rating to mean much."
+          },
+          "rating": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "Phase": {
+        "type": "string",
+        "description": "A phase of the game.",
+        "enum": [
+          "opening",
+          "middlegame",
+          "endgame"
+        ]
+      },
+      "PhaseReview": {
+        "type": "object",
+        "required": [
+          "moves",
+          "timed_moves",
+          "time_ms"
+        ],
+        "properties": {
+          "accuracy": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Lichess's game accuracy over this phase's moves, as lila's `phaseAccuracies`."
+          },
+          "acpl": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "moves": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "time_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "timed_moves": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Moves with a measured think time (games with a clock, after the first move of each side), and their total.",
+            "minimum": 0
+          }
+        }
+      },
+      "PhaseReviews": {
+        "type": "object",
+        "required": [
+          "opening",
+          "middlegame",
+          "endgame"
+        ],
+        "properties": {
+          "endgame": {
+            "$ref": "#/components/schemas/PhaseReview"
+          },
+          "middlegame": {
+            "$ref": "#/components/schemas/PhaseReview"
+          },
+          "opening": {
+            "$ref": "#/components/schemas/PhaseReview"
+          }
+        }
+      },
       "Player": {
         "type": "object",
         "required": [
@@ -4961,6 +5928,409 @@
               "null"
             ],
             "description": "The Lichess title, such as `BOT` or `GM`."
+          }
+        }
+      },
+      "PlayerImportRequest": {
+        "type": "object",
+        "properties": {
+          "max": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The player's newest games, at most this many. Default 50, at most 1000.",
+            "minimum": 0
+          },
+          "rated": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Only rated (true) or casual (false) games."
+          },
+          "speeds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these speeds (`bullet`, `blitz`, `rapid`, `classical`, ...). All when empty."
+          }
+        }
+      },
+      "PlayerProfile": {
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "url",
+          "ratings",
+          "counts",
+          "disabled",
+          "imported",
+          "reviewed"
+        ],
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/GameCounts",
+            "description": "Lichess's counts of all the player's games."
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "disabled": {
+            "type": "boolean",
+            "description": "A closed account, or one marked for breaking Lichess's terms."
+          },
+          "flag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "imported": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Games of the player stored here (imported), and how many of them are reviewed.",
+            "minimum": 0
+          },
+          "ratings": {
+            "$ref": "#/components/schemas/PlayerRatings"
+          },
+          "reviewed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "seen_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "PlayerRatings": {
+        "type": "object",
+        "properties": {
+          "blitz": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PerfRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bullet": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PerfRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "classical": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PerfRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rapid": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PerfRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "PlayerStats": {
+        "type": "object",
+        "required": [
+          "player",
+          "games",
+          "reviewed",
+          "pending_review",
+          "results",
+          "accuracy",
+          "by_speed",
+          "counts",
+          "per_game",
+          "judgements",
+          "opponents",
+          "openings",
+          "time",
+          "longest_win_streak",
+          "notable"
+        ],
+        "properties": {
+          "accuracy": {
+            "$ref": "#/components/schemas/AccuracyStats"
+          },
+          "acpl": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "by_speed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpeedStats"
+            }
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ClassCounts",
+            "description": "Classifications in all reviewed games, and per game."
+          },
+          "first_game": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "games": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Games considered, of them reviewed, and the rest.",
+            "minimum": 0
+          },
+          "judgements": {
+            "$ref": "#/components/schemas/JudgementCounts",
+            "description": "Lichess's own counts (a miss counts as its mistake or blunder)."
+          },
+          "last_game": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "longest_win_streak": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "notable": {
+            "$ref": "#/components/schemas/Notable"
+          },
+          "openings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpeningStats"
+            },
+            "description": "The most played opening families, at most 8."
+          },
+          "opponents": {
+            "$ref": "#/components/schemas/Opponents"
+          },
+          "pending_review": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "per_game": {
+            "$ref": "#/components/schemas/ClassRates"
+          },
+          "player": {
+            "type": "string",
+            "description": "As asked: `me`, `bot` or a Lichess username (lower case)."
+          },
+          "rating": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "results": {
+            "$ref": "#/components/schemas/Results"
+          },
+          "reviewed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "time": {
+            "$ref": "#/components/schemas/TimeStats"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Lichess name, title and rating in the newest game considered."
+          }
+        }
+      },
+      "PlyReview": {
+        "type": "object",
+        "description": "One move as the review judged it. Scores are White's (`{cp}` or `{mate}`; `mate: 0` is the side to move\ncheckmated, after the game's last move); win percentages and accuracy are the mover's.",
+        "required": [
+          "ply",
+          "side",
+          "uci",
+          "san",
+          "eval_before",
+          "eval_after",
+          "best_uci",
+          "best_san",
+          "best_pv",
+          "win_before",
+          "win_after",
+          "accuracy",
+          "cp_loss",
+          "classification",
+          "phase",
+          "sacrifice",
+          "depth"
+        ],
+        "properties": {
+          "accuracy": {
+            "type": "number",
+            "format": "double",
+            "description": "Lichess's accuracy of this move, 0 to 100."
+          },
+          "best_pv": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "best_san": {
+            "type": "string"
+          },
+          "best_uci": {
+            "type": "string",
+            "description": "The engine's best move here, and its line (at most 8 moves, UCI)."
+          },
+          "classification": {
+            "$ref": "#/components/schemas/Classification"
+          },
+          "clock_before_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The mover's clock before the move, in a game with a clock.",
+            "minimum": 0
+          },
+          "cp_loss": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Centipawns lost, each score capped at ±1000.",
+            "minimum": 0
+          },
+          "depth": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The depth of the search of the position before the move.",
+            "minimum": 0
+          },
+          "eval_after": {
+            "$ref": "#/components/schemas/Score",
+            "description": "The engine's best score after it."
+          },
+          "eval_before": {
+            "$ref": "#/components/schemas/Score",
+            "description": "The engine's best score before the move."
+          },
+          "eval_second": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Score"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "judgement": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Judgement",
+                "description": "Lichess's judgement, which a `miss` also carries."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "phase": {
+            "$ref": "#/components/schemas/Phase",
+            "description": "The phase of the position the move was played from."
+          },
+          "ply": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "sacrifice": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Pawns of material given up along the engine's best reply (a brilliant move gives up 2 or more)."
+          },
+          "san": {
+            "type": "string"
+          },
+          "second_uci": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The second-best move and its score, when there was a second legal move."
+          },
+          "side": {
+            "$ref": "#/components/schemas/Side"
+          },
+          "uci": {
+            "type": "string"
+          },
+          "win_after": {
+            "type": "number",
+            "format": "double"
+          },
+          "win_before": {
+            "type": "number",
+            "format": "double"
           }
         }
       },
@@ -5126,6 +6496,257 @@
           "variant_end",
           "other"
         ]
+      },
+      "Results": {
+        "type": "object",
+        "required": [
+          "overall",
+          "white",
+          "black"
+        ],
+        "properties": {
+          "black": {
+            "$ref": "#/components/schemas/Wdl"
+          },
+          "overall": {
+            "$ref": "#/components/schemas/Wdl"
+          },
+          "white": {
+            "$ref": "#/components/schemas/Wdl"
+          }
+        }
+      },
+      "Review": {
+        "type": "object",
+        "description": "A stored review: the summary and every move.",
+        "required": [
+          "id",
+          "match_id",
+          "build",
+          "nodes",
+          "created_at",
+          "summary",
+          "plies"
+        ],
+        "properties": {
+          "build": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "match_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "nodes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "plies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlyReview"
+            }
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ReviewSummary"
+          }
+        }
+      },
+      "ReviewBrief": {
+        "type": "object",
+        "description": "What match lists show of a game's newest review.",
+        "required": [
+          "id",
+          "build",
+          "nodes",
+          "white",
+          "black"
+        ],
+        "properties": {
+          "black": {
+            "$ref": "#/components/schemas/SideBrief"
+          },
+          "build": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The review's id."
+          },
+          "nodes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "white": {
+            "$ref": "#/components/schemas/SideBrief"
+          }
+        }
+      },
+      "ReviewJob": {
+        "type": "object",
+        "description": "A review job as queued: the request resolved.",
+        "required": [
+          "matches",
+          "build",
+          "nodes",
+          "concurrency"
+        ],
+        "properties": {
+          "build": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "concurrency": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "nodes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "ReviewRequest": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The newest finished games of `me` (your Lichess account) or `bot` not yet reviewed with this build and budget."
+          },
+          "build": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BuildRef",
+                "description": "The build to analyse with: an id, or a ref meaning its newest build. Default: the newest build of `main`."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "concurrency": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Engines at once, one thread each. Default: half the default test concurrency.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "How many games for `account` or `player`. Default 20, at most 1000.",
+            "minimum": 0
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "These matches, by id. Or, instead, `account` or `player`."
+          },
+          "nodes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Nodes per position. Default 200,000.",
+            "minimum": 0
+          },
+          "player": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The newest imported games of this Lichess player not yet reviewed with this build and budget."
+          },
+          "rated": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Only rated (true) or casual (false) games, for `account` or `player`."
+          },
+          "speeds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these Lichess speeds (`bullet`, `blitz`, `rapid`, `classical`, `correspondence`), for `account` or\n`player`."
+          }
+        }
+      },
+      "ReviewSummary": {
+        "type": "object",
+        "required": [
+          "build",
+          "nodes",
+          "white",
+          "black"
+        ],
+        "properties": {
+          "black": {
+            "$ref": "#/components/schemas/SideReview"
+          },
+          "build": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "endgame_ply": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "middlegame_ply": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The ply whose move starts the middlegame and the endgame (1 = the first move), when the game got there.",
+            "minimum": 0
+          },
+          "nodes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "white": {
+            "$ref": "#/components/schemas/SideReview"
+          }
+        }
       },
       "RunnerStatus": {
         "type": "object",
@@ -5469,6 +7090,83 @@
           "black"
         ]
       },
+      "SideBrief": {
+        "type": "object",
+        "description": "What lists show of a side's review.",
+        "required": [
+          "counts"
+        ],
+        "properties": {
+          "accuracy": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "acpl": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ClassCounts"
+          }
+        }
+      },
+      "SideReview": {
+        "type": "object",
+        "description": "One side's game.",
+        "required": [
+          "moves",
+          "counts",
+          "judgements",
+          "phases",
+          "time_trouble_blunders"
+        ],
+        "properties": {
+          "accuracy": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Lichess's game accuracy, 0 to 100."
+          },
+          "acpl": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Average centipawn loss, as Lichess computes it.",
+            "minimum": 0
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ClassCounts"
+          },
+          "judgements": {
+            "$ref": "#/components/schemas/JudgementCounts"
+          },
+          "moves": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "phases": {
+            "$ref": "#/components/schemas/PhaseReviews"
+          },
+          "time_trouble_blunders": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Blunders (Lichess's judgement) played with less than a tenth of the starting clock left.",
+            "minimum": 0
+          }
+        }
+      },
       "Speed": {
         "type": "string",
         "description": "A Lichess speed the bot can play. Correspondence is not one.",
@@ -5478,6 +7176,47 @@
           "rapid",
           "classical"
         ]
+      },
+      "SpeedStats": {
+        "type": "object",
+        "required": [
+          "speed",
+          "games",
+          "reviewed",
+          "results"
+        ],
+        "properties": {
+          "accuracy": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "acpl": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "games": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "results": {
+            "$ref": "#/components/schemas/Wdl"
+          },
+          "reviewed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "speed": {
+            "type": "string"
+          }
+        }
       },
       "Sprt": {
         "type": "object",
@@ -5786,6 +7525,60 @@
         ],
         "description": "How long each move may take."
       },
+      "TimeStats": {
+        "type": "object",
+        "description": "Think time per move, from reviewed games with a clock (Lichess records no time for each side's first move).",
+        "required": [
+          "games",
+          "time_trouble_blunders",
+          "time_trouble_blunders_per_game"
+        ],
+        "properties": {
+          "average_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "endgame_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "games": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "middlegame_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "opening_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "time_trouble_blunders": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Blunders played with less than a tenth of the starting clock left, in all and per game.",
+            "minimum": 0
+          },
+          "time_trouble_blunders_per_game": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "TokenRequest": {
         "type": "object",
         "required": [
@@ -5795,6 +7588,39 @@
           "token": {
             "type": "string",
             "description": "A Lichess personal API token with the `bot:play` scope, made at https://lichess.org/account/oauth/token."
+          }
+        }
+      },
+      "TopPlayer": {
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "rating",
+          "progress"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "progress": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Rating change over the last games, as Lichess reports it."
+          },
+          "rating": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": "string"
           }
         }
       },
@@ -6267,6 +8093,46 @@
               "null"
             ],
             "description": "Why it stopped, once finished."
+          }
+        }
+      },
+      "Wdl": {
+        "type": "object",
+        "description": "Wins, draws and losses.",
+        "required": [
+          "games",
+          "wins",
+          "draws",
+          "losses"
+        ],
+        "properties": {
+          "draws": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "games": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "score": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Points scored, as a percentage of the games."
+          },
+          "wins": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       }

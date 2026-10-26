@@ -153,6 +153,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Players side by side over their finished games: results (overall and by colour), average accuracy (overall, by
+         *     phase, by speed), ACPL, classifications per game, opponents' average and performance rating, top openings, time
+         *     per move by phase and time-trouble blunders, longest win streak, and notable moments with match id and ply. Engine
+         *     figures count reviewed games only; `pending_review` says how many are not reviewed.
+         */
+        get: operations["compare_players"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events": {
         parameters: {
             query?: never;
@@ -525,6 +547,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lichess/players/top": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lichess's leaderboard at a speed, cached ten minutes. */
+        get: operations["lichess_top_players"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/players/{username}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A Lichess player's profile (ratings, title, game counts; cached ten minutes) and how many of their games are
+         *     imported and reviewed here. 404 when Lichess has no such player.
+         */
+        get: operations["lichess_player"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lichess/players/{username}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Imports a Lichess player's newest public games (default 50) as matches with `account: "player"` and `player`
+         *     (`GET /api/matches?player=<name>`), each Lichess game once. A job beside the queue; its result is
+         *     `{ player, imported, skipped, other }`. 409 while you play on Lichess.
+         */
+        post: operations["import_lichess_player_games"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/lichess/seek": {
         parameters: {
             query?: never;
@@ -676,7 +756,8 @@ export interface paths {
         };
         /**
          * Recent matches, newest first, without their moves: local ones and Lichess games alike, unless `source` picks one
-         *     kind or `account` one Lichess account.
+         *     kind, `account` one Lichess account or `player` another player's imported games (left out otherwise). Each
+         *     summary carries its newest `review`, if any.
          */
         get: operations["list_matches"];
         put?: never;
@@ -863,6 +944,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/matches/{id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A game's review: per side accuracy, ACPL, classification counts, phases and time trouble, and every move with its
+         *     evaluations, best move, win percentages, accuracy and classification. 404 when the game has no review (yet).
+         */
+        get: operations["get_match_review"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/matches/{id}/takeback": {
         parameters: {
             query?: never;
@@ -879,6 +980,30 @@ export interface paths {
          *     (`lichess.takeback_offer`), with or without a clock.
          */
         post: operations["takeback_move"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Queues a review: every position of each game searched by a build (default: the newest build of `main`) at a node
+         *     budget (default 200,000), MultiPV 2, on several one-thread engines, and each move judged. Give `matches`, or
+         *     `account` (`me`, `bot`) or `player` (an imported Lichess player) for their newest finished games not yet reviewed
+         *     with that build and budget. A game already reviewed so is skipped. Progress comes as `review.progress` events and
+         *     the job's log; the result is `{ reviewed, skipped, failed, positions_searched, positions_cached, build, nodes }`.
+         *     409 while you play on Lichess (a running review pauses then), or with no build to review with.
+         */
+        post: operations["create_review"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1103,6 +1228,17 @@ export interface components {
             title?: string | null;
             username: string;
         };
+        /** @description Average game accuracy (each reviewed game counts once). */
+        AccuracyStats: {
+            /** Format: double */
+            endgame?: number | null;
+            /** Format: double */
+            middlegame?: number | null;
+            /** Format: double */
+            opening?: number | null;
+            /** Format: double */
+            overall?: number | null;
+        };
         AnalysisRequest: {
             /**
              * Format: int64
@@ -1203,6 +1339,8 @@ export interface components {
             ref: string;
             subject: string;
         };
+        /** @description A build by id, or a ref meaning its newest build. */
+        BuildRef: number | string;
         BuildRequest: {
             /** @description A branch, tag or commit of the Reckless checkout, such as `main` or `upstream/main`. */
             ref: string;
@@ -1302,12 +1440,74 @@ export interface components {
             incoming: components["schemas"]["ChallengeInfo"][];
             outgoing: components["schemas"]["ChallengeInfo"][];
         };
+        /** @description How many moves got each classification. */
+        ClassCounts: {
+            /** Format: int32 */
+            best: number;
+            /** Format: int32 */
+            blunder: number;
+            /** Format: int32 */
+            book: number;
+            /** Format: int32 */
+            brilliant: number;
+            /** Format: int32 */
+            excellent: number;
+            /** Format: int32 */
+            good: number;
+            /** Format: int32 */
+            great: number;
+            /** Format: int32 */
+            inaccuracy: number;
+            /** Format: int32 */
+            miss: number;
+            /** Format: int32 */
+            mistake: number;
+        };
+        /** @description Classifications per reviewed game. */
+        ClassRates: {
+            /** Format: double */
+            best: number;
+            /** Format: double */
+            blunder: number;
+            /** Format: double */
+            book: number;
+            /** Format: double */
+            brilliant: number;
+            /** Format: double */
+            excellent: number;
+            /** Format: double */
+            good: number;
+            /** Format: double */
+            great: number;
+            /** Format: double */
+            inaccuracy: number;
+            /** Format: double */
+            miss: number;
+            /** Format: double */
+            mistake: number;
+        };
+        /**
+         * @description What a review calls a move.
+         * @enum {string}
+         */
+        Classification: "brilliant" | "great" | "best" | "excellent" | "good" | "book" | "inaccuracy" | "mistake" | "blunder" | "miss";
         /** @description A clock, in seconds. */
         Clock: {
             /** Format: int32 */
             increment: number;
             /** Format: int32 */
             initial: number;
+        };
+        Comparison: {
+            /**
+             * Format: int32
+             * @description Newest games per player, at most.
+             */
+            limit: number;
+            players: components["schemas"]["PlayerStats"][];
+            rated?: boolean | null;
+            since?: string | null;
+            speeds: string[];
         };
         DeclineRequest: {
             /**
@@ -1413,6 +1613,27 @@ export interface components {
         };
         /** @enum {string} */
         ExperimentStatus: "queued" | "running" | "passed" | "failed" | "cancelled";
+        GameCounts: {
+            /** Format: int32 */
+            all: number;
+            /** Format: int32 */
+            draws: number;
+            /** Format: int32 */
+            losses: number;
+            /** Format: int32 */
+            rated: number;
+            /** Format: int32 */
+            wins: number;
+        };
+        GameMoment: {
+            /** Format: double */
+            accuracy: number;
+            /** Format: int64 */
+            match_id: number;
+            opponent: string;
+            played_at: string;
+            result: components["schemas"]["GameResult"];
+        };
         /**
          * @description How a game came out, as PGN writes it.
          * @enum {string}
@@ -1508,9 +1729,31 @@ export interface components {
         }) | (components["schemas"]["ImportRequest"] & {
             /** @enum {string} */
             kind: "lichess_import";
+        }) | (components["schemas"]["ReviewJob"] & {
+            /** @enum {string} */
+            kind: "review";
+        }) | (components["schemas"]["PlayerImportRequest"] & {
+            username: string;
+        } & {
+            /** @enum {string} */
+            kind: "lichess_player_import";
         });
         /** @enum {string} */
         JobStatus: "queued" | "running" | "done" | "failed" | "cancelled";
+        /**
+         * @description Lichess's judgement of a move.
+         * @enum {string}
+         */
+        Judgement: "inaccuracy" | "mistake" | "blunder";
+        /** @description Lichess's own counts: misses count as the mistake or blunder they are. */
+        JudgementCounts: {
+            /** Format: int32 */
+            blunder: number;
+            /** Format: int32 */
+            inaccuracy: number;
+            /** Format: int32 */
+            mistake: number;
+        };
         /**
          * @description What kind of change an experiment tests, which picks its funnel.
          * @enum {string}
@@ -1520,7 +1763,7 @@ export interface components {
          * @description One of our two Lichess accounts.
          * @enum {string}
          */
-        LichessAccount: "bot" | "me";
+        LichessAccount: "bot" | "me" | "player";
         /** @description What a game played on Lichess adds to the record. */
         LichessGame: {
             /** @description Which of our Lichess accounts played it: the BOT account (`bot`, a build plays) or your own (`me`, you play). */
@@ -1530,8 +1773,19 @@ export interface components {
             id: string;
             /** @description The opening as Lichess names it, such as `B01 Scandinavian Defense`, for games imported from your history. */
             opening?: string | null;
+            /**
+             * Format: int32
+             * @description How many plies of the game are the named opening (Lichess's `opening.ply`), for imported games: a review calls
+             *     them `book`.
+             */
+            opening_ply?: number | null;
             /** @description The side our account played: the bot's build, or you. */
             our_side: components["schemas"]["Side"];
+            /**
+             * @description For `account: player`: the Lichess player (user id, lower case) whose imported history this game is from;
+             *     `our_side` is then that player's side.
+             */
+            player?: string | null;
             rated: boolean;
             /** @description `bullet`, `blitz`, `rapid` or `classical`, as Lichess names the game's speed. */
             speed: string;
@@ -1734,6 +1988,7 @@ export interface components {
             plies: number;
             reason?: components["schemas"]["Reason"] | null;
             result: components["schemas"]["GameResult"];
+            review?: components["schemas"]["ReviewBrief"] | null;
             start_fen: string;
             status: components["schemas"]["MatchStatus"];
             time: components["schemas"]["MatchTime"];
@@ -1851,6 +2106,29 @@ export interface components {
              */
             token: string;
         };
+        /** @description A move worth linking to: the board opens `/matches/{match_id}` at `ply`. */
+        Moment: {
+            classification: components["schemas"]["Classification"];
+            /** Format: int64 */
+            match_id: number;
+            opponent: string;
+            played_at: string;
+            /** Format: int32 */
+            ply: number;
+            /**
+             * Format: int32
+             * @description Pawns of material given up (brilliant moves).
+             */
+            sacrifice: number;
+            san: string;
+            side: components["schemas"]["Side"];
+            /** @description The game on Lichess, at the move. */
+            url?: string | null;
+            /** Format: double */
+            win_after: number;
+            /** Format: double */
+            win_before: number;
+        };
         MoveRequest: {
             /** @description The move in UCI notation, such as `e2e4` or `e7e8q`. */
             uci: string;
@@ -1933,6 +2211,14 @@ export interface components {
             params?: components["schemas"]["ParamInput"][];
             preset?: components["schemas"]["Preset"] | null;
         };
+        Notable: {
+            /** @description The worst blunders by win percentage lost (at most 3). */
+            blunders: components["schemas"]["Moment"][];
+            /** @description The brilliant moves with the most material given up (at most 3), else the great ones. */
+            brilliant: components["schemas"]["Moment"][];
+            least_accurate_game?: components["schemas"]["GameMoment"] | null;
+            most_accurate_game?: components["schemas"]["GameMoment"] | null;
+        };
         OnlineBot: {
             name: string;
             ratings: components["schemas"]["Ratings"];
@@ -1951,12 +2237,29 @@ export interface components {
             /** @enum {string} */
             type: "book";
         };
+        OpeningStats: {
+            /** @description The opening family as Lichess names it, without the ECO code or the variation ("Sicilian Defense"). */
+            name: string;
+            results: components["schemas"]["Wdl"];
+        };
         /** @description Who a challenge is with. */
         Opponent: {
             name: string;
             /** Format: int32 */
             rating?: number | null;
             title?: string | null;
+        };
+        Opponents: {
+            /**
+             * Format: double
+             * @description The opponents' average rating, over the games where it is known.
+             */
+            average_rating?: number | null;
+            /**
+             * Format: double
+             * @description A simple performance rating: the opponents' average plus 400 × (wins − losses) / games.
+             */
+            performance?: number | null;
         };
         /** @description One tunable: its range and step sizes, and where it starts. */
         Param: {
@@ -1997,6 +2300,42 @@ export interface components {
         };
         /** @description Game-pair outcomes from the dev engine's side: `[LL, LD, WL+DD, WD, WW]`, i.e. pairs scoring 0, ½, 1, 1½ and 2. */
         Pentanomial: number[];
+        PerfRating: {
+            /** Format: int32 */
+            games: number;
+            /** @description Lichess's provisional flag: too few games for the rating to mean much. */
+            provisional: boolean;
+            /** Format: int32 */
+            rating: number;
+        };
+        /**
+         * @description A phase of the game.
+         * @enum {string}
+         */
+        Phase: "opening" | "middlegame" | "endgame";
+        PhaseReview: {
+            /**
+             * Format: double
+             * @description Lichess's game accuracy over this phase's moves, as lila's `phaseAccuracies`.
+             */
+            accuracy?: number | null;
+            /** Format: int32 */
+            acpl?: number | null;
+            /** Format: int32 */
+            moves: number;
+            /** Format: int64 */
+            time_ms: number;
+            /**
+             * Format: int32
+             * @description Moves with a measured think time (games with a clock, after the first move of each side), and their total.
+             */
+            timed_moves: number;
+        };
+        PhaseReviews: {
+            endgame: components["schemas"]["PhaseReview"];
+            middlegame: components["schemas"]["PhaseReview"];
+            opening: components["schemas"]["PhaseReview"];
+        };
         Player: {
             /**
              * Format: int64
@@ -2018,6 +2357,136 @@ export interface components {
             rating?: number | null;
             /** @description The Lichess title, such as `BOT` or `GM`. */
             title?: string | null;
+        };
+        PlayerImportRequest: {
+            /**
+             * Format: int32
+             * @description The player's newest games, at most this many. Default 50, at most 1000.
+             */
+            max?: number | null;
+            /** @description Only rated (true) or casual (false) games. */
+            rated?: boolean | null;
+            /** @description Only these speeds (`bullet`, `blitz`, `rapid`, `classical`, ...). All when empty. */
+            speeds?: string[];
+        };
+        PlayerProfile: {
+            /** @description Lichess's counts of all the player's games. */
+            counts: components["schemas"]["GameCounts"];
+            created_at?: string | null;
+            /** @description A closed account, or one marked for breaking Lichess's terms. */
+            disabled: boolean;
+            flag?: string | null;
+            id: string;
+            /**
+             * Format: int32
+             * @description Games of the player stored here (imported), and how many of them are reviewed.
+             */
+            imported: number;
+            ratings: components["schemas"]["PlayerRatings"];
+            /** Format: int32 */
+            reviewed: number;
+            seen_at?: string | null;
+            title?: string | null;
+            url: string;
+            username: string;
+        };
+        PlayerRatings: {
+            blitz?: components["schemas"]["PerfRating"] | null;
+            bullet?: components["schemas"]["PerfRating"] | null;
+            classical?: components["schemas"]["PerfRating"] | null;
+            rapid?: components["schemas"]["PerfRating"] | null;
+        };
+        PlayerStats: {
+            accuracy: components["schemas"]["AccuracyStats"];
+            /** Format: double */
+            acpl?: number | null;
+            by_speed: components["schemas"]["SpeedStats"][];
+            /** @description Classifications in all reviewed games, and per game. */
+            counts: components["schemas"]["ClassCounts"];
+            first_game?: string | null;
+            /**
+             * Format: int32
+             * @description Games considered, of them reviewed, and the rest.
+             */
+            games: number;
+            /** @description Lichess's own counts (a miss counts as its mistake or blunder). */
+            judgements: components["schemas"]["JudgementCounts"];
+            last_game?: string | null;
+            /** Format: int32 */
+            longest_win_streak: number;
+            notable: components["schemas"]["Notable"];
+            /** @description The most played opening families, at most 8. */
+            openings: components["schemas"]["OpeningStats"][];
+            opponents: components["schemas"]["Opponents"];
+            /** Format: int32 */
+            pending_review: number;
+            per_game: components["schemas"]["ClassRates"];
+            /** @description As asked: `me`, `bot` or a Lichess username (lower case). */
+            player: string;
+            /** Format: int32 */
+            rating?: number | null;
+            results: components["schemas"]["Results"];
+            /** Format: int32 */
+            reviewed: number;
+            time: components["schemas"]["TimeStats"];
+            title?: string | null;
+            /** @description The Lichess name, title and rating in the newest game considered. */
+            username?: string | null;
+        };
+        /**
+         * @description One move as the review judged it. Scores are White's (`{cp}` or `{mate}`; `mate: 0` is the side to move
+         *     checkmated, after the game's last move); win percentages and accuracy are the mover's.
+         */
+        PlyReview: {
+            /**
+             * Format: double
+             * @description Lichess's accuracy of this move, 0 to 100.
+             */
+            accuracy: number;
+            best_pv: string[];
+            best_san: string;
+            /** @description The engine's best move here, and its line (at most 8 moves, UCI). */
+            best_uci: string;
+            classification: components["schemas"]["Classification"];
+            /**
+             * Format: int64
+             * @description The mover's clock before the move, in a game with a clock.
+             */
+            clock_before_ms?: number | null;
+            /**
+             * Format: int32
+             * @description Centipawns lost, each score capped at ±1000.
+             */
+            cp_loss: number;
+            /**
+             * Format: int32
+             * @description The depth of the search of the position before the move.
+             */
+            depth: number;
+            /** @description The engine's best score after it. */
+            eval_after: components["schemas"]["Score"];
+            /** @description The engine's best score before the move. */
+            eval_before: components["schemas"]["Score"];
+            eval_second?: components["schemas"]["Score"] | null;
+            judgement?: components["schemas"]["Judgement"] | null;
+            /** @description The phase of the position the move was played from. */
+            phase: components["schemas"]["Phase"];
+            /** Format: int32 */
+            ply: number;
+            /**
+             * Format: int32
+             * @description Pawns of material given up along the engine's best reply (a brilliant move gives up 2 or more).
+             */
+            sacrifice: number;
+            san: string;
+            /** @description The second-best move and its score, when there was a second legal move. */
+            second_uci?: string | null;
+            side: components["schemas"]["Side"];
+            uci: string;
+            /** Format: double */
+            win_after: number;
+            /** Format: double */
+            win_before: number;
         };
         /** @description One point of a test's progress, for its chart. */
         Point: {
@@ -2074,6 +2543,95 @@ export interface components {
          * @enum {string}
          */
         Reason: "checkmate" | "stalemate" | "repetition" | "fifty_moves" | "insufficient_material" | "time" | "crash" | "illegal_move" | "resignation" | "draw_adjudication" | "aborted" | "resigned" | "agreement" | "abandoned" | "no_start" | "cheat" | "variant_end" | "other";
+        Results: {
+            black: components["schemas"]["Wdl"];
+            overall: components["schemas"]["Wdl"];
+            white: components["schemas"]["Wdl"];
+        };
+        /** @description A stored review: the summary and every move. */
+        Review: {
+            /** Format: int64 */
+            build: number;
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            match_id: number;
+            /** Format: int64 */
+            nodes: number;
+            plies: components["schemas"]["PlyReview"][];
+            summary: components["schemas"]["ReviewSummary"];
+        };
+        /** @description What match lists show of a game's newest review. */
+        ReviewBrief: {
+            black: components["schemas"]["SideBrief"];
+            /** Format: int64 */
+            build: number;
+            /**
+             * Format: int64
+             * @description The review's id.
+             */
+            id: number;
+            /** Format: int64 */
+            nodes: number;
+            white: components["schemas"]["SideBrief"];
+        };
+        /** @description A review job as queued: the request resolved. */
+        ReviewJob: {
+            /** Format: int64 */
+            build: number;
+            /** Format: int32 */
+            concurrency: number;
+            matches: number[];
+            /** Format: int64 */
+            nodes: number;
+        };
+        ReviewRequest: {
+            /** @description The newest finished games of `me` (your Lichess account) or `bot` not yet reviewed with this build and budget. */
+            account?: string | null;
+            build?: components["schemas"]["BuildRef"] | null;
+            /**
+             * Format: int32
+             * @description Engines at once, one thread each. Default: half the default test concurrency.
+             */
+            concurrency?: number | null;
+            /**
+             * Format: int32
+             * @description How many games for `account` or `player`. Default 20, at most 1000.
+             */
+            limit?: number | null;
+            /** @description These matches, by id. Or, instead, `account` or `player`. */
+            matches?: number[];
+            /**
+             * Format: int64
+             * @description Nodes per position. Default 200,000.
+             */
+            nodes?: number | null;
+            /** @description The newest imported games of this Lichess player not yet reviewed with this build and budget. */
+            player?: string | null;
+            /** @description Only rated (true) or casual (false) games, for `account` or `player`. */
+            rated?: boolean | null;
+            /**
+             * @description Only these Lichess speeds (`bullet`, `blitz`, `rapid`, `classical`, `correspondence`), for `account` or
+             *     `player`.
+             */
+            speeds?: string[];
+        };
+        ReviewSummary: {
+            black: components["schemas"]["SideReview"];
+            /** Format: int64 */
+            build: number;
+            /** Format: int32 */
+            endgame_ply?: number | null;
+            /**
+             * Format: int32
+             * @description The ply whose move starts the middlegame and the endgame (1 = the first move), when the game got there.
+             */
+            middlegame_ply?: number | null;
+            /** Format: int64 */
+            nodes: number;
+            white: components["schemas"]["SideReview"];
+        };
         RunnerStatus: {
             cpu: components["schemas"]["Machine"];
             /** @description The Reckless checkout the runner builds from. */
@@ -2269,11 +2827,54 @@ export interface components {
         };
         /** @enum {string} */
         Side: "white" | "black";
+        /** @description What lists show of a side's review. */
+        SideBrief: {
+            /** Format: double */
+            accuracy?: number | null;
+            /** Format: int32 */
+            acpl?: number | null;
+            counts: components["schemas"]["ClassCounts"];
+        };
+        /** @description One side's game. */
+        SideReview: {
+            /**
+             * Format: double
+             * @description Lichess's game accuracy, 0 to 100.
+             */
+            accuracy?: number | null;
+            /**
+             * Format: int32
+             * @description Average centipawn loss, as Lichess computes it.
+             */
+            acpl?: number | null;
+            counts: components["schemas"]["ClassCounts"];
+            judgements: components["schemas"]["JudgementCounts"];
+            /** Format: int32 */
+            moves: number;
+            phases: components["schemas"]["PhaseReviews"];
+            /**
+             * Format: int32
+             * @description Blunders (Lichess's judgement) played with less than a tenth of the starting clock left.
+             */
+            time_trouble_blunders: number;
+        };
         /**
          * @description A Lichess speed the bot can play. Correspondence is not one.
          * @enum {string}
          */
         Speed: "bullet" | "blitz" | "rapid" | "classical";
+        SpeedStats: {
+            /** Format: double */
+            accuracy?: number | null;
+            /** Format: double */
+            acpl?: number | null;
+            /** Format: int32 */
+            games: number;
+            results: components["schemas"]["Wdl"];
+            /** Format: int32 */
+            reviewed: number;
+            speed: string;
+        };
         /** @description The SPRT a test runs: Elo bounds in normalized Elo, and the error rates. */
         Sprt: {
             /** Format: double */
@@ -2357,9 +2958,41 @@ export interface components {
                 nodes: number;
             };
         };
+        /** @description Think time per move, from reviewed games with a clock (Lichess records no time for each side's first move). */
+        TimeStats: {
+            /** Format: double */
+            average_ms?: number | null;
+            /** Format: double */
+            endgame_ms?: number | null;
+            /** Format: int32 */
+            games: number;
+            /** Format: double */
+            middlegame_ms?: number | null;
+            /** Format: double */
+            opening_ms?: number | null;
+            /**
+             * Format: int32
+             * @description Blunders played with less than a tenth of the starting clock left, in all and per game.
+             */
+            time_trouble_blunders: number;
+            /** Format: double */
+            time_trouble_blunders_per_game: number;
+        };
         TokenRequest: {
             /** @description A Lichess personal API token with the `bot:play` scope, made at https://lichess.org/account/oauth/token. */
             token: string;
+        };
+        TopPlayer: {
+            id: string;
+            /**
+             * Format: int32
+             * @description Rating change over the last games, as Lichess reports it.
+             */
+            progress: number;
+            /** Format: int32 */
+            rating: number;
+            title?: string | null;
+            username: string;
         };
         Tune: {
             /** Format: double */
@@ -2533,6 +3166,22 @@ export interface components {
             status: components["schemas"]["ExperimentStatus"];
             /** @description Why it stopped, once finished. */
             summary?: string | null;
+        };
+        /** @description Wins, draws and losses. */
+        Wdl: {
+            /** Format: int32 */
+            draws: number;
+            /** Format: int32 */
+            games: number;
+            /** Format: int32 */
+            losses: number;
+            /**
+             * Format: double
+             * @description Points scored, as a percentage of the games.
+             */
+            score?: number | null;
+            /** Format: int32 */
+            wins: number;
         };
     };
     responses: never;
@@ -2833,6 +3482,42 @@ export interface operations {
                 content?: never;
             };
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    compare_players: {
+        parameters: {
+            query: {
+                /** @description Comma-separated: `me` (your account), `bot`, or Lichess usernames whose games were imported. */
+                players: string;
+                /** @description Comma-separated Lichess speeds; all when absent. */
+                speeds?: string | null;
+                /** @description Only rated (true) or casual (false) games. */
+                rated?: boolean | null;
+                /** @description Only games played since then: an ISO date or time (`2026-01-01`), or milliseconds since 1970. */
+                since?: string | null;
+                /** @description The newest games per player, at most. Default 200, at most 5000. */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Comparison"];
+                };
+            };
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3545,6 +4230,130 @@ export interface operations {
             };
         };
     };
+    lichess_top_players: {
+        parameters: {
+            query?: {
+                /** @description `ultraBullet`, `bullet`, `blitz`, `rapid` or `classical`. Default `blitz`. */
+                perf?: string | null;
+                /** @description How many, at most 200. Default 10. */
+                nb?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopPlayer"][];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    lichess_player: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerProfile"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    import_lichess_player_games: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerImportRequest"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     start_lichess_seek: {
         parameters: {
             query?: never;
@@ -3828,7 +4637,9 @@ export interface operations {
                 /** @description Only local matches (`local`) or only Lichess games (`lichess`). Both when absent. */
                 source?: ("local" | "lichess") | null;
                 /** @description Only the Lichess games of one account: the bot's (`bot`) or your own (`me`), played here or imported. */
-                account?: ("bot" | "me") | null;
+                account?: ("bot" | "me" | "player") | null;
+                /** @description Only the imported games of this other Lichess player (see `POST /api/lichess/players/{username}/import`). */
+                player?: string | null;
             };
             header?: never;
             path?: never;
@@ -4245,6 +5056,38 @@ export interface operations {
             };
         };
     };
+    get_match_review: {
+        parameters: {
+            query?: {
+                /** @description The review made with this build; the newest review when absent. */
+                build?: number | null;
+                /** @description The review made at this node budget. */
+                nodes?: number | null;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Review"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     takeback_move: {
         parameters: {
             query?: never;
@@ -4262,6 +5105,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Match"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_review: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewRequest"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
                 };
             };
             400: {

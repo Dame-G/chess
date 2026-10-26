@@ -41,6 +41,17 @@ pub enum JobSpec {
         #[serde(flatten)]
         options: crate::lichess::me::import::ImportRequest,
     },
+    /// Review games: search every position with a build and judge each move.
+    Review {
+        #[serde(flatten)]
+        review: crate::review::ReviewJob,
+    },
+    /// Import another Lichess player's recent public games, for comparison. Network only, so beside the queue.
+    LichessPlayerImport {
+        username: String,
+        #[serde(flatten)]
+        options: crate::lichess::players::PlayerImportRequest,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -324,6 +335,10 @@ async fn run(state: &Arc<AppState>, job: Job, token: CancellationToken) {
             tune::apply(tune::Run { state, cancel: &token, log: &log }, *id, options).await
         }
         JobSpec::LichessImport { options } => crate::lichess::me::import::run(state, &token, &log, options).await,
+        JobSpec::Review { review } => crate::review::run(state, id, &token, &log, review).await,
+        JobSpec::LichessPlayerImport { username, options } => {
+            crate::lichess::players::run_import(state, &token, &log, username, options).await
+        }
     };
 
     {

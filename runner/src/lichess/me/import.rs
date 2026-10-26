@@ -62,8 +62,14 @@ fn iso(ms: i64) -> String {
     super::super::quota::iso(ms)
 }
 
-/// One game of the export as a finished match, or `None` for one that is not standard chess or not over.
+/// One game of your export as a finished match, or `None` for one that is not standard chess or not over.
 pub fn to_match(g: &Value, me: &str) -> Result<Option<Match>> {
+    to_match_as(g, me, LichessAccount::Me)
+}
+
+/// One game of the export of the Lichess user `me` (an id) as a finished match of `account`: yours (`me`, your side
+/// is the human seat) or another player's (`player`, tagged with that id).
+pub fn to_match_as(g: &Value, me: &str, account: LichessAccount) -> Result<Option<Match>> {
     let id = g["id"].as_str().context("a game without an id")?.to_owned();
     if !matches!(g["variant"].as_str().unwrap_or("standard"), "standard" | "fromPosition") {
         return Ok(None);
@@ -82,9 +88,11 @@ pub fn to_match(g: &Value, me: &str) -> Result<Option<Match>> {
         bail!("game {id}: {me} plays neither side");
     };
     let (mut wp, mut bp) = (player(white), player(black));
-    match our {
-        Side::White => wp.human = true,
-        Side::Black => bp.human = true,
+    if account == LichessAccount::Me {
+        match our {
+            Side::White => wp.human = true,
+            Side::Black => bp.human = true,
+        }
     }
     let initial = g["initialFen"].as_str().unwrap_or("startpos");
     let mut pos: Chess = if initial == "startpos" {
@@ -199,10 +207,12 @@ pub fn to_match(g: &Value, me: &str) -> Result<Option<Match>> {
             rated: g["rated"].as_bool().unwrap_or(false),
             speed: g["speed"].as_str().unwrap_or_default().to_owned(),
             our_side: our,
-            account: LichessAccount::Me,
+            account,
             opening,
             draw_offer: None,
             takeback_offer: None,
+            player: (account == LichessAccount::Player).then(|| me.to_owned()),
+            opening_ply: g["opening"]["ply"].as_u64().map(|p| p as u32),
         }),
     }))
 }

@@ -123,6 +123,28 @@ const MIGRATIONS: &[&str] = &[
     // NULL when it was played as written.
     "ALTER TABLE tests ADD COLUMN scaling TEXT;
     ALTER TABLE tunes ADD COLUMN scaling TEXT;",
+    // 8: game reviews (one per game, build and node budget; `summary` and `plies` as JSON) and the evaluations of
+    // positions they searched, by FEN without move counters, build, nodes and MultiPV.
+    "CREATE TABLE reviews (
+        id INTEGER PRIMARY KEY,
+        match_id INTEGER NOT NULL REFERENCES matches (id),
+        build_id INTEGER NOT NULL REFERENCES builds (id),
+        nodes INTEGER NOT NULL,
+        summary TEXT NOT NULL,
+        plies TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        UNIQUE (match_id, build_id, nodes)
+    );
+    CREATE INDEX reviews_match ON reviews (match_id, id);
+    CREATE TABLE position_evals (
+        fen TEXT NOT NULL,
+        build_id INTEGER NOT NULL,
+        nodes INTEGER NOT NULL,
+        multipv INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        PRIMARY KEY (fen, build_id, nodes, multipv)
+    ) WITHOUT ROWID;",
 ];
 
 #[derive(Clone)]

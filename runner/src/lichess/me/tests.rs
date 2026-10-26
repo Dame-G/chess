@@ -399,9 +399,9 @@ async fn a_game_is_played_through_the_match_routes_and_locks_analysis_meanwhile(
     for kind in ["match.started", "match.move", "match.offer", "match.ended", "lichess.me.status"] {
         assert!(kinds.iter().any(|k| k == kind), "no {kind} in {kinds:?}");
     }
-    let mine = matches::list(&state, 10, Some(Source::Lichess), Some(LichessAccount::Me)).await.unwrap();
+    let mine = matches::list(&state, 10, Some(Source::Lichess), Some(LichessAccount::Me), None).await.unwrap();
     assert_eq!(mine.len(), 1);
-    assert!(matches::list(&state, 10, None, Some(LichessAccount::Bot)).await.unwrap().is_empty());
+    assert!(matches::list(&state, 10, None, Some(LichessAccount::Bot), None).await.unwrap().is_empty());
     let _ = std::fs::remove_dir_all(&state.config.data);
 }
 
@@ -423,7 +423,7 @@ async fn importing_twice_stores_each_game_once_and_carries_on_from_the_newest() 
     let third = import::run(&state, &cancel, &log, &again).await.unwrap();
     assert_eq!((third["imported"].as_u64(), third["skipped"].as_u64()), (Some(0), Some(2)));
 
-    let list = matches::list(&state, 10, None, Some(LichessAccount::Me)).await.unwrap();
+    let list = matches::list(&state, 10, None, Some(LichessAccount::Me), None).await.unwrap();
     assert_eq!(list.len(), 2);
     let m = matches::get(&state, list[0].id).await.unwrap().unwrap();
     let l = m.lichess.as_ref().unwrap();

@@ -21,16 +21,19 @@ pub struct ListQuery {
     /// Only the Lichess games of one account: the bot's (`bot`) or your own (`me`), played here or imported.
     #[param(inline)]
     account: Option<LichessAccount>,
+    /// Only the imported games of this other Lichess player (see `POST /api/lichess/players/{username}/import`).
+    player: Option<String>,
 }
 
 /// Recent matches, newest first, without their moves: local ones and Lichess games alike, unless `source` picks one
-/// kind or `account` one Lichess account.
+/// kind, `account` one Lichess account or `player` another player's imported games (left out otherwise). Each
+/// summary carries its newest `review`, if any.
 #[utoipa::path(get, path = "/api/matches", operation_id = "list_matches", tag = "matches", params(ListQuery), responses((status = 200, body = Vec<MatchSummary>)))]
 pub async fn list(
     State(state): State<Arc<AppState>>,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Vec<MatchSummary>>, ApiError> {
-    Ok(Json(matches::list(&state, q.limit.unwrap_or(50).clamp(1, 1000), q.source, q.account).await?))
+    Ok(Json(matches::list(&state, q.limit.unwrap_or(50).clamp(1, 1000), q.source, q.account, q.player).await?))
 }
 
 /// Starts a match between two builds and returns it. The moves arrive as `match.move` events, the thinking engine's

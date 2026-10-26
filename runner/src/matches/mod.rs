@@ -153,6 +153,14 @@ pub struct LichessGame {
     /// While your own game runs: the side proposing a takeback now, if any.
     #[serde(default)]
     pub takeback_offer: Option<Side>,
+    /// For `account: player`: the Lichess player (user id, lower case) whose imported history this game is from;
+    /// `our_side` is then that player's side.
+    #[serde(default)]
+    pub player: Option<String>,
+    /// How many plies of the game are the named opening (Lichess's `opening.ply`), for imported games: a review calls
+    /// them `book`.
+    #[serde(default)]
+    pub opening_ply: Option<u32>,
 }
 
 /// One of our two Lichess accounts.
@@ -164,6 +172,8 @@ pub enum LichessAccount {
     Bot,
     /// Your own account, which you play with.
     Me,
+    /// Neither: another Lichess player's games, imported for comparison (`player` names them).
+    Player,
 }
 
 impl LichessAccount {
@@ -171,6 +181,7 @@ impl LichessAccount {
         match self {
             Self::Bot => "bot",
             Self::Me => "me",
+            Self::Player => "player",
         }
     }
 }
@@ -262,6 +273,8 @@ pub struct MatchSummary {
     pub plies: u32,
     pub created_at: String,
     pub lichess: Option<LichessGame>,
+    /// The game's newest review, when it has one: accuracy, ACPL and classification counts per side.
+    pub review: Option<crate::review::ReviewBrief>,
 }
 
 /// A build as a player of a game.
@@ -288,6 +301,7 @@ impl Match {
             plies: self.moves.len() as u32,
             created_at: self.created_at.clone(),
             lichess: self.lichess.clone(),
+            review: None,
         }
     }
 }
@@ -315,28 +329,48 @@ fn recent(
     limit: u32,
     source: Option<Source>,
     account: Option<LichessAccount>,
+    player: Option<String>,
 ) -> Result<Vec<MatchSummary>> {
     let mut filters = Vec::new();
     match source {
         None => {}
-        Some(Source::Local) => filters.push("json_extract(data, '$.lichess') IS NULL"),
-        Some(Source::Lichess) => filters.push("json_extract(data, '$.lichess') IS NOT NULL"),
+        Some(Source::Local) => filters.push("json_extract(m.data, '$.lichess') IS NULL"),
+        Some(Source::Lichess) => filters.push("json_extract(m.data, '$.lichess') IS NOT NULL"),
     }
     // Records from before there were two accounts have no `account`: they are the bot's.
-    match account {
-        None => {}
-        Some(LichessAccount::Bot) => filters.push(
-            "json_extract(data, '$.lichess') IS NOT NULL \
-             AND ifnull(json_extract(data, '$.lichess.account'), 'bot') = 'bot'",
+    match (account, &player) {
+        (_, Some(_)) => filters.push(
+            "json_extract(m.data, '$.lichess.account') = 'player' AND json_extract(m.data, '$.lichess.player') = ?2",
         ),
-        Some(LichessAccount::Me) => filters.push("json_extract(data, '$.lichess.account') = 'me'"),
+        (None, None) => filters.push("ifnull(json_extract(m.data, '$.lichess.account'), '') <> 'player'"),
+        (Some(LichessAccount::Bot), None) => filters.push(
+            "json_extract(m.data, '$.lichess') IS NOT NULL \
+             AND ifnull(json_extract(m.data, '$.lichess.account'), 'bot') = 'bot'",
+        ),
+        (Some(LichessAccount::Me), None) => filters.push("json_extract(m.data, '$.lichess.account') = 'me'"),
+        (Some(LichessAccount::Player), None) => filters.push("json_extract(m.data, '$.lichess.account') = 'player'"),
     }
-    let filter = if filters.is_empty() { String::new() } else { format!("WHERE {}", filters.join(" AND ")) };
-    let mut stmt = c.prepare(&format!("SELECT data FROM matches {filter} ORDER BY id DESC LIMIT ?1"))?;
-    let rows = stmt.query_map([limit], |r| r.get::<_, String>(0))?;
+    let filter = format!("WHERE {}", filters.join(" AND "));
+    let mut stmt = c.prepare(&format!(
+        "SELECT m.data, r.id, r.summary FROM matches m
+         LEFT JOIN reviews r ON r.id = (SELECT max(id) FROM reviews WHERE match_id = m.id)
+         {filter} ORDER BY m.id DESC LIMIT ?1"
+    ))?;
+    let mut args: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(limit)];
+    if let Some(p) = player {
+        args.push(Box::new(p.to_lowercase()));
+    }
+    let rows = stmt.query_map(rusqlite::params_from_iter(args.iter()), |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, Option<String>>(2)?))
+    })?;
     let mut out = Vec::new();
-    for data in rows {
-        out.push(serde_json::from_str::<Match>(&data?).context("read a stored match")?.summary());
+    for row in rows {
+        let (data, review, summary) = row?;
+        let mut m = serde_json::from_str::<Match>(&data).context("read a stored match")?.summary();
+        if let (Some(id), Some(summary)) = (review, summary) {
+            m.review = serde_json::from_str(&summary).ok().map(|s| crate::review::ReviewBrief::of(id, &s));
+        }
+        out.push(m);
     }
     Ok(out)
 }
@@ -480,14 +514,16 @@ pub async fn get(state: &AppState, id: i64) -> Result<Option<Match>> {
 }
 
 /// Recent matches, newest first. `source` picks local games or Lichess games, `account` the Lichess games of one of
-/// our accounts.
+/// our accounts, `player` another Lichess player's imported games. Without `account` or `player`, imported games of
+/// other players are left out.
 pub async fn list(
     state: &AppState,
     limit: u32,
     source: Option<Source>,
     account: Option<LichessAccount>,
+    player: Option<String>,
 ) -> Result<Vec<MatchSummary>> {
-    state.store.call(move |c| recent(c, limit, source, account)).await
+    state.store.call(move |c| recent(c, limit, source, account, player)).await
 }
 
 /// Stops the running match, which is recorded as aborted, and returns it. 409 when that match is not running.
@@ -1321,8 +1357,8 @@ impl Recorder {
     }
 }
 
-/// Stores finished games from elsewhere (your Lichess history), skipping any whose Lichess game is already recorded
-/// for the same account. Answers how many were stored and how many skipped.
+/// Stores finished games from elsewhere (your Lichess history, another player's), skipping any whose Lichess game is
+/// already recorded for the same account (and player). Answers how many were stored and how many skipped.
 pub async fn import(state: &AppState, games: Vec<Match>) -> Result<(usize, usize)> {
     state
         .store
@@ -1331,13 +1367,24 @@ pub async fn import(state: &AppState, games: Vec<Match>) -> Result<(usize, usize
             let (mut stored, mut skipped) = (0, 0);
             for mut game in games {
                 let Some(l) = game.lichess.as_ref() else { continue };
-                let known: bool = tx.query_row(
-                    "SELECT EXISTS (SELECT 1 FROM matches WHERE json_extract(data, '$.lichess.id') = ?1
-                     AND ifnull(json_extract(data, '$.lichess.account'), 'bot') = ?2)",
-                    [l.id.clone(), l.account.key().to_owned()],
-                    |r| r.get(0),
-                )?;
-                if known {
+                let known: Option<i64> = tx
+                    .query_row(
+                        "SELECT id FROM matches WHERE json_extract(data, '$.lichess.id') = ?1
+                         AND ifnull(json_extract(data, '$.lichess.account'), 'bot') = ?2
+                         AND ifnull(json_extract(data, '$.lichess.player'), '') = ?3",
+                        [l.id.clone(), l.account.key().to_owned(), l.player.clone().unwrap_or_default()],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                if let Some(id) = known {
+                    // Records imported before `opening_ply` was kept get it now, so their book moves show.
+                    if let Some(ply) = l.opening_ply {
+                        tx.execute(
+                            "UPDATE matches SET data = json_set(data, '$.lichess.opening_ply', ?2)
+                             WHERE id = ?1 AND json_extract(data, '$.lichess.opening_ply') IS NULL",
+                            params![id, ply],
+                        )?;
+                    }
                     skipped += 1;
                     continue;
                 }

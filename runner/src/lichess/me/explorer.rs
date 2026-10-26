@@ -28,12 +28,12 @@ pub struct Cache {
 }
 
 impl Cache {
-    fn get(&self, key: &str) -> Option<Value> {
+    pub(crate) fn get(&self, key: &str) -> Option<Value> {
         let entries = self.entries.lock().unwrap();
         entries.get(key).filter(|(at, ttl, _)| at.elapsed() < *ttl).map(|(_, _, v)| v.clone())
     }
 
-    fn put(&self, key: String, ttl: Duration, value: Value) {
+    pub(crate) fn put(&self, key: String, ttl: Duration, value: Value) {
         let mut entries = self.entries.lock().unwrap();
         if entries.len() >= KEEP {
             entries.retain(|_, (at, ttl, _)| at.elapsed() < *ttl);

@@ -219,6 +219,8 @@ async fn run(state: &Arc<AppState>, id: &str) -> Result<()> {
             opening: None,
             draw_offer: None,
             takeback_offer: None,
+            player: None,
+            opening_ply: None,
         }),
     };
     // A game you come back to (after a restart) goes on in the record it has, as far as it agrees.

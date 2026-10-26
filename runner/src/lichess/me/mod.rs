@@ -234,7 +234,7 @@ impl Me {
         }
     }
 
-    fn client(&self) -> Option<Lichess> {
+    pub(crate) fn client(&self) -> Option<Lichess> {
         let inner = self.inner.lock().unwrap();
         let token = inner.token.as_ref()?;
         Some(Lichess::new(self.http.clone(), &self.base, token, inner.account.as_ref().map(|a| a.username.as_str())))
@@ -294,6 +294,17 @@ impl Me {
     /// Whether you have a game running on Lichess: engine analysis and the tablebase are off.
     pub fn locked(&self) -> bool {
         !self.inner.lock().unwrap().games.is_empty()
+    }
+
+    /// Pretends a game of yours is running on lichess.org (or that it ended), for tests of the fair-play lock.
+    #[cfg(test)]
+    pub fn set_playing_for_test(&self, playing: bool) {
+        let mut inner = self.inner.lock().unwrap();
+        if playing {
+            inner.games.insert("test0001".into(), Running { match_id: None, board: false, speed: "blitz".into() });
+        } else {
+            inner.games.clear();
+        }
     }
 
     /// Whether the explorer is off: during any game but correspondence, where Lichess allows it.

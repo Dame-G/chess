@@ -14,6 +14,7 @@ mod jobs;
 mod lichess;
 mod matches;
 mod proc;
+mod review;
 mod stats;
 mod store;
 mod tools;

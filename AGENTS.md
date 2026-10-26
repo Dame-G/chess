@@ -228,6 +228,70 @@ Events on `/api/events`:
 - `match.opponent_gone`: `{ id, gone, claim_win_in_seconds }`: the opponent left (or came back), and when you may claim.
 - `match.started`, `match.move`, `match.takeback` and `match.ended` as for any match.
 
+## Game review and comparison
+
+A review searches every position of a stored game (yours, the bot's, another player's, a local match) with one of our builds and judges each move. `compare` puts players side by side over their reviewed games. The code is `runner/src/review/` (`judge.rs` holds every formula and threshold below, as plain functions with tests) and `runner/src/lichess/players.rs`.
+
+```bash
+chess review <match id>... [--wait]               # with one id and --wait, prints the review
+chess review --account me | --player <name> [--limit 20] [--speeds blitz,rapid] [--rated] [--build main] [--nodes 200000] [--concurrency N] [--wait]
+chess review show <match id>                      # accuracy and counts per side, then every move
+chess compare me <name> [bot] [--speeds blitz] [--rated] [--since 2026-01-01] [--limit 200]
+chess lichess players import <name> [--max 50] [--speeds blitz,rapid] [--rated] [--wait]
+chess lichess players top [blitz] [--nb 10]       # Lichess's leaderboard
+chess lichess players show <name>                 # profile, and how many of their games are here
+```
+
+How a review runs:
+
+- **A job in the queue** (it loads the CPU), behind tests and tunes. Default build: the newest build of `main`; default budget: **200,000 nodes per position**, `MultiPV 2`, Hash 16, one thread per engine, on half the default test concurrency (3 engines on the i7-10700K). Engines are started once per job and reused across positions and games; positions go to whichever engine is free.
+- **Cost:** a 63-ply blitz game (64 positions) took 7.2 s on 3 engines here, about 0.35 s per position per core (depth 12 to 16), with the runner's other work going on. Fifty games is about six minutes.
+- **Cache:** every search is kept in `position_evals` by FEN without the move counters, build, nodes and MultiPV, so shared positions (openings, mostly) are searched once. The engine gets the bare FEN, without the game's history.
+- **Stored** in `reviews`, one row per game, build and node budget; reviewing again with the same build and budget skips the game. Lists (`GET /api/matches`) carry each game's newest review as `review` (`{ id, build, nodes, white: {accuracy, acpl, counts}, black }`).
+- **Fair play:** a review is analysis. While you play on Lichess (`fair_play_lock`) `POST /api/reviews` and player imports answer 409, and a running review waits before its next position until the game ends (its log says "paused"). It never looks at the game being played: a running match is skipped.
+
+Lichess's definitions (lila `AccuracyPercent.scala`, `AccuracyCP.scala`, `Advice.scala`; scalachess `WinPercent`; scalalib `Maths`), followed exactly:
+
+- **Win%** of the side to move: `50 + 50 × (2 / (1 + e^(−0.00368208 × cp)) − 1)`, centipawns capped at ±1000, a mate counting as the cap.
+- **Move accuracy** from the mover's win% before (the engine's best) and after: 100 if it did not drop, else `103.1668 × e^(−0.04354 × drop) − 3.1669 + 1`, within 0 and 100.
+- **Game accuracy** per side: the mean of a volatility-weighted mean and the harmonic mean (values under 1 count as 1) of its move accuracies. Each move is weighted by the population standard deviation of the win% in a window around it (clamped 0.5 to 12); the window is a tenth of the game's positions, 2 to 8. lila's own test values pass (`review::tests::game_accuracy_matches_lilas_tests`). Lichess scores the start +0.15; we search it.
+- **ACPL:** the mean of `max(0, before − after)` per move, each score capped at ±1000.
+- **Judgements**, only for a move that is not the engine's best: a drop in winning chances (the −1..1 scale, so half the win% drop) of 0.1 is an inaccuracy, 0.2 a mistake, 0.3 a blunder (5, 10, 15 points of win%). Walking into a forced mate: inaccuracy if already 10 pawns down, mistake if 7, else blunder. Losing one's own forced mate: inaccuracy if still 10 pawns up, mistake if 7, else blunder. A slower mate is no judgement.
+
+Our classifications (one per move, first match wins; chess.com's published descriptions of brilliant, great and miss as the model, made deterministic):
+
+| Classification | Rule |
+|---|---|
+| `miss` | Lichess judges it a mistake or blunder, the opponent's previous move was a mistake or blunder, win% before ≥ 60 and after ≥ 30: the chance was let go, the game not lost. |
+| `blunder`, `mistake`, `inaccuracy` | Lichess's judgement. |
+| `book` | Within the named opening: ply ≤ Lichess's `opening.ply` for the game (`lichess.opening_ply`, kept by imports; games imported before it came need `chess lichess me import --since 0` to get it). |
+| `brilliant` | The engine's best or within 2 win% of it; gives up ≥ 2 pawns of material (N = B = 3, R = 5, Q = 9: an exchange, or a piece for a pawn) along the engine's best reply: the mover's balance before, less the balance after the move and six more plies of the engine's line from the new position (longer while it keeps capturing, at most ten); win% before < 85 (not already winning); win% after ≥ 50; more than one legal move. |
+| `great` | The engine's best or within 2 win% of it; the second-best line is ≥ 15 win% worse than the best (every other move a blunder); win% after ≥ 40; not a recapture on the square just captured on; more than one legal move. |
+| `best` | The engine's best move. |
+| `excellent` | Within 2 win% of the best. |
+| `good` | Anything else that is not an inaccuracy. |
+
+`judgements` in a summary are Lichess's counts (a miss counts as its mistake or blunder), comparable with Lichess's own analysis.
+
+**Phases**, per position, never going back: **endgame** once at most 6 queens, rooks, bishops and knights are on the board (lila's `Divider` rule); **middlegame** once at most 10, or a side's back rank holds fewer than 4 of its own pieces, or 30 plies are played; **opening** before. A move belongs to the phase of the position it was played from. A phase's accuracy is the game accuracy of its positions, from the one before its first move (lila's `phaseAccuracies`).
+
+**Time:** think time per move comes from the clocks (Lichess records none for each side's first move). A **time-trouble blunder** is a blunder (judgement) played with less than a tenth of the starting clock.
+
+The routes:
+
+- `POST /api/reviews {matches: [ids] | account: "me"|"bot" | player: name, limit? (20), speeds?, rated?, build? (id or ref), nodes?, concurrency?}` → 202, a job (`kind: "review"`, `{matches, build, nodes, concurrency}` resolved when queued). Result `{ reviewed, skipped, failed, positions_searched, positions_cached, build, nodes }`. 404 for an unknown match, 409 for no build or the fair-play lock.
+- `GET /api/matches/{id}/review?build=&nodes=` → the newest review (or the one asked): `{ id, match_id, build, nodes, created_at, summary, plies }`. 404 without one.
+  - `summary`: `{ build, nodes, white, black, middlegame_ply, endgame_ply }`; a side is `{ moves, accuracy, acpl, counts: {brilliant, great, best, excellent, good, book, inaccuracy, mistake, blunder, miss}, judgements: {inaccuracy, mistake, blunder}, phases: {opening, middlegame, endgame: {moves, accuracy, acpl, timed_moves, time_ms}}, time_trouble_blunders }`.
+  - each ply: `{ ply, side, uci, san, eval_before, eval_after, best_uci, best_san, best_pv, second_uci, eval_second, win_before, win_after, accuracy, cp_loss, classification, judgement, phase, sacrifice, clock_before_ms, depth }`. Scores are White's `{cp}` or `{mate}`; `mate: 0` after the last move means the side to move is checkmated. Win% and accuracy are the mover's.
+- `GET /api/compare?players=me,<name>,bot&speeds=blitz,rapid&rated=true&since=2026-01-01&limit=200` → `{ players: [...], speeds, rated, since, limit }`. Each player: `player, username, title, rating` (from the newest game), `games, reviewed, pending_review, first_game, last_game`, `results: {overall, white, black: {games, wins, draws, losses, score}}`, `accuracy: {overall, opening, middlegame, endgame}` (mean of game accuracies), `acpl`, `by_speed: [{speed, games, reviewed, results, accuracy, acpl}]`, `counts` and `per_game` (each classification per reviewed game), `judgements`, `opponents: {average_rating, performance}` (performance = opponents' average + 400 × (wins − losses) / games), `openings` (top 8 families by games, ECO code and variation dropped, with results), `time: {games, average_ms, opening_ms, middlegame_ms, endgame_ms, time_trouble_blunders, time_trouble_blunders_per_game}`, `longest_win_streak`, `notable: {brilliant: [moment], blunders: [moment], most_accurate_game, least_accurate_game}`. A moment is `{ match_id, ply, san, side, classification, win_before, win_after, sacrifice, opponent, played_at, url }`: open `/matches/<match_id>` at `ply`. Results count every finished game; everything from the engine counts reviewed games only.
+- `POST /api/lichess/players/{username}/import {max? (50, at most 1000), speeds?, rated?}` → 202, a job beside the queue (network only): `GET /api/games/user/{username}` with clocks, evals and the opening, sent with your token when you are logged in, else anonymously (never the bot's). Games are matches with `lichess.account: "player"`, `lichess.player: <id>` and `our_side` = that player's side; no seat is `human`. Each Lichess game is stored once per player. Result `{ player, imported, skipped, other }`. These games stay out of `GET /api/matches` unless asked for with `?player=<name>` (or `account=player`), so the board's lists are not flooded.
+- `GET /api/lichess/players/top?perf=blitz&nb=10` → `[{ id, username, title, rating, progress }]`, Lichess's leaderboard (`/api/player/top/{nb}/{perf}`), cached ten minutes.
+- `GET /api/lichess/players/{username}` → `{ id, username, title, url, ratings: {bullet, blitz, rapid, classical: {rating, games, provisional}}, counts: {all, rated, wins, draws, losses}, flag, created_at, seen_at, disabled, imported, reviewed }`, cached ten minutes; 404 when Lichess has no such player.
+
+Events: `review.progress` `{ job, done, total, match, review, paused }` after each game (`review` is the brief, or null when skipped or failed) and when the review pauses for or resumes after a game of yours; `job.updated` and `job.log` as for any job.
+
+What a UI should show: in game lists, each side's accuracy (and a ?? count); on the board, the classification glyph on each move, the eval graph from `eval_after`, the best move as an arrow (`best_uci`, `best_pv`) where the move was not the best, and the summary per side and phase; on the compare screen, the players as columns with accuracy, classifications per game, results by colour, openings, time and the notable moments as links into the board, plus "N games not reviewed yet — Review them" (a `POST /api/reviews` with `player` or `account`).
+
 ## Versions and tidying
 
 A branch is a version of the engine. `GET /api/versions` gives one entry per branch (the fork's and upstream's, as `chess branches`), newest commit first: its builds (each with `on_disk`), `latest_build_id`, the `verdict` of its latest experiment as dev (status, summary, the last match's Elo estimate) and the base it was `tested_against`, its latest `tune`, `tunables`, `on_lichess`, `is_main` and `hidden`. A build belongs to a branch when it was built from that name or is of its tip commit.
