@@ -1,4 +1,4 @@
-import { onScopeDispose } from "vue";
+import { onScopeDispose, watch } from "vue";
 import { connection, runnerFetch } from "./runner";
 
 export interface RunnerEvent {
@@ -42,20 +42,32 @@ const FROM_NOW = Number.MAX_SAFE_INTEGER;
  * The first connection starts from now: the page fetches what it shows, so the runner's backlog would only replay
  * history (old log lines, a burst of refetches). After a dropped or refused connection it resumes from the last id
  * seen, and first hands over a `runner.started` event (id 0): a runner that (re)started counts its ids from 1 again
- * and what it said before the page reconnected is gone, so listeners refetch everything. Returns a function that
- * stops it.
+ * and what it said before the page reconnected is gone, so listeners refetch everything. Connecting to another runner
+ * (`connect`) starts over at once, the same way. Returns a function that stops it.
  */
 export function followEvents(onEvent: (event: RunnerEvent) => void, retryMs = 2000): () => void {
   const abort = new AbortController();
+  let attempt = new AbortController();
   let last: number | undefined;
   let tries = 0;
+
+  const stopWatching = watch(
+    () => `${connection.url} ${connection.token}`,
+    () => {
+      last = undefined;
+      attempt.abort();
+    },
+    { flush: "sync" },
+  );
+  abort.signal.addEventListener("abort", () => attempt.abort());
 
   (async () => {
     while (!abort.signal.aborted) {
       tries++;
+      attempt = new AbortController();
       try {
         const res = await runnerFetch(`${connection.url}/api/events?since=${last ?? FROM_NOW}`, {
-          signal: abort.signal,
+          signal: attempt.signal,
         });
         if (!res.ok || !res.body) throw new Error(String(res.status));
         if (tries > 1) onEvent({ id: 0, kind: "runner.started", data: { resumed: true } });
@@ -73,11 +85,15 @@ export function followEvents(onEvent: (event: RunnerEvent) => void, retryMs = 20
           }
         }
       } catch {}
-      if (!abort.signal.aborted) await new Promise((r) => setTimeout(r, retryMs));
+      // A new runner is tried at once; a lost one after a pause.
+      if (!attempt.signal.aborted) await new Promise((r) => setTimeout(r, retryMs));
     }
   })();
 
-  return () => abort.abort();
+  return () => {
+    stopWatching();
+    abort.abort();
+  };
 }
 
 type Handler = (data: unknown, event: RunnerEvent) => void;

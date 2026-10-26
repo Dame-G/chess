@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.stubGlobal("location", { hostname: "127.0.0.1" });
-const { initialConnection, DEFAULT_RUNNER } = await import("../src/api/runner");
+const { connect, initialConnection, DEFAULT_RUNNER } = await import("../src/api/runner");
 const { followEvents, parseEvents } = await import("../src/api/events");
 
 describe("initialConnection", () => {
@@ -34,12 +34,14 @@ describe("parseEvents", () => {
 });
 
 describe("followEvents", () => {
-  const stream = (text: string, end = true) =>
+  // A body that ends, or stays open until the request is aborted, as fetch does.
+  const stream = (text: string, end = true, signal?: AbortSignal) =>
     new Response(
       new ReadableStream({
         start(c) {
           c.enqueue(new TextEncoder().encode(text));
           if (end) c.close();
+          signal?.addEventListener("abort", () => c.error(new Error("aborted")));
         },
       }),
     );
@@ -69,5 +71,27 @@ describe("followEvents", () => {
       "8",
       "8",
     ]);
+  });
+
+  it("starts over at once on another runner, with its token", async () => {
+    const calls: { url: string; auth: string | null }[] = [];
+    vi.stubGlobal("fetch", (input: string, init: RequestInit & { signal: AbortSignal }) => {
+      calls.push({ url: input, auth: new Headers(init.headers).get("Authorization") });
+      if (calls.length === 1) return Promise.resolve(stream("id: 40\nevent: a\ndata: 1\n\n", false, init.signal));
+      return new Promise<Response>((_, reject) => init.signal.addEventListener("abort", () => reject(new Error())));
+    });
+    const seen: string[] = [];
+    const stop = followEvents((e) => seen.push(`${e.id}:${e.kind}`), 60_000);
+    await vi.waitFor(() => expect(seen).toEqual(["40:a"]));
+    connect("http://box:7878/", "secret");
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    stop();
+    connect("", "");
+    vi.unstubAllGlobals();
+
+    expect(calls[1]).toEqual({
+      url: `http://box:7878/api/events?since=${Number.MAX_SAFE_INTEGER}`,
+      auth: "Bearer secret",
+    });
   });
 });
