@@ -1,6 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["reference", "data"]
+members = ["reference", "data", "bullet"]
+# `bullet` needs the CUDA Toolkit (`CUDA_PATH`), so a plain `cargo build` or `cargo test` here leaves it out; build it
+# with `-p bullet`.
+default-members = ["reference", "data"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,6 +16,11 @@ anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 sha2 = "0.11.1"
 shakmaty = "0.30.2"
+# trainer/bullet: bullet from git, pinned (it has no crates.io releases); every bullet crate from the same commit.
+bullet_lib = { git = "https://github.com/jw1912/bullet", rev = "579b78b37a694cacd6e9ede4706386c15c34837c" }
+bullet-trainer = { git = "https://github.com/jw1912/bullet", rev = "579b78b37a694cacd6e9ede4706386c15c34837c" }
+bullet-compiler = { git = "https://github.com/jw1912/bullet", rev = "579b78b37a694cacd6e9ede4706386c15c34837c" }
+bullet-gpu = { git = "https://github.com/jw1912/bullet", rev = "579b78b37a694cacd6e9ede4706386c15c34837c" }
 # trainer/data
 bulletformat = "1.8.0"
 serde = { version = "1.0.229", features = ["derive"] }

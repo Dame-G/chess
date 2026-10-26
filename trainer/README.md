@@ -11,6 +11,7 @@ Crates:
 
 - `reference`: a CPU reference of Reckless's network in plain Rust, bit for bit with the engine. The bullet model is checked against it.
 - `data`: datasets (see its own docs).
+- `bullet`: the network as a [bullet](https://github.com/jw1912/bullet) model, Reckless's net file in and out, parity with the reference, and the training runner `bullet-train`. It needs the CUDA Toolkit, so it is not a default member: a plain `cargo test` here leaves it out (see [The bullet model](#the-bullet-model)).
 
 ## The reference
 
@@ -153,10 +154,97 @@ There is no header or version: a net of another architecture is a different size
 
 `main` embeds **`v60-7f587dfb.nnue`** (SHA-256 `7f587dfb1fe5d74d53909328afa6fd51650c8c7f45907602db7fbb1e52948c61`; the name's hex is the start of the hash). Reckless's `build/build.rs` names it (`NETWORK_NAME`) and sets `MODEL` to `EVALFILE` if given, else `networks/<name>`; if neither exists it downloads it with `curl` from `https://github.com/codedeliveryservice/RecklessNetworks/releases/download/networks/v60-7f587dfb.nnue`. `networks/` is git-ignored. `src/nnue.rs` embeds `MODEL` with `include_bytes!`, so changing the net means a new build (and a new `Bench:`).
 
-## What the bullet model needs
+## The bullet model
 
-- The two input sets with exactly these indices (`features.rs`), both perspectives, side to move first, and the horizontal mirror chosen by the perspective's own king.
-- The pairwise activation (clip to [0, 1] in float terms, then the product of the two halves), the 8 output buckets by piece count, and three dense layers with clipped ReLU.
-- Quantisation on save: FT weights and biases × 255 (`i16` for piece-square and biases, `i8` for threats, so threat weights must stay within ±127/255 ≈ ±0.5), L1 weights × 64 as `i8` (within ±2), everything else `f32`, written in the layout above with 64-byte alignment. The eval scale is 380.
-- The L1 weights' interleaved layout `[bucket][768/4][16][4]`.
-- Parity: load the shipped net into the bullet model, quantise it back, and compare with `reference::Network::forward` layer by layer on the same positions.
+`bullet` (crate in `bullet/`, binary `bullet-train`) is the architecture above in bullet, pinned to commit **`579b78b37a694cacd6e9ede4706386c15c34837c`** (2026-10-20, "Allow tracking of gradient norms"; `bullet_lib`, `bullet-trainer`, `bullet-compiler` and `bullet-gpu` from git at that rev, `trainer/Cargo.toml`). bullet has no CPU backend any more, so the crate builds and runs only with CUDA.
+
+### Building
+
+bullet links `cuda`, `cudart`, `nvrtc` and `cublas` from `CUDA_PATH` (`lib/x64`) and compiles its kernels at run time with NVRTC; nothing else is needed (no cuDNN). Verified with the CUDA Toolkit 13.4 (driver 616.92, RTX 3080) on native Windows with MSVC. The DLLs are in `bin/x64` in 13.x, which must be on `PATH` to run.
+
+```sh
+cd trainer
+export CUDA_PATH="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4"
+export PATH="/c/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.4/bin/x64:$PATH"
+CARGO_TARGET_DIR=../target-bullet cargo build --release -p bullet     # target-bullet/release/bullet-train(.exe)
+CARGO_TARGET_DIR=../target-bullet cargo test -p bullet                # includes a GPU parity test (needs the net)
+```
+
+### The model (`src/model.rs`, `src/inputs.rs`)
+
+- **Inputs:** threats and piece-squares per perspective, as four sparse inputs (66,864 × up to 256 slots, 7,680 × 32), plus the output bucket and the target. They are computed by `reference::features` itself, so the indices are the reference's (and the engine's). bullet's loaders give positions as bulletformat `ChessBoard`s, from the side to move (flipped and colour-swapped for Black); since Reckless's features are colour-symmetric, the side to move's inputs are White's view of that board and the other side's are Black's (tested against the real board in `inputs.rs`).
+- **Feature transformer:** `threat_w` (768 × 66,864, no bias) and `psq_w` (768 × 7,680) plus `psq_b`; each half of 384 is clipped to [0, 1], halves multiplied, the side to move's 384 first.
+- **Layers:** 768 → 8·16 → select bucket → clipped ReLU → 8·32 → select → clipped ReLU → 8 → select. The output × 380 is the eval.
+- **Quantisation-aware** (on by default, `--no-qat` turns it off): the pairwise output is truncated to the engine's `(a·b) >> 9` grid (steps of 512/255²) and the L1 weights rounded to 1/64, with the gradient passed straight through. Without it the float model is up to 131 eval units off the engine on the shipped net (see parity), because the engine truncates every product.
+- **Loss:** `|sigmoid(output · 380 / eval_scale) − target|^power` (power 2), target `wdl · result + (1 − wdl) · sigmoid(score / eval_scale)`, both from the side to move; `--eval-scale 380` makes the prediction `sigmoid(output)`. Scores should be in Reckless's internal units (`data datagen --units reckless-internal`), which is what the output × 380 is.
+- **Clipping** (AdamW's weight bounds): threats to [−128/255, 127/255] (`i8` × 255), L1 weights to [−2, 127/64] (`i8` × 64), piece-squares and biases to ±1.98, L2 and L3 weights to ±0.99, float biases ±1.98. The shipped net sits exactly on several of these (threats ±0.498, piece-squares 1.98, L2/L3 ±0.99, L1 ±0.984), which says it was trained with the same bounds (L1 probably ±0.99).
+
+### Net files (`src/net.rs`)
+
+`FloatNet::from_network` dequantises a file (FT ÷ 255, L1 ÷ 64, floats as they are) into bullet's column-major layout; `FloatNet::to_bytes` rounds back and writes the engine's `#[repr(C)]` struct: every field on a 64-byte boundary with zero padding, L1 interleaved `[bucket][192][16][4]`, L2 `[bucket][16][32]`, L3 `[bucket][32]`. A value outside its integer type is an error, never a silent wrap.
+
+### Parity (`bullet-train parity`)
+
+```sh
+bullet-train parity --net v60-7f587dfb.nnue --positions 4000 --eval-positions 10000 --both --resave resaved.nnue
+```
+
+It loads the net into the model on the GPU and compares every layer with `reference::Network::forward` on the reference's random positions (seed 1), then copies the weights to the GPU and back, quantises them, and compares the file and the reference's evals of both files (seed 2). Result on 2026-10-26 (v60-7f587dfb, RTX 3080, CUDA 13.4):
+
+| Check                                     | QAT on (default)                 | QAT off                      |
+| ----------------------------------------- | -------------------------------- | ---------------------------- |
+| accumulators, 4,000 positions × 1,536     | 0 mismatches (max 0.00055 units) | same                         |
+| pairwise outputs, × 768                   | 0 mismatches (max 3.8e-6 units)  | 278,692 differ (by < 1 unit) |
+| L1 / L2 activations, max difference       | 3.0e-7 / 5.2e-7                  | 0.048 / 0.080                |
+| float output, max difference              | 2.1e-6                           | 0.34                         |
+| evals equal to the reference (and engine) | **4,000 of 4,000**               | 365 of 4,000 (max 131 off)   |
+
+- **Re-saved file: byte-identical** to the original (63,266,880 bytes, 0 differing, SHA-256 `7f587dfb…`), so the reference's evals of both files agree on 10,000 of 10,000 positions.
+- **Engine:** Reckless `main` 69aea90 built with the re-saved net (`EVALFILE`, AVX2, no syzygy): `bench` = **2837905**, its `Bench:`.
+- The most threat inputs one perspective had on these positions was 60 (256 slots are reserved).
+- `tests/parity.rs` repeats this on 300 positions with every `cargo test -p bullet` (it passes with a note when the net is absent).
+
+### Training (`bullet-train train`)
+
+```sh
+bullet-train train --data a.vf b.vf --out runs/smoke --name smoke \
+  [--parent v60-7f587dfb.nnue | --resume runs/smoke/checkpoints/smoke-20] [--format viriformat|binpack|bulletformat] \
+  --superbatches 100 --batches-per-superbatch 6104 --batch-size 16384 \
+  --lr 0.001 --final-lr 0.00001 --lr-schedule cosine|linear|step|constant [--lr-step 30 --lr-gamma 0.3] [--warmup-batches N] \
+  --wdl 0.3 [--final-wdl 0.6] --eval-scale 380 [--loss-power 2] [--no-qat] [--weight-decay 0.01] \
+  --save-rate 10 --keep-checkpoints 2 --log-rate 32 [--read-threads 4 --map-threads 4 --buffer-mb 1024] [--no-grad-norms]
+```
+
+- **Data:** viriformat through bullet's `ViriBinpackLoader` (Reckless's filter at load time: no capture or promotion, not in check, |score| < 4096), Stockfish binpacks through `SfBinpackLoader` (same filter), or bulletformat in file order. The loaders cycle through the files until the schedule ends and shuffle within a buffer of `--buffer-mb`.
+- **From scratch or a fine-tune** (`--parent`: a Reckless net file, dequantised into the model). The LR and WDL schedules are functions of the absolute superbatch, so a resumed run continues them.
+- **Checkpoints:** `<out>/checkpoints/<name>-<sb>/` with bullet's `optimiser_state/` (weights, Adam moments: about 0.7 GB), the quantised net `<name>-<sb>.nnue` and `state.json` (superbatch, net, sha256, config); every `--save-rate` superbatches and at the end, keeping the newest `--keep-checkpoints`. At the end the last net is copied to `<out>/<name>.nnue`. `<out>/run.json` holds the bullet rev and the config.
+- **Resume:** `--resume <checkpoint dir>` with the run's other arguments unchanged (and no `--parent`): weights and optimiser state are loaded and training starts at the next superbatch. bullet's viriformat loader does not skip data, so a resumed run reads its files from the start again, in a new shuffle.
+- **Output: JSON lines on stdout**, one object each (diagnostics on stderr):
+  - `{"type":"started","device","start_superbatch","superbatches","batch_size","batches_per_superbatch","parent","resumed_from","bullet"}`
+  - `{"type":"progress","superbatch","batch","loss","lr","wdl","positions_per_sec","grad_norm","grad_norms":{weight: norm},"positions","elapsed_seconds"}` every `--log-rate` batches and at each superbatch's last: `loss` is the mean batch loss since the previous line, `batch` counts from 1, `grad_norm` the norm of the whole gradient (from bullet's per-weight norms; null with `--no-grad-norms`), `positions` since this process started.
+  - `{"type":"superbatch","superbatch","loss","positions_per_sec","elapsed_seconds"}`
+  - `{"type":"checkpoint","superbatch","path","net","sha256"}`
+  - `{"type":"done","net","sha256","superbatches","positions","elapsed_seconds","dropped_inputs"}` (`dropped_inputs`: threat inputs beyond the 256 slots, expected 0)
+  - `{"type":"error","message"}` and exit code 1; a failed checkpoint is `{"type":"warning",…}` and fails the run at the end.
+
+### Smoke run (2026-10-26)
+
+The pipeline end to end on this machine (i7-10700K, RTX 3080 10 GB, Windows, CUDA 13.4), proving it works, not a stronger net:
+
+1. **Data:** `data datagen --engine <Reckless origin/datagen 966be9a, v60 embedded> --threads 8 --soft-nodes 1000 --units reckless-internal --seed 1` (DFRC + 8 random plies), stopped after about 25 minutes (while other builds shared the CPU): **392,130 positions, 4,116 games, 1.7 MB** of viriformat.
+2. **Fine-tune of v60:** `bullet-train train --data part-*.vf --parent v60-7f587dfb.nnue --superbatches 20 --batches-per-superbatch 200 --batch-size 16384 --lr 0.0001 --final-lr 0.000001 --wdl 0.3 --save-rate 10 --buffer-mb 256`: 65.5 M positions (the small set cycled ~170 times, so it overfits: loss 1.2e-3 in the first superbatch, 1.2e-5 at the end) in 134 s.
+   - **Throughput: ~760,000 positions/s** in steady superbatches (QAT on, grad norms on, 4 map threads), 360–550 k/s while the CPU was busy elsewhere or right after a checkpoint; GPU utilisation 77–95 %.
+   - **VRAM: ~1.45 GB** for the trainer (3.79 GB used in all against 2.34 GB before), batch 16,384. A checkpoint is 0.72 GB on disk (weights and Adam moments).
+   - `dropped_inputs` 0. Net SHA-256 `37c9acdf…4d674d16`.
+3. **In the engine:** Reckless `main` 69aea90 built with it (`EVALFILE`): `bench` = 3039071 (v60: 2837905), `go depth 10` gives legal moves on four positions (e2e4 from the start), and `reference parity` against that build matches 2,000 of 2,000 positions, all 16,000 bucket outputs: a trained net's file is exactly what the engine reads.
+
+The data, checkpoints and builds were deleted afterwards.
+
+### What the app's `Train` executor does
+
+- Builds `bullet-train` with `CUDA_PATH` set (`cargo build --release -p bullet` in `trainer/`, its own target directory) and runs it with the CUDA `bin/x64` on `PATH`.
+- Passes `train --data <the dataset's viriformat files from its manifest> --out <run dir> --name <net name>`, `--parent <net file>` for a fine-tune, the schedule (`--superbatches`, `--batches-per-superbatch`, `--batch-size`, `--lr`, `--final-lr`, `--lr-schedule`, `--wdl`, `--final-wdl`), `--eval-scale 380`, and `--save-rate`/`--keep-checkpoints` sized to the disk (0.72 GB a checkpoint). It should hold `gpu: 1` and about four cores (`--read-threads`, `--map-threads`).
+- Reads stdout line by line: `progress` lines become `train.progress` events (loss, lr, grad norm, positions/s), `checkpoint` lines record resumable points, `done` gives the net's path and SHA-256 to register, `error` (exit 1) fails the run.
+- Stops by killing the process; resumes with the same arguments plus `--resume <the last checkpoint's path>` (without `--parent`).
+
+Not done here: offline metrics (validation loss on held-out data), a factoriser for from-scratch training, and data skipping on resume. The datasets' score units must be Reckless's internal eval (`--units reckless-internal`); `cp` data would need `--eval-scale` adjusted.
