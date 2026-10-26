@@ -11,6 +11,7 @@ export type Version = components["schemas"]["Version"];
 export type VersionBuild = components["schemas"]["VersionBuild"];
 export type Experiment = components["schemas"]["Experiment"];
 export type Test = components["schemas"]["Test"];
+export type TestDetail = components["schemas"]["TestDetail"];
 
 /** Unwraps an openapi-fetch result: the data, or an error with the runner's message. */
 export async function unwrap<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {

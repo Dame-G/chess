@@ -1,6 +1,6 @@
 import type { EntryKey } from "@pinia/colada";
 import type { RunnerEvent } from "./events";
-import type { Job, Tune, TuneDetail, Version } from "./queries";
+import type { Job, Test, TestDetail, Tune, TuneDetail, Version } from "./queries";
 
 /** The part of Pinia Colada's query cache the events touch. */
 export interface RunnerCache {
@@ -38,11 +38,9 @@ export function applyRunnerEvent(cache: RunnerCache, { kind, data }: RunnerEvent
       refetch(["experiments"], ["experiment", id], ["versions"]);
       break;
     }
-    case "test.progress": {
-      const { id } = data as { id: number };
-      refetch(["test", id], ["games", id]);
+    case "test.progress":
+      applyTestProgress(cache, data as Test);
       break;
-    }
     case "tune.updated":
     case "tune.finished":
       applyTuneEvent(cache, kind, data);
@@ -69,6 +67,31 @@ export function applyRunnerEvent(cache: RunnerCache, { kind, data }: RunnerEvent
       cache.setQueryData(["lichess"], data);
       break;
   }
+}
+
+/** How often a running test's game list is fetched again: the runner reads its whole PGN for it. */
+export const GAMES_EVERY_MS = 15_000;
+const gamesFetched = new Map<number, number>();
+
+/**
+ * A test reports after every game pair, a few times a second on a busy machine. Its detail takes the new totals and
+ * chart point in place; its game list, which grows to thousands of games, is fetched again at most every
+ * `GAMES_EVERY_MS`, and once more when the test ends.
+ */
+function applyTestProgress(cache: RunnerCache, test: Test) {
+  const detail = cache.getQueryData(["test", test.id]) as TestDetail | undefined;
+  if (detail && test.running) {
+    const point = { games: test.games, llr: test.llr, nelo: test.estimate?.nelo };
+    const points = detail.points.filter((p) => p.games < test.games);
+    cache.setQueryData(["test", test.id], { test, points: [...points, point] });
+  } else cache.invalidateQueries({ key: ["test", test.id] });
+
+  const now = Date.now();
+  if (!test.running || now - (gamesFetched.get(test.id) ?? -Infinity) >= GAMES_EVERY_MS) {
+    gamesFetched.set(test.id, now);
+    cache.invalidateQueries({ key: ["games", test.id] });
+  }
+  if (!test.running) gamesFetched.delete(test.id);
 }
 
 /** Folds a tune event into the cached list and detail, so the page follows a running tune without refetching. */

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { applyRunnerEvent } from "../src/api/cache";
+import { describe, expect, it, vi } from "vitest";
+import { applyRunnerEvent, GAMES_EVERY_MS } from "../src/api/cache";
 import type { Version } from "../src/api/queries";
 
 /** A query cache that is only a map, recording what was refetched ("*" for everything). */
@@ -68,5 +68,38 @@ describe("applyRunnerEvent", () => {
     const patched = c.store.get('["versions"]') as Version[];
     expect(patched[0]!.tune).toMatchObject({ id: 1, iteration: 4, iterations: 10 });
     expect(patched[1]).toBe(versions[1]);
+  });
+
+  it("folds a running test's progress into its detail and fetches its games at most every few seconds", () => {
+    vi.useFakeTimers();
+    try {
+      const detail = { test: { id: 9, games: 2, running: true }, points: [{ games: 2, llr: 0.1, nelo: 1 }] };
+      const progress = (games: number, running = true) => ({
+        id: 9,
+        games,
+        running,
+        llr: games / 10,
+        estimate: { nelo: games },
+      });
+      const c = cache({ '["test",9]': detail });
+      applyRunnerEvent(c, { id: 1, kind: "test.progress", data: progress(4) });
+      expect(c.store.get('["test",9]')).toMatchObject({
+        test: { games: 4 },
+        points: [{ games: 2 }, { games: 4, llr: 0.4, nelo: 4 }],
+      });
+      expect(c.refetched).toEqual(['["games",9]']);
+
+      applyRunnerEvent(c, { id: 2, kind: "test.progress", data: progress(6) });
+      expect(c.refetched).toEqual(['["games",9]']);
+      vi.advanceTimersByTime(GAMES_EVERY_MS);
+      applyRunnerEvent(c, { id: 3, kind: "test.progress", data: progress(8) });
+      expect(c.refetched).toEqual(['["games",9]', '["games",9]']);
+
+      // The end: the detail and the games are fetched as the runner has them.
+      applyRunnerEvent(c, { id: 4, kind: "test.progress", data: progress(8, false) });
+      expect(c.refetched.slice(2)).toEqual(['["test",9]', '["games",9]']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
