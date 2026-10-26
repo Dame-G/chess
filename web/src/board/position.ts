@@ -1,9 +1,10 @@
-import { Chess } from "chessops/chess";
+import { Chess, type Position as ChessPosition } from "chessops/chess";
 import { chessgroundDests } from "chessops/compat";
 import { INITIAL_FEN, makeFen, parseFen } from "chessops/fen";
 import { parsePgn, startingPosition } from "chessops/pgn";
 import { makeSan, makeSanVariation, parseSan } from "chessops/san";
 import { makeUci, parseUci } from "chessops/util";
+import { isDrop, type Move } from "chessops/types";
 import type { Color, Key } from "@lichess-org/chessground/types";
 import { signed } from "../format";
 
@@ -23,6 +24,30 @@ export interface Position {
   lastMove?: [Key, Key];
   /** Moves that were not legal, with everything after them, are dropped. */
   moves: string[];
+}
+
+/**
+ * A move as the engine takes it. chessops writes castling as the king taking its own rook (`e1h1`); engines want the
+ * king's two-square step (`e1g1`). Chess960 castling, where the king does not start on the e-file, keeps chessops' form.
+ * Call it before the move is played.
+ */
+export function uciOf(pos: ChessPosition, move: Move): string {
+  if (!isDrop(move)) {
+    const king = pos.board.get(move.from);
+    const target = pos.board.get(move.to);
+    const file = move.to % 8;
+    if (
+      king?.role === "king" &&
+      target?.role === "rook" &&
+      target.color === king.color &&
+      move.from % 8 === 4 &&
+      (file === 0 || file === 7) &&
+      Math.floor(move.from / 8) === Math.floor(move.to / 8)
+    ) {
+      return makeUci({ from: move.from, to: move.to > move.from ? move.from + 2 : move.from - 2 });
+    }
+  }
+  return makeUci(move);
 }
 
 function setup(fen: string): Chess | undefined {
@@ -45,9 +70,10 @@ export function play(line: Line): Position | undefined {
   for (const uci of line.moves) {
     const move = parseUci(uci);
     if (!move || !pos.isLegal(move)) break;
+    const standard = uciOf(pos, move);
     pos.play(move);
-    played.push(makeUci(move));
-    lastMove = [uci.slice(0, 2) as Key, uci.slice(2, 4) as Key];
+    played.push(standard);
+    lastMove = [standard.slice(0, 2) as Key, standard.slice(2, 4) as Key];
   }
   return {
     fen: makeFen(pos.toSetup()),
@@ -149,7 +175,7 @@ export function readPosition(text: string): Line | undefined {
   for (const node of game.moves.mainline()) {
     const move = parseSan(pos, node.san);
     if (!move) break;
-    moves.push(makeUci(move));
+    moves.push(uciOf(pos, move));
     pos.play(move);
   }
   if (!moves.length && !game.headers.has("FEN")) return undefined;
@@ -201,7 +227,7 @@ export function inspectPosition(text: string, which = 0): Reading {
       note = `Move ${n}, ${node.san}, is not legal there, so the game stops before it.`;
       break;
     }
-    moves.push(makeUci(move));
+    moves.push(uciOf(pos, move));
     pos.play(move);
   }
   if (!moves.length && !game.headers.has("FEN")) {
@@ -229,4 +255,14 @@ export function listGames(text: string): PgnGame[] {
     const moves = [...g.moves.mainline()].length;
     return { label: i + 1 + ". " + white + " – " + black, result: g.headers.get("Result") ?? "*", moves };
   });
+}
+
+/** How good a score is for the side to move, as one number: any mate for them beats any figure, a slower loss beats a faster one. */
+function scoreRank(score: Score): number {
+  return "mate" in score ? (score.mate > 0 ? 100_000 : -100_000) - score.mate : score.cp;
+}
+
+/** Engine lines, best first for the side to move. */
+export function bestFirst<T extends { score: Score; multipv: number }>(lines: T[]): T[] {
+  return [...lines].sort((a, b) => scoreRank(b.score) - scoreRank(a.score) || a.multipv - b.multipv);
 }

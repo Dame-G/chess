@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import type { components } from "../api/schema";
+import { fullMoves, movesText } from "./matchText";
 import { outcome, type Outcome } from "./playlist";
 
 type Game = components["schemas"]["GameSummary"];
@@ -63,14 +64,14 @@ const word: Record<Outcome, string> = { W: "Won", D: "Drew", L: "Lost", "": "Unf
           block
           :aria-current="r.g.index === current ? 'true' : undefined"
           :aria-label="`Game ${r.g.index + 1}, ${word[r.o]}`"
-          :title="`Game ${r.g.index + 1}: the new version played ${r.g.white === 'dev' ? 'White' : 'Black'}. ${word[r.o]} in ${Math.ceil(r.g.plies / 2)} moves.`"
+          :title="`Game ${r.g.index + 1}: the new version played ${r.g.white === 'dev' ? 'White' : 'Black'}. ${word[r.o]} in ${movesText(r.g.plies)}.`"
           class="row"
           @click="emit('open', r.g.index)"
         >
           <span class="n num">{{ r.g.index + 1 }}</span>
           <span :class="['side', r.g.white === 'dev' ? 'side--white' : 'side--black']" aria-hidden="true"></span>
           <span :class="['res', `res--${r.o || 'none'}`]">{{ r.o || "·" }}</span>
-          <span class="len num">{{ Math.ceil(r.g.plies / 2) }}</span>
+          <span class="len num">{{ fullMoves(r.g.plies) }}</span>
         </EButton>
       </div>
     </div>

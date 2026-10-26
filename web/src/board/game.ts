@@ -1,7 +1,7 @@
 import { makeFen } from "chessops/fen";
 import { parsePgn, startingPosition } from "chessops/pgn";
 import { parseSan } from "chessops/san";
-import { makeUci } from "chessops/util";
+import { uciOf } from "./position";
 
 interface Ply {
   san: string;
@@ -44,11 +44,12 @@ export function readGame(pgn: string): Game | undefined {
     const move = parseSan(pos, node.san);
     if (!move) break;
     const mover = pos.turn;
+    const uci = uciOf(pos, move);
     pos.play(move);
     const info = readComment(node.comments?.join(" ") ?? "");
     // Engines report their own side's score; the graph reads from White's.
     if (info.eval !== null && mover === "black") info.eval = -info.eval;
-    plies.push({ san: node.san, uci: makeUci(move), fen: makeFen(pos.toSetup()), ...info });
+    plies.push({ san: node.san, uci, fen: makeFen(pos.toSetup()), ...info });
   }
   return { headers: Object.fromEntries(game.headers), startFen, plies };
 }

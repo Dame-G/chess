@@ -91,3 +91,17 @@ describe("a file of several games", () => {
     expect(listGames("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")).toEqual([]);
   });
 });
+
+describe("engine lines", () => {
+  it("sorts by score for the side to move, mates first", async () => {
+    const { bestFirst } = await import("../src/board/position");
+    const lines = [
+      { multipv: 1, score: { cp: 10 } },
+      { multipv: 2, score: { mate: -3 } },
+      { multipv: 3, score: { mate: 4 } },
+      { multipv: 4, score: { cp: 50 } },
+      { multipv: 5, score: { mate: -1 } },
+    ];
+    expect(bestFirst(lines).map((l) => l.multipv)).toEqual([3, 4, 1, 2, 5]);
+  });
+});

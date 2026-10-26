@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import type { components } from "../api/schema";
-import { sanMoves, whitePawns, whiteScore, type Position } from "./position";
+import { bestFirst, sanMoves, whitePawns, whiteScore, type Position } from "./position";
 
 type Info = components["schemas"]["Info"];
 
@@ -24,7 +24,7 @@ const rows = computed(() => {
   const parts = props.position.fen.split(" ");
   const blackFirst = parts[1] === "b";
   const first = Number(parts[5] ?? 1);
-  return props.lines.filter(Boolean).map((l) => {
+  return bestFirst(props.lines.filter(Boolean)).map((l) => {
     const pv = l.pv.slice(0, props.depth ?? 10);
     const sans = sanMoves({ fen: props.position.fen, moves: pv });
     return {
@@ -56,8 +56,8 @@ const rows = computed(() => {
     </li>
     <template v-if="!rows.length">
       <li v-for="i in count" :key="i" class="line line--wait" aria-hidden="true">
-        <ESkeleton :height="24" />
-        <ESkeleton :lines="2" />
+        <ESkeleton :height="22" />
+        <ESkeleton :height="14" />
       </li>
     </template>
   </ol>
@@ -73,16 +73,15 @@ const rows = computed(() => {
 
 .line {
   display: grid;
-  min-height: 4rem;
+  min-height: 2.25rem;
   grid-template-columns: 3.5rem minmax(0, 1fr);
-  align-items: start;
+  align-items: center;
   gap: var(--e-gap-base);
   padding: var(--e-gap-snug) var(--ws-pad);
   border-block-start: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
 }
 
 .score {
-  margin-block-start: 0.125rem;
   padding: 0.125rem 0.25rem;
   border-radius: var(--e-radius-sm);
   font: 600 var(--e-text-sm) / 1.3 var(--e-font-mono);
@@ -101,15 +100,13 @@ const rows = computed(() => {
 }
 
 .pv {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-
-  /* Two rows of moves, always: lines of different lengths never change the height of what is below. */
-  height: 3.25rem;
+  /* One row, cut with an ellipsis as Lichess does: the line is long, the panel is not. */
+  display: block;
+  min-width: 0;
   overflow: hidden;
-  align-content: flex-start;
   font-family: var(--e-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .no {
@@ -120,7 +117,6 @@ const rows = computed(() => {
 }
 
 .pv :deep(.e-btn) {
-  flex: none;
   height: 1.625rem;
   min-height: 0;
   padding-block: 0;

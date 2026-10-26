@@ -128,3 +128,14 @@ export function youResult(m: Pick<MatchSummary, "result" | "white" | "black">): 
   if (m.result === "*") return "·";
   return (m.result === "1-0") === (me === "white") ? "Won" : "Lost";
 }
+
+/** Full moves in a game of `plies` half-moves (White's and Black's moves together): 81 plies are 41 moves. */
+export function fullMoves(plies: number): number {
+  return Math.ceil(plies / 2);
+}
+
+/** A game's length in words, always in full moves: `1 move`, `41 moves`. Plies are only ever a scrubber position. */
+export function movesText(plies: number): string {
+  const n = fullMoves(plies);
+  return `${n} ${n === 1 ? "move" : "moves"}`;
+}

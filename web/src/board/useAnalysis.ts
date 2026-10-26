@@ -3,7 +3,7 @@ import { useRunnerEvent } from "../api/events";
 import { api } from "../api/runner";
 import { unwrap, useStatus } from "../api/queries";
 import type { components } from "../api/schema";
-import { whitePawns, whiteScore, type Position } from "./position";
+import { bestFirst, whitePawns, whiteScore, type Position } from "./position";
 
 type Info = components["schemas"]["Info"];
 
@@ -38,6 +38,8 @@ export function useAnalysis(input: {
   let searching = false;
   /** Reports waiting to be shown, by line. */
   let pending: Info[] = [];
+  /** The last complete report of each line (by multipv), which stays until a deeper one replaces it. */
+  let slots: Info[] = [];
   let flushing: ReturnType<typeof setTimeout> | undefined;
   const FLUSH = 150;
   /** What the engine last said about positions already visited, so stepping back shows it at once. */
@@ -52,16 +54,25 @@ export function useAnalysis(input: {
     if (!pending.length) return;
     if (hold) {
       // A new search starts shallow: keep the deeper lines on show until it catches up.
-      if (!pending[0] || pending[0].depth < hold) {
+      if (Math.max(...pending.filter(Boolean).map((i) => i.depth)) < hold) {
         pending = [];
         return;
       }
       hold = 0;
     }
-    const next = [...lines.value];
-    pending.forEach((info, i) => info && (next[i] = info));
+    const next = [...slots];
+    pending.forEach((info, i) => {
+      const old = next[i];
+      // A report is a whole line; a shallower one, or a shorter one at the same depth, is a step back.
+      if (info && (!old || info.depth > old.depth || (info.depth === old.depth && info.pv.length >= old.pv.length)))
+        next[i] = info;
+    });
     pending = [];
-    lines.value = next;
+    slots = next;
+    const shown = bestFirst(next.filter(Boolean));
+    lines.value = shown;
+    // The headline is the first line shown.
+    if (shown[0]) remember(input.position.value.fen, shown[0]);
     const key = seenKey();
     seen.delete(key);
     seen.set(key, next);
@@ -71,6 +82,7 @@ export function useAnalysis(input: {
     clearTimeout(flushing);
     flushing = undefined;
     pending = [];
+    slots = [];
     hold = 0;
     lines.value = [];
   }
@@ -93,7 +105,6 @@ export function useAnalysis(input: {
     // A report without a move says nothing a line could show.
     if (!info.pv.length) return;
     pending[info.multipv - 1] = info;
-    if (info.multipv === 1) remember(input.position.value.fen, info);
     // Reports come many times a second; the lines only need to change a few times.
     if (flushing === undefined) flushing = setTimeout(flush, FLUSH);
   });
@@ -153,9 +164,10 @@ export function useAnalysis(input: {
       session.value = null;
       drop();
       const known = seen.get(seenKey());
-      if (known?.[0]) {
-        lines.value = known;
-        hold = known[0].depth;
+      if (known?.some(Boolean)) {
+        slots = [...known];
+        lines.value = bestFirst(known.filter(Boolean));
+        hold = Math.max(...known.filter(Boolean).map((i) => i.depth));
       }
       timer = setTimeout(begin, 120);
     },
