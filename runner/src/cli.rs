@@ -282,6 +282,79 @@ pub enum LichessAction {
         #[arg(long)]
         yes_irreversible: bool,
     },
+    /// Your own Lichess account (not the bot): with no subcommand, its status. Play your games with `chess move`.
+    Me(MeCommand),
+}
+
+#[derive(Args)]
+pub struct MeCommand {
+    #[command(subcommand)]
+    action: Option<MeAction>,
+}
+
+#[derive(Subcommand)]
+pub enum MeAction {
+    /// Print the Lichess login link: open it, allow access, and the runner stores the token.
+    Login,
+    /// Log in with a personal token instead (board:play, challenge:read, challenge:write), read from stdin.
+    Token,
+    /// Revoke the token at Lichess and forget it.
+    Logout,
+    /// Open a seek in the lobby (rapid or slower: minutes + 40 × increment at least 8). `seek stop` cancels it.
+    Seek {
+        /// Minutes plus increment seconds, such as 10+5.
+        #[arg(long, default_value = "10+5")]
+        tc: String,
+        #[arg(long)]
+        rated: bool,
+        /// white, black or random.
+        #[arg(long, default_value = "random")]
+        color: String,
+        /// Opponents' ratings, such as 1500-1800.
+        #[arg(long)]
+        range: Option<String>,
+        #[command(subcommand)]
+        action: Option<SeekAction>,
+    },
+    /// Challenge a player, your bot (--bot) or Lichess's AI (--ai 1-8). Blitz or slower.
+    Challenge {
+        username: Option<String>,
+        /// Lichess's AI at this level, 1 to 8.
+        #[arg(long)]
+        ai: Option<u8>,
+        /// Your own bot.
+        #[arg(long)]
+        bot: bool,
+        /// Minutes plus increment seconds, such as 5+3.
+        #[arg(long, default_value = "5+3")]
+        tc: String,
+        #[arg(long)]
+        rated: bool,
+        /// white, black or random: the colour you play.
+        #[arg(long, default_value = "random")]
+        color: String,
+    },
+    /// Accept a challenge to you.
+    Accept { id: String },
+    /// Decline a challenge to you.
+    Decline {
+        id: String,
+        /// One of Lichess's reasons, such as later, tooFast or casual.
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Withdraw a challenge of yours.
+    Cancel { id: String },
+    /// Import your finished games as matches; without --since, only games newer than the last import.
+    Import {
+        #[arg(long)]
+        max: Option<u32>,
+        /// Milliseconds since 1970.
+        #[arg(long)]
+        since: Option<i64>,
+        #[arg(long)]
+        wait: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1354,6 +1427,173 @@ async fn lichess(client: &Client, cmd: LichessCommand, json: bool) -> Result<()>
                 );
             }
             print(&client.post("/api/lichess/upgrade", json!({ "confirm": true })).await?, json, lichess_text);
+        }
+        LichessAction::Me(cmd) => return lichess_me(client, cmd, json).await,
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Your own Lichess account
+// ---------------------------------------------------------------------------------------------------------------------
+
+fn me_text(s: &Value) -> String {
+    let who = match s["account"]["username"].as_str() {
+        Some(name) => name.to_owned(),
+        None if s["configured"].as_bool() == Some(true) => "token stored, account not checked yet".into(),
+        None => "not logged in: `chess lichess me login`".into(),
+    };
+    let mut out = format!("lichess (you): {who}, {}", s["state"].as_str().unwrap_or("?"));
+    if let Some(e) = s["error"].as_str() {
+        out += &format!(" ({e})");
+    }
+    let r = &s["account"]["ratings"];
+    if r.is_object() {
+        let rating = |speed: &str| r[speed].as_u64().map_or_else(|| "-".to_owned(), |n| n.to_string());
+        out += &format!("\n  blitz {}  rapid {}  classical {}", rating("blitz"), rating("rapid"), rating("classical"));
+    }
+    if let Some(missing) = s["missing_scopes"].as_array().filter(|m| !m.is_empty()) {
+        let names: Vec<&str> = missing.iter().filter_map(Value::as_str).collect();
+        out += &format!("\n  the token lacks {}: log in again to grant them", names.join(", "));
+    }
+    if s["fair_play_lock"].as_bool() == Some(true) {
+        out += "\n  playing: analysis, explorer and tablebase are off until the game ends";
+    }
+    let playing: Vec<String> = s["playing"].as_array().into_iter().flatten().map(|m| format!("match {m}")).collect();
+    if !playing.is_empty() {
+        out += &format!("\n  playing {} (move with `chess move <id> <move>`)", playing.join(", "));
+    }
+    for g in s["elsewhere"].as_array().into_iter().flatten() {
+        out += &format!("\n  playing on lichess.org: {}", g["url"].as_str().unwrap_or("?"));
+    }
+    for (dir, label) in [("incoming", "from"), ("outgoing", "to")] {
+        for c in s["challenges"][dir].as_array().into_iter().flatten() {
+            let clock = match (c["clock"]["initial"].as_u64(), c["clock"]["increment"].as_u64()) {
+                (Some(i), Some(inc)) => format!("{}+{inc}", i as f64 / 60.0),
+                _ => c["speed"].as_str().unwrap_or("?").to_owned(),
+            };
+            out += &format!(
+                "\n  challenge {} {label} {} ({}): {clock} {}{}",
+                c["id"].as_str().unwrap_or("?"),
+                c["opponent"]["name"].as_str().unwrap_or("?"),
+                c["opponent"]["rating"].as_u64().map_or_else(|| "?".to_owned(), |r| r.to_string()),
+                if c["rated"].as_bool() == Some(true) { "rated" } else { "casual" },
+                if c["playable"].as_bool() == Some(false) { ", only on lichess.org" } else { "" },
+            );
+        }
+    }
+    if let Some(seek) = s["seek"]["seeking"].as_object() {
+        out += &format!(
+            "\n  seeking {}+{}",
+            seek["clock_seconds"].as_u64().unwrap_or(0) as f64 / 60.0,
+            seek["increment"].as_u64().unwrap_or(0)
+        );
+    } else if let Some(note) = s["seek"]["note"].as_str() {
+        out += &format!("\n  {note}");
+    }
+    out
+}
+
+/// `minutes+seconds`, as Lichess writes a clock, in seconds.
+fn lichess_clock(tc: &str) -> Result<(u32, u32)> {
+    let (minutes, increment) = tc.split_once('+').unwrap_or((tc, "0"));
+    let (Ok(minutes), Ok(increment)) = (minutes.trim().parse::<f64>(), increment.trim().parse::<u32>()) else {
+        bail!("a Lichess clock looks like 5+3 (minutes plus increment seconds), not {tc}");
+    };
+    Ok(((minutes * 60.0).round() as u32, increment))
+}
+
+async fn lichess_me(client: &Client, cmd: MeCommand, json: bool) -> Result<()> {
+    let Some(action) = cmd.action else {
+        print(&client.get("/api/lichess/me").await?, json, me_text);
+        return Ok(());
+    };
+    match action {
+        MeAction::Login => {
+            let started = client.post("/api/lichess/me/login", json!({})).await?;
+            print(&started, json, |s| {
+                format!(
+                    "Open this link, log in to Lichess and allow access (it works for {} minutes):\n{}",
+                    s["expires_in_seconds"].as_u64().unwrap_or(600) / 60,
+                    s["url"].as_str().unwrap_or("?")
+                )
+            });
+        }
+        MeAction::Token => {
+            use std::io::{BufRead, IsTerminal};
+            if std::io::stdin().is_terminal() {
+                eprint!("Paste your Lichess token (board:play, challenge:read, challenge:write) and press Enter: ");
+            }
+            let mut token = String::new();
+            std::io::stdin().lock().read_line(&mut token)?;
+            let token = token.trim();
+            if token.is_empty() {
+                bail!("no token on stdin");
+            }
+            print(&client.put("/api/lichess/me/token", json!({ "token": token })).await?, json, me_text);
+        }
+        MeAction::Logout => print(&client.delete("/api/lichess/me").await?, json, me_text),
+        MeAction::Seek { action: Some(SeekAction::Stop), .. } => {
+            print(&client.delete("/api/lichess/me/seek").await?, json, me_text);
+        }
+        MeAction::Seek { tc, rated, color, range, action: None } => {
+            let (clock_seconds, increment) = lichess_clock(&tc)?;
+            let body = json!({
+                "clock_seconds": clock_seconds,
+                "increment": increment,
+                "rated": rated,
+                "color": color,
+                "rating_range": range,
+            });
+            print(&client.post("/api/lichess/me/seek", body).await?, json, me_text);
+        }
+        MeAction::Challenge { username, ai, bot, tc, rated, color } => {
+            let (clock_seconds, increment) = lichess_clock(&tc)?;
+            let body = json!({
+                "username": username,
+                "ai_level": ai,
+                "my_bot": bot,
+                "clock_seconds": clock_seconds,
+                "increment": increment,
+                "rated": rated,
+                "color": color,
+            });
+            let sent = client.post("/api/lichess/me/challenge", body).await?;
+            print(&sent, json, |c| {
+                format!(
+                    "challenged {} to {}+{} {}: {}",
+                    c["username"].as_str().unwrap_or("?"),
+                    c["clock_seconds"].as_u64().unwrap_or(0) as f64 / 60.0,
+                    c["increment"],
+                    if c["rated"].as_bool() == Some(true) { "rated" } else { "casual" },
+                    c["url"].as_str().unwrap_or("?"),
+                )
+            });
+        }
+        MeAction::Accept { id } => {
+            print(&client.post(&format!("/api/lichess/me/challenges/{id}/accept"), json!({})).await?, json, me_text);
+        }
+        MeAction::Decline { id, reason } => {
+            let body = json!({ "reason": reason });
+            print(&client.post(&format!("/api/lichess/me/challenges/{id}/decline"), body).await?, json, me_text);
+        }
+        MeAction::Cancel { id } => {
+            print(&client.delete(&format!("/api/lichess/me/challenges/{id}")).await?, json, me_text);
+        }
+        MeAction::Import { max, since, wait } => {
+            let mut job = client.post("/api/lichess/me/import", json!({ "max": max, "since": since })).await?;
+            if wait {
+                let id = job["id"].as_i64().unwrap_or_default();
+                job = wait_for(client, id, json).await?;
+            }
+            print(&job, json, |j| {
+                let r = &j["result"];
+                if r.is_object() {
+                    format!("{}: {} new games, {} already here", job_line(j), r["imported"], r["skipped"])
+                } else {
+                    job_line(j)
+                }
+            });
         }
     }
     Ok(())
