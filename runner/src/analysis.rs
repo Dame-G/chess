@@ -119,6 +119,9 @@ pub async fn analyse(state: &AppState, mut req: AnalysisRequest) -> Result<Analy
     }
 }
 
+/// How long a live search runs with no event stream open before it stops: longer than a page takes to reconnect.
+const UNWATCHED: Duration = Duration::from_secs(15);
+
 pub struct Live {
     current: Mutex<Option<(u64, CancellationToken)>>,
     next: AtomicU64,
@@ -137,7 +140,8 @@ pub struct LiveSession {
     pub build: i64,
 }
 
-/// Starts a live search, stopping any other. Its reports arrive as `analysis.info` events, then `analysis.stopped`.
+/// Starts a live search, stopping any other. Its reports arrive as `analysis.info` events, then `analysis.stopped`. It
+/// also stops by itself once no event stream has been open for [`UNWATCHED`].
 pub async fn start_live(state: &Arc<AppState>, req: AnalysisRequest) -> Result<LiveSession, ApiError> {
     stop_live(state);
     let (b, mut engine) = start(state, &req).await?;
@@ -153,9 +157,21 @@ pub async fn start_live(state: &Arc<AppState>, req: AnalysisRequest) -> Result<L
     tokio::spawn(async move {
         // Once stopped, the engine has a few seconds to answer before it is killed (dropped) without its best move.
         let mut deadline = None;
+        // A board closed without stopping its search (a closed tab, a lost connection) leaves no one following the
+        // events: the search stops then, rather than taking the machine's threads from tests and the bot for good.
+        let mut watch = tokio::time::interval(UNWATCHED / 3);
+        let mut unwatched_since: Option<tokio::time::Instant> = None;
         let bestmove = loop {
             let next = tokio::select! {
                 next = engine.next() => next,
+                _ = watch.tick(), if deadline.is_none() => {
+                    if state.events.listeners() > 0 {
+                        unwatched_since = None;
+                    } else if unwatched_since.get_or_insert_with(tokio::time::Instant::now).elapsed() >= UNWATCHED {
+                        token.cancel();
+                    }
+                    continue;
+                }
                 _ = token.cancelled(), if deadline.is_none() => {
                     deadline = Some(tokio::time::Instant::now() + Duration::from_secs(5));
                     let _ = engine.send("stop").await;

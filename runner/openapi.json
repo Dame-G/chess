@@ -51,7 +51,7 @@
         "tags": [
           "analysis"
         ],
-        "summary": "Starts a live search, replacing any other. Reports arrive as `analysis.info` events until it is stopped.",
+        "summary": "Starts a live search, replacing any other. Reports arrive as `analysis.info` events until it is stopped, or until\nno event stream has been open for 15 seconds (a board closed without stopping it).",
         "operationId": "start_analysis",
         "requestBody": {
           "content": {

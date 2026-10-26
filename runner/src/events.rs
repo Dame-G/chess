@@ -1,5 +1,8 @@
 //! The live event stream. Every event gets a monotonic id, and the last few thousand are kept so a client that
-//! reconnects (`Last-Event-ID`, or `?since=` from the CLI) misses nothing.
+//! reconnects (`Last-Event-ID`, or `?since=` from the CLI) misses nothing that lasts.
+//!
+//! A search's progress (`analysis.info`, `match.info`) is sent live but not kept: the next report replaces it, and the
+//! several a second of a long search would otherwise push everything else out of the replay.
 
 use std::{collections::VecDeque, sync::Mutex};
 
@@ -8,6 +11,9 @@ use tokio::sync::broadcast;
 use utoipa::ToSchema;
 
 const KEEP: usize = 4096;
+
+/// Kinds sent live only, never replayed.
+const TRANSIENT: &[&str] = &["analysis.info", "match.info"];
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct Event {
@@ -37,10 +43,12 @@ impl Events {
         let mut inner = self.inner.lock().unwrap();
         let event = Event { id: inner.next, kind: kind.to_owned(), data };
         inner.next += 1;
-        if inner.recent.len() == KEEP {
-            inner.recent.pop_front();
+        if !TRANSIENT.contains(&kind) {
+            if inner.recent.len() == KEEP {
+                inner.recent.pop_front();
+            }
+            inner.recent.push_back(event.clone());
         }
-        inner.recent.push_back(event.clone());
         // Sent under the lock, so a subscriber that replays then listens sees every id exactly once.
         let _ = self.tx.send(event);
     }
@@ -50,6 +58,11 @@ impl Events {
         let inner = self.inner.lock().unwrap();
         let backlog = inner.recent.iter().filter(|e| e.id > since).cloned().collect();
         (backlog, self.tx.subscribe())
+    }
+
+    /// How many streams are open now.
+    pub fn listeners(&self) -> usize {
+        self.tx.receiver_count()
     }
 }
 
@@ -66,5 +79,17 @@ mod tests {
         assert_eq!(backlog.iter().map(|e| e.id).collect::<Vec<_>>(), vec![2]);
         events.emit("c", serde_json::json!(3));
         assert_eq!(rx.try_recv().unwrap().id, 3);
+        assert_eq!(events.listeners(), 1);
+    }
+
+    #[test]
+    fn search_progress_is_live_only() {
+        let events = Events::new();
+        let (_, mut rx) = events.subscribe(0);
+        events.emit("analysis.info", serde_json::json!(1));
+        events.emit("job.updated", serde_json::json!(2));
+        assert_eq!(rx.try_recv().unwrap().kind, "analysis.info");
+        let (backlog, _) = events.subscribe(0);
+        assert_eq!(backlog.iter().map(|e| (e.id, e.kind.as_str())).collect::<Vec<_>>(), [(2, "job.updated")]);
     }
 }

@@ -27,7 +27,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Starts a live search, replacing any other. Reports arrive as `analysis.info` events until it is stopped. */
+        /**
+         * Starts a live search, replacing any other. Reports arrive as `analysis.info` events until it is stopped, or until
+         *     no event stream has been open for 15 seconds (a board closed without stopping it).
+         */
         post: operations["start_analysis"];
         /** Stops the live search. */
         delete: operations["stop_analysis"];

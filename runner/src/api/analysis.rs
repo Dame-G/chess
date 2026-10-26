@@ -14,7 +14,8 @@ pub async fn analyse(
     Ok(Json(analysis::analyse(&state, req).await?))
 }
 
-/// Starts a live search, replacing any other. Reports arrive as `analysis.info` events until it is stopped.
+/// Starts a live search, replacing any other. Reports arrive as `analysis.info` events until it is stopped, or until
+/// no event stream has been open for 15 seconds (a board closed without stopping it).
 #[utoipa::path(post, path = "/api/analysis", operation_id = "start_analysis", tag = "analysis", request_body = AnalysisRequest, responses((status = 200, body = LiveSession), (status = 404, description = "No such build"), (status = 409, description = "The build was deleted, or there are no builds yet")))]
 pub async fn start(
     State(state): State<Arc<AppState>>,
