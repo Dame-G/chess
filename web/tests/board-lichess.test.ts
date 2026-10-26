@@ -247,6 +247,13 @@ describe("the free board", () => {
     expect(root.querySelector("[role=meter]")).toBeNull();
     expect(calls.filter((c) => c.includes("/api/analysis"))).toEqual([]);
     expect(text()).not.toContain("Engine version");
+    expect(buttons()).not.toContain("Explorer");
+  });
+
+  it("has the explorer as a tab when no game of yours is on", async () => {
+    locked = false;
+    await open(`/board?fen=${encodeURIComponent(fen)}&moves=e2e4`);
+    expect(buttons().some((b) => b.startsWith("Explorer"))).toBe(true);
   });
 });
 

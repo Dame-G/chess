@@ -42,6 +42,7 @@ import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import ChessBoard from "../board/ChessBoard.vue";
 import EngineLines from "../board/EngineLines.vue";
 import EvalBar from "../board/EvalBar.vue";
+import Explorer from "../board/Explorer.vue";
 import FairPlayNote from "../board/FairPlayNote.vue";
 import GameList from "../board/GameList.vue";
 import GameSetup from "../board/GameSetup.vue";
@@ -50,6 +51,7 @@ import MyGamePanel from "../board/MyGamePanel.vue";
 import MatchEngines, { type EngineRow } from "../board/MatchEngines.vue";
 import MatchStatus from "../board/MatchStatus.vue";
 import MoveList from "../board/MoveList.vue";
+import Tablebase from "../board/Tablebase.vue";
 import Playlist from "../board/Playlist.vue";
 import PlayerStrip from "../board/PlayerStrip.vue";
 import PlayPanel from "../board/PlayPanel.vue";
@@ -1012,8 +1014,14 @@ const result = computed(() => {
 /** Which tab of the panel shows. */
 const tab = ref("moves");
 const liveGames = computed(() => matchList.value.filter((m) => m.status === "running").length);
+/** The explorer and the tablebase belong to free analysis, and never to a time when a game of yours is on at Lichess. */
+const lookups = computed(() => !inGame.value && mode.value === "analyse" && !fairPlay.value);
+watch(lookups, (on) => {
+  if (!on && tab.value === "explorer") tab.value = "moves";
+});
 const tabs = computed(() => [
   { id: "moves", label: "Moves" },
+  ...(lookups.value ? [{ id: "explorer", label: "Explorer" }] : []),
   { id: "games", label: "Games", count: liveGames.value || undefined },
 ]);
 
@@ -1367,6 +1375,8 @@ const filters = [
                 <MatchEngines :rows="engineRows" />
               </section>
 
+              <Tablebase v-if="lookups" :fen="position.fen" @play="playMoves([$event])" />
+
               <section
                 v-if="!setup && !humanLive && (isMatch ? engineOn : engineOn || shown)"
                 class="engine"
@@ -1457,6 +1467,10 @@ const filters = [
               </EMenu>
             </footer>
           </div>
+        </template>
+
+        <template v-if="lookups" #panel-explorer>
+          <Explorer :fen="position.fen" :orientation="orientation" @play="playMoves([$event])" />
         </template>
 
         <template #panel-games>
