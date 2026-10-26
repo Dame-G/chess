@@ -60,7 +60,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The Reckless checkout's branches and upstream's, most recently committed first: what can be built or tested. */
+        /**
+         * The Reckless checkout's branches and upstream's, most recently committed first: what can be built or tested. `hidden`
+         *     says whether the Versions view hides it.
+         */
         get: operations["list_branches"];
         put?: never;
         post?: never;
@@ -88,6 +91,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/builds/prune": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deletes the binaries of builds nothing uses: those older than `older_than_days`, keeping each branch's newest
+         *     plain and `spsa` build unless told otherwise. `dry_run` only says what would go.
+         */
+        post: operations["prune_builds"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/builds/{id}": {
         parameters: {
             query?: never;
@@ -99,7 +122,12 @@ export interface paths {
         get: operations["get_build"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Deletes a build's binary; the build stays on record (with `deleted_at`) so everything that used it still reads,
+         *     and a later build of its commit builds afresh. 409 while a running experiment, test, tune or match uses it, or
+         *     it is the Lichess bot's build.
+         */
+        delete: operations["delete_build"];
         options?: never;
         head?: never;
         patch?: never;
@@ -687,6 +715,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One entry per branch (the fork's and upstream's, as `/api/branches`), newest commit first: its builds, the
+         *     verdict of its latest experiment, its latest tune and whether the Lichess bot plays it. Hidden ones are included
+         *     with `hidden: true`. A branch name with a `/` goes in a path as `%2F`.
+         */
+        get: operations["list_versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/versions/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Deletes a fork branch, locally and with `remote` on `origin`. The body must repeat its name. 400 for `main`, an
+         *     upstream branch, a wrong `confirm`, or a branch a queued or running experiment or tune uses; 409 when the Lichess
+         *     bot plays it, it is checked out, or (with `builds`) one of its builds is in use. Experiments and tunes that used it
+         *     keep their records.
+         */
+        delete: operations["delete_version"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/versions/{name}/hidden": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Hides a version from the Versions view, or shows it again. It can still be built and tested. */
+        put: operations["set_version_hidden"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -760,6 +848,8 @@ export interface components {
             bench?: number | null;
             /** @description When its commit was made, ISO 8601. */
             date: string;
+            /** @description Hidden from the Versions view (`PUT /api/versions/{name}/hidden`). It can still be built and tested. */
+            hidden: boolean;
             /** @description The name to build or test, such as `main` or `upstream/main`. */
             name: string;
             sha: string;
@@ -778,6 +868,11 @@ export interface components {
             bench_expected?: number | null;
             commit: string;
             created_at: string;
+            /**
+             * @description When its binary was deleted. The record stays, so the experiments, tests, tunes and matches that used it still
+             *     read; a later build of the same commit is a new build.
+             */
+            deleted_at?: string | null;
             /** @description `syzygy` with tablebase support (needs clang), else `no-syzygy`; `+spsa` when its tunables are UCI options. */
             features: string;
             /** Format: int64 */
@@ -827,6 +922,19 @@ export interface components {
             rated: boolean;
             url: string;
             username: string;
+        };
+        /** @description What deleting a version asks for. */
+        DeleteVersion: {
+            /** @description The branch name again, as a guard against deleting the wrong one. */
+            confirm: string;
+        };
+        /** @description What deleting a version did. */
+        DeletedVersion: {
+            /** @description The builds whose binaries were deleted with it. */
+            builds: number[];
+            name: string;
+            /** @description It was deleted on `origin` too (false when not asked, or when `origin` did not have it). */
+            remote: boolean;
         };
         DrawAnswer: {
             /** @description Whether the engine took the draw. If it did, the game is over. */
@@ -910,6 +1018,11 @@ export interface components {
             result: string;
             termination: string;
             white: string;
+        };
+        /** @description A version's hidden flag, as set. */
+        Hidden: {
+            hidden: boolean;
+            name?: string;
         };
         /**
          * @description The string `"human"`: the seat a person takes.
@@ -1355,6 +1468,31 @@ export interface components {
          * @enum {string}
          */
         Preset: "vstc" | "stc" | "ltc" | "stc-hash" | "ltc-hash" | "smp" | "nodes";
+        /** @description Which build binaries to delete. */
+        PruneRequest: {
+            /** @description Say what would go, deleting nothing. */
+            dry_run?: boolean;
+            /** @description Keep the newest plain build and the newest `spsa` build of every branch. Default true. */
+            keep_latest_per_branch?: boolean;
+            /**
+             * Format: int32
+             * @description Only builds made at least this many days ago. Left out, any age.
+             */
+            older_than_days?: number | null;
+        };
+        /** @description What a prune deleted. */
+        PruneResult: {
+            /** @description The builds whose binaries were deleted (or, with `dry_run`, would be). */
+            deleted: number[];
+            dry_run: boolean;
+            /**
+             * Format: int64
+             * @description Bytes freed (or, with `dry_run`, that would be).
+             */
+            freed_bytes: number;
+            /** @description Builds that matched but are in use (a running experiment, test, tune or match, or the Lichess bot). */
+            in_use: number[];
+        };
         /** @description A bot's rating at each speed it has played. */
         Ratings: {
             /** Format: int32 */
@@ -1740,6 +1878,91 @@ export interface components {
         };
         /** @enum {string} */
         Verdict: "accepted" | "rejected" | "continue";
+        /** @description One branch of the engine, with what has been done with it. */
+        Version: {
+            /**
+             * Format: int64
+             * @description The tip's `Bench:` line.
+             */
+            bench?: number | null;
+            /** @description Its builds, newest first, deleted ones included. */
+            builds: components["schemas"]["VersionBuild"][];
+            /** @description When the tip was committed, ISO 8601. */
+            date: string;
+            /** @description Hidden from the Versions view; still listed, for the client to filter. */
+            hidden: boolean;
+            /** @description `main`, the baseline. */
+            is_main: boolean;
+            /**
+             * Format: int64
+             * @description Its newest plain (not `spsa`) build that still has its binary.
+             */
+            latest_build_id?: number | null;
+            /** @description The branch, such as `main`, `test/no-nmp` or `upstream/main`. */
+            name: string;
+            /** @description The Lichess bot's `build` setting names this branch or resolves to one of its builds. */
+            on_lichess: boolean;
+            /** @description Its tip commit. */
+            sha: string;
+            subject: string;
+            /** @description The base ref of that experiment. */
+            tested_against?: string | null;
+            /**
+             * @description Whether it can be tuned: its tip declares tunables the `spsa` feature exposes (`src/parameters.rs` has the
+             *     feature's `define!`), or a tune of it read parameters.
+             */
+            tunables: boolean;
+            tune?: components["schemas"]["VersionTune"] | null;
+            /** @description Upstream's branch rather than the fork's. */
+            upstream: boolean;
+            verdict?: components["schemas"]["VersionVerdict"] | null;
+        };
+        /** @description A build as a version lists it. */
+        VersionBuild: {
+            /** Format: int64 */
+            bench: number;
+            /** @description Whether the bench equals the commit's `Bench:` line; absent when the commit has none. */
+            bench_ok?: boolean | null;
+            commit: string;
+            created_at: string;
+            /** @description When its binary was deleted. */
+            deleted_at?: string | null;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            nps: number;
+            /** @description Its binary is in the data directory. False once deleted. */
+            on_disk: boolean;
+            /** @description Built with the `spsa` feature, for tuning. */
+            spsa: boolean;
+        };
+        /** @description The latest tune of a version. */
+        VersionTune: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int32 */
+            iteration: number;
+            /** Format: int32 */
+            iterations: number;
+            status: components["schemas"]["TuneStatus"];
+        };
+        /** @description The latest experiment of a version. */
+        VersionVerdict: {
+            estimate?: components["schemas"]["Estimate"] | null;
+            /** Format: int64 */
+            experiment: number;
+            finished_at?: string | null;
+            /**
+             * Format: int64
+             * @description Games played in its last match.
+             */
+            games: number;
+            kind: components["schemas"]["Kind"];
+            name: string;
+            status: components["schemas"]["ExperimentStatus"];
+            /** @description Why it stopped, once finished. */
+            summary?: string | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -1896,6 +2119,29 @@ export interface operations {
             };
         };
     };
+    prune_builds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PruneRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PruneResult"];
+                };
+            };
+        };
+    };
     get_build: {
         parameters: {
             query?: never;
@@ -1916,6 +2162,39 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_build: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Build"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3015,6 +3294,104 @@ export interface operations {
                 content?: never;
             };
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Version"][];
+                };
+            };
+        };
+    };
+    delete_version: {
+        parameters: {
+            query?: {
+                /** @description Delete the branch on `origin` too. */
+                remote?: boolean;
+                /** @description Delete its builds' binaries too (those no other branch shares); their records stay. */
+                builds?: boolean;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteVersion"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedVersion"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_version_hidden: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Hidden"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Hidden"];
+                };
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

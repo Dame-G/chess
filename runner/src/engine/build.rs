@@ -1,5 +1,6 @@
 //! Engine builds. A build is a commit compiled once with a given feature set, then benched; it is what gets
-//! tested and analysed, never a loose binary. Builds are kept in the data directory and never rebuilt.
+//! tested and analysed, never a loose binary. Builds are kept in the data directory and never rebuilt, unless their
+//! binary was deleted to free space: the record stays, and the next build of the commit is a new one.
 
 use std::path::{Path, PathBuf};
 
@@ -31,12 +32,16 @@ pub struct Build {
     /// Nodes per second during `bench` on this machine.
     pub nps: u64,
     pub created_at: String,
+    /// When its binary was deleted. The record stays, so the experiments, tests, tunes and matches that used it still
+    /// read; a later build of the same commit is a new build.
+    pub deleted_at: Option<String>,
     /// The tree and features: what the build is, and the folder its binary lives in.
     #[serde(skip)]
     pub key: String,
 }
 
-const COLUMNS: &str = "id, ref, commit_sha, subject, features, network, bench, bench_expected, nps, created_at, key";
+const COLUMNS: &str =
+    "id, ref, commit_sha, subject, features, network, bench, bench_expected, nps, created_at, key, deleted_at";
 
 fn from_row(r: &Row) -> rusqlite::Result<Build> {
     Ok(Build {
@@ -51,6 +56,7 @@ fn from_row(r: &Row) -> rusqlite::Result<Build> {
         nps: r.get::<_, i64>(8)? as u64,
         created_at: r.get(9)?,
         key: r.get(10)?,
+        deleted_at: r.get(11)?,
     })
 }
 
@@ -65,6 +71,75 @@ pub fn get(c: &Connection, id: i64) -> Result<Option<Build>> {
 
 fn by_key(c: &Connection, key: &str) -> Result<Option<Build>> {
     Ok(c.query_row(&format!("SELECT {COLUMNS} FROM builds WHERE key = ?1"), [key], from_row).optional()?)
+}
+
+/// The newest build of a ref (or of a commit prefix) that still has its binary.
+pub fn newest_of(c: &Connection, spec: &str) -> Result<Option<Build>> {
+    Ok(list(c)?.into_iter().find(|b| b.deleted_at.is_none() && (b.refname == spec || b.commit.starts_with(spec))))
+}
+
+/// What still needs a build's binary, in words, or `None` when nothing does: a running experiment or test that plays
+/// it, a queued or running tune of it, or a match in progress. (A queued experiment has no builds yet; it builds when
+/// it starts.) The Lichess bot's build is the caller's to check.
+pub fn user(c: &Connection, id: i64) -> Result<Option<String>> {
+    let found = |sql: &str| -> Result<Option<i64>> { Ok(c.query_row(sql, [id], |r| r.get(0)).optional()?) };
+    if let Some(e) = found(
+        "SELECT id FROM experiments WHERE status IN ('queued', 'running') AND (base_build = ?1 OR dev_build = ?1)",
+    )? {
+        return Ok(Some(format!("experiment {e} is using it")));
+    }
+    if let Some(t) = found("SELECT id FROM tests WHERE running = 1 AND (base_build = ?1 OR dev_build = ?1)")? {
+        return Ok(Some(format!("test {t} is playing it")));
+    }
+    if let Some(t) = found("SELECT id FROM tunes WHERE status IN ('queued', 'running') AND build_id = ?1")? {
+        return Ok(Some(format!("tune {t} is using it")));
+    }
+    if let Some(m) = found(
+        "SELECT id FROM matches WHERE status = 'running'
+         AND (json_extract(data, '$.white.build') = ?1 OR json_extract(data, '$.black.build') = ?1)",
+    )? {
+        return Ok(Some(format!("match {m} is playing it")));
+    }
+    Ok(None)
+}
+
+/// Deletes a build's binary and marks it deleted. Its key is renamed so a later build of the same tree is a new row.
+/// Returns the bytes freed.
+pub fn delete(c: &Connection, data: &Path, build: &Build) -> Result<u64> {
+    let dir = data.join("builds").join(&build.key);
+    let freed = size(data, build);
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).with_context(|| format!("delete {}", dir.display()))?;
+    }
+    mark_deleted(c, build.id)?;
+    Ok(freed)
+}
+
+fn mark_deleted(c: &Connection, id: i64) -> Result<()> {
+    c.execute(
+        "UPDATE builds SET deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), key = key || '#deleted-' || id
+         WHERE id = ?1 AND deleted_at IS NULL",
+        [id],
+    )?;
+    Ok(())
+}
+
+/// The bytes a build's folder takes.
+pub fn size(data: &Path, build: &Build) -> u64 {
+    dir_size(&data.join("builds").join(&build.key))
+}
+
+fn dir_size(dir: &Path) -> u64 {
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| match e.metadata() {
+            Ok(m) if m.is_dir() => dir_size(&e.path()),
+            Ok(m) => m.len(),
+            Err(_) => 0,
+        })
+        .sum()
 }
 
 /// Where a build's binary lives.
@@ -125,8 +200,13 @@ async fn build_with(cx: BuildContext<'_>, refname: &str, spsa: bool) -> Result<B
             .await?
     };
     if let Some(build) = existing {
-        (cx.log)(&format!("{} is already built (build {})", &commit.sha[..8], build.id));
-        return Ok(build);
+        if binary(cx.data, &build).exists() {
+            (cx.log)(&format!("{} is already built (build {})", &commit.sha[..8], build.id));
+            return Ok(build);
+        }
+        // Its binary went missing outside the runner: keep the record as deleted and build afresh.
+        (cx.log)(&format!("build {}'s binary is missing: building again", build.id));
+        cx.store.call(move |c| mark_deleted(c, build.id)).await?;
     }
 
     let worktree = cx.data.join("worktree");
@@ -256,6 +336,68 @@ mod tests {
     fn parses_bench_output() {
         assert_eq!(parse_bench("Bench: 2837905 nodes 352413 nps\n"), Some((2837905, 352413)));
         assert_eq!(parse_bench("nothing"), None);
+    }
+
+    fn insert(c: &Connection, key: &str) -> i64 {
+        c.execute(
+            "INSERT INTO builds (key, ref, commit_sha, subject, features, bench, nps)
+             VALUES (?1, 'main', 'abcdef1234567890', 'A build', 'no-syzygy', 1, 1)",
+            [key],
+        )
+        .unwrap();
+        c.last_insert_rowid()
+    }
+
+    #[tokio::test]
+    async fn a_deleted_build_keeps_its_record_and_its_commit_builds_again() {
+        let store = crate::store::Store::memory().unwrap();
+        let data = std::env::temp_dir().join(format!("chess-build-delete-{}", std::process::id()));
+        let dir = data.join("builds").join("tree-no-syzygy");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(exe("reckless")), b"binary").unwrap();
+        let (first, again, newest) = store
+            .call(move |c| {
+                let id = insert(c, "tree-no-syzygy");
+                let b = get(c, id)?.unwrap();
+                assert!(binary(&data, &b).exists());
+                assert_eq!(delete(c, &data, &b)?, 6);
+                assert!(!binary(&data, &get(c, id)?.unwrap()).exists());
+                // The same tree builds again as a new row: the key is free.
+                assert!(by_key(c, "tree-no-syzygy")?.is_none());
+                let again = insert(c, "tree-no-syzygy");
+                let _ = std::fs::remove_dir_all(&data);
+                Ok((get(c, id)?.unwrap(), again, newest_of(c, "main")?.map(|b| b.id)))
+            })
+            .await
+            .unwrap();
+        assert!(first.deleted_at.is_some());
+        assert_eq!(first.commit, "abcdef1234567890");
+        assert_eq!(newest, Some(again));
+    }
+
+    #[tokio::test]
+    async fn a_build_in_use_says_by_what() {
+        let store = crate::store::Store::memory().unwrap();
+        store
+            .call(|c| {
+                let id = insert(c, "k");
+                assert_eq!(user(c, id)?, None);
+                c.execute(
+                    "INSERT INTO experiments (name, kind, base_ref, dev_ref, dev_build, funnel, status, results)
+                     VALUES ('e', 'gainer', 'main', 'x', ?1, '[]', 'running', '[]')",
+                    [id],
+                )?;
+                assert_eq!(user(c, id)?.as_deref(), Some("experiment 1 is using it"));
+                c.execute("UPDATE experiments SET status = 'passed'", [])?;
+                c.execute(
+                    "INSERT INTO matches (status, data) VALUES ('running', json_object('white', json_object('build', ?1)))",
+                    [id],
+                )?;
+                assert_eq!(user(c, id)?.as_deref(), Some("match 1 is playing it"));
+                Ok(())
+            })
+            .await
+            .unwrap();
     }
 
     #[test]

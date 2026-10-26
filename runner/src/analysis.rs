@@ -64,9 +64,14 @@ async fn start(state: &AppState, req: &AnalysisRequest) -> Result<(build::Build,
         .store
         .call(move |c| match id {
             Some(id) => build::get(c, id),
-            None => Ok(build::list(c)?.into_iter().next()),
+            None => Ok(build::list(c)?.into_iter().find(|b| b.deleted_at.is_none())),
         })
         .await?;
+    if let Some(b) = &found
+        && b.deleted_at.is_some()
+    {
+        bail!("build {} was deleted: build its commit again", b.id);
+    }
     let Some(b) = found else { bail!(if id.is_some() { "no such build" } else { "no builds yet: build one first" }) };
     let mut engine = Engine::start(&build::binary(&state.config.data, &b)).await?;
     engine.set_option("Threads", req.threads).await?;

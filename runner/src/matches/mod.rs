@@ -476,7 +476,11 @@ pub async fn start(state: &Arc<AppState>, req: MatchRequest) -> Result<Match, Ap
     for (i, seat) in seats.iter().enumerate() {
         if let Seat::Build(id) = *seat {
             let found = state.store.call(move |c| build::get(c, id)).await?;
-            builds[i] = Some(found.ok_or(ApiError::bad_request(&format!("no build {id}")))?);
+            let found = found.ok_or(ApiError::bad_request(&format!("no build {id}")))?;
+            if found.deleted_at.is_some() {
+                return Err(ApiError::bad_request(&format!("build {id} was deleted: build its commit again")));
+            }
+            builds[i] = Some(found);
         }
     }
     match req.time {

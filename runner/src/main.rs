@@ -18,6 +18,7 @@ mod stats;
 mod store;
 mod tools;
 mod tune;
+mod versions;
 
 use std::path::PathBuf;
 

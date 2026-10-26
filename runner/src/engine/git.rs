@@ -1,7 +1,7 @@
 //! The Reckless checkout, read through git. Builds never touch the checkout itself: each builds in a worktree in the
 //! data directory, so uncommitted work in the checkout is never built by accident and never disturbed.
 
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 
 use anyhow::{Context, Result};
 
@@ -47,6 +47,54 @@ pub struct Branch {
     pub date: String,
     /// The node count the commit message claims (`Bench: N`).
     pub bench: Option<u64>,
+    /// Hidden from the Versions view (`PUT /api/versions/{name}/hidden`). It can still be built and tested.
+    pub hidden: bool,
+}
+
+/// Whether a branch name is upstream's (`upstream/main`) rather than the fork's own.
+pub fn is_upstream(name: &str) -> bool {
+    name.starts_with("upstream/")
+}
+
+/// The branch the checkout itself has checked out, if any.
+pub async fn checked_out(repo: &Path) -> Option<String> {
+    git(repo, &["symbolic-ref", "--quiet", "--short", "HEAD"]).await.ok()
+}
+
+/// Whether the fork has a local branch of this name.
+pub async fn has_branch(repo: &Path, name: &str) -> bool {
+    git(repo, &["rev-parse", "--verify", "--quiet", &format!("refs/heads/{name}")]).await.is_ok()
+}
+
+/// Which of these commits have `needle` in the file at `path`: one `git grep` over all their trees. A commit without
+/// the file, or a failed grep, counts as not having it.
+pub async fn commits_containing(repo: &Path, shas: &[&str], path: &str, needle: &str) -> HashSet<String> {
+    let mut found = HashSet::new();
+    // Chunked, so a long list of branches stays well inside a command line.
+    for chunk in shas.chunks(200) {
+        let mut args = vec!["grep", "-l", "-F", "-e", needle];
+        args.extend_from_slice(chunk);
+        args.extend(["--", path]);
+        if let Ok(out) = git(repo, &args).await {
+            found.extend(out.lines().filter_map(|l| l.split_once(':').map(|(sha, _)| sha.to_owned())));
+        }
+    }
+    found
+}
+
+/// Deletes a local branch, merged or not.
+pub async fn delete_branch(repo: &Path, name: &str) -> Result<()> {
+    git(repo, &["branch", "-D", "--", name]).await.map(drop)
+}
+
+/// Deletes a branch on `origin`, when it is there. Returns whether it was.
+pub async fn delete_remote_branch(repo: &Path, name: &str) -> Result<bool> {
+    let heads = git(repo, &["ls-remote", "--heads", "origin", &format!("refs/heads/{name}")]).await?;
+    if heads.is_empty() {
+        return Ok(false);
+    }
+    git(repo, &["push", "origin", "--delete", name]).await?;
+    Ok(true)
 }
 
 /// The checkout's own branches and upstream's, most recently committed first.
@@ -76,6 +124,7 @@ pub async fn branches(repo: &Path) -> Result<Vec<Branch>> {
                 subject: subject.to_owned(),
                 date: date.to_owned(),
                 bench: bench_line(message),
+                hidden: false,
             })
         })
         .collect())

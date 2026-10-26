@@ -156,6 +156,23 @@ Events on `/api/events`:
 - `lichess.status`: the whole status (as `GET /api/lichess`) whenever the connection, the account, the settings, the games being played or the search for games change.
 - `lichess.challenge`: `{ id, direction: incoming|outgoing, from: {name, title, rating}, to, rated, speed, variant, clock: {initial, increment} | null, decision: accepted|declined|canceled, reason }`. `reason` is the Lichess decline key, ours for incoming challenges and theirs for outgoing ones.
 
+## Versions and tidying
+
+A branch is a version of the engine. `GET /api/versions` gives one entry per branch (the fork's and upstream's, as `chess branches`), newest commit first: its builds (each with `on_disk`), `latest_build_id`, the `verdict` of its latest experiment as dev (status, summary, the last match's Elo estimate) and the base it was `tested_against`, its latest `tune`, `tunables`, `on_lichess`, `is_main` and `hidden`. A build belongs to a branch when it was built from that name or is of its tip commit.
+
+```bash
+chess versions [--all]                              # one line per version; --all includes hidden ones
+chess version hide <name> | show <name>             # hidden versions stay buildable and testable
+chess version delete <name> [--remote] [--builds] --yes
+chess build delete <id>                             # delete a build's binary; the record stays
+chess build prune [--older-than-days N] [--all] [--dry-run]   # binaries nothing uses; keeps each branch's newest unless --all
+```
+
+- Deleting a build removes its binary and sets `deleted_at`; experiments, tests, tunes and matches still show it, and the next build of its commit is a new build. A deleted build cannot play, analyse or be the Lichess build. 409 while a running experiment, test, tune or match uses it, or the Lichess bot plays it.
+- Deleting a version deletes the fork branch locally (`--remote`: on `origin` too, first) and needs `{ "confirm": "<name>" }` (`--yes`). It refuses `main`, upstream branches and a branch a queued or running experiment or tune uses (400), and the Lichess bot's branch or the checked-out one (409). Records that used it stay. Only delete a branch the user asked to delete.
+- Routes: `GET /api/versions`, `PUT /api/versions/{name}/hidden {hidden}`, `DELETE /api/versions/{name}?remote=&builds=` with the confirm body, `DELETE /api/builds/{id}`, `POST /api/builds/prune {older_than_days?, keep_latest_per_branch = true, dry_run}`. A name with a `/` goes in a path as `%2F`.
+- Event: `versions.changed` `{ reason: hidden|deleted|build.deleted, ... }` after these. New builds, verdicts and tunes come as `job.updated`, `experiment.updated` and `tune.*`.
+
 ## Working on the harness itself
 
 - `runner/` is Rust (axum, rusqlite, utoipa). After changing a route or a type it returns, run `corepack pnpm api` and commit the regenerated `runner/openapi.json` and `web/src/api/schema.d.ts`.

@@ -109,6 +109,9 @@ pub async fn declared(State(state): State<Arc<AppState>>, Path(id): Path<i64>) -
     let Some(b) = state.store.call(move |c| build::get(c, id)).await? else {
         return Err(ApiError::not_found("no such build"));
     };
+    if b.deleted_at.is_some() {
+        return Err(ApiError::conflict("the build was deleted: its binary is gone"));
+    }
     if !build::is_spsa(&b) {
         return Err(ApiError::conflict("not an spsa build: its tunables are compiled in as constants"));
     }

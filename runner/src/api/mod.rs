@@ -12,6 +12,7 @@ mod lichess;
 mod matches;
 mod status;
 mod tunes;
+mod versions;
 mod web;
 
 use std::sync::Arc;
@@ -69,7 +70,8 @@ fn api() -> (Router<Arc<AppState>>, utoipa::openapi::OpenApi) {
         .routes(routes!(status::status))
         .routes(routes!(events::events))
         .routes(routes!(builds::list, builds::create))
-        .routes(routes!(builds::get))
+        .routes(routes!(builds::get, versions::delete_build))
+        .routes(routes!(versions::prune))
         .routes(routes!(builds::branches))
         .routes(routes!(jobs::list))
         .routes(routes!(jobs::get, jobs::cancel))
@@ -102,6 +104,9 @@ fn api() -> (Router<Arc<AppState>>, utoipa::openapi::OpenApi) {
         .routes(routes!(tunes::apply))
         .routes(routes!(tunes::resume))
         .routes(routes!(tunes::declared))
+        .routes(routes!(versions::list))
+        .routes(routes!(versions::hide))
+        .routes(routes!(versions::delete))
         .split_for_parts()
 }
 

@@ -118,7 +118,7 @@
         "tags": [
           "builds"
         ],
-        "summary": "The Reckless checkout's branches and upstream's, most recently committed first: what can be built or tested.",
+        "summary": "The Reckless checkout's branches and upstream's, most recently committed first: what can be built or tested. `hidden`\nsays whether the Versions view hides it.",
         "operationId": "list_branches",
         "responses": {
           "200": {
@@ -187,6 +187,36 @@
         }
       }
     },
+    "/api/builds/prune": {
+      "post": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "Deletes the binaries of builds nothing uses: those older than `older_than_days`, keeping each branch's newest\nplain and `spsa` build unless told otherwise. `dry_run` only says what would go.",
+        "operationId": "prune_builds",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PruneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PruneResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/builds/{id}": {
       "get": {
         "tags": [
@@ -216,6 +246,37 @@
             }
           },
           "404": {}
+        }
+      },
+      "delete": {
+        "tags": [
+          "builds"
+        ],
+        "summary": "Deletes a build's binary; the build stays on record (with `deleted_at`) so everything that used it still reads,\nand a later build of its commit builds afresh. 409 while a running experiment, test, tune or match uses it, or\nit is the Lichess bot's build.",
+        "operationId": "delete_build",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Build"
+                }
+              }
+            }
+          },
+          "404": {},
+          "409": {}
         }
       }
     },
@@ -1488,6 +1549,131 @@
           "409": {}
         }
       }
+    },
+    "/api/versions": {
+      "get": {
+        "tags": [
+          "versions"
+        ],
+        "summary": "One entry per branch (the fork's and upstream's, as `/api/branches`), newest commit first: its builds, the\nverdict of its latest experiment, its latest tune and whether the Lichess bot plays it. Hidden ones are included\nwith `hidden: true`. A branch name with a `/` goes in a path as `%2F`.",
+        "operationId": "list_versions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Version"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versions/{name}": {
+      "delete": {
+        "tags": [
+          "versions"
+        ],
+        "summary": "Deletes a fork branch, locally and with `remote` on `origin`. The body must repeat its name. 400 for `main`, an\nupstream branch, a wrong `confirm`, or a branch a queued or running experiment or tune uses; 409 when the Lichess\nbot plays it, it is checked out, or (with `builds`) one of its builds is in use. Experiments and tunes that used it\nkeep their records.",
+        "operationId": "delete_version",
+        "parameters": [
+          {
+            "name": "remote",
+            "in": "query",
+            "description": "Delete the branch on `origin` too.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "builds",
+            "in": "query",
+            "description": "Delete its builds' binaries too (those no other branch shares); their records stay.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteVersion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedVersion"
+                }
+              }
+            }
+          },
+          "400": {},
+          "404": {},
+          "409": {}
+        }
+      }
+    },
+    "/api/versions/{name}/hidden": {
+      "put": {
+        "tags": [
+          "versions"
+        ],
+        "summary": "Hides a version from the Versions view, or shows it again. It can still be built and tested.",
+        "operationId": "set_version_hidden",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Hidden"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Hidden"
+                }
+              }
+            }
+          },
+          "404": {}
+        }
+      }
     }
   },
   "components": {
@@ -1645,7 +1831,8 @@
           "name",
           "sha",
           "subject",
-          "date"
+          "date",
+          "hidden"
         ],
         "properties": {
           "bench": {
@@ -1660,6 +1847,10 @@
           "date": {
             "type": "string",
             "description": "When its commit was made, ISO 8601."
+          },
+          "hidden": {
+            "type": "boolean",
+            "description": "Hidden from the Versions view (`PUT /api/versions/{name}/hidden`). It can still be built and tested."
           },
           "name": {
             "type": "string",
@@ -1706,6 +1897,13 @@
           },
           "created_at": {
             "type": "string"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When its binary was deleted. The record stays, so the experiments, tests, tunes and matches that used it still\nread; a later build of the same commit is a new build."
           },
           "features": {
             "type": "string",
@@ -1826,6 +2024,45 @@
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "DeleteVersion": {
+        "type": "object",
+        "description": "What deleting a version asks for.",
+        "required": [
+          "confirm"
+        ],
+        "properties": {
+          "confirm": {
+            "type": "string",
+            "description": "The branch name again, as a guard against deleting the wrong one."
+          }
+        }
+      },
+      "DeletedVersion": {
+        "type": "object",
+        "description": "What deleting a version did.",
+        "required": [
+          "name",
+          "remote",
+          "builds"
+        ],
+        "properties": {
+          "builds": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The builds whose binaries were deleted with it."
+          },
+          "name": {
+            "type": "string"
+          },
+          "remote": {
+            "type": "boolean",
+            "description": "It was deleted on `origin` too (false when not asked, or when `origin` did not have it)."
           }
         }
       },
@@ -2076,6 +2313,21 @@
             "type": "string"
           },
           "white": {
+            "type": "string"
+          }
+        }
+      },
+      "Hidden": {
+        "type": "object",
+        "description": "A version's hidden flag, as set.",
+        "required": [
+          "hidden"
+        ],
+        "properties": {
+          "hidden": {
+            "type": "boolean"
+          },
+          "name": {
             "type": "string"
           }
         }
@@ -3408,6 +3660,66 @@
           "nodes"
         ]
       },
+      "PruneRequest": {
+        "type": "object",
+        "description": "Which build binaries to delete.",
+        "properties": {
+          "dry_run": {
+            "type": "boolean",
+            "description": "Say what would go, deleting nothing."
+          },
+          "keep_latest_per_branch": {
+            "type": "boolean",
+            "description": "Keep the newest plain build and the newest `spsa` build of every branch. Default true."
+          },
+          "older_than_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Only builds made at least this many days ago. Left out, any age.",
+            "minimum": 0
+          }
+        }
+      },
+      "PruneResult": {
+        "type": "object",
+        "description": "What a prune deleted.",
+        "required": [
+          "deleted",
+          "in_use",
+          "freed_bytes",
+          "dry_run"
+        ],
+        "properties": {
+          "deleted": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The builds whose binaries were deleted (or, with `dry_run`, would be)."
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "freed_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bytes freed (or, with `dry_run`, that would be).",
+            "minimum": 0
+          },
+          "in_use": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Builds that matched but are in use (a running experiment, test, tune or match, or the Lichess bot)."
+          }
+        }
+      },
       "Ratings": {
         "type": "object",
         "description": "A bot's rating at each speed it has played.",
@@ -4341,6 +4653,254 @@
           "rejected",
           "continue"
         ]
+      },
+      "Version": {
+        "type": "object",
+        "description": "One branch of the engine, with what has been done with it.",
+        "required": [
+          "name",
+          "sha",
+          "subject",
+          "date",
+          "upstream",
+          "hidden",
+          "is_main",
+          "builds",
+          "tunables",
+          "on_lichess"
+        ],
+        "properties": {
+          "bench": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The tip's `Bench:` line.",
+            "minimum": 0
+          },
+          "builds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VersionBuild"
+            },
+            "description": "Its builds, newest first, deleted ones included."
+          },
+          "date": {
+            "type": "string",
+            "description": "When the tip was committed, ISO 8601."
+          },
+          "hidden": {
+            "type": "boolean",
+            "description": "Hidden from the Versions view; still listed, for the client to filter."
+          },
+          "is_main": {
+            "type": "boolean",
+            "description": "`main`, the baseline."
+          },
+          "latest_build_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Its newest plain (not `spsa`) build that still has its binary."
+          },
+          "name": {
+            "type": "string",
+            "description": "The branch, such as `main`, `test/no-nmp` or `upstream/main`."
+          },
+          "on_lichess": {
+            "type": "boolean",
+            "description": "The Lichess bot's `build` setting names this branch or resolves to one of its builds."
+          },
+          "sha": {
+            "type": "string",
+            "description": "Its tip commit."
+          },
+          "subject": {
+            "type": "string"
+          },
+          "tested_against": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The base ref of that experiment."
+          },
+          "tunables": {
+            "type": "boolean",
+            "description": "Whether it can be tuned: its tip declares tunables the `spsa` feature exposes (`src/parameters.rs` has the\nfeature's `define!`), or a tune of it read parameters."
+          },
+          "tune": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/VersionTune",
+                "description": "The latest tune of this branch (by name, or by the id of one of its builds)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "upstream": {
+            "type": "boolean",
+            "description": "Upstream's branch rather than the fork's."
+          },
+          "verdict": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/VersionVerdict",
+                "description": "The latest experiment with this branch as `dev`."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "VersionBuild": {
+        "type": "object",
+        "description": "A build as a version lists it.",
+        "required": [
+          "id",
+          "commit",
+          "bench",
+          "nps",
+          "created_at",
+          "spsa",
+          "on_disk"
+        ],
+        "properties": {
+          "bench": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "bench_ok": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the bench equals the commit's `Bench:` line; absent when the commit has none."
+          },
+          "commit": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When its binary was deleted."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "nps": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "on_disk": {
+            "type": "boolean",
+            "description": "Its binary is in the data directory. False once deleted."
+          },
+          "spsa": {
+            "type": "boolean",
+            "description": "Built with the `spsa` feature, for tuning."
+          }
+        }
+      },
+      "VersionTune": {
+        "type": "object",
+        "description": "The latest tune of a version.",
+        "required": [
+          "id",
+          "status",
+          "iteration",
+          "iterations"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "iteration": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "iterations": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "status": {
+            "$ref": "#/components/schemas/TuneStatus"
+          }
+        }
+      },
+      "VersionVerdict": {
+        "type": "object",
+        "description": "The latest experiment of a version.",
+        "required": [
+          "experiment",
+          "name",
+          "status",
+          "kind",
+          "games"
+        ],
+        "properties": {
+          "estimate": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Estimate",
+                "description": "The Elo estimate of its last match, if it played one."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "experiment": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "games": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Games played in its last match.",
+            "minimum": 0
+          },
+          "kind": {
+            "$ref": "#/components/schemas/Kind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExperimentStatus"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it stopped, once finished."
+          }
+        }
       }
     }
   }

@@ -252,18 +252,23 @@ async fn meta_set(state: &AppState, key: &'static str, value: String) -> Result<
         .await
 }
 
-/// The build a setting names: an id, or the newest build of a ref (or of a commit prefix).
+/// The build a setting names: an id, or the newest build of a ref (or of a commit prefix). A deleted build is none.
 pub async fn resolve_build(state: &AppState, spec: &str) -> Result<Option<Build>> {
     let spec = spec.to_owned();
     state
         .store
         .call(move |c| {
             if let Ok(id) = spec.parse::<i64>() {
-                return build::get(c, id);
+                return Ok(build::get(c, id)?.filter(|b| b.deleted_at.is_none()));
             }
-            Ok(build::list(c)?.into_iter().find(|b| b.refname == spec || b.commit.starts_with(&spec)))
+            build::newest_of(c, &spec)
         })
         .await
+}
+
+/// The bot's `build` setting as it stands: a build id or a ref, if one is chosen.
+pub fn build_setting(state: &AppState) -> Option<String> {
+    state.lichess.settings().build
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

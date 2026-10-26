@@ -116,6 +116,9 @@ const MIGRATIONS: &[&str] = &[
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
         PRIMARY KEY (tune_id, iteration)
     );",
+    // 6: a deleted build keeps its row (experiments, tests, tunes and matches name it) but loses its binary. Its key
+    // is renamed on deletion so a later build of the same tree is a new row.
+    "ALTER TABLE builds ADD COLUMN deleted_at TEXT;",
 ];
 
 #[derive(Clone)]

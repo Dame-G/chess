@@ -16,16 +16,20 @@ mod tune;
 pub enum ClientCommand {
     /// Show the runner's status.
     Status,
-    /// Build a ref of the Reckless checkout (a branch, tag or commit) and bench it.
-    Build {
-        #[arg(value_name = "REF")]
-        refname: String,
-        /// Wait for the build and print it, instead of printing the queued job.
-        #[arg(long)]
-        wait: bool,
-    },
+    /// Build a ref of the Reckless checkout (a branch, tag or commit) and bench it; or `build delete <id>` /
+    /// `build prune` to free disk.
+    Build(BuildCommand),
     /// List the branches that can be built or tested, most recently committed first.
     Branches,
+    /// One line per branch (a version): its latest verdict, tune, builds and whether the Lichess bot plays it.
+    Versions {
+        /// Include hidden versions.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Hide, show or delete a version (a branch of the fork).
+    #[command(subcommand)]
+    Version(VersionCommand),
     /// List builds, newest first.
     Builds,
     /// List recent jobs, newest first.
@@ -114,6 +118,58 @@ pub enum ClientCommand {
         pairs: Option<u32>,
         #[arg(long)]
         wait: bool,
+    },
+}
+
+#[derive(Args)]
+#[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
+pub struct BuildCommand {
+    #[command(subcommand)]
+    action: Option<BuildAction>,
+    /// The branch, tag or commit to build.
+    #[arg(value_name = "REF", required = true)]
+    refname: Option<String>,
+    /// Wait for the build and print it, instead of printing the queued job.
+    #[arg(long)]
+    wait: bool,
+}
+
+#[derive(Subcommand)]
+pub enum BuildAction {
+    /// Delete a build's binary. Its record stays, so what used it still reads; its commit builds again when needed.
+    Delete { id: i64 },
+    /// Delete the binaries of builds nothing uses, keeping each branch's newest.
+    Prune {
+        /// Only builds at least this many days old.
+        #[arg(long)]
+        older_than_days: Option<u32>,
+        /// Prune each branch's newest builds too.
+        #[arg(long)]
+        all: bool,
+        /// Say what would go, deleting nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum VersionCommand {
+    /// Hide a version from the Versions view (it can still be built and tested).
+    Hide { name: String },
+    /// Show a hidden version again.
+    Show { name: String },
+    /// Delete a branch of the fork. Experiments and tunes that used it keep their records.
+    Delete {
+        name: String,
+        /// Delete it on `origin` (GitHub) too.
+        #[arg(long)]
+        remote: bool,
+        /// Delete its builds' binaries too.
+        #[arg(long)]
+        builds: bool,
+        /// Confirm the deletion; nothing is deleted without it.
+        #[arg(long)]
+        yes: bool,
     },
 }
 
@@ -386,7 +442,22 @@ pub async fn run(client: Client, command: ClientCommand, json: bool) -> Result<(
                 )
             });
         }
-        ClientCommand::Build { refname, wait } => {
+        ClientCommand::Build(BuildCommand { action: Some(action), .. }) => {
+            return build_action(&client, action, json).await;
+        }
+        ClientCommand::Versions { all } => {
+            let list = client.get("/api/versions").await?;
+            let shown: Vec<Value> = list
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|v| all || v["hidden"].as_bool() != Some(true))
+                .cloned()
+                .collect();
+            print(&Value::Array(shown), json, |l| lines(l, version_line));
+        }
+        ClientCommand::Version(cmd) => return version(&client, cmd, json).await,
+        ClientCommand::Build(BuildCommand { action: None, refname, wait }) => {
             let job = client.post("/api/builds", json!({ "ref": refname })).await?;
             if !wait {
                 print(&job, json, job_line);
@@ -492,7 +563,84 @@ fn build_line(b: &Value) -> String {
         b["ref"].as_str().unwrap_or("?"),
         b["nps"],
         b["subject"].as_str().unwrap_or(""),
-    )
+    ) + if b["deleted_at"].is_null() { "" } else { "  (deleted)" }
+}
+
+fn version_line(v: &Value) -> String {
+    let mut tags = Vec::new();
+    for (flag, tag) in [("is_main", "main"), ("on_lichess", "lichess"), ("tunables", "tunable"), ("hidden", "hidden")] {
+        if v[flag].as_bool() == Some(true) {
+            tags.push(tag);
+        }
+    }
+    let verdict = match &v["verdict"] {
+        Value::Null => "untested".to_owned(),
+        e => {
+            let elo = e["estimate"]["elo"].as_f64().map(|elo| format!(" {elo:+.1} Elo")).unwrap_or_default();
+            format!(
+                "{} vs {}{elo} (experiment {})",
+                e["status"].as_str().unwrap_or("?"),
+                v["tested_against"].as_str().unwrap_or("?"),
+                e["experiment"]
+            )
+        }
+    };
+    let tune = match &v["tune"] {
+        Value::Null => String::new(),
+        t => {
+            format!("  tune {} {} {}/{}", t["id"], t["status"].as_str().unwrap_or("?"), t["iteration"], t["iterations"])
+        }
+    };
+    let built = v["latest_build_id"].as_i64().map(|id| format!("build {id}")).unwrap_or_else(|| "not built".into());
+    let tags = if tags.is_empty() { String::new() } else { format!(" [{}]", tags.join(", ")) };
+    format!("{:<28} {built:<10} {verdict}{tune}{tags}", v["name"].as_str().unwrap_or("?"))
+}
+
+async fn build_action(client: &Client, action: BuildAction, json: bool) -> Result<()> {
+    match action {
+        BuildAction::Delete { id } => {
+            let b = client.delete(&format!("/api/builds/{id}")).await?;
+            print(&b, json, |b| format!("deleted the binary of {}", build_line(b)));
+        }
+        BuildAction::Prune { older_than_days, all, dry_run } => {
+            let body =
+                json!({ "older_than_days": older_than_days, "keep_latest_per_branch": !all, "dry_run": dry_run });
+            let r = client.post("/api/builds/prune", body).await?;
+            print(&r, json, |r| {
+                let ids = |k: &str| {
+                    let ids: Vec<String> = r[k].as_array().into_iter().flatten().map(Value::to_string).collect();
+                    if ids.is_empty() { "none".to_owned() } else { ids.join(", ") }
+                };
+                let mib = r["freed_bytes"].as_u64().unwrap_or_default() as f64 / 1048576.0;
+                let verb = if dry_run { "would delete" } else { "deleted" };
+                format!("{verb} builds {} ({mib:.1} MiB); in use: {}", ids("deleted"), ids("in_use"))
+            });
+        }
+    }
+    Ok(())
+}
+
+async fn version(client: &Client, cmd: VersionCommand, json: bool) -> Result<()> {
+    let (name, hidden) = match cmd {
+        VersionCommand::Hide { name } => (name, true),
+        VersionCommand::Show { name } => (name, false),
+        VersionCommand::Delete { name, remote, builds, yes } => {
+            if !yes {
+                bail!("deleting {name} cannot be undone: add --yes to confirm");
+            }
+            let path = format!("/api/versions/{}?remote={remote}&builds={builds}", urlencode(&name));
+            let r = client.delete_with(&path, json!({ "confirm": name })).await?;
+            print(&r, json, |r| {
+                let builds = r["builds"].as_array().map_or(0, Vec::len);
+                let origin = if r["remote"].as_bool() == Some(true) { " and on origin" } else { "" };
+                format!("deleted {name} locally{origin}; {builds} build binaries deleted")
+            });
+            return Ok(());
+        }
+    };
+    let r = client.put(&format!("/api/versions/{}/hidden", urlencode(&name)), json!({ "hidden": hidden })).await?;
+    print(&r, json, |_| format!("{name} is {}", if hidden { "hidden" } else { "shown" }));
+    Ok(())
 }
 
 async fn experiment(client: &Client, cmd: ExperimentCommand, json: bool) -> Result<()> {
@@ -648,6 +796,7 @@ async fn resolve_build(client: &Client, spec: &str) -> Result<i64> {
         .as_array()
         .into_iter()
         .flatten()
+        .filter(|b| b["deleted_at"].is_null())
         .find(|b| b["ref"].as_str() == Some(spec) || b["commit"].as_str().is_some_and(|c| c.starts_with(spec)))
         .and_then(|b| b["id"].as_i64())
         .ok_or_else(|| anyhow::anyhow!("no build of {spec}: build it first with `chess build {spec}`"))

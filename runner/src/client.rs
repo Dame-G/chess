@@ -36,6 +36,11 @@ impl Client {
         Ok(self.send(self.http.delete(self.url(path))).await?.json().await?)
     }
 
+    /// A `DELETE` with a JSON body, for deletions that ask for confirmation.
+    pub async fn delete_with(&self, path: &str, body: Value) -> Result<Value> {
+        Ok(self.send(self.http.delete(self.url(path)).json(&body)).await?.json().await?)
+    }
+
     pub async fn text(&self, path: &str) -> Result<String> {
         Ok(self.send(self.http.get(self.url(path))).await?.text().await?)
     }
