@@ -253,7 +253,7 @@ Statistics are the old harness's `stats.rs` ported as is: pentanomial GSPRT (alp
 
 A tune (`kind: tune`) carries `TuneSpec { params: Vec<TunableOverride>, iterations, pairs, time | nodes, hash }` and stores its SPSA history (one row per update: values, result, penta). SPSA follows OpenBench exactly as the old `tune.rs` does (alpha 0.602, gamma 0.101, A = 0.1 × iterations, `r_end` 0.002, stochastic rounding, `c_k ≥ 0.5`, workers of two games). When SPSA ends, the tune writes the rounded values into `src/parameters.rs` on a new branch `tune/<idea id>`, commits with its `Bench:` line, records that as the idea's version, and the remaining stages run on it.
 
-**Promoting:** a kept idea can be promoted: its branch is merged into the fork's `main` locally (fast-forward or a merge commit with the `Bench:` line), which makes a new champion `v<n+1>`. Pushing the fork is a separate, explicit action (`POST /api/dameless/push`), never automatic.
+**Promoting:** a kept idea can be promoted: its branch is merged into the fork's `main` locally (fast-forward or a merge commit with the `Bench:` line), which makes a new champion `v<n+1>`. The merge is made in a scratch worktree under the data directory; since `main` is usually checked out in the user's checkout, that checkout is fast-forwarded to the result when it has no uncommitted changes, and the promotion is refused (changing nothing) when it has (`engine::git::CheckedOut`). Pushing the fork is a separate, explicit action (`POST /api/dameless/push`), never automatic.
 
 ### Reviews
 
