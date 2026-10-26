@@ -5,8 +5,7 @@ import { api } from "./runner";
 import type { components } from "./schema";
 
 export type Job = components["schemas"]["Job"];
-/** A branch of the checkout. `hidden` is set by the runner on branches the user put away. */
-export type Branch = components["schemas"]["Branch"] & { hidden?: boolean };
+export type Branch = components["schemas"]["Branch"];
 export type Build = components["schemas"]["Build"];
 export type Version = components["schemas"]["Version"];
 export type VersionBuild = components["schemas"]["VersionBuild"];
@@ -35,8 +34,7 @@ export const useStatus = () =>
 
 export const useBuilds = () => useQuery({ key: ["builds"], query: () => unwrap(api.GET("/api/builds")) });
 
-export const useBranches = () =>
-  useQuery({ key: ["branches"], query: async () => (await unwrap(api.GET("/api/branches"))) as Branch[] });
+export const useBranches = () => useQuery({ key: ["branches"], query: () => unwrap(api.GET("/api/branches")) });
 
 /** One entry per branch with its builds, verdict, tune and bot state. Build, test and tune events keep it current. */
 export const useVersions = () => useQuery({ key: ["versions"], query: () => unwrap(api.GET("/api/versions")) });
