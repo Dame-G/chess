@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineComponent, onBeforeUnmount, onMounted, ref, shallowRef, toRaw, watch, type Slots } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, toRaw, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { useQuery } from "@pinia/colada";
 import type { DrawShape } from "@lichess-org/chessground/draw";
@@ -11,23 +11,25 @@ import {
   PhCaretRight,
   PhChartLine,
   PhClipboardText,
+  PhClockCounterClockwise,
   PhCopy,
-  PhListBullets,
+  PhFlask,
   PhMagnifyingGlass,
   PhPause,
   PhPlay,
+  PhPlus,
   PhSword,
   PhSkipBack,
   PhSkipForward,
   PhSpeakerHigh,
   PhSpeakerSlash,
+  PhSquaresFour,
   PhUser,
 } from "@phosphor-icons/vue";
 import { useCopy, useShortcuts, useToast } from "@eos-ui/vue";
 import { EBreadcrumb } from "@eos-ui/vue/components/EBreadcrumb";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { EMenu } from "@eos-ui/vue/components/EMenu";
-import { EDrawer } from "@eos-ui/vue/components/EDrawer";
+import { EMenu, type EMenuItem } from "@eos-ui/vue/components/EMenu";
 import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
@@ -36,13 +38,14 @@ import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESelect } from "@eos-ui/vue/components/ESelect";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { EStamp } from "@eos-ui/vue/components/EStamp";
+import { ETabs } from "@eos-ui/vue/components/ETabs";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextarea } from "@eos-ui/vue/components/ETextarea";
 import { EUpload } from "@eos-ui/vue/components/EUpload";
-import BoardLibrary from "../board/BoardLibrary.vue";
 import ChessBoard from "../board/ChessBoard.vue";
 import EngineLines from "../board/EngineLines.vue";
 import EvalBar from "../board/EvalBar.vue";
+import GameList from "../board/GameList.vue";
 import GameSetup from "../board/GameSetup.vue";
 import MatchEngines, { type EngineRow } from "../board/MatchEngines.vue";
 import MatchStatus from "../board/MatchStatus.vue";
@@ -133,9 +136,6 @@ watch(sans, (s) => {
   }
 });
 
-/** The library's drawer, for when it is not beside the board. Declared early: `reset` closes it during setup. */
-const drawerOpen = ref(false);
-
 /**
  * Whether the board follows a live match. Stepping back detaches it, like a live video, and new moves keep arriving
  * without moving the board; stepping to the end (or "Live") attaches it again.
@@ -147,7 +147,6 @@ function go(to: number) {
   if (isMatch.value) attached.value = cursor.value >= moves.value.length;
 }
 function reset(fen = "startpos", line: string[] = []) {
-  drawerOpen.value = false;
   start.value = fen;
   moves.value = line;
   cursor.value = line.length;
@@ -467,6 +466,8 @@ const matchEval = computed<Seen | undefined>(() => {
 const shown = computed(
   () => matchEval.value ?? (engineOn.value && live.value ? live.value : (recorded.value ?? live.value)),
 );
+/** Whether the eval bar has a place: not while your game hides it, and not when no engine or game has anything to show. */
+const evalShown = computed(() => !veiled.value && !setup.value && (engineOn.value || !!shown.value));
 const fromEngine = computed(() => !!shown.value && shown.value === live.value && (engineOn.value || !recorded.value));
 
 /** Mover's name for the move on the board, in a game. */
@@ -591,7 +592,7 @@ function openMatch(id: number | undefined) {
 
 /** Opens the setup for a game of your own or of two engines: on the free board it is a mode, elsewhere it goes there. */
 function openSetup(into: Mode) {
-  drawerOpen.value = false;
+  tab.value = "moves";
   if (inGame.value) void router.push({ path: "/board", query: { mode: into } });
   else mode.value = into;
 }
@@ -602,7 +603,7 @@ function playFromHere(into: Mode) {
 }
 function openPosition(fen: string, line: string[]) {
   mode.value = "analyse";
-  drawerOpen.value = false;
+  tab.value = "moves";
   if (inGame.value) {
     const query: Record<string, string> = {};
     if (fen !== "startpos") query.fen = fen;
@@ -725,8 +726,6 @@ async function again(swap: boolean) {
   }
 }
 watch(matchId, () => (matchError.value = ""));
-
-const libraryName = computed(() => (isGame.value ? "Games" : "Library"));
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Playing against a build
@@ -968,7 +967,25 @@ function recentLabel(r: Recent) {
   if (!r.moves.length) return r.fen.split(" ")[0]!;
   return sanLine(r.fen, r.moves.slice(0, 6)) + (r.moves.length > 6 ? " …" : "");
 }
-const recentItems = computed(() => recent.value.slice(0, 6).map((r) => ({ ...r, label: recentLabel(r) })));
+
+/** The "New" menu: where a board can start from, and loading one. */
+const newItems = computed(() => {
+  const items: EMenuItem[] = [
+    { label: "Start position", icon: PhSquaresFour, onClick: () => openPosition("startpos", []) },
+    { label: "Load a game or FEN", icon: PhClipboardText, onClick: () => (importOpen.value = true) },
+  ];
+  if (latestItem.value) {
+    const t = latestItem.value;
+    items.push({ label: `Games of ${t.name}`, icon: PhFlask, onClick: () => void router.push(`/games/${t.id}/0`) });
+  }
+  if (recent.value.length) {
+    items.push({ divider: true }, { type: "label", label: "Recent positions" });
+    for (const r of recent.value.slice(0, 6)) {
+      items.push({ label: recentLabel(r), icon: PhClockCounterClockwise, onClick: () => openPosition(r.fen, r.moves) });
+    }
+  }
+  return items;
+});
 
 const { state: experiments } = useExperiments();
 const newest = computed(() => experiments.value.data?.reduce((a, b) => (b.id > a.id ? b : a)));
@@ -1017,41 +1034,18 @@ const result = computed(() => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
-// The library: beside the board when there is room, in a drawer when the board would otherwise shrink
+// The right panel: Moves and Games. Below 64rem the panes stack, the board first.
 // ---------------------------------------------------------------------------------------------------------------------
-
-// The library's body is written once and shown either in the pane or in the drawer.
-let libraryBody: Slots["default"];
-const DefineLibrary = defineComponent({
-  setup:
-    (_, { slots }) =>
-    () => {
-      libraryBody = slots.default;
-      return null;
-    },
-});
-const UseLibrary = defineComponent({ setup: () => () => libraryBody?.() });
 
 const frame = ref<{ $el: HTMLElement }>();
 const stacked = ref(false);
-/** Whether the library fits beside a board that fills the height; it drops out when it does not. */
-const roomy = ref(true);
-/** The person's own choice, once they have made one. */
-const pinned = stored<boolean | null>("board.library", null);
-const libraryInline = computed(() => stacked.value || (pinned.value ?? roomy.value));
-watch(libraryInline, (v) => {
-  if (v) drawerOpen.value = false;
-});
-watch(
-  () => route.fullPath,
-  () => (drawerOpen.value = false),
-);
-
-function toggleLibrary() {
-  if (libraryInline.value) pinned.value = false;
-  else if (roomy.value) pinned.value = true;
-  else drawerOpen.value = true;
-}
+/** Which tab of the panel shows. */
+const tab = ref("moves");
+const liveGames = computed(() => matchList.value.filter((m) => m.status === "running").length);
+const tabs = computed(() => [
+  { id: "moves", label: "Moves" },
+  { id: "games", label: "Games", count: liveGames.value || undefined },
+]);
 
 let observer: ResizeObserver | undefined;
 onMounted(() => {
@@ -1061,13 +1055,6 @@ onMounted(() => {
     const r = rem();
     const w = el.clientWidth;
     stacked.value = w < 64 * r;
-    // The side the height allows, and the width the whole row needs for it (see the sizes in the styles below).
-    const pad = 0.75 * r;
-    const side = el.clientHeight - 5.45 * r - 2 * pad - (isMatch.value ? 6 * r : 0);
-    const needed = 16 * r + 22 * r + 2 * r + 0.375 * r + 2 * pad + side;
-    // A margin on the way back keeps it from flickering at the edge.
-    if (roomy.value && w < needed) roomy.value = false;
-    else if (!roomy.value && w > needed + 2.5 * r) roomy.value = true;
   };
   observer = new ResizeObserver(measure);
   observer.observe(el);
@@ -1148,72 +1135,18 @@ const filters = [
 </script>
 
 <template>
-  <DefineLibrary>
-    <div v-if="isGame" class="games">
-      <div class="games-bar">
-        <ESegmented v-model="filter" label="Show games" hide-label size="sm" :options="filters" />
-        <span class="count num">{{ listed.length.toLocaleString() }}</span>
-      </div>
-      <ESkeleton v-if="gamesState.status === 'pending'" :lines="6" label="Loading games" class="pad" />
-      <EEmptyState v-else-if="!listed.length" title="No games here" icon="info" size="sm" bare class="pad">
-        {{ filter === "all" ? "This test has no games yet." : "No game ended that way. Try another filter." }}
-      </EEmptyState>
-      <Playlist v-else :games="listed" :current="index" @open="openGame($event)" />
-    </div>
-
-    <BoardLibrary
-      v-else
-      :matches="matchList"
-      :loading="matchesState.status === 'pending'"
-      :current="matchId || undefined"
-      :recent="recentItems"
-      :latest="latestItem"
-      @open="openMatch"
-      @position="openPosition"
-      @test="router.push(`/games/${$event}/0`)"
-    />
-  </DefineLibrary>
   <Workspace
     ref="frame"
     fit
-    :class="['board-ws', { 'board-ws--solo': !libraryInline, 'board-ws--match': isMatch }]"
-    library-label="Games, matches and positions"
-    inspector-label="Engine and moves"
+    :class="['board-ws', { 'board-ws--match': isMatch, 'board-ws--noeval': !evalShown }]"
+    inspector-label="Moves and games"
   >
-    <!-- Library: a game's playlist, or the places a free board can start from. -->
-    <template v-if="libraryInline" #library-head>
-      <EBreadcrumb
-        v-if="isGame"
-        :link-component="RouterLink"
-        :items="[
-          { label: 'Lab', to: '/lab' },
-          ...(experiment ? [{ label: experiment.name, to: `/lab/${experiment.id}` }] : []),
-          { label: 'Games' },
-        ]"
-      />
-      <template v-else>
-        <h2 class="head-title">{{ libraryName }}</h2>
-        <EIconButton
-          :icon="PhClipboardText"
-          label="Load a game or FEN"
-          tooltip
-          size="sm"
-          class="head-load"
-          @click="importOpen = true"
-        />
-      </template>
-    </template>
-
-    <template v-if="libraryInline" #library>
-      <UseLibrary />
-    </template>
-
     <!-- Stage: the eval bar beside the board, as large as the pane allows. -->
     <div class="stage" :class="{ loading }">
       <div :class="['rig', { 'rig--match': isMatch && matchData }]">
         <PlayerStrip v-if="isMatch && matchData" v-bind="strip(topSide)" class="strip-top" />
         <!-- Your game keeps the engine's opinion to itself until it is over. -->
-        <div v-if="veiled" class="rig-eval"></div>
+        <div v-if="!evalShown" class="rig-eval"></div>
         <EvalBar v-else :pawns="shown?.pawns" :text="shown?.text" :orientation="orientation" class="rig-eval" />
         <ChessBoard
           ref="board"
@@ -1300,16 +1233,6 @@ const filters = [
           >/ {{ moves.length }}</span
         >
       </span>
-      <EIconButton
-        v-if="!stacked"
-        :icon="PhListBullets"
-        :label="`${libraryName} list`"
-        tooltip
-        size="sm"
-        :variant="libraryInline ? 'primary' : undefined"
-        :aria-pressed="libraryInline"
-        @click="toggleLibrary"
-      />
       <ESegmented
         v-if="!isMatch && !(stacked && !moves.length)"
         v-model="rate"
@@ -1330,197 +1253,240 @@ const filters = [
       />
     </template>
 
-    <!-- Inspector: the engine, then the moves, as on Lichess. -->
-    <template #inspector-head>
-      <ESegmented
-        v-if="!inGame"
-        v-model="mode"
-        label="What to do with the board"
-        hide-label
-        size="sm"
-        :options="modes"
-      />
-      <ESwitch v-if="isMatch && !veiled" v-model="matchArrowsOn" label="Arrows" />
-      <ESwitch v-if="!matchLive && !setup" v-model="engineOn" label="Engine" />
-      <ESelect
-        v-if="buildOptions.length && !matchLive && !setup"
-        v-model="build"
-        label="Engine version"
-        hide-label
-        size="sm"
-        :options="buildOptions"
-        class="pick"
-      />
-    </template>
-
+    <!-- Inspector: Moves (what to do with the board, the engine, the moves) and Games, as on Lichess. -->
     <template #inspector>
-      <div class="insp">
-        <PlayPanel
-          v-if="isMatch && matchData && humanSide"
-          :match="matchData"
-          :attached="attached"
-          :busy="matchBusy"
-          :analysing="analysed"
-          @resign="stopMatch"
-          @takeback="takeback"
-          @draw="offerDraw"
-          @analyse="analyseGame"
-          @rematch="again(false)"
-          @swap="again(true)"
-          @fresh="openSetup('play')"
-        />
-        <MatchStatus
-          v-else-if="isMatch && matchData"
-          :match="matchData"
-          :attached="attached"
-          :busy="matchBusy"
-          @stop="stopMatch"
-          @rematch="again(false)"
-          @swap="again(true)"
-        />
-        <header v-else-if="loading && !game" class="match" aria-hidden="true">
-          <ESkeleton :height="20" width="70%" />
-          <ESkeleton :height="20" width="55%" />
-        </header>
-        <header v-else-if="isGame && game" class="match">
-          <p class="who">
-            <span :class="['chip', devWhite ? 'chip--white' : 'chip--black']" aria-hidden="true"></span>
-            New version
-            <span class="vs">vs</span>
-            <span :class="['chip', devWhite ? 'chip--black' : 'chip--white']" aria-hidden="true"></span>
-            Current version
-          </p>
-          <p class="how">
-            <EStamp size="sm" :tone="result.tone" :label="result.label" />
-            {{ ending(game.headers.Termination) }} after {{ Math.ceil(game.plies.length / 2) }} moves
-          </p>
-          <div v-if="stacked" class="hop">
-            <EIconButton
-              :icon="PhCaretLeft"
-              label="Previous game (P)"
-              tooltip
-              size="sm"
-              :disabled="!previousGame"
-              @click="openGame(previousGame?.index)"
-            />
-            <EIconButton
-              :icon="PhCaretRight"
-              label="Next game (N)"
-              tooltip
-              size="sm"
-              :disabled="!nextGame"
-              @click="openGame(nextGame?.index)"
-            />
-          </div>
-        </header>
-
-        <ENotice v-if="matchError" tone="danger" title="That did not work" class="problem">
-          {{ matchError }}
-        </ENotice>
-        <ENotice
-          v-if="gameFailed"
-          tone="danger"
-          :title="`That ${isMatch ? 'match' : 'game'} did not load`"
-          class="problem"
-        >
-          It may have been removed, or the runner is not reachable.
-        </ENotice>
-
-        <GameSetup v-if="setup" :mode="setup" :fen="start" :moves="moves.slice(0, cursor)" />
-
-        <section v-if="isMatch && matchData && !veiled" class="engine engine--match" aria-label="Engines in the match">
-          <MatchEngines :rows="engineRows" />
-        </section>
-
-        <section v-if="!setup && !humanLive && (!isMatch || engineOn)" class="engine" aria-label="Engine">
-          <EEmptyState v-if="noBuilds" title="No engine built yet" icon="info" size="sm" bare>
-            Build Reckless once and it analyses here.
-            <template #action>
-              <EButton size="sm" @click="router.push('/engines')">Build an engine</EButton>
-            </template>
-          </EEmptyState>
-
-          <template v-else>
-            <p v-if="!engineOn && !shown" class="off">Engine off</p>
-            <div v-else class="hero">
-              <div class="big num" :class="{ dim: !shown }">
-                <template v-if="shown">{{ shown.text }}</template>
-                <template v-else-if="searching">…</template>
-                <template v-else>–</template>
-              </div>
-              <div class="facts num">
-                <p v-if="!engineOn">{{ shown ? "From the game" : "Engine off" }}</p>
-                <p v-else-if="playing">Paused while playing</p>
-                <p v-else-if="best">
-                  <Term of="depth" inline>Depth</Term> {{ best.depth }}/{{ best.seldepth }} · {{ speed(best.nps) }}
-                </p>
-                <p v-else-if="error" class="bad">{{ error }}</p>
-                <p v-else>Thinking…</p>
-                <p v-if="played && mover" class="played">
-                  {{ mover }}: <template v-if="fromEngine && recorded">{{ recorded.text }}, </template>
-                  <template v-if="played.depth !== null">depth {{ played.depth }}</template>
-                  <template v-if="played.time !== null">, {{ played.time.toFixed(2) }}s</template>
-                </p>
-              </div>
-            </div>
-            <div v-if="engineOn" class="lines-bar">
-              <span>Lines</span>
+      <ETabs v-model="tab" :items="tabs" fill stretch label="Board panel" class="panel">
+        <template #panel-moves>
+          <div class="moves-head">
+            <div class="head-row">
               <ESegmented
-                v-model="multipv"
-                label="Lines to show"
+                v-if="!inGame"
+                v-model="mode"
+                label="What to do with the board"
                 hide-label
                 size="sm"
-                :options="['1', '2', '3', '5']"
+                :options="modes"
+              />
+              <EMenu label="New or load" :items="newItems" side="bottom" align="end" class="new">
+                <template #trigger>
+                  <EButton variant="outline" size="sm" :icon="PhPlus">New</EButton>
+                </template>
+              </EMenu>
+            </div>
+            <div v-if="(isMatch && !veiled) || (!matchLive && !setup)" class="head-row">
+              <ESwitch v-if="isMatch && !veiled" v-model="matchArrowsOn" label="Arrows" />
+              <ESwitch v-if="!matchLive && !setup" v-model="engineOn" label="Engine" />
+              <ESelect
+                v-if="buildOptions.length && !matchLive && !setup"
+                v-model="build"
+                label="Engine version"
+                hide-label
+                size="sm"
+                :options="buildOptions"
+                class="pick"
               />
             </div>
-            <ENotice v-if="error && best" tone="danger" title="The engine could not start" :role="false">
-              {{ error }}
-            </ENotice>
-            <EngineLines
-              v-if="engineOn && !playing"
-              :position="position"
-              :lines="lines"
-              :count="Number(multipv)"
-              @play="playMoves"
+          </div>
+
+          <div class="insp">
+            <PlayPanel
+              v-if="isMatch && matchData && humanSide"
+              :match="matchData"
+              :attached="attached"
+              :busy="matchBusy"
+              :analysing="analysed"
+              @resign="stopMatch"
+              @takeback="takeback"
+              @draw="offerDraw"
+              @analyse="analyseGame"
+              @rematch="again(false)"
+              @swap="again(true)"
+              @fresh="openSetup('play')"
             />
-          </template>
-        </section>
+            <MatchStatus
+              v-else-if="isMatch && matchData"
+              :match="matchData"
+              :attached="attached"
+              :busy="matchBusy"
+              @stop="stopMatch"
+              @rematch="again(false)"
+              @swap="again(true)"
+            />
+            <header v-else-if="loading && !game" class="match" aria-hidden="true">
+              <ESkeleton :height="20" width="70%" />
+              <ESkeleton :height="20" width="55%" />
+            </header>
+            <header v-else-if="isGame && game" class="match">
+              <p class="who">
+                <span :class="['chip', devWhite ? 'chip--white' : 'chip--black']" aria-hidden="true"></span>
+                New version
+                <span class="vs">vs</span>
+                <span :class="['chip', devWhite ? 'chip--black' : 'chip--white']" aria-hidden="true"></span>
+                Current version
+              </p>
+              <p class="how">
+                <EStamp size="sm" :tone="result.tone" :label="result.label" />
+                {{ ending(game.headers.Termination) }} after {{ Math.ceil(game.plies.length / 2) }} moves
+              </p>
+              <div class="hop">
+                <EIconButton
+                  :icon="PhCaretLeft"
+                  label="Previous game (P)"
+                  tooltip
+                  size="sm"
+                  :disabled="!previousGame"
+                  @click="openGame(previousGame?.index)"
+                />
+                <EIconButton
+                  :icon="PhCaretRight"
+                  label="Next game (N)"
+                  tooltip
+                  size="sm"
+                  :disabled="!nextGame"
+                  @click="openGame(nextGame?.index)"
+                />
+              </div>
+            </header>
 
-        <section class="pane-moves" aria-label="Moves">
-          <MoveList :sans="sans" :cursor="cursor" :start="start" :loading="loading" @go="go" />
-        </section>
+            <ENotice v-if="matchError" tone="danger" title="That did not work" class="problem">
+              {{ matchError }}
+            </ENotice>
+            <ENotice
+              v-if="gameFailed"
+              tone="danger"
+              :title="`That ${isMatch ? 'match' : 'game'} did not load`"
+              class="problem"
+            >
+              It may have been removed, or the runner is not reachable.
+            </ENotice>
 
-        <footer class="tools">
-          <EMenu label="Copy" :items="copyItems" side="top">
-            <template #trigger>
-              <EButton variant="quiet" size="sm" :icon="PhCopy">Copy</EButton>
-            </template>
-          </EMenu>
-          <template v-if="inGame && !humanLive && !(isMatch && matchLive)">
-            <EButton variant="quiet" size="sm" :icon="PhChartLine" @click="fork([])"> Analyse from here </EButton>
-            <EButton variant="quiet" size="sm" :icon="PhUser" @click="playFromHere('play')">Play from here</EButton>
-            <EButton variant="quiet" size="sm" :icon="PhSword" @click="playFromHere('engines')">
-              Engines from here
-            </EButton>
-          </template>
-          <EIconButton
-            :icon="sound ? PhSpeakerHigh : PhSpeakerSlash"
-            :label="sound ? 'Mute move sounds' : 'Play move sounds'"
-            tooltip
-            size="sm"
-            class="sound"
-            :variant="sound ? 'primary' : undefined"
-            :aria-pressed="sound"
-            @click="toggleSound"
+            <GameSetup v-if="setup" :mode="setup" :fen="start" :moves="moves.slice(0, cursor)" />
+
+            <section
+              v-if="isMatch && matchData && !veiled"
+              class="engine engine--match"
+              aria-label="Engines in the match"
+            >
+              <MatchEngines :rows="engineRows" />
+            </section>
+
+            <section v-if="!setup && !humanLive && (!isMatch || engineOn)" class="engine" aria-label="Engine">
+              <EEmptyState v-if="noBuilds" title="No engine built yet" icon="info" size="sm" bare>
+                Build Reckless once and it analyses here.
+                <template #action>
+                  <EButton size="sm" @click="router.push('/engines')">Build an engine</EButton>
+                </template>
+              </EEmptyState>
+
+              <template v-else>
+                <p v-if="!engineOn && !shown" class="off">Engine off</p>
+                <div v-else class="hero">
+                  <div class="big num" :class="{ dim: !shown }">
+                    <template v-if="shown">{{ shown.text }}</template>
+                    <template v-else-if="searching">…</template>
+                    <template v-else>–</template>
+                  </div>
+                  <div class="facts num">
+                    <p v-if="!engineOn">{{ shown ? "From the game" : "Engine off" }}</p>
+                    <p v-else-if="playing">Paused while playing</p>
+                    <p v-else-if="best">
+                      <Term of="depth" inline>Depth</Term> {{ best.depth }}/{{ best.seldepth }} · {{ speed(best.nps) }}
+                    </p>
+                    <p v-else-if="error" class="bad">{{ error }}</p>
+                    <p v-else>Thinking…</p>
+                    <p v-if="played && mover" class="played">
+                      {{ mover }}: <template v-if="fromEngine && recorded">{{ recorded.text }}, </template>
+                      <template v-if="played.depth !== null">depth {{ played.depth }}</template>
+                      <template v-if="played.time !== null">, {{ played.time.toFixed(2) }}s</template>
+                    </p>
+                  </div>
+                </div>
+                <div v-if="engineOn" class="lines-bar">
+                  <span>Lines</span>
+                  <ESegmented
+                    v-model="multipv"
+                    label="Lines to show"
+                    hide-label
+                    size="sm"
+                    :options="['1', '2', '3', '5']"
+                  />
+                </div>
+                <ENotice v-if="error && best" tone="danger" title="The engine could not start" :role="false">
+                  {{ error }}
+                </ENotice>
+                <EngineLines
+                  v-if="engineOn && !playing"
+                  :position="position"
+                  :lines="lines"
+                  :count="Number(multipv)"
+                  @play="playMoves"
+                />
+              </template>
+            </section>
+
+            <section class="pane-moves" aria-label="Moves">
+              <MoveList :sans="sans" :cursor="cursor" :start="start" :loading="loading" @go="go" />
+            </section>
+
+            <footer class="tools">
+              <EMenu label="Copy" :items="copyItems" side="top">
+                <template #trigger>
+                  <EButton variant="quiet" size="sm" :icon="PhCopy">Copy</EButton>
+                </template>
+              </EMenu>
+              <template v-if="inGame && !humanLive && !(isMatch && matchLive)">
+                <EButton variant="quiet" size="sm" :icon="PhChartLine" @click="fork([])"> Analyse from here </EButton>
+                <EButton variant="quiet" size="sm" :icon="PhUser" @click="playFromHere('play')">Play from here</EButton>
+                <EButton variant="quiet" size="sm" :icon="PhSword" @click="playFromHere('engines')">
+                  Engines from here
+                </EButton>
+              </template>
+              <EIconButton
+                :icon="sound ? PhSpeakerHigh : PhSpeakerSlash"
+                :label="sound ? 'Mute move sounds' : 'Play move sounds'"
+                tooltip
+                size="sm"
+                class="sound"
+                :variant="sound ? 'primary' : undefined"
+                :aria-pressed="sound"
+                @click="toggleSound"
+              />
+            </footer>
+          </div>
+        </template>
+
+        <template #panel-games>
+          <div v-if="isGame" class="games">
+            <EBreadcrumb
+              :link-component="RouterLink"
+              class="crumbs"
+              :items="[
+                { label: 'Lab', to: '/lab' },
+                ...(experiment ? [{ label: experiment.name, to: `/lab/${experiment.id}` }] : []),
+                { label: 'Games' },
+              ]"
+            />
+            <div class="games-bar">
+              <ESegmented v-model="filter" label="Show games" hide-label size="sm" :options="filters" />
+              <span class="count num">{{ listed.length.toLocaleString() }}</span>
+            </div>
+            <ESkeleton v-if="gamesState.status === 'pending'" :lines="6" label="Loading games" class="pad" />
+            <EEmptyState v-else-if="!listed.length" title="No games here" icon="info" size="sm" bare class="pad">
+              {{ filter === "all" ? "This test has no games yet." : "No game ended that way. Try another filter." }}
+            </EEmptyState>
+            <Playlist v-else :games="listed" :current="index" @open="openGame($event)" />
+          </div>
+          <GameList
+            v-else
+            :matches="matchList"
+            :loading="matchesState.status === 'pending'"
+            :current="matchId || undefined"
+            @open="openMatch"
           />
-        </footer>
-      </div>
+        </template>
+      </ETabs>
     </template>
   </Workspace>
-
-  <EDrawer v-model:open="drawerOpen" side="start" size="sm" :title="libraryName">
-    <div class="drawer-body"><UseLibrary v-if="!libraryInline" /></div>
-  </EDrawer>
 
   <EDialog
     v-model:open="importOpen"
@@ -1563,15 +1529,35 @@ const filters = [
 </template>
 
 <style scoped>
-/* Library */
-.head-title {
-  margin: 0;
-  font: var(--e-type-h6);
+/* The panel: tabs on top, each tab's content under them */
+.panel {
+  height: 100%;
+  min-height: 0;
 }
 
-.head-load {
+.moves-head {
+  display: grid;
+  gap: var(--e-gap-snug);
+  padding: var(--e-gap-snug) var(--ws-pad);
+  border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
+}
+
+.head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--e-gap-snug);
+}
+
+.head-row .new {
   margin-inline-start: auto;
 }
+
+.crumbs {
+  padding: var(--e-gap-snug) var(--ws-pad);
+}
+
+/* The games tab */
 
 .games {
   display: grid;
@@ -1597,68 +1583,23 @@ const filters = [
   padding: var(--e-pad-control-sm);
 }
 
-.match-rows {
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.starts {
-  display: grid;
-  align-content: start;
-  padding-block: var(--e-gap-tight);
-}
-
-.section {
-  margin: var(--e-gap-snug) 0 0;
-  padding: var(--e-gap-tight) var(--ws-pad);
-  color: var(--e-muted);
-  font: var(--e-type-small);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.starts :deep(.e-btn) {
-  justify-content: flex-start;
-  border-radius: 0;
-  text-align: start;
-  text-decoration: none;
-}
-
-.aside {
-  margin-inline-start: auto;
-  color: var(--e-muted);
-}
-
-.grow {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.recent-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* Stage: the board drives the layout. Its side is the largest square the frame's height allows (less the transport and
-   padding), or what the width allows once the library and the inspector keep their minimum widths. The frame
+   padding), or what the width allows once the panel keeps its width. The frame
    (Workspace with fit) is the size container and the stage column hugs the rig, so only the inspector absorbs slack. */
 .board-ws {
-  --ws-library: 16rem;
-  --lib: var(--ws-library);
   --ws-inspector: 22rem;
   --col: 2rem;
   --gap: var(--e-gap-snug);
+
+  /* The gap between the eval bar and the board goes with the bar. */
+  --egap: var(--gap);
   --pad: var(--ws-pad, var(--e-pad-control));
   --foot: 5.45rem;
   --strip: 2.5rem;
   --extra: 0px;
   --side-raw: min(
     100cqh - var(--foot) - var(--extra) - 2 * var(--pad),
-    100cqw - var(--lib) - var(--ws-inspector, 24rem) - var(--col) - var(--gap) - 2 * var(--pad)
+    100cqw - var(--ws-inspector, 24rem) - var(--col) - var(--egap) - 2 * var(--pad)
   );
   --side: var(--side-raw);
 }
@@ -1673,19 +1614,9 @@ const filters = [
   }
 }
 
-.board-ws--solo {
-  --lib: 0px;
-}
-
 /* A match puts a player's strip above and below the board. */
 .board-ws--match {
   --extra: calc(2 * (var(--strip) + var(--gap)));
-}
-
-.drawer-body {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr);
-  height: calc(100dvh - 9rem);
 }
 
 .board-ws :deep(.ws-foot) {
@@ -1702,8 +1633,8 @@ const filters = [
 .rig {
   display: grid;
   grid-template-columns: var(--col) var(--side);
-  gap: var(--gap);
-  width: calc(var(--col) + var(--gap) + var(--side));
+  gap: var(--gap) var(--egap);
+  width: calc(var(--col) + var(--egap) + var(--side));
   height: var(--side);
   transition: opacity 0.2s;
 }
@@ -1976,7 +1907,7 @@ const filters = [
    then the buttons spread the width of the screen for thumbs. */
 @media (width < 64rem) {
   .board-ws {
-    --side-raw: min(100cqw - var(--col) - var(--gap) - 2 * var(--pad), max(100dvh - 17rem - var(--extra), 16rem));
+    --side-raw: min(100cqw - var(--col) - var(--egap) - 2 * var(--pad), max(100dvh - 17rem - var(--extra), 16rem));
   }
 
   .board-ws :deep(.ws-stage) {
@@ -2031,6 +1962,15 @@ const filters = [
     margin-inline-start: 0;
   }
 
+  .panel {
+    height: auto;
+  }
+
+  .panel :deep(.e-tabpanel) {
+    flex: none;
+    overflow: visible;
+  }
+
   .insp {
     height: auto;
   }
@@ -2048,10 +1988,6 @@ const filters = [
   .games :deep(.playlist) {
     height: 20rem;
   }
-
-  .match-rows {
-    max-height: 20rem;
-  }
 }
 
 @media (width < 40rem) {
@@ -2059,5 +1995,11 @@ const filters = [
     --pad: 0.5rem;
     --col: 1.75rem;
   }
+}
+
+/* With no eval bar, the board and the strips and bar around it take its width. */
+.board-ws--noeval {
+  --col: 0px;
+  --egap: 0px;
 }
 </style>

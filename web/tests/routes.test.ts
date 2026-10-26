@@ -64,7 +64,7 @@ let lichess = "lichess-off.json";
 const fen = encodeURIComponent("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 const routes: [string, string, string?][] = [
   ["/", "Open the board"],
-  ["/board", "Start position"],
+  ["/board", "New"],
   [`/board?fen=${fen}&moves=e2e4`, "1. e4"],
   ["/games/2/0", "Nd7"],
   ["/matches/1", "Black (test/no-nmp) won on time"],
