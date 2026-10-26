@@ -214,15 +214,6 @@ fn decline_phrase(key: &str) -> Option<&'static str> {
 // Picking an opponent
 // ---------------------------------------------------------------------------------------------------------------------
 
-fn speed_key(speed: Speed) -> &'static str {
-    match speed {
-        Speed::Bullet => "bullet",
-        Speed::Blitz => "blitz",
-        Speed::Rapid => "rapid",
-        Speed::Classical => "classical",
-    }
-}
-
 fn rating_at(r: &Ratings, speed: Speed) -> Option<u32> {
     match speed {
         Speed::Bullet => r.bullet,
@@ -234,7 +225,7 @@ fn rating_at(r: &Ratings, speed: Speed) -> Option<u32> {
 
 /// Our rating at `speed` from the account's `perfs`: a provisional or missing one counts as 1500.
 pub fn our_rating(perfs: &Value, speed: Speed) -> u32 {
-    let perf = &perfs[speed_key(speed)];
+    let perf = &perfs[speed.key()];
     match perf["rating"].as_u64() {
         Some(r) if perf["prov"].as_bool() != Some(true) => r as u32,
         _ => UNRATED,

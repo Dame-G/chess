@@ -121,14 +121,20 @@ pub enum Speed {
 }
 
 impl Speed {
-    pub fn parse(key: &str) -> Option<Self> {
-        match key {
-            "bullet" => Some(Self::Bullet),
-            "blitz" => Some(Self::Blitz),
-            "rapid" => Some(Self::Rapid),
-            "classical" => Some(Self::Classical),
-            _ => None,
+    const ALL: [Self; 4] = [Self::Bullet, Self::Blitz, Self::Rapid, Self::Classical];
+
+    /// The name Lichess gives the speed, as in a challenge's `speed` and an account's `perfs`.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Bullet => "bullet",
+            Self::Blitz => "blitz",
+            Self::Rapid => "rapid",
+            Self::Classical => "classical",
         }
+    }
+
+    pub fn parse(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.key() == key)
     }
 }
 
@@ -250,8 +256,7 @@ pub struct Challenge {
 }
 
 /// Why a challenge is declined, as Lichess's decline reasons name it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Decline {
     Generic,
     /// Busy: as many games as allowed are running.
