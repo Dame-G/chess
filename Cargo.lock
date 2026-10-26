@@ -279,6 +279,7 @@ dependencies = [
  "dameless-engine",
  "dameless-hub",
  "dameless-store",
+ "dameless-work",
  "futures",
  "serde",
  "serde_json",
