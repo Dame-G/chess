@@ -6,6 +6,7 @@ use std::time::Duration;
 use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
 use serde_json::{Value, json};
+use shakmaty::{CastlingMode, Chess, EnPassantMode, fen::Fen, san::SanPlus, uci::UciMove};
 
 use crate::client::{Client, print};
 
@@ -65,6 +66,21 @@ pub enum ClientCommand {
     },
     /// Engine-vs-engine matches you can watch: start one, or `match show <id>` / `match stop <id>`.
     Match(MatchCommand),
+    /// Play your move in a match where you hold a seat, then wait for the engine's reply and print both.
+    Move {
+        /// The match.
+        id: i64,
+        /// The move, in UCI (e2e4, e7e8q) or SAN (e4, Nf3, O-O, exd8=Q+).
+        #[arg(value_name = "MOVE", allow_hyphen_values = true)]
+        mv: String,
+        /// Return once the move is on the board, without waiting for the reply.
+        #[arg(long)]
+        no_wait: bool,
+    },
+    /// Take back your last move and the engine's reply, on your turn, in a game without a clock.
+    Takeback { id: i64 },
+    /// Offer the engine a draw, on your turn. It accepts or declines at once.
+    Draw { id: i64 },
     /// List recent matches, newest first.
     Matches {
         #[arg(long, default_value_t = 20)]
@@ -121,10 +137,10 @@ pub enum MatchAction {
 /// Starts a match. One match runs at a time.
 #[derive(Args)]
 pub struct NewMatch {
-    /// White's build: an id, or a ref (the newest build of it).
+    /// White: a build id, a ref (the newest build of it), or `human` for you (move with `chess move`).
     #[arg(long)]
     white: Option<String>,
-    /// Black's build: an id, or a ref.
+    /// Black: a build id, a ref, or `human`. At least one side must be a build.
     #[arg(long)]
     black: Option<String>,
     /// Clocks as `base+increment` seconds, such as 10+0.1.
@@ -331,6 +347,22 @@ pub async fn run(client: Client, command: ClientCommand, json: bool) -> Result<(
         ClientCommand::Batch(cmd) => return batch(&client, cmd, json).await,
         ClientCommand::Tune(cmd) => return tune::run(&client, cmd, json).await,
         ClientCommand::Match(cmd) => return matches(&client, cmd, json).await,
+        ClientCommand::Move { id, mv, no_wait } => return play_move(&client, id, &mv, !no_wait, json).await,
+        ClientCommand::Takeback { id } => {
+            let m = client.post(&format!("/api/matches/{id}/takeback"), json!({})).await?;
+            print(&m, json, |m| {
+                let plies = m["moves"].as_array().map_or(0, Vec::len);
+                format!("taken back: {plies} plies on the board, {} to move", m["turn"].as_str().unwrap_or("?"))
+            });
+            return Ok(());
+        }
+        ClientCommand::Draw { id } => {
+            let answer = client.post(&format!("/api/matches/{id}/draw"), json!({})).await?;
+            print(&answer, json, |a| {
+                if a["accepted"].as_bool() == Some(true) { "Draw by agreement".into() } else { "Draw declined".into() }
+            });
+            return Ok(());
+        }
         ClientCommand::Lichess(cmd) => return lichess(&client, cmd, json).await,
         ClientCommand::Matches { limit } => {
             let list = client.get(&format!("/api/matches?limit={limit}")).await?;
@@ -621,6 +653,74 @@ async fn resolve_build(client: &Client, spec: &str) -> Result<i64> {
         .ok_or_else(|| anyhow::anyhow!("no build of {spec}: build it first with `chess build {spec}`"))
 }
 
+/// `human` for your own seat, else a build.
+async fn resolve_seat(client: &Client, spec: &str) -> Result<Value> {
+    if spec.eq_ignore_ascii_case("human") {
+        return Ok(json!("human"));
+    }
+    Ok(json!(resolve_build(client, spec).await?))
+}
+
+/// The position a match stands at: after its last move, or where it started.
+fn current_position(m: &Value) -> Result<Chess> {
+    let fen = m["moves"]
+        .as_array()
+        .and_then(|moves| moves.last())
+        .and_then(|mv| mv["fen_after"].as_str())
+        .or_else(|| m["start_fen"].as_str())
+        .unwrap_or("startpos");
+    if fen == "startpos" {
+        return Ok(Chess::default());
+    }
+    Ok(fen.parse::<Fen>()?.into_position(CastlingMode::Standard)?)
+}
+
+/// A move in UCI or SAN as the UCI the runner takes, checked against the position.
+fn to_uci(pos: &Chess, text: &str) -> Result<String> {
+    let text = text.trim();
+    let mv = text
+        .parse::<UciMove>()
+        .ok()
+        .and_then(|u| u.to_move(pos).ok())
+        .or_else(|| text.parse::<SanPlus>().ok().and_then(|s| s.san.to_move(pos).ok()));
+    match mv {
+        Some(m) => Ok(m.to_uci(CastlingMode::Standard).to_string()),
+        None => bail!("{text} is not a legal move in {}", Fen::from_position(pos, EnPassantMode::Legal)),
+    }
+}
+
+/// Plays your move; with `wait`, also waits for the engine's reply (or the end of the game) and prints both.
+async fn play_move(client: &Client, id: i64, text: &str, wait: bool, json: bool) -> Result<()> {
+    let before = client.get(&format!("/api/matches/{id}")).await?;
+    if before["status"].as_str() != Some("running") {
+        bail!("match {id} is over: {}", match_outcome(&before));
+    }
+    let uci = to_uci(&current_position(&before)?, text)?;
+    let mut m = client.post(&format!("/api/matches/{id}/moves"), json!({ "uci": uci })).await?;
+    let mine = m["moves"].as_array().map_or(0, Vec::len);
+    let engine_to_move = |m: &Value| {
+        let side = m["turn"].as_str().unwrap_or("white");
+        m["status"].as_str() == Some("running") && m[side]["human"].as_bool() != Some(true)
+    };
+    if wait && engine_to_move(&m) {
+        // The reply is on the board once the move count grows past ours, or the game is over.
+        while m["status"].as_str() == Some("running") && m["moves"].as_array().map_or(0, Vec::len) <= mine {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            m = client.get(&format!("/api/matches/{id}")).await?;
+        }
+    }
+    print(&m, json, |m| {
+        let start = m["start_fen"].as_str().unwrap_or("startpos");
+        let moves = m["moves"].as_array().cloned().unwrap_or_default();
+        let mut out: Vec<String> = moves.iter().skip(mine.saturating_sub(1)).map(|mv| move_line(mv, start)).collect();
+        if m["status"].as_str() != Some("running") {
+            out.push(match_outcome(m));
+        }
+        out.join("\n")
+    });
+    Ok(())
+}
+
 fn parse_tc(tc: &str) -> Result<Value> {
     let (base, inc) = tc.split_once('+').unwrap_or((tc, "0"));
     let (Ok(seconds), Ok(increment)) = (base.parse::<f64>(), inc.parse::<f64>()) else {
@@ -755,8 +855,8 @@ async fn matches(client: &Client, cmd: MatchCommand, json: bool) -> Result<()> {
                 _ => json!({ "type": "start" }),
             };
             let body = json!({
-                "white": resolve_build(client, n.white.as_deref().ok_or_else(|| anyhow::anyhow!("--white is required"))?).await?,
-                "black": resolve_build(client, n.black.as_deref().ok_or_else(|| anyhow::anyhow!("--black is required"))?).await?,
+                "white": resolve_seat(client, n.white.as_deref().ok_or_else(|| anyhow::anyhow!("--white is required"))?).await?,
+                "black": resolve_seat(client, n.black.as_deref().ok_or_else(|| anyhow::anyhow!("--black is required"))?).await?,
                 "time": time,
                 "opening": opening,
                 "hash": n.hash,
@@ -780,6 +880,9 @@ async fn matches(client: &Client, cmd: MatchCommand, json: bool) -> Result<()> {
                 }
             };
             say(match_line(&m));
+            for side in ["white", "black"].into_iter().filter(|s| m[*s]["human"].as_bool() == Some(true)) {
+                say(format!("you play {side}: move with `chess move {id} <move>` (UCI or SAN) from another shell"));
+            }
             follow_match(client, id, &start, &say).await?;
             let done = client.get(&format!("/api/matches/{id}")).await?;
             if json {
@@ -821,6 +924,7 @@ async fn follow_match(client: &Client, id: i64, start: &str, say: &dyn Fn(String
                 }
                 match kind.as_str() {
                     "match.move" => say(move_line(&event, start)),
+                    "match.takeback" => say(format!("taken back to {} plies", event["plies"])),
                     "match.ended" => return Ok(()),
                     _ => {}
                 }
@@ -1066,4 +1170,41 @@ async fn lichess(client: &Client, cmd: LichessCommand, json: bool) -> Result<()>
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_move_reads_as_uci_or_san() {
+        let start = Chess::default();
+        assert_eq!(to_uci(&start, "e2e4").unwrap(), "e2e4");
+        assert_eq!(to_uci(&start, "e4").unwrap(), "e2e4");
+        assert_eq!(to_uci(&start, "Nf3").unwrap(), "g1f3");
+        assert!(to_uci(&start, "e5").is_err());
+        assert!(to_uci(&start, "e2e5").is_err());
+
+        let pos = current_position(&json!({
+            "start_fen": "r3k2r/1P6/8/8/8/8/8/R3K2R w KQkq - 0 1",
+            "moves": [],
+        }))
+        .unwrap();
+        assert_eq!(to_uci(&pos, "O-O").unwrap(), "e1g1");
+        assert_eq!(to_uci(&pos, "O-O-O").unwrap(), "e1c1");
+        assert_eq!(to_uci(&pos, "e1g1").unwrap(), "e1g1");
+        assert_eq!(to_uci(&pos, "bxa8=Q+").unwrap(), "b7a8q");
+        assert_eq!(to_uci(&pos, "b8=N").unwrap(), "b7b8n");
+    }
+
+    #[test]
+    fn the_position_is_after_the_last_move() {
+        let m = json!({
+            "start_fen": "startpos",
+            "moves": [{ "uci": "e2e4", "fen_after": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" }],
+        });
+        let pos = current_position(&m).unwrap();
+        assert_eq!(to_uci(&pos, "c5").unwrap(), "c7c5");
+        assert_eq!(current_position(&json!({ "start_fen": "startpos", "moves": [] })).unwrap(), Chess::default());
+    }
 }

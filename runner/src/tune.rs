@@ -3,12 +3,26 @@
 //! nudged one way and the other, and steps the parameters toward the side that scored better. A tune is a job in the
 //! queue, so it never shares the machine with a test; its parameters after every iteration are kept, for charts.
 //!
+//! ## Filling the machine
+//!
+//! An iteration is small (OpenBench's default is 8 pairs, 16 games), so one fastchess run per iteration at the tune's
+//! full concurrency spends much of each iteration waiting on its last few games with most slots idle. Instead the
+//! tune runs the way OpenBench's fleet does: its `concurrency` slots are split into workers of two (one game pair at a
+//! time, both games at once), and each worker plays one iteration's batch of `pairs_per_iteration` pairs. A batch is
+//! drawn when a worker frees up — its own random Δ, θ± around θ as it stands at that moment, and `c_k`, `R_k` for
+//! `k` = updates applied so far + 1, as OpenBench computes the iteration from results received — and its step
+//! `R_k · c_k · (W − L) · Δ` is added to θ as it stands when the batch finishes ([`Scheduler`]). So several batches
+//! are in flight at once, each a few updates behind, exactly as with OpenBench's many workers; every update is still
+//! one stored iteration (numbered in the order they are applied) with its own `tune.progress` event, and a tune of
+//! `N` iterations plays `N` batches. Each worker writes its games to its own `games-<worker>.pgn`.
+//!
 //! Applying a tune bakes its current values into the engine as new defaults on a branch of the fork, with the right
 //! `Bench:` line, and can queue the confirmation OpenBench-style tuning asks for: a gainer at SPRT [0, 4].
 
 use std::{path::Path, sync::Arc};
 
 use anyhow::{Context, Result, bail};
+use futures::stream::{FuturesUnordered, StreamExt};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -524,46 +538,60 @@ pub async fn run(r: Run<'_>, id: i64) -> Result<TuneStatus> {
     let schedule =
         spsa::Schedule { iterations: tune.iterations, alpha: tune.alpha, gamma: tune.gamma, a_ratio: tune.a_ratio };
 
-    for k in tune.iteration + 1..=tune.iterations {
-        if r.cancel.is_cancelled() {
-            bail!("cancelled");
-        }
-        let flips = flips(params.len())?;
-        let mut plus = Vec::new();
-        let mut minus = Vec::new();
-        let mut steps = Vec::new();
-        for (p, &flip) in params.iter().zip(&flips) {
-            let (c, rk) = (schedule.c(&p.param, k), schedule.r(&p.param, k));
-            let (hi, lo) = spsa::perturb(&p.param, p.value, c, flip);
-            plus.push((p.param.name.clone(), format!("{hi}")));
-            minus.push((p.param.name.clone(), format!("{lo}")));
-            steps.push((c, rk));
-        }
-
+    let slots = workers(tune.concurrency);
+    (r.log)(&format!(
+        "{} batches of {} pairs at once, {} games at a time",
+        slots.len(),
+        tune.pairs_per_iteration,
+        tune.concurrency
+    ));
+    let mut scheduler = Scheduler::new(schedule, params, tune.iteration);
+    let n = scheduler.params.len();
+    let (fastchess, book, bin, spec, dir, cancel, slots) =
+        (&fastchess, &book, &bin, &tune.spec, &dir, r.cancel, &slots);
+    let launch = move |worker: usize, batch: Batch| async move {
         let penta = fastchess::run(fastchess::Match {
-            fastchess: &fastchess,
-            book: &book,
-            dev: &bin,
-            base: &bin,
-            dev_options: &plus,
-            base_options: &minus,
-            spec: &tune.spec,
-            concurrency: tune.concurrency,
-            pgn: &dir.join("games.pgn"),
-            cancel: r.cancel,
+            fastchess,
+            book,
+            dev: bin,
+            base: bin,
+            dev_options: &batch.plus,
+            base_options: &batch.minus,
+            spec,
+            concurrency: slots[worker],
+            pgn: &dir.join(format!("games-{worker}.pgn")),
+            cancel,
             // One line per iteration is enough; fastchess's own failures come back in its error.
             log: &|_| {},
             progress: &|_| {},
         })
-        .await?;
-        let result = wins_minus_losses(&penta);
-        for ((p, &flip), (c, rk)) in params.iter_mut().zip(&flips).zip(&steps) {
-            p.value = spsa::step(&p.param, p.value, *rk, *c, flip, result);
+        .await;
+        (worker, batch, penta)
+    };
+    let mut running = FuturesUnordered::new();
+    for worker in 0..slots.len() {
+        if let Some(batch) = scheduler.next(flips(n)?) {
+            running.push(launch(worker, batch));
         }
+    }
 
-        let values: Vec<f64> = params.iter().map(|p| p.value).collect();
-        let (vals, penta_json, params_json) =
-            (serde_json::to_string(&values)?, serde_json::to_string(&penta.0)?, serde_json::to_string(&params)?);
+    // Results are applied as they come back; the worker that played one is given the next batch. An error in any
+    // batch (or a cancel) drops the rest, which stops their fastchess.
+    while let Some((worker, batch, penta)) = running.next().await {
+        let penta = penta?;
+        let result = wins_minus_losses(&penta);
+        let k = scheduler.apply(&batch, result);
+        if let Some(next) = scheduler.next(flips(n)?) {
+            running.push(launch(worker, next));
+        }
+        let (plus, minus) = (&batch.plus, &batch.minus);
+
+        let values: Vec<f64> = scheduler.params.iter().map(|p| p.value).collect();
+        let (vals, penta_json, params_json) = (
+            serde_json::to_string(&values)?,
+            serde_json::to_string(&penta.0)?,
+            serde_json::to_string(&scheduler.params)?,
+        );
         state
             .store
             .call(move |c| {
@@ -578,10 +606,11 @@ pub async fn run(r: Run<'_>, id: i64) -> Result<TuneStatus> {
                 Ok(())
             })
             .await?;
-        let sides = plus.iter().zip(&minus).map(|((name, hi), (_, lo))| format!("{name} {hi}/{lo}"));
+        let sides = plus.iter().zip(minus.iter()).map(|((name, hi), (_, lo))| format!("{name} {hi}/{lo}"));
         (r.log)(&format!(
-            "iteration {k}/{}: θ+/θ− {}: {:?} → {result:+}",
+            "iteration {k}/{} (drawn at {}, worker {worker}): θ+/θ− {}: {:?} → {result:+}",
             tune.iterations,
+            batch.k,
             sides.collect::<Vec<_>>().join(", "),
             penta.0
         ));
@@ -593,6 +622,74 @@ pub async fn run(r: Run<'_>, id: i64) -> Result<TuneStatus> {
 
     finish(state, id, TuneStatus::Done, &format!("{} iterations", tune.iterations)).await?;
     Ok(TuneStatus::Done)
+}
+
+/// The tune's game slots as workers: two each (a game pair at a time, both games at once), and one left over when
+/// the concurrency is odd.
+fn workers(concurrency: u32) -> Vec<u32> {
+    let mut slots = vec![2; (concurrency / 2) as usize];
+    if concurrency % 2 == 1 || slots.is_empty() {
+        slots.push(1);
+    }
+    slots
+}
+
+/// One iteration's batch of games: θ± as drawn at dispatch, and what its result needs to become a step.
+#[derive(Clone, Debug)]
+struct Batch {
+    /// The `k` its `c_k` and `R_k` belong to.
+    k: u32,
+    flips: Vec<f64>,
+    /// `(c_k, R_k)` per parameter.
+    steps: Vec<(f64, f64)>,
+    /// θ+ and θ− as UCI options.
+    plus: Vec<(String, String)>,
+    minus: Vec<(String, String)>,
+}
+
+/// Draws batches against the current θ and applies their results to θ as it stands when they come back, as
+/// OpenBench's server does for its workers. See the module's doc.
+struct Scheduler {
+    schedule: spsa::Schedule,
+    params: Vec<TuneParam>,
+    /// Updates applied, the tune's `iteration`.
+    applied: u32,
+    /// Batches drawn and not yet applied.
+    in_flight: u32,
+}
+
+impl Scheduler {
+    fn new(schedule: spsa::Schedule, params: Vec<TuneParam>, applied: u32) -> Self {
+        Self { schedule, params, applied, in_flight: 0 }
+    }
+
+    /// The next batch, drawn with these flips around the current θ; `None` once every iteration left is drawn.
+    fn next(&mut self, flips: Vec<f64>) -> Option<Batch> {
+        if self.applied + self.in_flight >= self.schedule.iterations {
+            return None;
+        }
+        self.in_flight += 1;
+        let k = self.applied + 1;
+        let mut batch = Batch { k, flips, steps: Vec::new(), plus: Vec::new(), minus: Vec::new() };
+        for (p, &flip) in self.params.iter().zip(&batch.flips) {
+            let (c, rk) = (self.schedule.c(&p.param, k), self.schedule.r(&p.param, k));
+            let (hi, lo) = spsa::perturb(&p.param, p.value, c, flip);
+            batch.plus.push((p.param.name.clone(), format!("{hi}")));
+            batch.minus.push((p.param.name.clone(), format!("{lo}")));
+            batch.steps.push((c, rk));
+        }
+        Some(batch)
+    }
+
+    /// Steps θ by a finished batch's result (θ+'s wins minus losses) and returns the iteration this update is.
+    fn apply(&mut self, batch: &Batch, result: i64) -> u32 {
+        for ((p, &flip), &(c, rk)) in self.params.iter_mut().zip(&batch.flips).zip(&batch.steps) {
+            p.value = spsa::step(&p.param, p.value, rk, c, flip, result);
+        }
+        self.in_flight -= 1;
+        self.applied += 1;
+        self.applied
+    }
 }
 
 /// A ref to build: a build id names its commit.
@@ -848,6 +945,60 @@ mod tests {
     fn counts_wins_minus_losses_from_pairs() {
         assert_eq!(wins_minus_losses(&Pentanomial([1, 2, 3, 4, 5])), 10); // -2 - 2 + 4 + 10
         assert_eq!(wins_minus_losses(&Pentanomial([0, 0, 7, 0, 0])), 0);
+    }
+
+    #[test]
+    fn splits_the_slots_into_workers_of_two() {
+        assert_eq!(workers(14), [2; 7]);
+        assert_eq!(workers(5), [2, 2, 1]);
+        assert_eq!(workers(1), [1]);
+        assert_eq!(workers(0), [1]);
+    }
+
+    fn scheduler(iterations: u32, applied: u32) -> Scheduler {
+        let param = Param { name: "x".into(), start: 100.0, min: 0.0, max: 200.0, c_end: 4.0, r_end: 0.002 };
+        let schedule = spsa::Schedule { iterations, alpha: spsa::ALPHA, gamma: spsa::GAMMA, a_ratio: spsa::A_RATIO };
+        Scheduler::new(schedule, vec![TuneParam { value: param.start, param }], applied)
+    }
+
+    #[test]
+    fn batches_in_flight_share_theta_and_k_until_a_result_lands() {
+        let mut s = scheduler(10, 0);
+        let a = s.next(vec![1.0]).unwrap();
+        let b = s.next(vec![-1.0]).unwrap();
+        // Both drawn against θ = 100 at k = 1, with opposite flips.
+        assert_eq!((a.k, b.k), (1, 1));
+        assert_eq!(a.plus, b.minus);
+        assert_eq!(a.minus, b.plus);
+
+        // b lands first: θ moves by b's own step, and becomes iteration 1.
+        let (c, rk) = b.steps[0];
+        assert_eq!(s.apply(&b, 4), 1);
+        let after_b = 100.0 - rk * c * 4.0;
+        assert!((s.params[0].value - after_b).abs() < 1e-9);
+
+        // A batch drawn now sees the moved θ and k = 2.
+        let c2 = s.next(vec![1.0]).unwrap();
+        assert_eq!(c2.k, 2);
+        let (cc, _) = c2.steps[0];
+        assert_eq!(c2.plus[0].1, format!("{}", (after_b + cc).round()));
+
+        // a lands next, applied to θ as it stands (not to the θ it was drawn at), with a's c and R, as iteration 2.
+        let (ca, ra) = a.steps[0];
+        assert_eq!(s.apply(&a, -2), 2);
+        assert!((s.params[0].value - (after_b - ra * ca * 2.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn draws_exactly_the_iterations_left() {
+        // A resumed tune with 7 of 10 applied: three batches, however many workers ask.
+        let mut s = scheduler(10, 7);
+        let drawn: Vec<Batch> = (0..7).filter_map(|_| s.next(vec![1.0])).collect();
+        assert_eq!(drawn.len(), 3);
+        assert!(drawn.iter().all(|b| b.k == 8));
+        let numbers: Vec<u32> = drawn.iter().map(|b| s.apply(b, 0)).collect();
+        assert_eq!(numbers, [8, 9, 10]);
+        assert!(s.next(vec![1.0]).is_none());
     }
 
     #[test]

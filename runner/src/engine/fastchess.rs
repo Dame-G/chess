@@ -71,6 +71,11 @@ pub fn args(m: &Match) -> Vec<String> {
         m.concurrency.to_string(),
         "-ratinginterval".into(),
         "10".into(),
+        // fastchess saves its state for resuming as config.json, by default in its working directory: keep it next to
+        // the match's PGN under the same name (games.config.json), so runs at once (a tune's workers, a test) never
+        // write over each other's.
+        "-config".into(),
+        format!("outname={}", path(&m.pgn.with_extension("config.json"))),
         "-pgnout".into(),
         format!("file={}", path(m.pgn)),
         "nodes=true".into(),
@@ -103,6 +108,7 @@ pub async fn run(m: Match<'_>) -> Result<Pentanomial> {
     let args = args(&m);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     (m.log)(&format!("fastchess {}", args.join(" ")));
+    // The working directory stays the runner's, so relative paths (a relative data directory) mean the same to it.
     let mut child = proc::spawn(proc::Spawn { program: m.fastchess, args: &refs, cwd: None, env: &[], stdin: false })?;
     let mut lines = proc::lines(&mut child);
     let mut totals = Pentanomial::default();
@@ -171,12 +177,14 @@ mod tests {
             base_options: &[],
             spec: &spec,
             concurrency: 14,
-            pgn: Path::new("games.pgn"),
+            pgn: Path::new("tests/7/games.pgn"),
             cancel: &token,
             log: &|_| {},
             progress: &|_| {},
         });
         let joined = args.join(" ");
+        let config = format!("-config outname={}", Path::new("tests/7/games.config.json").display());
+        assert!(joined.contains(&config), "{joined}");
         assert!(joined.contains("tc=8+0.08"), "{joined}");
         assert!(joined.contains("option.Hash=16 option.Threads=1 option.Minimal=true option.MoveOverhead=0"));
         assert!(joined.contains("-sprt elo0=0 elo1=3 alpha=0.05 beta=0.1 model=normalized"));

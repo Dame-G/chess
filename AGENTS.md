@@ -64,7 +64,7 @@ chess tune tunables <build id>        # what an spsa build declares
 chess tune apply <id> [--branch tune/<id>] [--base main] [--no-experiment] [--ltc] [--push] [--wait]
 ```
 
-- **How it runs.** A tune is a job in the queue, so it waits behind tests. Each iteration plays `--pairs` game pairs of θ+ against θ−, with the tests' book and adjudication, and takes a step. The defaults are OpenBench's: alpha 0.602, gamma 0.101, A = 0.1 × iterations, `r_end` 0.002. `c_k` shrinks to `c_end` and `a_k / c_k²` shrinks to `r_end` at the last iteration. With no `--params`, every declared tunable is tuned. In the API, each entry of `params` can override `start`, `min`, `max`, `c_end` or `r_end`.
+- **How it runs.** A tune is a job in the queue, so it waits behind tests. Each iteration plays `--pairs` game pairs of θ+ against θ−, with the tests' book and adjudication, and takes a step. To keep every core busy it runs like OpenBench's fleet of workers: the `--concurrency` slots are split into workers of two games (one pair at a time), each playing its own iteration's batch, drawn against θ as it stands when the worker frees up and applied to θ as it stands when the batch ends. So about `concurrency / 2` iterations are in flight at once, each a few updates behind, and `history` still has one entry per update, numbered in the order they were applied. The defaults are OpenBench's: alpha 0.602, gamma 0.101, A = 0.1 × iterations, `r_end` 0.002. `c_k` shrinks to `c_end` and `a_k / c_k²` shrinks to `r_end` at the last iteration. With no `--params`, every declared tunable is tuned. In the API, each entry of `params` can override `start`, `min`, `max`, `c_end` or `r_end`.
 - **What is kept.** Every iteration is stored: the values after it and its game pairs. `GET /api/tunes/{id}` returns `{ tune, history }`, and `history[i].values` follow the order of `tune.params`. A cancelled tune keeps its iterations, and so does one that was running when the runner stopped (that one is marked failed). `resume` carries on from the last iteration.
 - **Applying a tune.** `apply` writes the current values, rounded, into `src/parameters.rs` as the new defaults, on a new branch made from the tune's commit. It builds that branch and commits with its `Bench:` line. Unless you pass `--no-experiment`, it also queues a gainer experiment against `--base`: bench, the screen, then STC at **[0, 4]** (and LTC at [0, 4] with `--ltc`), the bounds Reckless confirms its tunes with. Apply is a job. Its result is `{ tune, branch, commit, bench, experiment }`.
 - **Events.** `tune.updated` sends the whole tune on each change of status. `tune.progress` sends `{ id, iteration, values, result, penta }` after each iteration, where `result` is θ+'s games won minus games lost. `tune.finished` sends `{ id, status, summary, iteration }`.
@@ -75,7 +75,7 @@ chess tune apply <id> [--branch tune/<id>] [--base main] [--no-experiment] [--lt
 Two builds play each other live, move by move; the board shows it at `/matches/<id>`, and finished games replay like any other. A match runs outside the job queue (so a long experiment never holds it up), one at a time, on two search threads (one per engine). It is stored in the database and survives a restart; one that was running when the runner stopped is kept as it stood, aborted.
 
 ```bash
-chess match --white <build id|ref> --black <build id|ref> --tc 10+0.1 | --nodes N | --movetime MS \
+chess match --white <build id|ref|human> --black <build id|ref|human> --tc 10+0.1 | --nodes N | --movetime MS \
   [--fen "<fen>" --moves e2e4 e7e5 | --book] [--hash 16] [--threads 1] [--adjudicate] [--minimal] [--follow]
 chess matches [--limit 20]   # recent first
 chess match show <id>        # headers, every move with eval, depth, time and clocks, the result
@@ -100,7 +100,19 @@ How games are run and ended:
 - Games end by checkmate, stalemate, threefold repetition, the fifty-move rule, insufficient material, time forfeit, an engine crash or an illegal move. With `adjudicate`, the tests' adjudication also applies: a side whose last three moves each scored -4 or worse loses, and a game within 0.10 for six moves each from move 30 is drawn.
 - A match is stopped with `DELETE`; its result is `*` with reason `aborted`. In a game you play it is a resignation once each side has moved.
 
-You can take a seat yourself: `white` or `black` of `POST /api/matches` is a build id or `"human"` (at least one side must be a build; that player is `{name: "You", human: true}`). The board sends your moves, and the clock runs on you exactly as on an engine:
+You can take a seat yourself: `white` or `black` of `POST /api/matches` is a build id or `"human"` (at least one side must be a build; that player is `{name: "You", human: true}`). The board sends your moves, and the clock runs on you exactly as on an engine. From the CLI:
+
+```bash
+chess match --white human --black main --movetime 1000 [--follow]   # human works wherever a build or ref does
+chess move <id> <move>       # UCI (e2e4, e7e8q) or SAN (e4, Nf3, O-O, exd8=Q); waits for the reply unless --no-wait
+chess takeback <id>          # your last move and the reply, in a game without a clock
+chess draw <id>              # offer a draw: "Draw by agreement" or "Draw declined"
+chess match stop <id>        # resigns, once each side has moved
+```
+
+`chess move` converts SAN against the match's current position and prints your move and the engine's reply (with `--json`, the match after the reply). `--follow` on a game you play prints both sides' moves and takebacks as they happen, so it can run in one shell while you move from another.
+
+The routes:
 
 - `POST /api/matches/{id}/moves` `{ uci }`: your move, answered with the match once it is on the board. 400 for an illegal move or a match without a human, 409 when it is not your turn or the game is over.
 - `POST /api/matches/{id}/takeback`: takes back your last move and the reply, on your turn, in a game without a clock (`movetime` or `nodes`). The `match.takeback` event carries `{ id, plies }`.
