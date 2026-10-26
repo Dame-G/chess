@@ -2,7 +2,7 @@
 /**
  * The frame of every workspace: a library on the left (what you pick from), the stage in the middle (what you look
  * at) and an inspector on the right (what you read about it). Panes are flat, divided by hairlines, and scroll on their
- * own, so the stage never moves. Below 64rem they stack and the page scrolls instead.
+ * own, so the stage never moves. Below 75rem they stack and the page scrolls instead.
  */
 defineProps<{
   /**
@@ -128,7 +128,7 @@ defineSlots<{
 }
 
 /* Fit: the stage column is as wide as its content and its rows hug it, so nothing around the content is dead space. */
-@media (width >= 64rem) {
+@media (width >= 75rem) {
   .ws--fit {
     container-type: size;
   }
@@ -157,7 +157,7 @@ defineSlots<{
   }
 }
 
-@media (width < 64rem) {
+@media (width < 75rem) {
   .ws--fit {
     container-type: inline-size;
   }

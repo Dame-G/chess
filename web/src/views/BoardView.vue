@@ -1034,7 +1034,7 @@ const result = computed(() => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
-// The right panel: Moves and Games. Below 64rem the panes stack, the board first.
+// The right panel: Moves and Games. Below 75rem the panes stack, the board first.
 // ---------------------------------------------------------------------------------------------------------------------
 
 const frame = ref<{ $el: HTMLElement }>();
@@ -1615,11 +1615,12 @@ const filters = [
 }
 
 /* On a wide screen the board is height-limited: the panel grows to a readable width and no further, and the board and
-   panel sit together in the middle, as on Lichess, instead of the panel taking all the slack. */
-@media (width >= 64rem) {
-  .board-ws:deep(.ws--fit.ws--inspector),
+   panel sit together in the middle, as on Lichess, instead of the panel taking all the slack. The board column is its
+   content's full width (max-content, not auto): with auto, the grid filled the panel to its maximum first and squeezed
+   the board column under the board, so the panel overlapped it. */
+@media (width >= 75rem) {
   .board-ws.ws--fit.ws--inspector {
-    grid-template-columns: auto minmax(var(--ws-inspector), 30rem);
+    grid-template-columns: max-content minmax(var(--ws-inspector), 30rem);
     justify-content: center;
   }
 }
@@ -1931,10 +1932,10 @@ const filters = [
   border-block-end: 0;
 }
 
-/* Below 64rem the panes stack: the board, the transport (a bar pinned to the bottom of the window, in thumb reach), then the inspector
+/* Below 75rem the panes stack: the board, the transport (a bar pinned to the bottom of the window, in thumb reach), then the inspector
    and the library. The board takes the width, and the transport is a small stack of rows: where we are, the timeline,
    then the buttons spread the width of the screen for thumbs. */
-@media (width < 64rem) {
+@media (width < 75rem) {
   .board-ws {
     --side-raw: min(100cqw - var(--col) - var(--egap) - 2 * var(--pad), max(100dvh - 17rem - var(--extra), 16rem));
   }

@@ -503,7 +503,7 @@ const analyse = () => router.push({ path: "/board", query: { build: String(id.va
   flex: 1 1 100%;
 }
 
-@media (width < 64rem) {
+@media (width < 75rem) {
   .head-switch {
     display: block;
   }
