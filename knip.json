@@ -2,8 +2,11 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["scripts/*.mjs"]
+      "entry": ["scripts/*.mjs"],
+      "ignoreDependencies": ["openapi-typescript"]
     },
-    "apps/web": {}
+    "apps/web": {
+      "entry": ["src/api/types.ts"]
+    }
   }
 }
