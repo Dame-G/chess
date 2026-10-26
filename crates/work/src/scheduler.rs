@@ -435,8 +435,7 @@ impl Scheduler {
         match self.inner.hub.store.update_work(id, update).await {
             Ok(work) => {
                 self.emit(&work);
-                self.inner.ended.notify_waiters();
-                self.inner.wake.notify_one();
+                // Callbacks first, so whoever waits on this item sees what they did (the next trial queued).
                 self.call_hooks(&work, outcome.as_ref().ok()).await;
             }
             Err(e) => eprintln!("scheduler: record the end of work {id}: {e}"),
