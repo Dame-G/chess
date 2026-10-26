@@ -11,6 +11,7 @@ export type Version = components["schemas"]["Version"];
 export type VersionBuild = components["schemas"]["VersionBuild"];
 export type Experiment = components["schemas"]["Experiment"];
 export type Test = components["schemas"]["Test"];
+export type Calibration = components["schemas"]["Calibration"];
 export type TestDetail = components["schemas"]["TestDetail"];
 
 /** Unwraps an openapi-fetch result: the data, or an error with the runner's message. */

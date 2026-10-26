@@ -7,6 +7,7 @@ import { ETag } from "@eos-ui/vue/components/ETag";
 import LineChart from "../charts/LineChart.vue";
 import DecisionGauge from "./DecisionGauge.vue";
 import PairBar from "./PairBar.vue";
+import ScaledClock from "./ScaledClock.vue";
 import Term from "./Term.vue";
 import { useTest } from "../api/queries";
 import { bounds, signed } from "../format";
@@ -58,6 +59,8 @@ const est = computed(() => test.value?.estimate);
         :height="190"
       />
     </figure>
+
+    <ScaledClock :scaling="test.scaling" :measuring="test.running && 'clock' in test.spec.tc" />
 
     <div class="settings" aria-label="Test settings">
       <ETag v-if="sprt" size="sm" :label="`Elo range tested: ${signed(sprt.elo0, 0)} to ${signed(sprt.elo1, 0)}`" />

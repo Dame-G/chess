@@ -5,6 +5,7 @@ import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { ETable } from "@eos-ui/vue/components/ETable";
 import type { Tune } from "../../api/queries";
 import { signed } from "../../format";
+import ScaledClock from "../ScaledClock.vue";
 import { controlText, gamesIn, pairs, type Iteration } from "./tune";
 
 /** What a tune was set up with, and its latest iterations. */
@@ -29,6 +30,11 @@ const lead = (r: number) => signed(r, 0);
 
 <template>
   <EDescriptionList class="settings" :items="settings" />
+  <ScaledClock
+    class="clock"
+    :scaling="tune.scaling"
+    :measuring="tune.status === 'running' && 'clock' in tune.spec.tc"
+  />
   <EEmptyState v-if="!recent.length" bare size="sm" title="No iterations yet">
     Each one plays a few game pairs and takes a step.
   </EEmptyState>
@@ -57,6 +63,10 @@ const lead = (r: number) => signed(r, 0);
 </template>
 
 <style scoped>
+.clock {
+  padding: var(--e-gap-snug) var(--ws-pad, var(--e-pad-control-sm));
+}
+
 .settings {
   padding: var(--e-gap-base) var(--ws-pad, var(--e-pad-control-sm));
   border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 55%, transparent);

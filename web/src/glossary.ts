@@ -16,6 +16,10 @@ export const glossary = {
     term: "Evidence (LLR)",
     text: "How strongly the games so far favour one answer. The test stops when it crosses the accept or the reject line.",
   },
+  scaled: {
+    term: "Scaled clock",
+    text: "Games are played on a clock stretched to this machine's speed, as OpenBench does, so a result at 8+0.08 means the same here as on Reckless's own testers.",
+  },
   bounds: {
     term: "Elo range tested",
     text: "The two answers the test chooses between, in normalized Elo: [0, 3] asks “is it at least 3 better, or no better at all?”",
