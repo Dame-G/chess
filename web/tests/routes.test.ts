@@ -75,6 +75,8 @@ const routes: [string, string, string?][] = [
   ["/lichess", "is not a bot account yet", "lichess-person.json"],
   ["/lichess", "Stockfish-Bot", "lichess-connected.json"],
   ["/lichess", "Playing a game", "lichess-connected.json"],
+  ["/lichess", "Challenged Alpha-Bot (1950) to 3+2 rated.", "lichess-seeking.json"],
+  ["/lichess", "Find a game", "lichess-connected.json"],
   ["/matches/2", "Black resigned", "lichess-connected.json"],
   ["/matches/2", "View on Lichess", "lichess-connected.json"],
 ];

@@ -5,6 +5,8 @@ import type { MatchSummary } from "./board/matchText";
 export type LichessStatus = components["schemas"]["LichessStatus"];
 export type LichessSettings = components["schemas"]["Settings"];
 export type Speed = components["schemas"]["Speed"];
+export type SeekState = components["schemas"]["SeekStatus"];
+export type SeekMode = components["schemas"]["SeekMode"];
 
 type Gameish = Pick<MatchSummary, "white" | "black" | "lichess" | "result" | "status">;
 
@@ -12,6 +14,26 @@ type Gameish = Pick<MatchSummary, "white" | "black" | "lichess" | "result" | "st
 export function clockLabel(seconds: number, increment: number): string {
   const minutes = { 15: "¼", 30: "½", 45: "¾" }[seconds] ?? String(Math.round((seconds / 60) * 100) / 100);
   return `${minutes}+${increment}`;
+}
+
+/** The clocks Lichess offers for a game against a bot: minutes plus seconds a move. */
+const seekPresets = ["1+0", "2+1", "3+0", "3+2", "5+0", "5+3", "10+0", "10+5", "15+10"];
+
+/** Seconds of a clock written `m+s` (`3+2` is 180 and 2); minutes may be fractions, as in `0.5+0`. */
+export function parseClock(text: string): { initial: number; increment: number } {
+  const [m, s] = text.split("+");
+  return { initial: Math.round(Number(m) * 60), increment: Number(s ?? 0) };
+}
+
+/** The presets, with any clock set elsewhere (the command line) added, shortest first. */
+export function clockOptions(chosen: readonly string[]): { value: string; label: string }[] {
+  const length = (c: string) => {
+    const { initial, increment } = parseClock(c);
+    return initial + 40 * increment;
+  };
+  return [...new Set([...seekPresets, ...chosen])]
+    .sort((a, b) => length(a) - length(b))
+    .map((c) => ({ value: c, label: c }));
 }
 
 /** Lichess's speed for a clock: by the time a game is expected to take (initial + 40 increments). */

@@ -107,6 +107,13 @@ async function save() {
   timer = undefined;
   if (problem.value) return;
   const body = clone(draft.value);
+  // What it looks for is edited beside the Find a game button: keep the newest of it.
+  const latest = cache.getQueryData<LichessStatus>(["lichess"])?.settings;
+  if (latest) {
+    body.seek_clocks = latest.seek_clocks;
+    body.seek_rated = latest.seek_rated;
+    body.seek_range = latest.seek_range;
+  }
   note.value = "saving";
   error.value = "";
   try {

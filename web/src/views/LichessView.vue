@@ -13,6 +13,7 @@ import BotSettings from "../components/lichess/BotSettings.vue";
 import ChallengeForm from "../components/lichess/ChallengeForm.vue";
 import ChallengeLog from "../components/lichess/ChallengeLog.vue";
 import GameRows from "../components/lichess/GameRows.vue";
+import SeekPanel from "../components/lichess/SeekPanel.vue";
 import SetupPanel from "../components/lichess/SetupPanel.vue";
 import { api } from "../api/runner";
 import { unwrap, useLichess, useLichessGames } from "../api/queries";
@@ -111,6 +112,7 @@ const open = (id: number) => void router.push(`/matches/${id}`);
           {{ bot.error }}
         </ENotice>
         <ENotice v-if="problem" tone="danger" title="That did not work" :role="false">{{ problem }}</ENotice>
+        <SeekPanel :status="bot" />
         <BotSettings :settings="bot.settings" />
       </template>
     </div>
@@ -120,7 +122,7 @@ const open = (id: number) => void router.push(`/matches/${id}`);
     </template>
 
     <template v-if="bot" #inspector-head>
-      <strong class="head-title">Challenge a bot</strong>
+      <strong class="head-title">Challenge someone</strong>
     </template>
     <template v-if="bot" #inspector>
       <div class="side">

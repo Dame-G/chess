@@ -28,6 +28,7 @@ export function useActivity() {
     if (game) return { playing: true, text: `vs ${opponentOf(game).player.name}` } as const;
     if (l.state === "error") return { playing: false, text: "Lichess bot not connected" } as const;
     if (l.state === "connecting") return { playing: false, text: "Lichess bot connecting" } as const;
+    if (l.seek && l.seek.mode !== "off") return { playing: false, text: "Lichess · looking for a game" } as const;
     return { playing: false, text: "Lichess bot online" } as const;
   });
   const liveName = computed(() => (live.value ? `${live.value.white.name} vs ${live.value.black.name}` : ""));

@@ -25,6 +25,10 @@
     "from_position": false,
     "accept_humans": true,
     "accept_bots": true,
-    "max_games": 1
-  }
+    "max_games": 1,
+    "seek_clocks": ["3+0", "3+2", "5+3"],
+    "seek_rated": true,
+    "seek_range": 300
+  },
+  "seek": { "mode": "off", "pending": null, "note": null }
 }
