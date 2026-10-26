@@ -1,15 +1,20 @@
 //! Position analysis with a build: one-shot (a search to a limit, answered in the response, for agents and scripts)
 //! and live (an infinite search streamed as `analysis.info` events, for the board). One live search at a time.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 
-use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 use utoipa::ToSchema;
 
 use crate::{
-    api::AppState,
+    api::{ApiError, AppState},
     engine::{
         build,
         uci::{Engine, Info, Limits, Search},
@@ -58,7 +63,7 @@ pub struct AnalysisResult {
     pub lines: Vec<Info>,
 }
 
-async fn start(state: &AppState, req: &AnalysisRequest) -> Result<(build::Build, Engine)> {
+async fn start(state: &AppState, req: &AnalysisRequest) -> Result<(build::Build, Engine), ApiError> {
     let id = req.build;
     let found = state
         .store
@@ -67,12 +72,14 @@ async fn start(state: &AppState, req: &AnalysisRequest) -> Result<(build::Build,
             None => Ok(build::list(c)?.into_iter().find(|b| b.deleted_at.is_none())),
         })
         .await?;
-    if let Some(b) = &found
-        && b.deleted_at.is_some()
-    {
-        bail!("build {} was deleted: build its commit again", b.id);
-    }
-    let Some(b) = found else { bail!(if id.is_some() { "no such build" } else { "no builds yet: build one first" }) };
+    let b = match found {
+        Some(b) if b.deleted_at.is_some() => {
+            return Err(ApiError::conflict(&format!("build {} was deleted: build its commit again", b.id)));
+        }
+        Some(b) => b,
+        None if id.is_some() => return Err(ApiError::not_found("no such build")),
+        None => return Err(ApiError::conflict("no builds yet: build one first")),
+    };
     let mut engine = Engine::start(&build::binary(&state.config.data, &b)).await?;
     engine.set_option("Threads", req.threads).await?;
     engine.set_option("Hash", req.hash).await?;
@@ -82,8 +89,12 @@ async fn start(state: &AppState, req: &AnalysisRequest) -> Result<(build::Build,
     Ok((b, engine))
 }
 
-/// Keeps the newest report of each line.
-fn record(lines: &mut Vec<Info>, info: Info) {
+/// Keeps the newest report of each line. An engine's `multipv` counts from 1; a line it numbers beyond what was asked
+/// for is ignored.
+fn record(lines: &mut Vec<Info>, info: Info, multipv: u32) {
+    if info.multipv == 0 || info.multipv > multipv.max(1) {
+        return;
+    }
     let i = info.multipv as usize - 1;
     if lines.len() <= i {
         lines.resize(i + 1, info.clone());
@@ -91,7 +102,7 @@ fn record(lines: &mut Vec<Info>, info: Info) {
     lines[i] = info;
 }
 
-pub async fn analyse(state: &AppState, mut req: AnalysisRequest) -> Result<AnalysisResult> {
+pub async fn analyse(state: &AppState, mut req: AnalysisRequest) -> Result<AnalysisResult, ApiError> {
     let l = &req.limits;
     if l.depth.is_none() && l.nodes.is_none() && l.movetime.is_none() {
         req.limits.depth = Some(20);
@@ -100,7 +111,7 @@ pub async fn analyse(state: &AppState, mut req: AnalysisRequest) -> Result<Analy
     let mut lines = Vec::new();
     loop {
         match engine.next().await? {
-            Search::Info(info) => record(&mut lines, info),
+            Search::Info(info) => record(&mut lines, info, req.multipv),
             Search::Done(bestmove) => {
                 return Ok(AnalysisResult { build: b.id, engine: engine.name.clone(), bestmove, lines });
             }
@@ -110,12 +121,12 @@ pub async fn analyse(state: &AppState, mut req: AnalysisRequest) -> Result<Analy
 
 pub struct Live {
     current: Mutex<Option<(u64, CancellationToken)>>,
-    next: Mutex<u64>,
+    next: AtomicU64,
 }
 
 impl Live {
     pub fn new() -> Self {
-        Self { current: Mutex::new(None), next: Mutex::new(1) }
+        Self { current: Mutex::new(None), next: AtomicU64::new(1) }
     }
 }
 
@@ -127,27 +138,31 @@ pub struct LiveSession {
 }
 
 /// Starts a live search, stopping any other. Its reports arrive as `analysis.info` events, then `analysis.stopped`.
-pub async fn start_live(state: &Arc<AppState>, req: AnalysisRequest) -> Result<LiveSession> {
+pub async fn start_live(state: &Arc<AppState>, req: AnalysisRequest) -> Result<LiveSession, ApiError> {
     stop_live(state);
     let (b, mut engine) = start(state, &req).await?;
-    let session = {
-        let mut next = state.live.next.lock().unwrap();
-        *next += 1;
-        *next - 1
-    };
+    let session = state.live.next.fetch_add(1, Ordering::Relaxed);
     let token = CancellationToken::new();
-    *state.live.current.lock().unwrap() = Some((session, token.clone()));
+    // Two starts at once both get past `stop_live` above: the one replaced here is stopped too, or its engine would
+    // search forever with nothing left to stop it.
+    if let Some((_, replaced)) = state.live.current.lock().unwrap().replace((session, token.clone())) {
+        replaced.cancel();
+    }
 
     let state = state.clone();
     tokio::spawn(async move {
-        let mut stopping = false;
+        // Once stopped, the engine has a few seconds to answer before it is killed (dropped) without its best move.
+        let mut deadline = None;
         let bestmove = loop {
             let next = tokio::select! {
                 next = engine.next() => next,
-                _ = token.cancelled(), if !stopping => {
-                    stopping = true;
+                _ = token.cancelled(), if deadline.is_none() => {
+                    deadline = Some(tokio::time::Instant::now() + Duration::from_secs(5));
                     let _ = engine.send("stop").await;
                     continue;
+                }
+                _ = tokio::time::sleep_until(deadline.unwrap_or_else(tokio::time::Instant::now)), if deadline.is_some() => {
+                    break None;
                 }
             };
             match next {
@@ -170,5 +185,22 @@ pub async fn start_live(state: &Arc<AppState>, req: AnalysisRequest) -> Result<L
 pub fn stop_live(state: &AppState) {
     if let Some((_, token)) = state.live.current.lock().unwrap().take() {
         token.cancel();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keeps_the_newest_report_of_each_line_asked_for() {
+        let info =
+            |multipv, depth| Info::parse(&format!("info depth {depth} multipv {multipv} score cp 1 pv e2e4")).unwrap();
+        let mut lines = Vec::new();
+        record(&mut lines, info(2, 5), 2);
+        record(&mut lines, info(1, 6), 2);
+        record(&mut lines, info(0, 7), 2);
+        record(&mut lines, info(3, 7), 2);
+        assert_eq!(lines.iter().map(|l| (l.multipv, l.depth)).collect::<Vec<_>>(), [(1, 6), (2, 5)]);
     }
 }

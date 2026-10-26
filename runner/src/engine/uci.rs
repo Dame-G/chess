@@ -124,7 +124,12 @@ impl Engine {
         bail!("{} exited before uciok", path.display())
     }
 
+    /// Sends one command. A line break inside it (from a FEN or a move in a request) would smuggle in another, so it is
+    /// refused.
     pub async fn send(&mut self, command: &str) -> Result<()> {
+        if command.contains(['\n', '\r']) {
+            bail!("a UCI command cannot contain a line break");
+        }
         let stdin = self.child.stdin().as_mut().context("engine stdin closed")?;
         stdin.write_all(format!("{command}\n").as_bytes()).await?;
         stdin.flush().await?;
