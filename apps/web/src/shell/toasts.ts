@@ -1,5 +1,5 @@
-import { h, onScopeDispose } from "vue";
-import { useRouter } from "vue-router";
+import { h, onScopeDispose, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { onEvent } from "../api/stream";
@@ -82,5 +82,34 @@ export function useEventToasts() {
         action: () => button("Open", () => void router.push(`/dameless/ideas/${i.id}`)),
       });
     }),
+  );
+}
+
+/**
+ * What Lichess said when a login came back (`?lichess=connected` or `?lichess=error&message=…` on the page the login
+ * started from), as a toast; the query is then taken off the address. Call once, in the app's root.
+ */
+export function useLoginResult() {
+  const toast = useToast();
+  const route = useRoute();
+  const router = useRouter();
+  watch(
+    () => route.query["lichess"],
+    (result) => {
+      if (result !== "connected" && result !== "error") return;
+      const message = typeof route.query["message"] === "string" ? route.query["message"] : undefined;
+      if (result === "connected") toast.show({ title: "Your Lichess account is linked", tone: "success" });
+      else
+        toast.show({
+          title: "Lichess login did not work",
+          message: message ?? "Lichess did not give the app access. Try logging in again.",
+          tone: "warning",
+        });
+      const query = { ...route.query };
+      delete query["lichess"];
+      delete query["message"];
+      void router.replace({ query });
+    },
+    { immediate: true },
   );
 }

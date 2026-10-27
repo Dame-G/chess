@@ -1,4 +1,4 @@
-import type { Estimate, GameSummary, Outcome, Score, Seat, Side, Speed, TimeControl } from "./api/types";
+import type { Ending, Estimate, GameSummary, Outcome, Score, Seat, Side, Speed, TimeControl } from "./api/types";
 
 /** `+1.23`, `−0.50` or `0.00`: a figure that rounds to zero has no sign. */
 export function signed(n: number, digits = 2): string {
@@ -80,6 +80,10 @@ const units: [Intl.RelativeTimeFormatUnit, number][] = [
   ["minute", 60],
 ];
 
+/** A time to expect, `about 7 min`, or `under a minute` (never "about under a minute"). */
+export const aboutDuration = (seconds: number): string =>
+  seconds < 60 ? "under a minute" : `about ${duration(seconds)}`;
+
 /** "5 minutes ago", "yesterday". */
 export function ago(iso: string, now = Date.now()): string {
   const seconds = (new Date(iso).getTime() - now) / 1000;
@@ -122,13 +126,15 @@ export function yourResult(g: GameSummary): "won" | "drew" | "lost" | null {
   return r === "1" ? "won" : r === "½" ? "drew" : "lost";
 }
 
-/** Dameless at a level of its ladder: the server names it by its rating, `Dameless 1650`. */
-export const isLevelSeat = (seat: Seat): boolean => seat.player === "dameless" && /^Dameless [0-9]+$/.test(seat.name);
+/** Dameless at a level of its ladder (the server names it by its rating, `Dameless 1650`). */
+export const isLevelSeat = (seat: Seat): boolean => seat.player === "dameless" && seat.level != null;
 
-/** A seat as people say it: `Dameless v14`, `Dameless 1650` (at a level), `cutemouse83`, `Stockfish level 5`. */
-export function seatName(seat: Seat, versionName?: string): string {
-  if (isLevelSeat(seat)) return seat.name;
-  if (seat.player === "dameless") return versionName ? `Dameless ${versionName}` : seat.name || "Dameless";
+/**
+ * A seat as people say it: `Dameless v14`, `Dameless 1650` (at a level), `cutemouse83`, `Stockfish level 5`. The
+ * server names every seat this way; a Dameless seat recorded by its bare version name (`v14`) gets the prefix here.
+ */
+export function seatName(seat: Seat): string {
+  if (seat.player === "dameless" && !/^Dameless\b/.test(seat.name)) return `Dameless ${seat.name}`.trim();
   return seat.name;
 }
 
@@ -187,4 +193,39 @@ export function buildingText(title: string): string {
   const what = title.replace(/^Building\s*/i, "").trim() || "the engine";
   const named = /^v\d/.test(what) ? `Dameless ${what}` : what;
   return `Building ${named} first (about a minute)…`;
+}
+
+/** How a game ended, in words: `Checkmate`, `Black resigned`, `Draw by repetition`, `White ran out of time`. */
+export function endingText(ending: Ending, outcome: Outcome | null | undefined): string {
+  const loser = outcome === "white_wins" ? "Black" : outcome === "black_wins" ? "White" : null;
+  switch (ending) {
+    case "checkmate":
+      return "Checkmate";
+    case "resignation":
+      return loser ? `${loser} resigned` : "Resigned";
+    case "timeout":
+      return loser ? `${loser} ran out of time` : "Draw: time ran out and no mate was possible";
+    case "stalemate":
+      return "Stalemate";
+    case "repetition":
+      return "Draw by repetition";
+    case "fifty_moves":
+      return "Draw by the fifty-move rule";
+    case "insufficient_material":
+      return "Draw: neither side can mate";
+    case "agreement":
+      return "Draw by agreement";
+    case "adjudication":
+      return "Adjudicated";
+    case "abandoned":
+      return loser ? `${loser} left the game` : "Abandoned";
+    case "aborted":
+      return "Aborted";
+    case "engine_failure":
+      return "An engine failed";
+    case "illegal_move":
+      return loser ? `${loser} played an illegal move` : "An illegal move";
+    default:
+      return "Game over";
+  }
 }

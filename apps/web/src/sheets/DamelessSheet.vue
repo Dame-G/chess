@@ -110,7 +110,7 @@ watch(creating, (open) => {
         <h2 id="d-strength" class="part-title">Strength</h2>
         <p v-if="champion" class="sec-note">
           <Term k="champion" /> <strong class="mono">{{ champion.name }}</strong>
-          <span v-if="last">
+          <span v-if="last && strength.length > 1">
             · <span class="mono">{{ signed(last.value, 1) }}</span> <Term k="elo" /> over v1</span
           >
         </p>

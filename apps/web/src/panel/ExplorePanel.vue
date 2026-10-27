@@ -147,6 +147,7 @@ function openPasted() {
 
 .lines {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   margin: 0;
   padding: 0;

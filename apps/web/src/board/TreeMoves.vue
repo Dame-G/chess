@@ -26,7 +26,7 @@ followCurrent(box, () => props.node.id);
 </script>
 
 <template>
-  <div ref="box" class="tree" role="list" aria-label="Moves and variations">
+  <div ref="box" class="tree" role="group" aria-label="Moves and variations">
     <template
       v-for="row in list"
       :key="row.type === 'moves' ? `m${row.number}-${row.white?.id}-${row.black?.id}` : row.key"
@@ -35,7 +35,6 @@ followCurrent(box, () => props.node.id);
         <span class="no num" role="presentation">{{ row.number }}</span>
         <EButton
           v-if="row.white"
-          role="listitem"
           size="sm"
           variant="quiet"
           class="mv"
@@ -47,7 +46,6 @@ followCurrent(box, () => props.node.id);
         <span v-else class="gap">…</span>
         <EButton
           v-if="row.black"
-          role="listitem"
           size="sm"
           variant="quiet"
           class="mv"
@@ -63,7 +61,6 @@ followCurrent(box, () => props.node.id);
           <EButton
             v-for="t in line"
             :key="t.node.id"
-            role="listitem"
             size="sm"
             variant="quiet"
             class="vm"

@@ -1,5 +1,6 @@
 import type { Idea, IdeaKind, IdeaStatus, Preset, Stage, Trial, TrialStatus, TrialSummary } from "../api/types";
 import { plusMinus, trialClock } from "../format";
+import { stageLabel } from "../rail/rail";
 
 export type Tone = "neutral" | "info" | "success" | "warning" | "danger";
 
@@ -39,18 +40,10 @@ export const KIND_WORD: Record<IdeaKind, string> = {
   net: "Net",
 };
 
-/** The stages as people read them. */
-export const STAGE_WORD: Record<Stage, string> = {
-  fingerprint: "Bench",
-  screen: "Quick screen",
-  short: "Short games",
-  long: "Long games",
-  speed: "Speed",
-  tune: "Tune",
-  confirm: "Confirmation",
-  custom: "Test",
-  train: "Training",
-};
+/** The stages as people read them, capitalised to start a line: `Quick screen`, `Short games` (the rail's words). */
+export const STAGE_WORD = Object.fromEntries(
+  Object.entries(stageLabel).map(([stage, word]) => [stage, word.charAt(0).toUpperCase() + word.slice(1)]),
+) as Record<Stage, string>;
 
 /** The clock each preset plays, as written (before it is scaled to this machine). */
 const PRESET_CLOCK: Record<Preset, string> = {

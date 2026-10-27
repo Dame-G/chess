@@ -67,11 +67,15 @@ const stateWord = (c: { configured: boolean; state: string; error?: string | nul
         : c.state === "error"
           ? (c.error ?? "Cannot reach Lichess")
           : "Linked, offline";
+/** Health, less what this sheet already shows in its own sections: the builds (This machine) and the harness. */
+const healthItems = computed(() =>
+  (dameless.health?.items ?? []).filter((i) => i.key !== "builds" && i.key !== "harness"),
+);
+
 const lichessItems = (c: typeof you.value) => [
-  {
-    label: "Account",
-    text: c.account ? `${c.account.username}${c.account.title ? ` (${c.account.title})` : ""}` : "None",
-  },
+  ...(c.account
+    ? [{ label: "Account", text: `${c.account.username}${c.account.title ? ` (${c.account.title})` : ""}` }]
+    : []),
   { label: "Status", text: stateWord(c) },
   ...(c.key === "you" && c.you?.expires_at
     ? [
@@ -145,7 +149,12 @@ const machineItems = computed(() => {
     { label: "Data", text: m?.data_dir ?? "Unknown" },
     {
       label: "Engine binaries kept",
-      text: m ? `${plural(m.builds.count, "binary", "binaries")}, ${bytes(m.builds.bytes)}` : "Unknown",
+      // The bytes include the build cache, so they are not zero without binaries: say which is which.
+      text: m
+        ? m.builds.count
+          ? `${plural(m.builds.count, "binary", "binaries")}, ${bytes(m.builds.bytes)} with the build cache`
+          : `None yet (${bytes(m.builds.bytes)} of build cache)`
+        : "Unknown",
     },
   ];
 });
@@ -271,7 +280,7 @@ function pair() {
       <h2 id="s-health" class="part-title">Health</h2>
       <ESkeleton v-if="!dameless.health" :lines="3" label="Checking the machine" />
       <ul v-else class="plain health">
-        <li v-for="item in dameless.health.items" :key="item.key" class="health-item">
+        <li v-for="item in healthItems" :key="item.key" class="health-item">
           <EStamp size="sm" :tone="LEVEL[item.level].tone" :label="LEVEL[item.level].word" />
           <div class="health-text">
             <p class="health-title">{{ item.title }}</p>
@@ -374,7 +383,7 @@ function pair() {
     <ConfirmDialog
       v-model:open="checking"
       title="Check the harness?"
-      description="The champion plays an identical copy of itself, at short games, until the test decides."
+      description="The champion plays an identical copy of itself, at short games, until the trial decides."
       confirm="Start the check"
       :busy="checkBusy"
       @confirm="checkHarness"
@@ -392,7 +401,7 @@ function pair() {
       :busy="pruneBusy"
       @confirm="prune"
     >
-      <p class="text">Only binaries that no test, tune, game or the bot uses are removed. Nothing else is touched.</p>
+      <p class="text">Only binaries that no trial, tune, game or the bot uses are removed. Nothing else is touched.</p>
     </ConfirmDialog>
   </SheetFrame>
 </template>

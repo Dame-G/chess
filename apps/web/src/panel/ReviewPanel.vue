@@ -7,7 +7,7 @@ import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import "../board/review.css";
 import type { Classification, Side } from "../api/types";
-import { resultText, seatName } from "../format";
+import { endingText, resultText, seatName } from "../format";
 import { useBoard } from "../board/board";
 import { sanLine } from "../board/position";
 import { findPly, hasBetter, hint, markOf, SUMMARY_MARKS } from "../board/review";
@@ -38,7 +38,7 @@ const sides: Side[] = ["white", "black"];
 const name = (side: Side) => {
   const x = s.value;
   if (!x) return side;
-  return x.you === side ? "You" : seatName(x[side], versions.name(x[side].version));
+  return x.you === side ? "You" : seatName(x[side]);
 };
 
 const move = computed(() => (review.value && board.ply > 0 ? review.value.plies[board.ply - 1] : undefined));
@@ -128,7 +128,7 @@ const fmt = (n: number | null | undefined) => (n == null ? "–" : n.toFixed(1))
   <div class="review">
     <p class="result">
       <span class="num">{{ resultText(s?.outcome ?? null) }}</span>
-      <span v-if="s?.ending" class="ending">{{ s.ending.replace(/_/g, " ") }}</span>
+      <span v-if="s?.ending" class="ending">{{ endingText(s.ending, s.outcome) }}</span>
       <span v-if="s?.opening" class="ending">· {{ s.opening.name }}</span>
     </p>
 

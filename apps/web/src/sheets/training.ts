@@ -1,5 +1,5 @@
 import type { DataStatus, Dataset, TrainSchedule, TrainSpec, TrainStep } from "../api/types";
-import { bytes, duration } from "../format";
+import { aboutDuration, bytes, duration } from "../format";
 
 /**
  * The numbers behind the Brain section: what generating data costs, what an import needs on disk, what a training
@@ -173,7 +173,7 @@ export function positionsText(n: number): string {
 
 /** The cost of a run in words. */
 export function trainCostText(c: TrainCost): string {
-  return `${positionsText(c.positions)} positions, about ${duration(c.seconds)} on this GPU, and ${bytes(c.checkpointBytes)} of disk for the checkpoints while it runs.`;
+  return `${positionsText(c.positions)} positions, ${aboutDuration(c.seconds)} on this GPU, and ${bytes(c.checkpointBytes)} of disk for the checkpoints while it runs.`;
 }
 
 /** Which preset a schedule is, or `null` when its numbers were changed. */

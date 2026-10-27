@@ -8,9 +8,7 @@ import { ENotice } from "@eos-ui/vue/components/ENotice";
 import type { SeatAction, Side } from "../api/types";
 import { other, seatName, speedName, timeControl } from "../format";
 import { useBoard } from "../board/board";
-import { onLichessAsYou } from "../board/modes";
 import { useGames } from "../stores/games";
-import { useVersions } from "../stores/versions";
 
 /**
  * Play: You are a seat in a live game. Whose move it is, offers to answer, the opponent leaving and the claims it
@@ -18,7 +16,6 @@ import { useVersions } from "../stores/versions";
  */
 const board = useBoard();
 const games = useGames();
-const versions = useVersions();
 const toast = useToast();
 
 const g = computed(() => board.game);
@@ -27,7 +24,7 @@ const yourSide = computed<Side>(() => s.value?.you ?? "white");
 const theirs = computed(() => other(yourSide.value));
 const opponent = computed(() => {
   const seat = s.value?.[theirs.value];
-  return seat ? seatName(seat, versions.name(seat.version)) : "Your opponent";
+  return seat ? seatName(seat) : "Your opponent";
 });
 const yourTurn = computed(() => board.atEnd && board.position.turn === yourSide.value);
 const can = (a: SeatAction) => !!g.value?.actions.includes(a);
@@ -74,7 +71,9 @@ onBeforeUnmount(() => clearInterval(timer));
 const status = computed(() => {
   if (!s.value) return "";
   if (s.value.status === "starting") return "The game is starting.";
-  if (yourTurn.value) return "Your move.";
+  // Said aloud as it changes, so the opponent's reply is part of it.
+  const last = g.value?.moves.at(-1)?.san;
+  if (yourTurn.value) return last ? `${opponent.value} played ${last}. Your move.` : "Your move.";
   const seat = s.value[theirs.value];
   return seat.player === "dameless" ? `${opponent.value} is thinking.` : `Waiting for ${opponent.value}.`;
 });
@@ -148,8 +147,6 @@ const where = computed(() => {
       <EButton v-if="can('abort')" size="sm" variant="outline" @click="act('abort')">Abort</EButton>
       <EButton v-if="can('resign')" size="sm" variant="danger" @click="confirmResign = true">Resign</EButton>
     </EActions>
-
-    <p v-if="s && onLichessAsYou(s)" class="note">Analysis is off while you're playing on Lichess.</p>
 
     <EDialog v-model:open="confirmResign" title="Resign this game?" role="alertdialog" size="sm">
       {{ opponent }} wins the game.

@@ -15,12 +15,12 @@ import { useKeys } from "./shell/keys";
 import NewGame from "./shell/NewGame.vue";
 import Shortcuts from "./shell/Shortcuts.vue";
 import StatusLine from "./shell/StatusLine.vue";
-import { useEventToasts } from "./shell/toasts";
+import { useEventToasts, useLoginResult } from "./shell/toasts";
 import TopBar from "./shell/TopBar.vue";
 
 /**
- * The app is the board plus a panel, with the Games rail beside them; profiles and settings are sheets over the
- * board's right side (the whole window below 75rem), never instead of it.
+ * The app is the board plus a panel, with the Games rail beside them; profiles and settings are sheets in the
+ * panel's place beside the board (the whole window below 75rem), never instead of it.
  */
 const route = useRoute();
 const board = useBoard();
@@ -29,6 +29,7 @@ const sheet = computed(() => route.meta["sheet"] === true);
 useBoardAddress();
 useKeys();
 useEventToasts();
+useLoginResult();
 
 watchEffect(() => {
   const s = board.summary;
@@ -122,16 +123,19 @@ watchEffect(() => {
   background: var(--e-surface);
 }
 
-/* A sheet covers the panel and part of the board's right side; the board stays visible and live. */
+/* A sheet takes the panel's place beside the board, which shrinks to fit and stays visible and live. */
+.ws--sheet {
+  grid-template-columns: 18rem minmax(0, 1fr) minmax(30rem, 40rem);
+}
+
+.ws--sheet .ws-panel {
+  display: none;
+}
+
 .ws-sheet {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-end: 0;
-  z-index: 5;
-  inline-size: min(40rem, calc(100% - 18rem - 24rem));
-  min-inline-size: 30rem;
+  min-inline-size: 0;
+  min-block-size: 0;
   border-inline-start: var(--line);
-  box-shadow: -0.5rem 0 1.5rem -1rem rgb(0 0 0 / 35%);
   animation: sheet-in var(--e-duration-move, 0.18s) ease-out both;
 }
 
@@ -182,14 +186,15 @@ watchEffect(() => {
     border-inline-end: 0;
   }
 
+  .ws--sheet {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .ws-sheet {
     position: fixed;
     inset: 0;
     z-index: 20;
-    inline-size: auto;
-    min-inline-size: 0;
     border: 0;
-    box-shadow: none;
   }
 }
 </style>

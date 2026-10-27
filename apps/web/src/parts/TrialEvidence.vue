@@ -7,7 +7,6 @@ import { plural, plusMinus, resultText, seatName, trialClock } from "../format";
 import { pairsOf, STAGE_WORD } from "../sheets/idea";
 import { useGames } from "../stores/games";
 import { useIdeas } from "../stores/ideas";
-import { useVersions } from "../stores/versions";
 import LineChart from "./LineChart.vue";
 import LlrGauge from "./LlrGauge.vue";
 import PentaBar from "./PentaBar.vue";
@@ -22,7 +21,6 @@ const props = defineProps<{ trial: Trial }>();
 
 const ideas = useIdeas();
 const games = useGames();
-const versions = useVersions();
 
 const pairs = computed(() => pairsOf(props.trial.penta));
 const hasGames = computed(() => pairs.value > 0 || props.trial.wdl.some((n) => n > 0));
@@ -40,7 +38,7 @@ const trialGames = computed(() =>
 const total = computed(
   () => games.list.filter((g) => g.source.type === "trial" && g.source.trial === props.trial.id).length,
 );
-const name = (seat: Parameters<typeof seatName>[0]) => seatName(seat, versions.name(seat.version));
+const name = seatName;
 </script>
 
 <template>
@@ -113,7 +111,7 @@ const name = (seat: Parameters<typeof seatName>[0]) => seatName(seat, versions.n
           </li>
         </ul>
         <p v-if="total > trialGames.length" class="sec-note">
-          The newest {{ trialGames.length }} of {{ total }}. All of them are in the Games list under Tests.
+          The newest {{ trialGames.length }} of {{ total }}. All of them are in the Games list under Trials.
         </p>
       </div>
     </template>

@@ -6,7 +6,7 @@ import { EIconButton } from "@eos-ui/vue/components/EIconButton";
 import { useBoard } from "../board/board";
 
 /**
- * A sheet: a profile or settings, opened over the board's right side on a wide screen (the board stays visible and
+ * A sheet: a profile or settings, opened in the panel's place beside the board on a wide screen (the board stays visible and
  * live) and over the whole window on a narrow one. It takes focus when it opens and gives it back when it closes;
  * Escape and Close return to the board as it was, Back goes to the previous sheet when there is one.
  */

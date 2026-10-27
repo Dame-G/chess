@@ -36,7 +36,6 @@ const emit = defineEmits<{ go: [ply: number] }>();
   <span class="no num" role="presentation">{{ number }}</span>
   <EButton
     v-if="a"
-    role="listitem"
     size="sm"
     variant="quiet"
     class="mv"
@@ -52,7 +51,6 @@ const emit = defineEmits<{ go: [ply: number] }>();
   <span v-else class="gap">…</span>
   <EButton
     v-if="b"
-    role="listitem"
     size="sm"
     variant="quiet"
     class="mv"

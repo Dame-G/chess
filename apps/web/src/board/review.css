@@ -1,10 +1,11 @@
 /* The colours of a move's judgement. Lichess's own are teal, blue, yellow, orange and red; these keep that order in the
-   theme's warm light and dark. Quiet moves (best, good, book) have none: only what is worth a look is marked. */
+   theme's warm light and dark, each at least 4.5:1 against the surface as text. Quiet moves (best, good, book) have
+   none: only what is worth a look is marked. */
 :root {
-  --rv-brilliant: #148275;
-  --rv-great: #3f6fa6;
-  --rv-inaccuracy: #96680a;
-  --rv-mistake: #c4561a;
+  --rv-brilliant: #0e6f64;
+  --rv-great: #38659a;
+  --rv-inaccuracy: #855c08;
+  --rv-mistake: #a6460f;
   --rv-blunder: #b3261e;
   --rv-miss: #8a5a52;
 }

@@ -208,7 +208,10 @@ function serve(routes: Record<string, (init?: RequestInit) => unknown>) {
 }
 
 describe("the drills store", () => {
-  beforeEach(() => setActivePinia(createPinia()));
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    usePolicy().known = true;
+  });
 
   const result = (outcome: "pass" | "fail", d: Drill): DrillAnswerResult => ({
     outcome,
@@ -483,15 +486,26 @@ describe("the levels", () => {
       { a: 2, b: 3, games: 40, priority: 1 },
     ];
     const text = calibrationCost(plan, overview.levels, 2);
-    expect(text).toMatch(/^2 matches, 80 games between neighbouring levels\. About .+ in the background/);
+    expect(text).toMatch(
+      /^80 games between 2 pairs of neighbouring levels\. (About .+|Under a minute) in the background/,
+    );
     expect(calibrationCost([], overview.levels, 2)).toBe("");
   });
 
   it("names a level seat by its rating", () => {
-    const seat = { player: "dameless", name: "Dameless 1650", version: 14, build: null, rating: 1650, title: null };
+    const seat = {
+      player: "dameless",
+      name: "Dameless 1650",
+      level: 5,
+      version: 14,
+      build: null,
+      rating: 1650,
+      title: null,
+    };
     expect(isLevelSeat(seat)).toBe(true);
-    expect(seatName(seat, "v14")).toBe("Dameless 1650");
-    expect(seatName({ ...seat, name: "Dameless" }, "v14")).toBe("Dameless v14");
+    expect(seatName(seat)).toBe("Dameless 1650");
+    expect(seatName({ ...seat, name: "v14", level: null })).toBe("Dameless v14");
+    expect(seatName({ ...seat, name: "Dameless v14", level: null })).toBe("Dameless v14");
     expect(isLevelSeat({ ...seat, player: "you", name: "Dameless 12" })).toBe(false);
   });
 });
@@ -548,12 +562,19 @@ describe("the progress chart", () => {
     expect(progressData(relative).lines[0]!.scale).toBe("elo");
   });
 
-  it("shows the hit rate as a percentage and leaves out a line with no points", () => {
+  it("shows the hit rate as a percentage and leaves out a line of fewer than two points", () => {
     const withHits: ProgressChart = {
-      series: [{ player: "you", metric: "drill_hit_rate", points: [point("2026-10-05T00:00:00Z", 0.5)] }],
+      series: [
+        {
+          player: "you",
+          metric: "drill_hit_rate",
+          points: [point("2026-10-05T00:00:00Z", 0.5), point("2026-10-06T00:00:00Z", 0.75)],
+        },
+      ],
     };
-    expect(progressData(withHits, ["drill_hit_rate"]).lines[0]!.values).toEqual([50]);
+    expect(progressData(withHits, ["drill_hit_rate"]).lines[0]!.values).toEqual([50, 75]);
     expect(progressData(chart, ["drill_hit_rate"]).lines).toEqual([]);
+    expect(progressData(chart, ["accuracy"]).lines).toEqual([]);
   });
 });
 

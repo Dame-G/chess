@@ -318,6 +318,10 @@ describe("connections, policy and versions", () => {
 
   it("follows the fair-play policy", () => {
     const p = usePolicy();
+    // Nothing is allowed before the server has said.
+    expect(p.allowed).toBe(false);
+    expect(p.reason).toBeNull();
+    event("policy.changed", { assist: "allowed", reason: null });
     expect(p.allowed).toBe(true);
     event("policy.changed", { assist: "off", reason: "Analysis is off while you're playing on Lichess" });
     expect(p.allowed).toBe(false);

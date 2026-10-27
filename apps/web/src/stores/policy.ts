@@ -11,22 +11,28 @@ import { listen, reloadOnReconnect } from "./listen";
 export const usePolicy = defineStore("policy", () => {
   const policy = ref<Policy>({ assist: "allowed", reason: null });
   const status = ref<Status | null>(null);
+  /** Nothing is allowed until the server has said: a page that opens during a Lichess game asks for no analysis. */
+  const known = ref(false);
 
-  const allowed = computed(() => policy.value.assist === "allowed");
-  const explorer = computed(() => policy.value.assist !== "off");
+  const allowed = computed(() => known.value && policy.value.assist === "allowed");
+  const explorer = computed(() => known.value && policy.value.assist !== "off");
   const reason = computed(() =>
-    allowed.value ? null : (policy.value.reason ?? "Analysis is off while you're playing on Lichess"),
+    !known.value || policy.value.assist === "allowed"
+      ? null
+      : (policy.value.reason ?? "Analysis is off while you're playing on Lichess"),
   );
 
   async function load() {
     status.value = await ok(client.GET("/api/status"));
     policy.value = status.value.policy;
+    known.value = true;
   }
 
   listen("policy.changed", (p) => {
     policy.value = p;
+    known.value = true;
   });
   reloadOnReconnect(load);
 
-  return { policy, status, allowed, explorer, reason, load };
+  return { policy, status, known, allowed, explorer, reason, load };
 });

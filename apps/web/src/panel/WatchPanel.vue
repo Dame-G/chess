@@ -10,14 +10,12 @@ import { stageLabel } from "../rail/rail";
 import { useGames } from "../stores/games";
 import { useIdeas } from "../stores/ideas";
 import { usePolicy } from "../stores/policy";
-import { useVersions } from "../stores/versions";
 
-/** Watch: a live game You are not in. The thinking engine's line and score, what the game is, and for a test game its idea. */
+/** Watch: a live game You are not in. The thinking engine's line and score, what the game is, and for a trial game its idea. */
 const board = useBoard();
 const games = useGames();
 const ideas = useIdeas();
 const policy = usePolicy();
-const versions = useVersions();
 
 const s = computed(() => board.summary);
 const t = computed(() => (policy.allowed ? games.thinking : null));
@@ -25,7 +23,7 @@ const thinker = computed(() => {
   const x = s.value;
   if (!x || !t.value) return "";
   const seat = x[t.value.side];
-  return seatName(seat, versions.name(seat.version));
+  return seatName(seat);
 });
 const line = computed(() => (t.value ? sanLine(board.plies[board.lastPly]?.fen ?? "", t.value.pv.slice(0, 10)) : ""));
 const nps = computed(() => (t.value ? `${(t.value.nps / 1e6).toFixed(2)}M nodes/s` : ""));

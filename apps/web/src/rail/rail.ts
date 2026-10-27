@@ -9,7 +9,7 @@ export const FILTERS: { value: RailFilter; label: string }[] = [
   { value: "you", label: "You" },
   { value: "dameless", label: "Dameless" },
   { value: "lichess", label: "Lichess" },
-  { value: "tests", label: "Tests" },
+  { value: "tests", label: "Trials" },
 ];
 
 const hasDameless = (g: GameSummary) => g.white.player === "dameless" || g.black.player === "dameless";
@@ -71,6 +71,6 @@ export const stageLabel: Record<Stage, string> = {
   speed: "speed",
   tune: "tune",
   confirm: "confirmation",
-  custom: "test",
+  custom: "custom trial",
   train: "training",
 };

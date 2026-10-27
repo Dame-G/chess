@@ -92,7 +92,7 @@ const tune = computed(() => ideas.tuneStates[id.value]);
           <EStamp :tone="STATUS_TONE[idea.status]" :label="STATUS_WORD[idea.status]" />
           <span class="sec-note">
             {{ idea.author === "you" ? "You" : "Claude" }} · {{ KIND_WORD[idea.kind] }} ·
-            {{ idea.kind === "net" ? "trains a network, tested" : "tests" }}
+            {{ idea.kind === "net" ? "trains a network, tried" : "tries" }}
             <span v-if="idea.kind !== 'net'" class="mono">{{ change }}</span> against
             <ELink :link-component="RouterLink" to="/dameless">{{ base ?? "the champion" }}</ELink> ·
             {{ ago(idea.created_at) }}
@@ -110,11 +110,11 @@ const tune = computed(() => ideas.tuneStates[id.value]);
 
       <section class="sec" aria-labelledby="i-funnel">
         <div class="sec-head">
-          <h2 id="i-funnel" class="part-title">The tests</h2>
+          <h2 id="i-funnel" class="part-title">The trials</h2>
           <p class="sec-note">Each stage must pass before the next one runs.</p>
         </div>
         <p v-if="!trials.length" class="sec-note">
-          {{ idea.status === "queued" ? "It is waiting its turn. The first stage checks the bench." : "No test ran." }}
+          {{ idea.status === "queued" ? "It is waiting its turn. The first stage checks the bench." : "No trial ran." }}
         </p>
         <ol v-else class="funnel" aria-label="Stages">
           <li v-for="t in trials" :key="t.id" class="funnel-item">

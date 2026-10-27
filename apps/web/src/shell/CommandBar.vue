@@ -9,6 +9,7 @@ import { useBoard } from "../board/board";
 import { useDrills } from "../stores/drills";
 import { useGames } from "../stores/games";
 import { useIdeas } from "../stores/ideas";
+import { usePolicy } from "../stores/policy";
 import { useVersions } from "../stores/versions";
 import { choice } from "../scheme";
 import { readVerb, type Verb } from "./commands";
@@ -42,6 +43,7 @@ const places: CommandItem[] = [
   { id: "go:/settings", label: "Settings", group: "Places", shortcut: "g s" },
 ];
 
+const policy = usePolicy();
 const verbs = computed<CommandItem[]>(() => [
   { id: "do:new-game", label: "New game", description: "play", group: "Do", shortcut: "n", keywords: ["play"] },
   ...(drills.available
@@ -53,6 +55,17 @@ const verbs = computed<CommandItem[]>(() => [
           group: "Do",
           shortcut: "d",
           keywords: ["practice", "mistakes"],
+        },
+      ]
+    : []),
+  ...(policy.allowed
+    ? [
+        {
+          id: "do:review-20",
+          label: "Review your last 20 games",
+          description: "review last 20",
+          group: "Do",
+          keywords: ["review", "accuracy"],
         },
       ]
     : []),
@@ -70,7 +83,7 @@ const verbs = computed<CommandItem[]>(() => [
 /** The typed verb, as the first command, so Enter runs it. */
 const typed = computed<CommandItem[]>(() => {
   const v = readVerb(query.value);
-  if (!v || (v.verb === "drills" && !drills.available)) return [];
+  if (!v || (v.verb === "drills" && !drills.available) || (v.verb === "review" && !policy.allowed)) return [];
   const label = describe(v);
   return [
     { id: `verb:${JSON.stringify(v)}`, label, description: query.value.trim(), group: "Do", keywords: [query.value] },
@@ -92,8 +105,7 @@ function describe(v: Verb): string {
   }
 }
 
-const name = (g: GameSummary, side: Side) =>
-  g.you === side ? "You" : seatName(g[side], versions.name(g[side].version));
+const name = (g: GameSummary, side: Side) => (g.you === side ? "You" : seatName(g[side]));
 const gameItems = computed<CommandItem[]>(() =>
   games.list
     .filter((g) => g.source.type !== "trial")
@@ -177,6 +189,7 @@ async function select(item: CommandItem) {
     else if (kind === "verb") await runVerb(JSON.parse(arg) as Verb);
     else if (arg === "new-game") ui.startNewGame();
     else if (arg === "drills") await startDrills();
+    else if (arg === "review-20") await runVerb({ verb: "review", last: 20 });
     else if (arg === "flip") board.flip();
     else if (arg === "shortcuts") ui.shortcuts = true;
     else if (arg === "new-idea") await router.push({ path: "/dameless", query: { new: "idea" } });

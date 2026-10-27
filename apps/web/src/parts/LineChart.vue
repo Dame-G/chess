@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
+import { shortDate } from "../format";
 import type { ChartSeries, ReferenceLine } from "./chart";
 
 /**
@@ -44,15 +45,37 @@ function css(name: string, fallback = "#888"): string {
   return raw || fallback;
 }
 
+/** The columns to draw. Times are made strictly increasing (games recorded at the same second a second apart), as
+ * uPlot needs ascending x and a scale cannot be fitted to a single instant. */
 function data(): uPlot.AlignedData {
-  return [props.x, ...props.series.map((s) => s.values)] as uPlot.AlignedData;
+  let x = props.x;
+  if (props.time) {
+    x = [];
+    for (const t of props.x) x.push(x.length && t <= x[x.length - 1]! ? x[x.length - 1]! + 1 : t);
+  }
+  return [x, ...props.series.map((s) => s.values)] as uPlot.AlignedData;
 }
 
+/** A scale a little wider than the data; a flat line gets room around it (2 %, at least 1), not a range of ±1. */
 function scaleRange(r: [number | null, number | null] | undefined): uPlot.Scale.Range {
   return (_u, min, max) => {
-    const pad = (max - min) * 0.08 || 1;
+    const pad = (max - min) * 0.08 || Math.max(Math.abs(max) * 0.02, 1);
     return [r?.[0] ?? min - pad, r?.[1] ?? max + pad];
   };
+}
+
+/** The time axis spans at least a day, so games played at the same moment do not stretch it over years. */
+const timeRange: uPlot.Scale.Range = (_u, min, max) => (max - min < 3600 ? [min - 43_200, max + 43_200] : [min, max]);
+
+/** Time ticks as the app writes them: `14:30` within two days, else `12 Oct` (with the year when not this one). */
+function timeValues(u: uPlot, ticks: number[]): string[] {
+  const span = (u.scales["x"]?.max ?? 0) - (u.scales["x"]?.min ?? 0);
+  return ticks.map((t) => {
+    const d = new Date(t * 1000);
+    return span < 2 * 86_400
+      ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+      : shortDate(d.toISOString());
+  });
 }
 
 function options(width: number): uPlot.Options {
@@ -72,7 +95,7 @@ function options(width: number): uPlot.Options {
     cursor: { y: false, points: { size: 7, width: 1 }, drag: { x: false, y: false, setScale: false } },
     select: { show: false, left: 0, top: 0, width: 0, height: 0 },
     scales: {
-      x: { time: props.time === true },
+      x: props.time ? { time: true, range: timeRange } : { time: false },
       y: { range: scaleRange(props.range) },
       y2: { range: scaleRange(props.rightRange) },
     },
@@ -80,8 +103,12 @@ function options(width: number): uPlot.Options {
       {
         ...axisBase,
         grid: { show: false },
-        ...(props.time || !props.xFormat ? {} : { values: (_u, ticks) => ticks.map((t) => props.xFormat!(t)) }),
-        size: props.time ? 38 : 24,
+        ...(props.time
+          ? { values: timeValues }
+          : props.xFormat
+            ? { values: (_u: uPlot, ticks: number[]) => ticks.map((t) => props.xFormat!(t)) }
+            : {}),
+        size: 24,
       },
       { ...axisBase, size: 40, values: (_u, ticks) => ticks.map((t) => fmt(t)) },
       ...(hasRight

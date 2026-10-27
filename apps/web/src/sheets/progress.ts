@@ -35,11 +35,11 @@ function eloOnRatingScale(s: Series): boolean {
 
 /**
  * The series of a progress answer on one time axis, for the side-by-side chart: your rating, your accuracy (and the
- * drill hit rate as a percentage) and Dameless's Elo. A series with no points is left out. Accuracy and the hit rate
+ * drill hit rate as a percentage) and Dameless's Elo. A series of fewer than two points is not a line and is left out. Accuracy and the hit rate
  * are scaled to 0 to 100 so they read as percentages.
  */
 export function progressData(chart: ProgressChart, metrics: readonly Metric[] = ["rating", "elo"]): ProgressData {
-  const chosen = chart.series.filter((s) => s.points.length > 0 && metrics.includes(s.metric));
+  const chosen = chart.series.filter((s) => s.points.length > 1 && metrics.includes(s.metric));
   const x = [...new Set(chosen.flatMap((s) => s.points.map((p) => seconds(p.at))))].sort((a, b) => a - b);
   const index = new Map(x.map((t, i) => [t, i]));
   const lines = chosen.map((s): ProgressLine => {

@@ -4,15 +4,12 @@ import { EButton } from "@eos-ui/vue/components/EButton";
 import type { GameSummary, Side } from "../api/types";
 import { ago, resultText, seatName, speedName, timeControl, yourResult } from "../format";
 import { isLive } from "../board/modes";
-import { useVersions } from "../stores/versions";
 
 /** One game in the rail: the players, the result, accuracy once reviewed, the time control and when. */
 const props = defineProps<{ game: GameSummary; current: boolean; nested?: boolean }>();
 const emit = defineEmits<{ open: [] }>();
-const versions = useVersions();
 
-const name = (side: Side) =>
-  props.game.you === side ? "You" : seatName(props.game[side], versions.name(props.game[side].version));
+const name = (side: Side) => (props.game.you === side ? "You" : seatName(props.game[side]));
 const live = computed(() => isLive(props.game));
 const mine = computed(() => yourResult(props.game));
 const where = computed(() => {
@@ -25,35 +22,58 @@ const accuracy = computed(() => {
   const a = props.game.accuracy;
   return a ? { white: a.white.toFixed(1), black: a.black.toFixed(1) } : null;
 });
+/** What a screen reader says for the row, in words rather than the row's columns run together. */
+const spoken = computed(() => {
+  const g = props.game;
+  const result = live.value
+    ? "live"
+    : g.outcome === "draw"
+      ? "drawn"
+      : g.outcome
+        ? `${g.outcome === "white_wins" ? name("white") : name("black")} won`
+        : "unfinished";
+  return [
+    `${name("white")} against ${name("black")}`,
+    result,
+    accuracy.value ? `accuracy ${accuracy.value.white} and ${accuracy.value.black}` : "",
+    timeControl(g.time),
+    where.value ?? "",
+    ago(g.started_at),
+  ]
+    .filter(Boolean)
+    .join(", ");
+});
 </script>
 
 <template>
-  <EButton
-    role="listitem"
-    variant="quiet"
-    size="sm"
-    block
-    class="row"
-    :class="{ 'row--nested': nested }"
-    :aria-current="current ? 'true' : undefined"
-    @click="emit('open')"
-  >
-    <span class="line">
-      <span v-if="live" class="pulse" aria-label="Live"></span>
-      <span class="players">{{ name("white") }} <span class="vs">–</span> {{ name("black") }}</span>
-      <span class="res num" :class="mine ? `res--${mine}` : undefined">{{
-        live ? "live" : resultText(game.outcome)
-      }}</span>
-    </span>
-    <span class="meta">
-      <span v-if="accuracy" class="acc num" :title="`Accuracy: White ${accuracy.white}, Black ${accuracy.black}`"
-        >{{ accuracy.white }} · {{ accuracy.black }}</span
-      >
-      <span class="num">{{ timeControl(game.time) }}</span>
-      <span v-if="where">{{ where }}</span>
-      <span class="when">{{ ago(game.started_at) }}</span>
-    </span>
-  </EButton>
+  <div role="listitem">
+    <EButton
+      variant="quiet"
+      size="sm"
+      block
+      class="row"
+      :class="{ 'row--nested': nested }"
+      :aria-current="current ? 'true' : undefined"
+      :aria-label="spoken"
+      @click="emit('open')"
+    >
+      <span class="line">
+        <span v-if="live" class="pulse" aria-label="Live"></span>
+        <span class="players">{{ name("white") }} <span class="vs">–</span> {{ name("black") }}</span>
+        <span class="res num" :class="mine ? `res--${mine}` : undefined">{{
+          live ? "live" : resultText(game.outcome)
+        }}</span>
+      </span>
+      <span class="meta">
+        <span v-if="accuracy" class="acc num" :title="`Accuracy: White ${accuracy.white}, Black ${accuracy.black}`"
+          >{{ accuracy.white }} · {{ accuracy.black }}</span
+        >
+        <span class="num">{{ timeControl(game.time) }}</span>
+        <span v-if="where">{{ where }}</span>
+        <span class="when">{{ ago(game.started_at) }}</span>
+      </span>
+    </EButton>
+  </div>
 </template>
 
 <style scoped>

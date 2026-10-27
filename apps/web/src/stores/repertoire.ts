@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
 import { ApiError, client, ok } from "../api/client";
 import type { Repertoire, Side } from "../api/types";
@@ -51,6 +51,10 @@ export const useRepertoire = defineStore("repertoire", () => {
   });
   reloadOnReconnect(async () => {
     if (wanted) await load();
+  });
+  // Asked for before the policy was known, or while you played: read once it allows.
+  watch(available, (now) => {
+    if (now && wanted && !sides.value.white) void load().catch(() => {});
   });
 
   return { sides, loading, failed, available, empty, load };

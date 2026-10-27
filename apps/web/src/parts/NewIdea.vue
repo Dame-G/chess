@@ -33,7 +33,7 @@ import Term from "./Term.vue";
 
 /**
  * New idea: one dialog for every kind. A gain should play stronger; a neutral change should play the same, simpler;
- * a speed change should only be faster; a tune moves the engine's constants by many short games; a custom test is any
+ * a speed change should only be faster; a tune moves the engine's constants by many short games; a custom trial is any
  * preset and bounds, or a fixed number of pairs. The branch is picked from the versions the fork has.
  */
 const open = defineModel<boolean>("open", { required: true });
@@ -50,12 +50,12 @@ const KINDS: { value: Kind; label: string; text: string }[] = [
   {
     value: "gain",
     label: "Gain",
-    text: "Should play stronger. Tested for a gain: the bench must change, then quick games, then short games.",
+    text: "Should play stronger. Tried as a gain: the bench must change, then quick games, then short games.",
   },
   {
     value: "neutral",
     label: "Neutral",
-    text: "Should play the same, with simpler code. Tested for no loss, with the same funnel as a gain.",
+    text: "Should play the same, with simpler code. Tried for no loss, with the same funnel as a gain.",
   },
   {
     value: "speed",
@@ -70,12 +70,12 @@ const KINDS: { value: Kind; label: string; text: string }[] = [
   {
     value: "net",
     label: "Network",
-    text: "Trains a new network on your data, then tests the champion with it: the bench must change, then quick games, then short games.",
+    text: "Trains a new network on your data, then tries the champion with it: the bench must change, then quick games, then short games.",
   },
   {
     value: "custom",
-    label: "Custom test",
-    text: "One test with the settings you choose, for checks that are not an idea.",
+    label: "Custom trial",
+    text: "One trial with the settings you choose, for checks that are not an idea.",
   },
 ];
 
@@ -308,7 +308,7 @@ async function create() {
         <ENumberField v-model="iterations" label="Iterations" :min="100" :max="20000" :step="100" />
         <p class="sec-note">
           Each iteration plays {{ pairs }} game pairs. {{ tuneCostText(cost) }} The result still has to pass a
-          <Term k="sprt" text="test" /> before it is kept.
+          <Term k="sprt" text="confirmation" /> before it is kept.
         </p>
       </template>
 

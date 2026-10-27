@@ -6,7 +6,7 @@ import { GameTree, rows } from "../src/board/tree";
 import { readVerb } from "../src/shell/commands";
 import { parseEvents } from "../src/api/stream";
 import { railRows } from "../src/rail/rail";
-import { clock, scoreText, timeControl } from "../src/format";
+import { clock, endingText, scoreText, timeControl } from "../src/format";
 
 describe("the game tree", () => {
   it("keeps the game as the main line and adds variations", () => {
@@ -160,5 +160,12 @@ describe("formatting", () => {
     expect(clock(9_400)).toBe("0:09.4");
     expect(timeControl({ type: "clock", initial_ms: 180_000, increment_ms: 2000 })).toBe("3+2");
     expect(timeControl({ type: "nodes", nodes: 25_000 })).toBe("25k nodes");
+  });
+
+  it("says how a game ended, naming the side that lost", () => {
+    expect(endingText("resignation", "white_wins")).toBe("Black resigned");
+    expect(endingText("timeout", "black_wins")).toBe("White ran out of time");
+    expect(endingText("agreement", "draw")).toBe("Draw by agreement");
+    expect(endingText("checkmate", "white_wins")).toBe("Checkmate");
   });
 });

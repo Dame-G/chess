@@ -50,7 +50,7 @@ followCurrent(list, () => props.cursor);
 </script>
 
 <template>
-  <div ref="list" class="moves" role="list" aria-label="Moves" :aria-busy="loading || undefined">
+  <div ref="list" class="moves" role="group" aria-label="Moves" :aria-busy="loading || undefined">
     <MoveRow
       v-for="r in rows"
       :key="r.number"

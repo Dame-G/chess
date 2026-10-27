@@ -91,7 +91,6 @@ async function calibrate() {
             </th>
             <td class="e-num">
               <span class="mono">{{ levelRatingText(l) }}</span>
-              <span v-if="!isCalibrated(l)" class="est">estimate</span>
             </td>
             <td class="e-num mono">{{ l.games }}</td>
           </tr>
@@ -127,14 +126,13 @@ async function calibrate() {
 </template>
 
 <style scoped>
-.near {
-  margin-inline-start: var(--e-gap-snug);
+/* The level and its stamp wrap on a phone rather than push the games column out of the sheet. */
+tbody th {
+  white-space: normal;
 }
 
-.est {
+.near {
   margin-inline-start: var(--e-gap-snug);
-  color: var(--e-muted);
-  font: var(--e-type-small);
 }
 
 .you th,

@@ -9,7 +9,6 @@ import { answerArrow } from "./drill";
 import { useDrills } from "../stores/drills";
 import { useGames } from "../stores/games";
 import { usePolicy } from "../stores/policy";
-import { useVersions } from "../stores/versions";
 import { useEvaluation } from "../stores/evaluation";
 import Board from "./Board.vue";
 import EvalBar from "./EvalBar.vue";
@@ -25,7 +24,6 @@ import { playMoveSound, soundOf } from "./sound";
 const board = useBoard();
 const games = useGames();
 const policy = usePolicy();
-const versions = useVersions();
 const evaluation = useEvaluation();
 const drills = useDrills();
 const toast = useToast();
@@ -74,7 +72,7 @@ function strip(side: Side) {
   return {
     // A level's name carries its rating ("Dameless 1650"), so the strip does not repeat it.
     seat: isLevelSeat(seat) ? { ...seat, rating: null } : seat,
-    name: you ? "You" : seatName(seat, versions.name(seat.version)),
+    name: you ? "You" : seatName(seat),
     ...clockOf(side),
     since: games.clocksAt,
     active: live.value && board.atEnd && board.position.turn === side,

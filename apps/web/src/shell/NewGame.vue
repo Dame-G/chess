@@ -44,6 +44,8 @@ const strength = stored("new.strength", "full");
 const version = ref<string>("");
 /** Begin from a random line of the opening book instead of the standard start. */
 const book = ref(false);
+/** The book is not installed yet (Settings › Health says how), so a book start would be refused. */
+const noBook = computed(() => dameless.health?.items.some((i) => i.key === "book" && !i.ok) ?? false);
 const lichessHow = ref<"seek" | "challenge">("seek");
 const username = ref("");
 const busy = ref(false);
@@ -71,6 +73,7 @@ watch(
     if (fromPosition.value) opponent.value = "dameless";
     if (!version.value && versions.current) version.value = String(versions.current.id);
     if (!dameless.levels) await dameless.loadLevels().catch(() => {});
+    if (!dameless.health) void dameless.loadHealth().catch(() => {});
     // Practising a position ("Play this out") starts at the level nearest your rating.
     if (ui.newGame && fromPosition.value) {
       remembered ??= strength.value;
@@ -190,7 +193,12 @@ async function start() {
           v-if="!fromPosition"
           v-model="book"
           label="Start from a book line"
-          description="A random opening from the book the tests use, so games differ."
+          :disabled="noBook"
+          :description="
+            noBook
+              ? 'The opening book is not installed yet: Settings › Health says how.'
+              : 'A random opening from the book trials use, so games differ.'
+          "
         />
       </template>
       <template v-else-if="opponent === 'stockfish'">

@@ -111,7 +111,7 @@ const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
     </ETable>
     <p class="sec-note">
       <Term k="tune" /> moves each constant a little after every batch of games. The trajectory can wander on noise, so
-      only the confirmation test decides.
+      only the confirmation trial decides.
     </p>
   </div>
 </template>

@@ -79,7 +79,7 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
       </template>
     </ENotice>
 
-    <ProfileHead v-if="player" :player="player" />
+    <ProfileHead v-if="player && linked" :player="player" />
 
     <section v-if="challenges.length" class="sec" aria-labelledby="y-ch">
       <h2 id="y-ch" class="part-title">Your challenges</h2>

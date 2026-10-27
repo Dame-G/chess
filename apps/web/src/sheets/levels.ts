@@ -1,5 +1,5 @@
 import type { Level, LevelRating, LevelsOverview, PlannedMatch } from "../api/types";
-import { duration } from "../format";
+import { aboutDuration } from "../format";
 
 /** Whether a level has played enough to have a rating of its own: a fit exists and games went into it. */
 export const isCalibrated = (l: LevelRating): boolean => l.games > 0 && !!l.rating;
@@ -64,13 +64,13 @@ function calibrationGameSeconds(nodes: number): number {
   return 60 * (nodes / 1_000_000 + 0.01);
 }
 
-/** What queueing calibration costs, in words: the matches, their games and the time they take in the background. */
+/** What queueing calibration costs, in words: the pairs of levels, their games and the time they take in the background. */
 export function calibrationCost(plan: readonly PlannedMatch[], levels: readonly LevelRating[], slots: number): string {
   if (plan.length === 0) return "";
   const nodes = (id: number) => levels.find((l) => l.level.id === id)?.level.nodes ?? 1_000_000;
   const games = plan.reduce((n, m) => n + m.games, 0);
   const seconds = plan.reduce((n, m) => n + m.games * calibrationGameSeconds(Math.max(nodes(m.a), nodes(m.b))), 0);
-  const when = duration(seconds / Math.max(1, slots));
-  const matches = plan.length === 1 ? "1 match" : `${plan.length} matches`;
-  return `${matches}, ${games} games between neighbouring levels. About ${when} in the background, behind everything else.`;
+  const when = aboutDuration(seconds / Math.max(1, slots));
+  const pairs = plan.length === 1 ? "1 pair" : `${plan.length} pairs`;
+  return `${games} games between ${pairs} of neighbouring levels. ${when.charAt(0).toUpperCase() + when.slice(1)} in the background, behind everything else.`;
 }
