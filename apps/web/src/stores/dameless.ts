@@ -1,7 +1,15 @@
 import { ref } from "vue";
 import { defineStore } from "pinia";
 import { client, ok } from "../api/client";
-import type { DamelessView, HarnessStatus, Health, LevelsOverview, MachineInfo, Pruned } from "../api/types";
+import type {
+  DamelessView,
+  HarnessStatus,
+  Health,
+  LevelsOverview,
+  MachineInfo,
+  PlannedMatch,
+  Pruned,
+} from "../api/types";
 import { listen, reloadOnReconnect } from "./listen";
 
 /**
@@ -14,6 +22,8 @@ export const useDameless = defineStore("dameless", () => {
   const token = ref<string | null>(null);
   /** The strength ladder (`dameless@<level>` seats) with each level's rating, and the level suggested for You. */
   const levels = ref<LevelsOverview | null>(null);
+  /** The calibration matches that would teach the most now, with how many games each plays. */
+  const plan = ref<PlannedMatch[]>([]);
   /** What the machine has and lacks for the work (Settings › Health): fastchess, the book, the engine, the disk… */
   const health = ref<Health | null>(null);
   /** Whether results on this machine can be trusted: the last check of the harness, and one running. */
@@ -48,6 +58,13 @@ export const useDameless = defineStore("dameless", () => {
     levels.value = await ok(client.GET("/api/levels"));
   }
 
+  async function loadPlan(count = 3) {
+    plan.value = await ok(client.GET("/api/levels/plan", { params: { query: { count } } }));
+  }
+
+  /** Queues calibration of the levels (background work at the lowest priority); answers the work. */
+  const calibrate = (count = 3) => ok(client.POST("/api/levels/calibrate", { body: { count } }));
+
   async function loadToken() {
     token.value = (await ok(client.GET("/api/token"))).token;
   }
@@ -80,11 +97,14 @@ export const useDameless = defineStore("dameless", () => {
     machine,
     token,
     levels,
+    plan,
     health,
     harness,
     load,
     loadMachine,
     loadLevels,
+    loadPlan,
+    calibrate,
     loadHealth,
     loadHarness,
     checkHarness,

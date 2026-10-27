@@ -10,6 +10,8 @@ import type { Classification, GameId, Moment, Profile, WeakSpot } from "../api/t
 import { markOf } from "../board/review";
 import { figure, percent, plural, resultText, shortDate } from "../format";
 import { readClock } from "../shell/commands";
+import { playOutSeat } from "../sheets/levels";
+import { useDameless } from "../stores/dameless";
 import { useGames } from "../stores/games";
 import { stored } from "../stored";
 import { speedName } from "../format";
@@ -27,6 +29,7 @@ const props = defineProps<{ profile: Profile; isYou?: boolean }>();
 const router = useRouter();
 const toast = useToast();
 const games = useGames();
+const dameless = useDameless();
 const clock = stored("new.clock", "5+3");
 
 const reviewed = computed(() => props.profile.reviewed > 0);
@@ -88,9 +91,12 @@ async function playOut(spot: WeakSpot) {
   starting.value = key;
   const whiteToMove = spot.fen.split(" ")[1] !== "b";
   try {
+    // At the level nearest your rating, so the position is practised against someone you can learn from.
+    if (!dameless.levels) await dameless.loadLevels().catch(() => {});
+    const seat = playOutSeat(dameless.levels);
     const s = await games.start({
-      white: whiteToMove ? "you" : "dameless",
-      black: whiteToMove ? "dameless" : "you",
+      white: whiteToMove ? "you" : seat,
+      black: whiteToMove ? seat : "you",
       time: readClock(clock.value) ?? { type: "clock", initial_ms: 300_000, increment_ms: 3000 },
       from: { type: "position", fen: spot.fen, moves: [] },
     });

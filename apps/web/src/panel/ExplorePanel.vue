@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { EActions } from "@eos-ui/vue/components/EActions";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ECopyButton } from "@eos-ui/vue/components/ECopyButton";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextarea } from "@eos-ui/vue/components/ETextarea";
-import { scoreText } from "../format";
+import { buildingText, scoreText } from "../format";
 import { useBoard } from "../board/board";
 import { inspectPosition, sanLine, toPgn } from "../board/position";
 import { useEvaluation } from "../stores/evaluation";
 import { usePolicy } from "../stores/policy";
+import { useRepertoire } from "../stores/repertoire";
+import { useWork } from "../stores/work";
+import { repertoireNote } from "../sheets/repertoire";
 import { useUi } from "../shell/ui";
 
 /**
@@ -21,6 +24,19 @@ const board = useBoard();
 const evaluation = useEvaluation();
 const policy = usePolicy();
 const ui = useUi();
+const work = useWork();
+const repertoire = useRepertoire();
+
+/** The first engine build can take a minute: say so, rather than "Thinking…" for as long. */
+const waiting = computed(() => {
+  if (evaluation.error) return `The engine did not start: ${evaluation.error}`;
+  return work.building ? buildingText(work.building.title) : "Thinking…";
+});
+
+onMounted(() => {
+  if (repertoire.available && !repertoire.sides.white) void repertoire.load();
+});
+const yours = computed(() => (repertoire.available ? repertoireNote(repertoire.sides, fen.value) : null));
 
 const fen = computed(() => board.node.fen);
 const line = computed(() => board.tree.line(board.node));
@@ -74,10 +90,12 @@ function openPasted() {
             <span class="line-pv num">{{ l.san }}</span>
           </EButton>
         </li>
-        <li v-if="!lines.length" class="muted">Thinking…</li>
+        <li v-if="!lines.length" class="muted">{{ waiting }}</li>
       </ol>
     </section>
     <p v-else class="muted">{{ policy.reason }}</p>
+
+    <p v-if="yours" class="muted">{{ yours }}</p>
 
     <section class="position" aria-label="Position">
       <p class="fen num" :title="fen">{{ fen }}</p>

@@ -1,9 +1,15 @@
 import type { GameSummary } from "../api/types";
 
 /** The panel's tabs. */
-export type Mode = "play" | "watch" | "review" | "explore";
+export type Mode = "play" | "watch" | "review" | "explore" | "drill";
 
-export const modeLabel: Record<Mode, string> = { play: "Play", watch: "Watch", review: "Review", explore: "Explore" };
+export const modeLabel: Record<Mode, string> = {
+  play: "Play",
+  watch: "Watch",
+  review: "Review",
+  explore: "Explore",
+  drill: "Drill",
+};
 
 /** Whether a game is being played now. */
 export const isLive = (g: Pick<GameSummary, "status">) => g.status === "live" || g.status === "starting";

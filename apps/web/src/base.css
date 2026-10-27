@@ -63,6 +63,13 @@ body {
   border-block-start: var(--line);
 }
 
+/* A section is a grid; its parts may shrink below their content, so a wide table scrolls inside its own frame
+   instead of widening the sheet. */
+.sec > *,
+.sec > * > * {
+  min-width: 0;
+}
+
 .sec:first-child {
   padding-block-start: 0;
   border-block-start: 0;

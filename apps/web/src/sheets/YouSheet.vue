@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
@@ -7,12 +7,16 @@ import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import type { Player, ProfileFilter } from "../api/types";
 import ChallengeList from "../parts/ChallengeList.vue";
+import DrillsCard from "../parts/DrillsCard.vue";
 import ProfileFilters from "../parts/ProfileFilters.vue";
 import ProfileHead from "../parts/ProfileHead.vue";
 import ProfileView from "../parts/ProfileView.vue";
+import ProgressChart from "../parts/ProgressChart.vue";
+import RepertoireView from "../parts/RepertoireView.vue";
 import ReviewBar from "../parts/ReviewBar.vue";
 import { useConnections } from "../stores/connections";
 import { ALL_GAMES, usePlayers } from "../stores/players";
+import { useProgress } from "../stores/progress";
 import SheetFrame from "./SheetFrame.vue";
 
 /**
@@ -22,6 +26,7 @@ import SheetFrame from "./SheetFrame.vue";
  */
 const connections = useConnections();
 const players = usePlayers();
+const progress = useProgress();
 const router = useRouter();
 const toast = useToast();
 
@@ -40,6 +45,7 @@ async function load() {
 }
 watch(filter, load, { immediate: true, deep: true });
 onBeforeUnmount(() => players.unwatch("you"));
+onMounted(() => void progress.load().catch(() => {}));
 
 /** Without a Lichess login the head still names You, from the account if there is one. */
 const player = computed<Player | null>(() => {
@@ -103,6 +109,17 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
       </section>
 
       <ProfileView :profile="profile" is-you />
+
+      <section v-if="progress.chart" class="sec" aria-labelledby="y-progress">
+        <div class="sec-head">
+          <h2 id="y-progress" class="part-title">Progress</h2>
+          <p class="sec-note">You and Dameless, side by side.</p>
+        </div>
+        <ProgressChart :chart="progress.chart" />
+      </section>
+
+      <DrillsCard />
+      <RepertoireView />
 
       <section class="sec" aria-label="Compare">
         <div class="sheet-actions">

@@ -19,6 +19,6 @@ export async function startStores() {
     () => policy.status,
     () => null,
   );
-  stream.start(2000, status ? status.next_event - 1 : undefined);
+  stream.start(1000, status ? status.next_event - 1 : undefined);
   return Promise.allSettled(stores.map((s) => s.load()));
 }

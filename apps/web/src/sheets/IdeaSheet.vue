@@ -11,6 +11,7 @@ import { ago, plusMinus } from "../format";
 import IdeaActions from "../parts/IdeaActions.vue";
 import Notes from "../parts/Notes.vue";
 import Term from "../parts/Term.vue";
+import TrainView from "../parts/TrainView.vue";
 import TrialEvidence from "../parts/TrialEvidence.vue";
 import TuneView from "../parts/TuneView.vue";
 import { useIdeas } from "../stores/ideas";
@@ -48,16 +49,24 @@ async function open() {
 watch(id, open, { immediate: true });
 
 const trials = computed(() => idea.value?.trials ?? []);
-/** The stage shown: the one chosen, else the one running, else the last. */
+/** The stage shown: the one chosen, else the one running, else the one that failed, else the last. */
 const current = computed(
-  () => selected.value ?? String((trials.value.find((t) => t.status === "running") ?? trials.value.at(-1))?.id ?? ""),
+  () =>
+    selected.value ??
+    String(
+      (
+        trials.value.find((t) => t.status === "running") ??
+        trials.value.find((t) => t.status === "failed") ??
+        trials.value.at(-1)
+      )?.id ?? "",
+    ),
 );
 const trial = computed(() => trials.value.find((t) => String(t.id) === current.value));
 const full = computed(() => (trial.value ? ideas.trials[trial.value.id] : undefined));
 watch(
   trial,
   (t) => {
-    if (t && !ideas.trials[t.id]) void ideas.loadTrial(id.value, t.id).catch(() => {});
+    if (t && t.stage !== "train" && !ideas.trials[t.id]) void ideas.loadTrial(id.value, t.id).catch(() => {});
   },
   { immediate: true },
 );
@@ -82,8 +91,9 @@ const tune = computed(() => ideas.tuneStates[id.value]);
         <div class="meta">
           <EStamp :tone="STATUS_TONE[idea.status]" :label="STATUS_WORD[idea.status]" />
           <span class="sec-note">
-            {{ idea.author === "you" ? "You" : "Claude" }} · {{ KIND_WORD[idea.kind] }} · tests
-            <span class="mono">{{ change }}</span> against
+            {{ idea.author === "you" ? "You" : "Claude" }} · {{ KIND_WORD[idea.kind] }} ·
+            {{ idea.kind === "net" ? "trains a network, tested" : "tests" }}
+            <span v-if="idea.kind !== 'net'" class="mono">{{ change }}</span> against
             <ELink :link-component="RouterLink" to="/dameless">{{ base ?? "the champion" }}</ELink> ·
             {{ ago(idea.created_at) }}
           </span>
@@ -128,7 +138,8 @@ const tune = computed(() => ideas.tuneStates[id.value]);
             <span v-if="trialClockText(trial)" class="mono sec-note"> · {{ trialClockText(trial) }}</span>
           </h3>
           <TuneView v-if="trial.stage === 'tune' && tune" :tune="tune" :running="trial.status === 'running'" />
-          <ESkeleton v-if="!full && trial.stage !== 'tune'" :lines="4" label="Loading the stage" />
+          <TrainView v-if="trial.stage === 'train'" :idea="idea" :status="trial.status" />
+          <ESkeleton v-else-if="!full && trial.stage !== 'tune'" :lines="4" label="Loading the stage" />
           <TrialEvidence v-else-if="full" :trial="full" />
           <p v-else-if="trial.detail" class="verdict">{{ trial.detail }}</p>
         </div>
@@ -191,9 +202,17 @@ const tune = computed(() => ideas.tuneStates[id.value]);
   text-align: start;
 }
 
+/* The chosen stage is marked by its border and a soft wash; its words stay in ink, which the button's pressed colour
+   would turn white on the light wash. */
 .stage[aria-pressed="true"] {
   border-color: var(--e-primary);
   background: var(--e-primary-soft);
+  color: var(--e-ink);
+}
+
+.stage[aria-pressed="true"] .stage-name,
+.stage[aria-pressed="true"] .stage-num {
+  color: var(--e-ink);
 }
 
 .stage-name {

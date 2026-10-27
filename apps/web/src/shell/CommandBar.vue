@@ -6,11 +6,13 @@ import { ECommandPalette, type CommandItem } from "@eos-ui/vue/components/EComma
 import type { GameSummary, Side } from "../api/types";
 import { ago, resultText, seatName, timeControl } from "../format";
 import { useBoard } from "../board/board";
+import { useDrills } from "../stores/drills";
 import { useGames } from "../stores/games";
 import { useIdeas } from "../stores/ideas";
 import { useVersions } from "../stores/versions";
 import { choice } from "../scheme";
 import { readVerb, type Verb } from "./commands";
+import { useStartDrills } from "./drillFlow";
 import { useUi } from "./ui";
 
 /** The command bar: places, games, ideas, versions, and verbs in the CLI's words (`play 5+3 dameless`). */
@@ -21,6 +23,8 @@ const games = useGames();
 const ideas = useIdeas();
 const versions = useVersions();
 const toast = useToast();
+const drills = useDrills();
+const startDrills = useStartDrills();
 
 const query = ref("");
 
@@ -40,6 +44,18 @@ const places: CommandItem[] = [
 
 const verbs = computed<CommandItem[]>(() => [
   { id: "do:new-game", label: "New game", description: "play", group: "Do", shortcut: "n", keywords: ["play"] },
+  ...(drills.available
+    ? [
+        {
+          id: "do:drills",
+          label: "Drills",
+          description: "drills",
+          group: "Do",
+          shortcut: "d",
+          keywords: ["practice", "mistakes"],
+        },
+      ]
+    : []),
   { id: "do:flip", label: "Flip the board", group: "Do", shortcut: "f" },
   { id: "do:shortcuts", label: "Keyboard shortcuts", group: "Do", shortcut: "?" },
   { id: "do:new-idea", label: "New idea", description: "new idea", group: "Do", keywords: ["test", "experiment"] },
@@ -54,7 +70,7 @@ const verbs = computed<CommandItem[]>(() => [
 /** The typed verb, as the first command, so Enter runs it. */
 const typed = computed<CommandItem[]>(() => {
   const v = readVerb(query.value);
-  if (!v) return [];
+  if (!v || (v.verb === "drills" && !drills.available)) return [];
   const label = describe(v);
   return [
     { id: `verb:${JSON.stringify(v)}`, label, description: query.value.trim(), group: "Do", keywords: [query.value] },
@@ -71,6 +87,8 @@ function describe(v: Verb): string {
       return `Compare with ${v.players.join(", ")}`;
     case "new-idea":
       return "New idea";
+    case "drills":
+      return "Start today's drills";
   }
 }
 
@@ -142,6 +160,8 @@ async function runVerb(v: Verb) {
       path: "/compare",
       query: { players: ["you", ...v.players.map((p) => `lichess:${p}`)].join(",") },
     });
+  } else if (v.verb === "drills") {
+    await startDrills();
   } else {
     await router.push({ path: "/dameless", query: { new: "idea" } });
   }
@@ -156,6 +176,7 @@ async function select(item: CommandItem) {
     else if (kind === "version") await router.push("/dameless");
     else if (kind === "verb") await runVerb(JSON.parse(arg) as Verb);
     else if (arg === "new-game") ui.startNewGame();
+    else if (arg === "drills") await startDrills();
     else if (arg === "flip") board.flip();
     else if (arg === "shortcuts") ui.shortcuts = true;
     else if (arg === "new-idea") await router.push({ path: "/dameless", query: { new: "idea" } });

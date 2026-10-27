@@ -5,6 +5,8 @@ import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ECombobox } from "@eos-ui/vue/components/ECombobox";
 import { EDialog } from "@eos-ui/vue/components/EDialog";
+import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
+import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESelect } from "@eos-ui/vue/components/ESelect";
@@ -12,10 +14,20 @@ import { EStack } from "@eos-ui/vue/components/EStack";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextarea } from "@eos-ui/vue/components/ETextarea";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
-import type { NewIdeaRequest, Preset, Tunable } from "../api/types";
+import type { LrSchedule, NewIdeaRequest, Preset, Tunable } from "../api/types";
 import { tuneCost, tuneCostText, tuneSpec } from "../sheets/tune";
+import {
+  positionsText,
+  presetOf,
+  SCHEDULES,
+  trainCost,
+  trainCostText,
+  trainSpec,
+  type Preset as SchedulePreset,
+} from "../sheets/training";
 import { useIdeas } from "../stores/ideas";
 import { usePolicy } from "../stores/policy";
+import { useTraining } from "../stores/training";
 import { useVersions } from "../stores/versions";
 import Term from "./Term.vue";
 
@@ -29,10 +41,11 @@ const open = defineModel<boolean>("open", { required: true });
 const ideas = useIdeas();
 const versions = useVersions();
 const policy = usePolicy();
+const training = useTraining();
 const router = useRouter();
 const toast = useToast();
 
-type Kind = "gain" | "neutral" | "speed" | "tune" | "custom";
+type Kind = "gain" | "neutral" | "speed" | "tune" | "net" | "custom";
 const KINDS: { value: Kind; label: string; text: string }[] = [
   {
     value: "gain",
@@ -55,6 +68,11 @@ const KINDS: { value: Kind; label: string; text: string }[] = [
     text: "Moves the engine's constants by playing many short games, then confirms the result.",
   },
   {
+    value: "net",
+    label: "Network",
+    text: "Trains a new network on your data, then tests the champion with it: the bench must change, then quick games, then short games.",
+  },
+  {
     value: "custom",
     label: "Custom test",
     text: "One test with the settings you choose, for checks that are not an idea.",
@@ -75,8 +93,32 @@ const chosen = ref<string[]>([]);
 const iterations = ref<number | null>(1000);
 const pairs = 8;
 
+// Network
+const datasetIds = ref<string[]>([]);
+const parent = ref("champion");
+const preset = ref<SchedulePreset | "custom">("quick");
+const schedule = ref({ ...SCHEDULES.quick.schedule });
+/** A number of the schedule as a field: it keeps its value when the field is emptied. */
+const field = (key: "superbatches" | "batches_per_superbatch" | "batch_size" | "lr" | "final_lr" | "wdl") =>
+  computed({
+    get: () => schedule.value[key],
+    set: (v: number | null) => {
+      if (v != null) schedule.value[key] = v;
+    },
+  });
+const superbatches = field("superbatches");
+const batchesEach = field("batches_per_superbatch");
+const batchSize = field("batch_size");
+const learningRate = field("lr");
+const finalRate = field("final_lr");
+const resultWeight = field("wdl");
+const rateFalls = computed({
+  get: () => schedule.value.lr_schedule ?? "cosine",
+  set: (v: string) => (schedule.value.lr_schedule = v as LrSchedule),
+});
+
 // Custom
-const preset = ref<Preset>("stc");
+const gamePreset = ref<Preset>("stc");
 const stop = ref<"sprt" | "pairs">("sprt");
 const lower = ref<number | null>(0);
 const upper = ref<number | null>(3);
@@ -88,9 +130,46 @@ const branches = computed(() => {
   return [...seen].sort().map((value) => ({ value, label: value }));
 });
 const kindText = computed(() => KINDS.find((k) => k.value === kind.value)?.text ?? "");
-const hasLong = computed(() => kind.value === "gain" || kind.value === "neutral" || kind.value === "tune");
+const hasLong = computed(
+  () => kind.value === "gain" || kind.value === "neutral" || kind.value === "tune" || kind.value === "net",
+);
 const cost = computed(() => tuneCost(iterations.value ?? 0, pairs, policy.status?.cores ?? 8));
 const tunableOptions = computed(() => available.value.map((t) => ({ value: t.name, label: t.name })));
+const datasetOptions = computed(() =>
+  training.datasets.map((d) => ({ value: String(d.id), label: `${d.name} · ${positionsText(d.positions)} positions` })),
+);
+const parentOptions = computed(() => [
+  {
+    value: "champion",
+    label: training.champion ? `The champion's network (${training.champion.name})` : "The champion's network",
+  },
+  ...training.nets.map((n) => ({ value: String(n.id), label: n.name })),
+]);
+const schedulePresets = (Object.keys(SCHEDULES) as SchedulePreset[]).map((value) => ({
+  value,
+  label: SCHEDULES[value].label,
+}));
+const lrSchedules: { value: LrSchedule; label: string }[] = [
+  { value: "cosine", label: "Cosine" },
+  { value: "linear", label: "Linear" },
+  { value: "step", label: "Step" },
+  { value: "constant", label: "Constant" },
+];
+const trainCostSentence = computed(() => trainCostText(trainCost(schedule.value)));
+const noGpu = computed(() => (policy.status?.ledger?.gpus ?? 0) === 0);
+watch(preset, (p) => {
+  if (p !== "custom") schedule.value = { ...SCHEDULES[p].schedule };
+});
+/** Changing a number under Advanced leaves the presets: the segment shows what it is now. */
+watch(
+  schedule,
+  (s) => {
+    const known = presetOf(s);
+    if (known) preset.value = known;
+    else if (preset.value !== "custom") preset.value = "custom";
+  },
+  { deep: true },
+);
 const presets: { value: Preset; label: string }[] = [
   { value: "vstc", label: "Quick screen, 4+0.04" },
   { value: "stc", label: "Short games, 8+0.08" },
@@ -110,6 +189,12 @@ watch(open, (isOpen) => {
     long.value = false;
     tags.value = "";
     chosen.value = [];
+    datasetIds.value = [];
+    parent.value = "champion";
+    preset.value = "quick";
+    schedule.value = { ...SCHEDULES.quick.schedule };
+    gamePreset.value = "stc";
+    void training.load().catch(() => {});
   }
 });
 let typing: ReturnType<typeof setTimeout> | undefined;
@@ -128,7 +213,7 @@ watch([kind, branch], () => {
 
 const missing = computed(() => {
   if (!title.value.trim()) return "Give it a title.";
-  if (!branch.value.trim()) return "Pick the branch that holds the change.";
+  if (kind.value !== "net" && !branch.value.trim()) return "Pick the branch that holds the change.";
   if (kind.value !== "custom" && !hypothesis.value.trim()) return "Say what it should do and why.";
   return "";
 });
@@ -138,6 +223,7 @@ async function create() {
     title: title.value.trim(),
     hypothesis: hypothesis.value.trim(),
     kind: kind.value === "custom" ? "gain" : kind.value,
+    // A network idea tests the champion's code with a new net: no branch needed.
     branch: branch.value.trim(),
     author: "you",
     tags: tags.value
@@ -154,10 +240,19 @@ async function create() {
           }),
         }
       : {}),
+    ...(kind.value === "net"
+      ? {
+          train: trainSpec({
+            datasets: datasetIds.value.map(Number),
+            parent: parent.value === "champion" ? null : Number(parent.value),
+            schedule: schedule.value,
+          }),
+        }
+      : {}),
     ...(kind.value === "custom"
       ? {
           custom: {
-            preset: preset.value,
+            preset: gamePreset.value,
             ...(stop.value === "sprt"
               ? { bounds: [lower.value ?? 0, upper.value ?? 3] }
               : { pairs: fixedPairs.value ?? 1000 }),
@@ -192,6 +287,7 @@ async function create() {
       <ETextField v-model="title" label="Title" placeholder="Deeper LMR at high depth" autocomplete="off" />
       <ETextarea v-model="hypothesis" label="What it should do, and why" :optional="kind === 'custom'" :rows="3" />
       <ECombobox
+        v-if="kind !== 'net'"
         v-model="branch"
         label="Branch"
         freeform
@@ -216,8 +312,42 @@ async function create() {
         </p>
       </template>
 
+      <template v-if="kind === 'net'">
+        <ENotice v-if="noGpu" tone="warning" title="No GPU found">
+          Training needs a GPU the app can use. Check Settings, Health.
+        </ENotice>
+        <ECombobox
+          v-model="datasetIds"
+          label="Data"
+          multiple
+          :options="datasetOptions"
+          placeholder="Every dataset in the engine's units"
+          hint="Leave empty to train on all the data that is in the engine's own units."
+        />
+        <ESelect v-model="parent" label="Start from" :options="parentOptions" />
+        <ESegmented
+          v-model="preset"
+          label="Schedule"
+          :options="[...schedulePresets, ...(preset === 'custom' ? [{ value: 'custom', label: 'Custom' }] : [])]"
+        />
+        <p class="sec-note">{{ trainCostSentence }}</p>
+        <EDisclosure title="Advanced">
+          <EStack gap="base">
+            <div class="pair">
+              <ENumberField v-model="superbatches" label="Superbatches" :min="1" :step="5" />
+              <ENumberField v-model="batchesEach" label="Batches each" :min="1" :step="100" />
+              <ENumberField v-model="batchSize" label="Batch size" :min="256" :step="1024" />
+              <ESelect v-model="rateFalls" label="Learning rate falls" :options="lrSchedules" />
+              <ENumberField v-model="learningRate" label="Learning rate" :step="0.00001" />
+              <ENumberField v-model="finalRate" label="Ends at" :step="0.000001" />
+              <ENumberField v-model="resultWeight" label="Weight on the result" :min="0" :max="1" :step="0.1" />
+            </div>
+          </EStack>
+        </EDisclosure>
+      </template>
+
       <template v-if="kind === 'custom'">
-        <ESelect v-model="preset" label="Games" :options="presets" />
+        <ESelect v-model="gamePreset" label="Games" :options="presets" />
         <ESegmented
           v-model="stop"
           label="Stop"

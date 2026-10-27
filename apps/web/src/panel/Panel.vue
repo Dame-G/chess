@@ -10,6 +10,7 @@ import { INITIAL_FEN } from "../board/position";
 import { hint } from "../board/review";
 import { useGames } from "../stores/games";
 import { usePolicy } from "../stores/policy";
+import DrillPanel from "./DrillPanel.vue";
 import ExplorePanel from "./ExplorePanel.vue";
 import PlayPanel from "./PlayPanel.vue";
 import ReviewPanel from "./ReviewPanel.vue";
@@ -35,14 +36,15 @@ const hints = computed(() => (policy.allowed && games.review ? games.review.plie
 </script>
 
 <template>
-  <aside class="panel" aria-label="Panel">
+  <aside class="panel" :class="{ 'panel--drill': board.drilling }" aria-label="Panel">
     <ETabs v-model="mode" :items="tabs" label="Mode" class="tabs">
       <template #panel-play><PlayPanel /></template>
       <template #panel-watch><WatchPanel /></template>
       <template #panel-review><ReviewPanel /></template>
       <template #panel-explore><ExplorePanel /></template>
+      <template #panel-drill><DrillPanel /></template>
     </ETabs>
-    <div class="moves">
+    <div v-if="!board.drilling" class="moves">
       <TreeMoves
         v-if="board.exploring"
         :tree="board.tree"
@@ -70,6 +72,11 @@ const hints = computed(() => (policy.allowed && games.review ? games.review.plie
   grid-template-rows: auto minmax(9rem, 1fr);
   min-height: 0;
   height: 100%;
+}
+
+.panel--drill {
+  grid-template-rows: auto;
+  align-content: start;
 }
 
 .tabs {

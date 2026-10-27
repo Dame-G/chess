@@ -52,6 +52,22 @@ export const GLOSSARY = {
     term: "Champion",
     text: "The current best version of Dameless: the tip of the fork's main line. New ideas are tested against it.",
   },
+  calibration: {
+    term: "Calibration",
+    text: "Dameless's levels play each other, and you, in the background. The results fix what each level is really worth, instead of trusting the first guess of its rating.",
+  },
+  net: {
+    term: "Network",
+    text: "The part of the engine that judges a position, learned from millions of positions. A new network can make the engine stronger without changing a line of its code.",
+  },
+  superbatch: {
+    term: "Superbatch",
+    text: "A fixed number of batches of positions. Training is counted in superbatches, and a checkpoint is saved every few of them.",
+  },
+  loss: {
+    term: "Loss",
+    text: "How far the network's judgements are from the answers in the data. It should fall as training goes on; lower is better, and only games show whether a net is stronger.",
+  },
 } as const;
 
 export type TermKey = keyof typeof GLOSSARY;

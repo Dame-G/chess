@@ -14,6 +14,7 @@ const groups = [
     rows: [
       { keys: [mod], does: "Open the command bar" },
       { keys: [["N"]], does: "New game" },
+      { keys: [["D"]], does: "Start today's drills" },
       {
         keys: [
           ["G", "Y"],

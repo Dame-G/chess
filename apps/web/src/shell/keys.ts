@@ -3,6 +3,7 @@ import { useShortcuts } from "@eos-ui/vue";
 import { useBoard } from "../board/board";
 import { findPly, walksSide } from "../board/review";
 import { useGames } from "../stores/games";
+import { useStartDrills } from "./drillFlow";
 import { useUi } from "./ui";
 
 /** Controls that use the arrow keys themselves: the board's steps leave them alone. */
@@ -11,13 +12,14 @@ const OWN_ARROWS =
 
 /**
  * The app's keys, as docs/design.md lists them: ←/→, Home/End, F, Space (Explore's engine), X and Shift X (Review's
- * mistakes), N, G Y / G D / G S and `?`. ⌘K belongs to the command bar. Call once, in the app's root.
+ * mistakes), N, D (today's drills), G Y / G D / G S and `?`. ⌘K belongs to the command bar. Call once, in the app's root.
  */
 export function useKeys() {
   const board = useBoard();
   const games = useGames();
   const ui = useUi();
   const router = useRouter();
+  const startDrills = useStartDrills();
 
   const arrows = (step: () => void) => (e: KeyboardEvent) => {
     const target = e.target as Element | null;
@@ -38,6 +40,13 @@ export function useKeys() {
     if (Date.now() - g < 1000) void router.push(to);
     g = 0;
   };
+  /** D alone starts today's drills; G then D goes to Dameless. */
+  const drillsOrDameless = () => {
+    if (Date.now() - g < 1000) {
+      g = 0;
+      void router.push("/dameless");
+    } else void startDrills();
+  };
 
   useShortcuts({
     left: arrows(() => board.go(board.cursor - 1)),
@@ -50,7 +59,7 @@ export function useKeys() {
     n: () => ui.startNewGame(),
     g: () => (g = Date.now()),
     y: after("/you"),
-    d: after("/dameless"),
+    d: drillsOrDameless,
     s: after("/settings"),
     "?": () => (ui.shortcuts = true),
   });

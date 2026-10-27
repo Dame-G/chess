@@ -15,6 +15,7 @@ import { useDameless } from "../stores/dameless";
 import { useGames } from "../stores/games";
 import { useVersions } from "../stores/versions";
 import { stored } from "../stored";
+import { strengthOptions as optionsOf, suggestedStrength } from "../sheets/levels";
 import { readClock } from "./commands";
 import { useUi } from "./ui";
 
@@ -41,17 +42,40 @@ const level = stored("new.level", "5");
 /** Dameless's strength: "full", or a level of its ladder (`dameless@<level>`). */
 const strength = stored("new.strength", "full");
 const version = ref<string>("");
+/** Begin from a random line of the opening book instead of the standard start. */
+const book = ref(false);
 const lichessHow = ref<"seek" | "challenge">("seek");
 const username = ref("");
 const busy = ref(false);
 
 const fromPosition = computed(() => ui.newGameFrom);
+/** The strength remembered for New game while a practice position borrows the dialog. */
+let remembered: string | null = null;
+// The version is the champion's until chosen; it may arrive after the dialog was first opened.
+watch(
+  () => versions.current?.id,
+  (id) => {
+    if (id != null && !version.value) version.value = String(id);
+  },
+  { immediate: true },
+);
 watch(
   () => ui.newGame,
-  (open) => {
-    if (open && fromPosition.value) opponent.value = "dameless";
-    if (open && !version.value && versions.current) version.value = String(versions.current.id);
-    if (open && !dameless.levels) void dameless.loadLevels().catch(() => {});
+  async (open) => {
+    if (!open) {
+      if (remembered !== null) strength.value = remembered;
+      remembered = null;
+      return;
+    }
+    book.value = false;
+    if (fromPosition.value) opponent.value = "dameless";
+    if (!version.value && versions.current) version.value = String(versions.current.id);
+    if (!dameless.levels) await dameless.loadLevels().catch(() => {});
+    // Practising a position ("Play this out") starts at the level nearest your rating.
+    if (ui.newGame && fromPosition.value) {
+      remembered ??= strength.value;
+      strength.value = suggestedStrength(dameless.levels);
+    }
   },
 );
 
@@ -79,15 +103,7 @@ const clockValues = computed(() => clocks.value.map((c) => (typeof c === "string
 watch(clockValues, (c) => {
   if (!c.includes(clock.value)) clock.value = c.includes("5+3") ? "5+3" : c[1]!;
 });
-const strengthOptions = computed(() => [
-  { value: "full", label: "Full strength" },
-  ...(dameless.levels?.levels ?? [])
-    .filter((l) => l.level.nodes != null)
-    .map((l) => ({
-      value: String(l.level.id),
-      label: `Level ${l.level.id} · ${l.games > 0 && l.rating ? Math.round(l.rating.elo) : `about ${l.level.nominal}`}${l.level.id === dameless.levels?.suggested ? " (suggested)" : ""}`,
-    })),
-]);
+const strengthOptions = computed(() => optionsOf(dameless.levels));
 
 /** Dameless's seat: `dameless`, at a version (`:#<id>`) and a level (`@<n>`) when chosen. */
 function damelessSeat(): string {
@@ -116,7 +132,11 @@ async function start() {
         white: you === "white" ? "you" : seat,
         black: you === "white" ? seat : "you",
         time,
-        ...(from ? { from: { type: "position" as const, fen: from.fen, moves: from.moves } } : {}),
+        ...(from
+          ? { from: { type: "position" as const, fen: from.fen, moves: from.moves } }
+          : book.value
+            ? { from: { type: "book" as const } }
+            : {}),
       });
       ui.newGame = false;
       await router.push({ path: "/", query: { game: String(s.id) } });
@@ -166,6 +186,12 @@ async function start() {
       <template v-if="opponent === 'dameless'">
         <ESelect v-if="versionOptions.length" v-model="version" label="Version" :options="versionOptions" />
         <ESelect v-model="strength" label="Strength" :options="strengthOptions" />
+        <ESwitch
+          v-if="!fromPosition"
+          v-model="book"
+          label="Start from a book line"
+          description="A random opening from the book the tests use, so games differ."
+        />
       </template>
       <template v-else-if="opponent === 'stockfish'">
         <ESelect v-model="level" label="Level" :options="['1', '2', '3', '4', '5', '6', '7', '8']" />

@@ -1,5 +1,6 @@
 import { computed, watch } from "vue";
 import { useRoute, useRouter, type LocationQuery } from "vue-router";
+import { useDrills } from "../stores/drills";
 import { useGames } from "../stores/games";
 import { useBoard } from "./board";
 import { firstGame } from "./modes";
@@ -7,7 +8,7 @@ import { INITIAL_FEN, isValidFen } from "./position";
 
 /**
  * The address is the board's state: `/?game=<id>&ply=<n>` (no ply while following a live game) or `/?fen=…` for a free
- * position. Reading it opens what it names; moving on the board rewrites it in place. With nothing named, what opens
+ * position, or `/?drill=<id>` for a drill. Reading it opens what it names; moving on the board rewrites it in place. With nothing named, what opens
  * first follows docs/design.md: a live game, else your last finished game, else the start position in Explore.
  * Call once, in the app's root.
  */
@@ -16,6 +17,7 @@ export function useBoardAddress() {
   const router = useRouter();
   const board = useBoard();
   const games = useGames();
+  const drills = useDrills();
 
   const address = computed(() => board.address);
 
@@ -25,6 +27,13 @@ export function useBoardAddress() {
 
   let chosen = false;
   async function read(q: LocationQuery) {
+    const drill = Number(q["drill"]);
+    if (Number.isInteger(drill) && drill > 0) {
+      if (drills.active?.id === drill || (await drills.open(drill))) {
+        chosen = true;
+        return;
+      }
+    } else if (drills.active) drills.leave();
     const game = Number(q["game"]);
     const ply = q["ply"] === undefined ? undefined : Number(q["ply"]);
     if (Number.isInteger(game) && game > 0) {

@@ -11,10 +11,13 @@ import { resultText, seatName } from "../format";
 import { useBoard } from "../board/board";
 import { sanLine } from "../board/position";
 import { findPly, hasBetter, hint, markOf, SUMMARY_MARKS } from "../board/review";
+import { rematchRequest } from "../board/rematch";
+import { useDameless } from "../stores/dameless";
 import { useGames } from "../stores/games";
 import { usePolicy } from "../stores/policy";
 import { useVersions } from "../stores/versions";
 import { useUi } from "../shell/ui";
+import { useRouter } from "vue-router";
 
 /**
  * Review: a finished game read by the engine. Accuracy per side, the marks counted (each jumps to the next such
@@ -26,6 +29,8 @@ const policy = usePolicy();
 const versions = useVersions();
 const ui = useUi();
 const toast = useToast();
+const dameless = useDameless();
+const router = useRouter();
 
 const s = computed(() => board.summary);
 const review = computed(() => games.review);
@@ -59,6 +64,37 @@ function playThisOut() {
   if (!g) return;
   const upto = Math.max(0, board.ply - 1);
   ui.startNewGame({ fen: board.plies[0]?.fen ?? "", moves: g.moves.slice(0, upto).map((m) => m.uci) });
+}
+
+/** A rematch: the same opponent and clock with the colours swapped, from a new book line if the game began from one. */
+const starting = ref(false);
+const canRematch = computed(() => {
+  const g = board.game;
+  return !!g && rematchRequest(g, { champion: versions.current?.id, levels: dameless.levels }) !== null;
+});
+async function rematch() {
+  const g = board.game;
+  if (!g) return;
+  starting.value = true;
+  try {
+    if (!dameless.levels) await dameless.loadLevels().catch(() => {});
+    const request = rematchRequest(g, {
+      champion: versions.current?.id,
+      levels: dameless.levels,
+      started: games.starts[String(g.summary.id)] ?? null,
+    });
+    if (!request) return;
+    const made = await games.start(request);
+    await router.push({ path: "/", query: { game: String(made.id) } });
+  } catch (e) {
+    toast.show({
+      title: "The rematch did not start",
+      message: e instanceof Error ? e.message : String(e),
+      tone: "warning",
+    });
+  } finally {
+    starting.value = false;
+  }
 }
 
 const asking = ref(false);
@@ -95,6 +131,10 @@ const fmt = (n: number | null | undefined) => (n == null ? "–" : n.toFixed(1))
       <span v-if="s?.ending" class="ending">{{ s.ending.replace(/_/g, " ") }}</span>
       <span v-if="s?.opening" class="ending">· {{ s.opening.name }}</span>
     </p>
+
+    <EActions v-if="canRematch">
+      <EButton size="sm" variant="outline" :loading="starting" @click="rematch">Rematch</EButton>
+    </EActions>
 
     <p v-if="!policy.allowed" class="muted">{{ policy.reason }}</p>
     <ESkeleton v-else-if="games.reviewLoading && !review" :lines="4" label="Loading the review" />

@@ -11,6 +11,7 @@ import { parseSan } from "chessops/san";
 import { makeUci } from "chessops/util";
 import { playUci, setup, uciOf } from "../board/position";
 import { error, reply } from "./fixtures-http";
+import { createLearnRoutes } from "./fixtures-learn";
 import { createSheetRoutes } from "./fixtures-sheets";
 import { fixtureMode } from "./mode";
 import type {
@@ -383,6 +384,17 @@ const trials: Trial[] = [
   }),
 ];
 
+trials.push(
+  trial({
+    id: 30,
+    idea: 9,
+    stage: "train",
+    status: "running",
+    detail: "Superbatch 7 of 20.",
+    started_at: minutesAgo(11),
+  }),
+);
+
 const summaryOf = (t: Trial): TrialSummary => ({
   id: t.id,
   stage: t.stage,
@@ -447,6 +459,24 @@ const ideas: Idea[] = [
     notes: null,
     created_at: minutesAgo(60 * 50),
     ended_at: minutesAgo(60 * 49),
+  },
+  {
+    id: 9,
+    title: "Fine-tune the champion on our own games",
+    hypothesis:
+      "A short fine-tune of the shipped network on self-play positions should fit this engine's own search better.",
+    kind: "net",
+    author: "you",
+    branch: "",
+    base: 14,
+    version: null,
+    status: "running",
+    verdict: null,
+    trials: [],
+    tags: ["nets"],
+    notes: null,
+    created_at: minutesAgo(12),
+    ended_at: null,
   },
 ];
 for (const idea of ideas) idea.trials = trials.filter((t) => t.idea === idea.id).map(summaryOf);
@@ -1014,12 +1044,21 @@ const status: Status = {
     oversubscribed: false,
     grants: [{ work: 1, cores: 12 }],
     reservations: [],
-    gpus: 0,
+    gpus: 1,
     gpu_grants: [],
   },
   lichess_url: "https://lichess.org",
   next_event: 1,
 };
+
+const learnRoutes = createLearnRoutes({
+  minutesAgo,
+  emit,
+  work,
+  status,
+  ideas,
+  yourGames: () => [...games.values()].filter((s) => s.game.summary.you).map((s) => s.game.summary.id),
+});
 
 const sheetRoutes = createSheetRoutes({
   minutesAgo,
@@ -1429,6 +1468,8 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
   if (path === "/api/events") return streamResponse(url, init?.signal);
   await new Promise((r) => setTimeout(r, 40 + Math.random() * 80));
 
+  const learn = learnRoutes(method, path, url, body);
+  if (learn) return learn;
   const sheet = sheetRoutes(method, path, url, body);
   if (sheet) return sheet;
 

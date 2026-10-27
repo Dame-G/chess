@@ -13,3 +13,7 @@ test-results
 /.data
 /.data-web
 /run
+
+# Scratch builds and data of the screens agent.
+/run-feat
+/.data-feat

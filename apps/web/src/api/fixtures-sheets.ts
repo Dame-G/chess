@@ -816,7 +816,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       const t = trial({
         id: Math.max(...ctx.trials.map((x) => x.id)) + 1,
         idea: id,
-        stage: body.kind === "tune" ? "tune" : "fingerprint",
+        stage: body.kind === "tune" ? "tune" : body.kind === "net" ? "train" : "fingerprint",
         status: "running",
         started_at: new Date().toISOString(),
       });
@@ -987,6 +987,20 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
               detail: "clang is not on the PATH, so builds with Syzygy support cannot be made.",
               action: { label: "Install it", command: "winget install LLVM.LLVM" },
             },
+            {
+              key: "cuda",
+              level: "ok",
+              ok: true,
+              title: "CUDA",
+              detail: "CUDA 12.6 is installed.",
+            },
+            {
+              key: "gpu",
+              level: "ok",
+              ok: true,
+              title: "GPU",
+              detail: "NVIDIA GeForce RTX 3080, 10 GB.",
+            },
             { key: "disk", level: "ok", ok: true, title: "Disk", detail: "212 GB free on the data drive." },
           ],
         });
@@ -1001,17 +1015,6 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
           running: null,
           last: null,
           summary: "Checked on this machine 3 days ago: an identical copy did not pass (+0.4 ± 2.1 Elo).",
-        });
-      if (path === "/api/levels")
-        return reply("/api/levels", "get", {
-          levels: [800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800].map((nominal, i) => ({
-            level: { id: i + 1, name: `Level ${i + 1}`, nodes: 300 * (i + 1), multipv: 1, temperature: 0, nominal },
-            games: 0,
-            rating: null,
-          })),
-          suggested: 7,
-          you: null,
-          updated_at: null,
         });
     }
 

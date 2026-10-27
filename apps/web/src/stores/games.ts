@@ -12,7 +12,9 @@ import type {
   PlayerKey,
   Review,
   SeatAction,
+  StartFrom,
 } from "../api/types";
+import { stored } from "../stored";
 import { listen, reloadOnReconnect } from "./listen";
 
 /** Live games first (they are pinned), then newest first. */
@@ -44,6 +46,8 @@ export const useGames = defineStore("games", () => {
   let wanted: GameId | null = null;
   /** Games this tab started, which need no "your game started" toast. */
   const startedHere = new Set<GameId>();
+  /** How the games this browser started began (a book line or a position), for a rematch to begin the same way. */
+  const starts = stored<Record<string, StartFrom | null>>("game.starts", {});
 
   const list = computed(() => Object.values(summaries.value).sort(byRailOrder));
 
@@ -135,6 +139,7 @@ export const useGames = defineStore("games", () => {
     const s = game.summary;
     summaries.value[s.id] = s;
     startedHere.add(s.id);
+    starts.value = { ...Object.fromEntries(Object.entries(starts.value).slice(-99)), [s.id]: request.from ?? null };
     return s;
   }
 
@@ -216,5 +221,6 @@ export const useGames = defineStore("games", () => {
     reviewPlayer,
     start,
     startedHere,
+    starts,
   };
 });

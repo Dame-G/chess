@@ -4,7 +4,9 @@ import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { useToast } from "@eos-ui/vue";
 import type { Side } from "../api/types";
-import { other, pawns, seatName, sideResult, winChance } from "../format";
+import { isLevelSeat, other, pawns, seatName, sideResult, winChance } from "../format";
+import { answerArrow } from "./drill";
+import { useDrills } from "../stores/drills";
 import { useGames } from "../stores/games";
 import { usePolicy } from "../stores/policy";
 import { useVersions } from "../stores/versions";
@@ -25,15 +27,18 @@ const games = useGames();
 const policy = usePolicy();
 const versions = useVersions();
 const evaluation = useEvaluation();
+const drills = useDrills();
 const toast = useToast();
 
-const g = computed(() => board.game);
-const s = computed(() => board.summary);
+/** A drill takes the board: the game or position under it shows neither seats nor graph. */
+const drilling = computed(() => board.drilling);
+const g = computed(() => (drilling.value ? null : board.game));
+const s = computed(() => (drilling.value ? null : board.summary));
 const live = computed(() => !!s.value && isLive(s.value));
 const playing = computed(() => board.mode === "play");
 
 /** Analysis on screen: never while You play (on Lichess nothing else is on screen), never against the policy. */
-const analysis = computed(() => policy.allowed && !playing.value);
+const analysis = computed(() => policy.allowed && !playing.value && !drilling.value);
 const evalShown = computed(() => analysis.value && !(s.value && onLichessAsYou(s.value) && live.value));
 
 const bottom = computed<Side>(() => board.orientation);
@@ -67,7 +72,8 @@ function strip(side: Side) {
   const seat = s.value![side];
   const you = s.value!.you === side;
   return {
-    seat,
+    // A level's name carries its rating ("Dameless 1650"), so the strip does not repeat it.
+    seat: isLevelSeat(seat) ? { ...seat, rating: null } : seat,
     name: you ? "You" : seatName(seat, versions.name(seat.version)),
     ...clockOf(side),
     since: games.clocksAt,
@@ -80,11 +86,27 @@ function strip(side: Side) {
 const yourTurn = computed(
   () => playing.value && !!g.value?.actions.includes("move") && board.atEnd && board.position.turn === s.value?.you,
 );
-const movable = computed(() => board.exploring || yourTurn.value);
+const drillMovable = computed(() => drilling.value && !!drills.active && !drills.result && !drills.answering);
+const movable = computed(() => board.exploring || yourTurn.value || drillMovable.value);
 const premove = computed(() => (playing.value && board.atEnd ? (s.value?.you ?? undefined) : undefined));
 
 const boardRef = ref<InstanceType<typeof Board>>();
 async function onMove(uci: string) {
+  if (drilling.value) {
+    try {
+      const r = await drills.answer(uci);
+      // A move that failed the drill goes back: the board shows the position and the answer, not the try.
+      if (r?.outcome === "fail") boardRef.value?.reset();
+    } catch (e) {
+      boardRef.value?.reset();
+      toast.show({
+        title: "That drill did not go through",
+        message: e instanceof Error ? e.message : String(e),
+        tone: "warning",
+      });
+    }
+    return;
+  }
   if (board.exploring) {
     board.exploreMove(uci);
     return;
@@ -110,6 +132,10 @@ const arrow = (uci: string, brush: string): DrawShape => ({
   brush,
 });
 const shapes = computed<DrawShape[]>(() => {
+  if (drilling.value) {
+    const best = drills.result ? answerArrow(drills.result) : null;
+    return best ? [arrow(best, "green")] : [];
+  }
   if (!analysis.value) return [];
   if (board.exploring) {
     const info = evaluation.info;
@@ -213,7 +239,7 @@ onBeforeUnmount(() => stepQuery?.removeEventListener("change", setStep));
           class="graph"
           @select="board.go"
         />
-        <Transport />
+        <Transport v-if="!drilling" />
       </div>
     </div>
   </section>

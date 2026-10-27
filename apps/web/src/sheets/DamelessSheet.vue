@@ -8,6 +8,9 @@ import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { EStamp } from "@eos-ui/vue/components/EStamp";
 import type { ChartSeries } from "../parts/chart";
 import BotCard from "../parts/BotCard.vue";
+import BrainCard from "../parts/BrainCard.vue";
+import LevelsCard from "../parts/LevelsCard.vue";
+import ProgressChart from "../parts/ProgressChart.vue";
 import LineChart from "../parts/LineChart.vue";
 import Logbook from "../parts/Logbook.vue";
 import NewIdea from "../parts/NewIdea.vue";
@@ -15,6 +18,7 @@ import Term from "../parts/Term.vue";
 import { signed } from "../format";
 import { useDameless } from "../stores/dameless";
 import { useIdeas } from "../stores/ideas";
+import { useProgress } from "../stores/progress";
 import { useVersions } from "../stores/versions";
 import { KIND_WORD, progressWord, STATUS_TONE, STATUS_WORD } from "./idea";
 import SheetFrame from "./SheetFrame.vue";
@@ -25,12 +29,14 @@ import SheetFrame from "./SheetFrame.vue";
  */
 const dameless = useDameless();
 const ideas = useIdeas();
+const progress = useProgress();
 const versions = useVersions();
 const route = useRoute();
 const router = useRouter();
 
 const failed = ref<string | null>(null);
 onMounted(async () => {
+  void progress.load().catch(() => {});
   try {
     await dameless.load();
   } catch (e) {
@@ -61,6 +67,14 @@ const readout = computed(() => {
   if (!p) return "";
   const margin = p.high != null && p.low != null ? `, ±${((p.high - p.low) / 2).toFixed(1)}` : "";
   return `${p.label ?? ""}: ${signed(p.value, 1)} Elo over v1${margin}`;
+});
+
+/** Both players have a line to draw: yours (rating) and Dameless's (Elo). */
+const both = computed(() => {
+  const s = progress.chart?.series ?? [];
+  return (
+    s.some((x) => x.metric === "rating" && x.points.length) && s.some((x) => x.metric === "elo" && x.points.length)
+  );
 });
 
 const inProgress = computed(() => [...ideas.running, ...ideas.queued]);
@@ -117,6 +131,16 @@ watch(creating, (open) => {
       <p v-else class="sec-note">The line starts once a second version is promoted.</p>
     </section>
 
+    <section v-if="progress.chart && both" class="sec" aria-labelledby="d-progress">
+      <div class="sec-head">
+        <h2 id="d-progress" class="part-title">You and Dameless</h2>
+        <ELink :link-component="RouterLink" to="/you">Your progress</ELink>
+      </div>
+      <ProgressChart :chart="progress.chart" compact />
+    </section>
+
+    <LevelsCard />
+
     <section class="sec" aria-labelledby="d-ideas">
       <div class="sec-head">
         <h2 id="d-ideas" class="part-title">Ideas in progress</h2>
@@ -140,6 +164,8 @@ watch(creating, (open) => {
       <h2 id="d-log" class="part-title">Logbook</h2>
       <Logbook />
     </section>
+
+    <BrainCard />
 
     <section class="sec">
       <BotCard />

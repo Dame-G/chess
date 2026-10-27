@@ -3,6 +3,7 @@ import { defineStore } from "pinia";
 import type { Color } from "@lichess-org/chessground/types";
 import type { GameId, Score, Side } from "../api/types";
 import { pawns, scoreText } from "../format";
+import { useDrills } from "../stores/drills";
 import { useEvaluation } from "../stores/evaluation";
 import { useGames } from "../stores/games";
 import { usePolicy } from "../stores/policy";
@@ -24,6 +25,7 @@ export const useBoard = defineStore("board", () => {
   const games = useGames();
   const policy = usePolicy();
   const evaluation = useEvaluation();
+  const drills = useDrills();
 
   /** The game on the board, or `null` for a free position (Explore). */
   const gameId = ref<GameId | null>(null);
@@ -58,7 +60,9 @@ export const useBoard = defineStore("board", () => {
   });
   const lastPly = computed(() => Math.max(0, plies.value.length - 1));
 
-  const modes = computed(() => modesFor(summary.value));
+  /** A drill is on the board: it takes the whole board and the panel, and the game or position under it waits. */
+  const drilling = computed(() => drills.drilling);
+  const modes = computed<Mode[]>(() => (drilling.value ? ["drill"] : modesFor(summary.value)));
   const mode = computed<Mode>(() =>
     chosenMode.value && modes.value.includes(chosenMode.value) ? chosenMode.value : modes.value[0]!,
   );
@@ -66,6 +70,10 @@ export const useBoard = defineStore("board", () => {
 
   /** The board's position: Explore's node, else the game at the move shown. */
   const position = computed<Position>(() => {
+    if (drilling.value && drills.active) {
+      const pos = setup(drills.active.fen);
+      if (pos) return view(pos);
+    }
     if (exploring.value) {
       const pos = setup(node.value.fen)!;
       return view(pos, node.value.uci || undefined);
@@ -77,6 +85,7 @@ export const useBoard = defineStore("board", () => {
 
   /** You at the bottom in your games, the bot's side in its own; flipping turns that round. */
   const orientation = computed<Color>(() => {
+    if (drilling.value && drills.active) return drills.active.side;
     const s = summary.value;
     let base: Side = "white";
     if (s?.you) base = s.you;
@@ -87,6 +96,7 @@ export const useBoard = defineStore("board", () => {
 
   /** The query that names what is on the board now: `game` and `ply` (none while following a live game), or `fen`. */
   const address = computed((): Record<string, string> => {
+    if (drilling.value && drills.active) return { drill: String(drills.active.id) };
     if (gameId.value !== null) {
       const live = summary.value ? isLive(summary.value) : false;
       return live && following.value
@@ -99,6 +109,7 @@ export const useBoard = defineStore("board", () => {
 
   /** Opens a game on the board at a move (its end when left out, and following it while it is live). */
   async function openGame(id: GameId, at?: number) {
+    drills.leave();
     if (gameId.value !== id) chosenMode.value = null;
     gameId.value = id;
     following.value = at === undefined;
@@ -108,6 +119,7 @@ export const useBoard = defineStore("board", () => {
 
   /** Puts a free position on the board, in Explore. */
   function openFree(fen = INITIAL_FEN, moves: string[] = []) {
+    drills.leave();
     gameId.value = null;
     games.closeGame();
     chosenMode.value = null;
@@ -117,6 +129,7 @@ export const useBoard = defineStore("board", () => {
 
   /** Steps to a move: a ply of the game, or along Explore's line. */
   function go(target: number) {
+    if (drilling.value) return;
     if (exploring.value) {
       const path = tree.value.path(tree.value.end(node.value));
       const here = node.value.ply;
@@ -171,7 +184,7 @@ export const useBoard = defineStore("board", () => {
 
   /** The score to show for the position on the board, White POV, with where it came from. */
   const shownScore = computed<{ score: Score; turn: Side; depth?: number } | null>(() => {
-    if (!policy.allowed || mode.value === "play") return null;
+    if (!policy.allowed || mode.value === "play" || drilling.value) return null;
     const turn = position.value.turn;
     if (exploring.value) {
       const info = evaluation.info;
@@ -230,6 +243,7 @@ export const useBoard = defineStore("board", () => {
     lastPly,
     modes,
     mode,
+    drilling,
     exploring,
     position,
     orientation,

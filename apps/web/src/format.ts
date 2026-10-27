@@ -122,8 +122,12 @@ export function yourResult(g: GameSummary): "won" | "drew" | "lost" | null {
   return r === "1" ? "won" : r === "½" ? "drew" : "lost";
 }
 
-/** A seat as people say it: `Dameless v14`, `cutemouse83`, `Stockfish level 5`. */
+/** Dameless at a level of its ladder: the server names it by its rating, `Dameless 1650`. */
+export const isLevelSeat = (seat: Seat): boolean => seat.player === "dameless" && /^Dameless [0-9]+$/.test(seat.name);
+
+/** A seat as people say it: `Dameless v14`, `Dameless 1650` (at a level), `cutemouse83`, `Stockfish level 5`. */
 export function seatName(seat: Seat, versionName?: string): string {
+  if (isLevelSeat(seat)) return seat.name;
   if (seat.player === "dameless") return versionName ? `Dameless ${versionName}` : seat.name || "Dameless";
   return seat.name;
 }
@@ -174,3 +178,13 @@ export function reviewCost(games: number): string {
 /** `1 game`, `3 games`. */
 export const plural = (n: number, one: string, many = `${one}s`): string =>
   `${n.toLocaleString("en-GB")} ${n === 1 ? one : many}`;
+
+/**
+ * What to say while an engine that has not been built yet is wanted: the build's title ("Building v1", or with its
+ * label) as a sentence about waiting, "Building Dameless v1 first (about a minute)…".
+ */
+export function buildingText(title: string): string {
+  const what = title.replace(/^Building\s*/i, "").trim() || "the engine";
+  const named = /^v\d/.test(what) ? `Dameless ${what}` : what;
+  return `Building ${named} first (about a minute)…`;
+}

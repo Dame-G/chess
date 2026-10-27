@@ -1,3 +1,4 @@
+import { retryDelay } from "./backoff";
 import { serverFetch } from "./client";
 import type { AppEvent, EventKind, EventPayloads } from "./types";
 
@@ -98,7 +99,7 @@ class Stream {
   private stopped = false;
 
   /** Opens the stream; `since` is the last event already accounted for (the status's `next_event` − 1). */
-  start(retryMs = 2000, since?: number) {
+  start(retryMs = 1000, since?: number) {
     if (this.running) return;
     this.running = true;
     if (since !== undefined && since >= 0) this.last = since;
@@ -130,12 +131,15 @@ class Stream {
 
   private async loop(retryMs: number) {
     let dropped = false;
+    // Failures in a row: the wait doubles with each, up to ten seconds, and starts over once the server answers.
+    let failures = 0;
     while (!this.stopped) {
       this.attempt = new AbortController();
       const signal = this.attempt.signal;
       try {
         const res = await serverFetch(this.url(), { signal, headers: { Accept: "text/event-stream" } });
         if (!res.ok || !res.body) throw new Error(String(res.status));
+        failures = 0;
         if (dropped) for (const h of reconnectHandlers) h();
         dropped = false;
         const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -154,10 +158,14 @@ class Stream {
         // The server closed the stream: a drop like any other.
         dropped = true;
       } catch {
-        if (!signal.aborted) dropped = true;
+        if (!signal.aborted) {
+          dropped = true;
+          failures++;
+        }
       }
-      // A change of topics reconnects at once; a lost server after a pause.
-      if (!signal.aborted && !this.stopped) await new Promise((r) => setTimeout(r, retryMs));
+      // A change of topics reconnects at once; a lost server after a pause that grows while it stays lost.
+      if (!signal.aborted && !this.stopped)
+        await new Promise((r) => setTimeout(r, retryDelay(Math.max(0, failures - 1), Math.random(), retryMs)));
     }
   }
 }

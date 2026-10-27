@@ -5,7 +5,8 @@ export type Verb =
   | { verb: "play"; time: TimeControl | null; opponent: "dameless" | "stockfish" | "lichess"; level?: number }
   | { verb: "review"; last: number }
   | { verb: "compare"; players: string[] }
-  | { verb: "new-idea" };
+  | { verb: "new-idea" }
+  | { verb: "drills" };
 
 /** "5+3" (minutes + seconds) as a clock. */
 export function readClock(text: string): TimeControl | null {
@@ -20,7 +21,7 @@ export function readClock(text: string): TimeControl | null {
 
 /**
  * Reads what is typed in the command bar as one of the CLI's verbs: `play 5+3 dameless`, `play stockfish 5`,
- * `review last 20`, `compare cutemouse83`, `new idea`. `undefined` when it is not one.
+ * `review last 20`, `compare cutemouse83`, `new idea`, `drills`. `undefined` when it is not one.
  */
 export function readVerb(query: string): Verb | undefined {
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -40,5 +41,6 @@ export function readVerb(query: string): Verb | undefined {
   }
   if (head === "compare" && rest.length) return { verb: "compare", players: rest };
   if (head === "new" && rest[0] === "idea") return { verb: "new-idea" };
+  if (head === "drills" || head === "drill") return { verb: "drills" };
   return undefined;
 }
