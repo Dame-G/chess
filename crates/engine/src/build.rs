@@ -38,6 +38,9 @@ pub struct BuildSpec {
     pub out_dir: PathBuf,
     /// A folder of network files shared by builds, so each network is downloaded once. Optional.
     pub networks_dir: Option<PathBuf>,
+    /// A network file to embed instead of the commit's own (Reckless's `EVALFILE`): a trained net. The commit's
+    /// own net is still what [`network_name`] names; [`Built::network`] is this file's name.
+    pub evalfile: Option<PathBuf>,
 }
 
 /// A finished build.
@@ -92,9 +95,15 @@ pub async fn build(spec: &BuildSpec, cancel: &CancellationToken, log: &mut (dyn 
     say(&format!("checking out {} {}", short(&commit.sha), commit.subject));
     repo.checkout_worktree(&spec.worktree, &commit.sha).await?;
 
-    let network = network_name(&spec.worktree);
+    let mut network = network_name(&spec.worktree);
     let mut command = cargo_command(spec, syzygy);
-    if let (Some(name), Some(nets)) = (&network, &spec.networks_dir) {
+    if let Some(file) = &spec.evalfile {
+        if !file.is_file() {
+            bail!("the network file {} is missing", file.display());
+        }
+        command = command.env("EVALFILE", file.as_os_str());
+        network = file.file_name().map(|n| n.to_string_lossy().into_owned());
+    } else if let (Some(name), Some(nets)) = (&network, &spec.networks_dir) {
         std::fs::create_dir_all(nets)?;
         let cached = nets.join(name);
         let in_checkout = spec.repo.join("networks").join(name);
@@ -112,7 +121,9 @@ pub async fn build(spec: &BuildSpec, cancel: &CancellationToken, log: &mut (dyn 
     }
 
     // A network the build script downloaded is kept for the next build.
-    if let (Some(name), Some(nets)) = (&network, &spec.networks_dir) {
+    if spec.evalfile.is_none()
+        && let (Some(name), Some(nets)) = (&network, &spec.networks_dir)
+    {
         let downloaded = spec.worktree.join("networks").join(name);
         if !nets.join(name).exists() && downloaded.exists() {
             std::fs::copy(&downloaded, nets.join(name))?;
@@ -208,6 +219,7 @@ mod tests {
             target_dir: "target".into(),
             out_dir: "out".into(),
             networks_dir: None,
+            evalfile: None,
         }
     }
 
@@ -272,6 +284,7 @@ mod tests {
             target_dir: dir.path().join("target"),
             out_dir: dir.path().join("out"),
             networks_dir: Some(networks),
+            evalfile: None,
         };
         let built = build(&spec, &CancellationToken::new(), &mut |l| println!("{l}")).await.unwrap();
         let b = bench(&built.binary).await.unwrap();

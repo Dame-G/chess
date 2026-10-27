@@ -58,13 +58,22 @@ pub struct Config {
     pub lichess: LichessUrls,
     /// The hosted UI's origin, allowed with the token.
     pub hosted_origin: String,
+    /// GPUs the ledger hands out (`DAMELESS_GPUS`; from the environment, one when nvidia-smi finds a GPU).
+    pub gpus: u32,
+    /// What every dataset together may hold on disk (`DAMELESS_DATA_CAP_GB`; 10 GB on Windows, 200 GB elsewhere).
+    pub data_cap_bytes: u64,
 }
 
 impl Config {
     /// From the process's environment: `DAMELESS_DATA`, `DAMELESS_LISTEN`, `RECKLESS_DIR`, `DAMELESS_CORES`,
-    /// `DAMELESS_SCALE_CLOCKS`, `DAMELESS_REFERENCE_NPS`, `LICHESS_URL`, `LICHESS_EXPLORER_URL`, `LICHESS_TABLEBASE_URL`.
+    /// `DAMELESS_SCALE_CLOCKS`, `DAMELESS_REFERENCE_NPS`, `LICHESS_URL`, `LICHESS_EXPLORER_URL`, `LICHESS_TABLEBASE_URL`,
+    /// `DAMELESS_GPUS`, `DAMELESS_DATA_CAP_GB`.
     pub fn from_env() -> Result<Self> {
-        Self::from_vars(|name| std::env::var(name).ok())
+        let mut config = Self::from_vars(|name| std::env::var(name).ok())?;
+        if std::env::var("DAMELESS_GPUS").map_or(true, |v| v.trim().is_empty()) {
+            config.gpus = detect_gpus();
+        }
+        Ok(config)
     }
 
     /// From any source of variables, so the rules can be tested without touching the environment. Empty values count
@@ -96,6 +105,17 @@ impl Config {
         let mut config = Self::new(data_dir, listen, reckless_dir, cores);
         config.scaling = scaling;
         config.lichess = lichess;
+        if let Some(n) = var("DAMELESS_GPUS") {
+            config.gpus = n.parse().with_context(|| format!("DAMELESS_GPUS: {n:?} is not a number"))?;
+        }
+        if let Some(gb) = var("DAMELESS_DATA_CAP_GB") {
+            let value = gb
+                .parse::<f64>()
+                .ok()
+                .filter(|g| g.is_finite() && *g >= 0.0)
+                .with_context(|| format!("DAMELESS_DATA_CAP_GB: {gb:?} is not a number of GB"))?;
+            config.data_cap_bytes = (value * 1e9) as u64;
+        }
         Ok(config)
     }
 
@@ -111,6 +131,8 @@ impl Config {
             scaling: ScalingSettings::default(),
             lichess: LichessUrls::default(),
             hosted_origin: HOSTED_ORIGIN.to_owned(),
+            gpus: 0,
+            data_cap_bytes: dameless_core::training::default_cap_bytes(cfg!(windows)),
         }
     }
 
@@ -129,6 +151,8 @@ impl Config {
             self.tools_dir(),
             self.logs_dir(),
             self.worktrees_dir(),
+            self.nets_dir(),
+            self.datasets_dir(),
         ] {
             std::fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
         }
@@ -191,11 +215,47 @@ impl Config {
     pub fn promote_worktree(&self) -> PathBuf {
         self.worktrees_dir().join("promote")
     }
+
+    /// Network files, each `<sha256>.nnue`.
+    pub fn nets_dir(&self) -> PathBuf {
+        self.data_dir.join("nets")
+    }
+
+    /// Datasets, one directory each (with its `manifest.json`).
+    pub fn datasets_dir(&self) -> PathBuf {
+        self.data_dir.join("data")
+    }
+
+    /// Training runs: one directory per `Train` work item (`runs/<work id>/`), with bullet's checkpoints.
+    pub fn runs_dir(&self) -> PathBuf {
+        self.data_dir.join("runs")
+    }
+
+    /// The trainer's binaries (`data`, `bullet-train`), built from the repository's `trainer/` workspace.
+    pub fn trainer_tools_dir(&self) -> PathBuf {
+        self.tools_dir().join("trainer")
+    }
+
+    /// Downloads in progress (dataset imports), removed when they end.
+    pub fn downloads_dir(&self) -> PathBuf {
+        self.data_dir.join("downloads")
+    }
 }
 
 /// `dameless` in the user's local data folder (`%LOCALAPPDATA%` on Windows).
 pub fn default_data_dir() -> PathBuf {
     dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("dameless")
+}
+
+/// One GPU when `nvidia-smi -L` lists one, else none. Training is the only user; the app never needs CUDA to run.
+pub fn detect_gpus() -> u32 {
+    let out = std::process::Command::new("nvidia-smi").arg("-L").output();
+    match out {
+        Ok(o) if o.status.success() => {
+            u32::from(String::from_utf8_lossy(&o.stdout).lines().any(|l| l.trim_start().starts_with("GPU ")))
+        }
+        _ => 0,
+    }
 }
 
 /// Physical cores less one, so the machine stays usable; at least one.
@@ -243,8 +303,11 @@ mod tests {
             ("DAMELESS_REFERENCE_NPS", "500000"),
             ("LICHESS_URL", "http://127.0.0.1:9999/"),
             ("LICHESS_TABLEBASE_URL", "http://tb.test/"),
+            ("DAMELESS_GPUS", "1"),
+            ("DAMELESS_DATA_CAP_GB", "2.5"),
         ]))
         .unwrap();
+        assert_eq!((c.gpus, c.data_cap_bytes), (1, 2_500_000_000));
         assert_eq!(c.data_dir, dir.path());
         assert!(!c.is_loopback());
         assert!(c.reckless_dir.is_absolute() && c.reckless_dir.ends_with("engine"));
@@ -255,6 +318,8 @@ mod tests {
         assert_eq!(c.lichess.tablebase, "http://tb.test");
 
         assert!(Config::from_vars(vars(&[("DAMELESS_CORES", "0")])).is_err());
+        assert!(Config::from_vars(vars(&[("DAMELESS_GPUS", "one")])).is_err());
+        assert!(Config::from_vars(vars(&[("DAMELESS_DATA_CAP_GB", "-1")])).is_err());
         assert!(Config::from_vars(vars(&[("DAMELESS_LISTEN", "nowhere")])).is_err());
     }
 
@@ -267,7 +332,7 @@ mod tests {
         assert_eq!(c.lichess_token_path(ConnectionKey::You), dir.path().join("secrets").join("lichess-you"));
         assert_eq!(c.lichess_token_path(ConnectionKey::Bot), dir.path().join("secrets").join("lichess-bot"));
         assert_eq!(c.work_log_path(WorkId(7)), dir.path().join("logs").join("work-7.log"));
-        for d in ["secrets", "builds", "games", "tools", "logs", "worktrees"] {
+        for d in ["secrets", "builds", "games", "tools", "logs", "worktrees", "nets", "data"] {
             assert!(dir.path().join(d).is_dir(), "{d}");
         }
         assert_eq!(Config::new(dir.path(), DEFAULT_LISTEN.parse().unwrap(), "r", 0).cores, 1);

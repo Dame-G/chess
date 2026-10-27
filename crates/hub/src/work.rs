@@ -27,7 +27,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
-use crate::{Grant, Hub};
+use crate::{GpuGrant, Grant, Hub};
 
 /// Runs one kind of work. Implemented by the crate that owns that kind.
 #[async_trait]
@@ -151,6 +151,30 @@ impl WorkContext {
             if let Some(grant) = ledger.grant(self.id, min, max) {
                 let _ = self.update(WorkUpdate { cores: Some(grant.cores()), ..Default::default() }).await;
                 return Some(grant);
+            }
+            tokio::select! {
+                _ = self.cancel.cancelled() => return None,
+                r = changed.changed() => if r.is_err() { return None },
+            }
+        }
+    }
+
+    /// Asks for a GPU, waiting until one is free. `None` when stopped while waiting, or at once when the machine has
+    /// none (check `hub.ledger.gpus()` first to say so). Hold it for the whole run.
+    pub async fn gpu(&self) -> Option<GpuGrant> {
+        let ledger = self.hub.ledger.clone();
+        if ledger.gpus() == 0 {
+            return None;
+        }
+        let mut changed = ledger.changed();
+        let mut said = false;
+        loop {
+            if let Some(grant) = ledger.grant_gpu(self.id) {
+                return Some(grant);
+            }
+            if !said {
+                said = true;
+                self.log("Waiting for the GPU.");
             }
             tokio::select! {
                 _ = self.cancel.cancelled() => return None,

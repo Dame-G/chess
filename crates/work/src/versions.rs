@@ -626,6 +626,7 @@ impl Executor for BuildExecutor {
             target_dir: builds.join("target"),
             out_dir,
             networks_dir: Some(builds.join("networks")),
+            evalfile: None,
         };
         cx.log(format!("Building {} ({}) {label}", version.name, short(&spec.commit)));
         let mut log = |line: &str| cx.log(line);

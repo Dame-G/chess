@@ -18,7 +18,7 @@ pub mod work;
 
 pub use bus::{Bus, Next, Subscription, TopicFilter};
 pub use config::{Config, LichessUrls};
-pub use ledger::{Grant, Ledger, LedgerSnapshot, Reservation};
+pub use ledger::{GpuGrant, Grant, Ledger, LedgerSnapshot, Reservation};
 pub use policy::PolicyState;
 pub use secrets::Secrets;
 pub use work::{Control, Executor, WorkContext};
@@ -46,7 +46,7 @@ impl Hub {
         let bus = Arc::new(Bus::new());
         Ok(Arc::new(Self {
             policy: PolicyState::new(bus.clone()),
-            ledger: Ledger::new(config.cores),
+            ledger: Ledger::with_gpus(config.cores, config.gpus),
             bus,
             store,
             secrets,

@@ -29,12 +29,14 @@ mod migrate;
 pub mod positions;
 pub mod records;
 pub mod reviews;
+pub mod training;
 pub mod versions;
 pub mod work;
 
 pub use games::{GameFilter, GameUpdate, NewGame, SourceKind};
 pub use ideas::{IdeaFilter, IdeaUpdate, NewIdea, NewTrial};
 pub use records::{ConnectionField, ConnectionRecord};
+pub use training::{NewDataset, NewNet};
 pub use versions::{NewBuild, NewVersion};
 pub use work::{NewWork, WorkLists, WorkUpdate};
 

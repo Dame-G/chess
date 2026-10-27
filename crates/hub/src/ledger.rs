@@ -6,6 +6,9 @@
 //! `want_min` and `want_max` cores, or nothing yet. Both come back as guards that hand their cores back when dropped,
 //! and every change wakes [`Ledger::changed`] so the scheduler can rebalance: shrink a trial at its next round, or
 //! start what was waiting.
+//!
+//! The ledger also holds the machine's **GPUs** (one, or none, on this machine): a training run is granted the GPU
+//! whole ([`Ledger::grant_gpu`]) beside a few cores for its data loader, so a trial can play while a net trains.
 
 use std::{
     collections::BTreeMap,
@@ -20,6 +23,7 @@ use utoipa::ToSchema;
 /// The ledger.
 pub struct Ledger {
     total: u32,
+    gpus: u32,
     state: Mutex<State>,
     changed: watch::Sender<u64>,
 }
@@ -29,6 +33,7 @@ struct State {
     next: u64,
     reservations: BTreeMap<u64, (String, u32)>,
     grants: BTreeMap<u64, (WorkId, u32)>,
+    gpu_grants: BTreeMap<u64, WorkId>,
 }
 
 impl State {
@@ -55,6 +60,10 @@ pub struct LedgerSnapshot {
     pub oversubscribed: bool,
     pub reservations: Vec<ReservationInfo>,
     pub grants: Vec<GrantInfo>,
+    /// GPUs on the machine (`DAMELESS_GPUS`, else what nvidia-smi finds).
+    pub gpus: u32,
+    /// The work holding each GPU in use.
+    pub gpu_grants: Vec<WorkId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, ToSchema)]
@@ -71,9 +80,45 @@ pub struct GrantInfo {
 }
 
 impl Ledger {
-    /// A ledger of `total` cores (at least one).
+    /// A ledger of `total` cores (at least one) and no GPU.
     pub fn new(total: u32) -> Arc<Self> {
-        Arc::new(Self { total: total.max(1), state: Mutex::new(State::default()), changed: watch::Sender::new(0) })
+        Self::with_gpus(total, 0)
+    }
+
+    /// A ledger of `total` cores (at least one) and `gpus` GPUs.
+    pub fn with_gpus(total: u32, gpus: u32) -> Arc<Self> {
+        Arc::new(Self {
+            total: total.max(1),
+            gpus,
+            state: Mutex::new(State::default()),
+            changed: watch::Sender::new(0),
+        })
+    }
+
+    /// GPUs on the machine.
+    pub fn gpus(&self) -> u32 {
+        self.gpus
+    }
+
+    /// Grants work a whole GPU, or nothing while every GPU is held (or there is none).
+    pub fn grant_gpu(self: &Arc<Self>, work: WorkId) -> Option<GpuGrant> {
+        let id = {
+            let mut s = self.state();
+            if s.gpu_grants.len() as u32 >= self.gpus {
+                return None;
+            }
+            s.next += 1;
+            let id = s.next;
+            s.gpu_grants.insert(id, work);
+            id
+        };
+        self.bump();
+        Some(GpuGrant { ledger: self.clone(), id, work })
+    }
+
+    /// GPUs free now.
+    pub fn free_gpus(&self) -> u32 {
+        self.gpus.saturating_sub(self.state().gpu_grants.len() as u32)
     }
 
     pub fn total(&self) -> u32 {
@@ -144,6 +189,8 @@ impl Ledger {
                 .map(|(owner, cores)| ReservationInfo { owner: owner.clone(), cores: *cores })
                 .collect(),
             grants: s.grants.values().map(|(work, cores)| GrantInfo { work: *work, cores: *cores }).collect(),
+            gpus: self.gpus,
+            gpu_grants: s.gpu_grants.values().copied().collect(),
         }
     }
 
@@ -160,6 +207,36 @@ impl Ledger {
     fn release_grant(&self, id: u64) {
         self.state().grants.remove(&id);
         self.bump();
+    }
+
+    fn release_gpu(&self, id: u64) {
+        self.state().gpu_grants.remove(&id);
+        self.bump();
+    }
+}
+
+/// A GPU granted to work (a training run); given back when dropped.
+pub struct GpuGrant {
+    ledger: Arc<Ledger>,
+    id: u64,
+    work: WorkId,
+}
+
+impl GpuGrant {
+    pub fn work(&self) -> WorkId {
+        self.work
+    }
+}
+
+impl Drop for GpuGrant {
+    fn drop(&mut self) {
+        self.ledger.release_gpu(self.id);
+    }
+}
+
+impl std::fmt::Debug for GpuGrant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GpuGrant").field("work", &self.work).finish()
     }
 }
 
@@ -253,6 +330,24 @@ mod tests {
         assert_eq!(s.grants, [GrantInfo { work: WorkId(1), cores: 4 }]);
         assert_eq!((eval.cores(), game.cores()), (1, 2));
         assert!(ledger.grant(WorkId(2), 1, 1).is_none());
+    }
+
+    #[test]
+    fn the_gpu_is_granted_whole_to_one_work_at_a_time() {
+        let ledger = Ledger::with_gpus(4, 1);
+        let rx = ledger.changed();
+        let gpu = ledger.grant_gpu(WorkId(1)).unwrap();
+        assert!(rx.has_changed().unwrap());
+        assert_eq!((gpu.work(), ledger.free_gpus()), (WorkId(1), 0));
+        assert!(ledger.grant_gpu(WorkId(2)).is_none());
+        // Cores are a separate account.
+        assert_eq!(ledger.grant(WorkId(1), 2, 4).unwrap().cores(), 4);
+        let s = ledger.snapshot();
+        assert_eq!((s.gpus, s.gpu_grants.clone()), (1, vec![WorkId(1)]));
+        drop(gpu);
+        assert_eq!(ledger.free_gpus(), 1);
+        assert!(ledger.grant_gpu(WorkId(2)).is_some());
+        assert!(Ledger::new(4).grant_gpu(WorkId(3)).is_none(), "no GPU, no grant");
     }
 
     #[test]
