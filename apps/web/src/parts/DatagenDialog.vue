@@ -73,6 +73,7 @@ async function start() {
     title="Generate data"
     description="Dameless plays itself and writes the positions down for training."
     size="md"
+    initial-focus="#datagen-form input"
   >
     <EForm id="datagen-form" @submit.prevent="start">
       <ENumberField

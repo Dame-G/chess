@@ -157,10 +157,12 @@ const answered = (e: (typeof recent.value)[number]) => {
 </template>
 
 <style scoped>
+/* Below 75rem the sheet is the whole window: the card stays to a readable line. */
 .world {
   display: grid;
   gap: var(--e-gap-snug);
   min-width: 0;
+  max-inline-size: 42rem;
 }
 
 .line {
