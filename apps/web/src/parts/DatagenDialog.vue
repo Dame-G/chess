@@ -5,7 +5,7 @@ import { EButton } from "@eos-ui/vue/components/EButton";
 import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
-import { EStack } from "@eos-ui/vue/components/EStack";
+import { EForm } from "@eos-ui/vue/components/EForm";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import { datagenEstimate, datagenText, validName, whyNoRoom } from "../sheets/training";
 import { usePolicy } from "../stores/policy";
@@ -41,7 +41,7 @@ const estimate = computed(() =>
 );
 const noRoom = computed(() => (training.data ? whyNoRoom(estimate.value.bytes, training.data) : null));
 const nameError = computed(() =>
-  name.value && !validName(name.value) ? "Letters, digits, dashes and underscores." : undefined,
+  name.value && !validName(name.value) ? "Use letters, digits, dashes and underscores." : undefined,
 );
 const blocked = computed(() => positions.value < 1000 || !!nameError.value || !!noRoom.value);
 
@@ -74,8 +74,15 @@ async function start() {
     description="Dameless plays itself and writes the positions down for training."
     size="md"
   >
-    <EStack gap="base">
-      <ENumberField v-model="millions" label="Positions" suffix="million" :min="0.1" :step="5" />
+    <EForm id="datagen-form" @submit.prevent="start">
+      <ENumberField
+        v-model="millions"
+        label="Positions"
+        suffix="million"
+        :min="0.1"
+        :step="5"
+        :error="positions < 1000 ? 'At least a thousand positions.' : undefined"
+      />
       <ENumberField
         v-model="threads"
         label="Threads"
@@ -91,11 +98,11 @@ async function start() {
         :error="nameError"
         hint="The same name again adds more positions to that dataset."
       />
-      <p class="sec-note">{{ datagenText(estimate) }}</p>
+      <p class="sec-note" role="status">{{ datagenText(estimate) }}</p>
       <ENotice v-if="noRoom" tone="warning" title="There is not enough room">{{ noRoom }}</ENotice>
-    </EStack>
+    </EForm>
     <template #actions>
-      <EButton :loading="busy" :disabled="blocked" @click="start">Generate</EButton>
+      <EButton type="submit" form="datagen-form" :loading="busy" :disabled="blocked">Generate</EButton>
       <EButton variant="outline" @click="open = false">Cancel</EButton>
     </template>
   </EDialog>

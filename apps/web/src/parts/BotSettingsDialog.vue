@@ -5,9 +5,10 @@ import { EButton } from "@eos-ui/vue/components/EButton";
 import { ECheckboxGroup } from "@eos-ui/vue/components/ECheckboxGroup";
 import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
+import { EFieldset } from "@eos-ui/vue/components/EFieldset";
+import { EForm } from "@eos-ui/vue/components/EForm";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
 import { ESelect } from "@eos-ui/vue/components/ESelect";
-import { EStack } from "@eos-ui/vue/components/EStack";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import type { BotSettings, Speed } from "../api/types";
@@ -17,7 +18,8 @@ import { useVersions } from "../stores/versions";
 
 /**
  * The bot's rules: which version plays, which speeds and clocks and challengers it takes, how many games at once, and
- * the clocks it looks for games at. Clocks are written in minutes here and kept in seconds, as the settings are.
+ * the clocks it looks for games at. Clocks are written in minutes here and kept in seconds, as the settings are. It is
+ * a form: Enter saves, and what stops a save is said beside the field that needs the change.
  */
 const props = defineProps<{ settings: BotSettings }>();
 const open = defineModel<boolean>("open", { required: true });
@@ -43,7 +45,7 @@ const speedOptions: { value: Speed; label: string }[] = (["bullet", "blitz", "ra
   }),
 );
 const versionOptions = computed(() => [
-  { value: "champion", label: "The champion at the start of each game" },
+  { value: "champion", label: "Champion, as of each game" },
   ...[...versions.line].reverse().map((v) => ({ value: v.name, label: v.name })),
 ]);
 
@@ -61,14 +63,32 @@ const minutes = (key: "min_initial" | "max_initial") =>
 const minInitial = minutes("min_initial");
 const maxInitial = minutes("max_initial");
 
+const clocks = computed(() =>
+  seekText.value
+    .split(/[,\s]+/)
+    .map((c) => c.trim())
+    .filter(Boolean),
+);
+
+const speedsError = computed(() => (draft.value.speeds.length ? undefined : "Pick at least one speed."));
+const longestError = computed(() =>
+  draft.value.max_initial < draft.value.min_initial ? "Not shorter than the shortest." : undefined,
+);
+const largestError = computed(() =>
+  draft.value.max_increment < draft.value.min_increment ? "Not less than the least." : undefined,
+);
+const clocksError = computed(() =>
+  clocks.value.some((c) => !/^\d+(\.\d+)?\+\d+$/.test(c))
+    ? "Write each clock as minutes+seconds, like 3+2."
+    : undefined,
+);
+const blocked = computed(() => !!(speedsError.value || longestError.value || largestError.value || clocksError.value));
+
 async function save() {
+  if (blocked.value) return;
   busy.value = true;
   try {
-    const seek_clocks = seekText.value
-      .split(/[,\s]+/)
-      .map((c) => c.trim())
-      .filter(Boolean);
-    await connections.saveBotSettings({ ...draft.value, seek_clocks });
+    await connections.saveBotSettings({ ...draft.value, seek_clocks: clocks.value });
     open.value = false;
     toast.show({ title: "The bot's rules are saved", tone: "success" });
   } catch (e) {
@@ -90,31 +110,54 @@ async function save() {
     description="What Dameless plays on Lichess, and which challenges it takes."
     size="md"
   >
-    <EStack gap="base">
+    <EForm id="bot-rules" @submit.prevent="save">
       <ESelect v-model="version" label="Version that plays" :options="versionOptions" />
       <ECheckboxGroup
         v-model="draft.speeds"
         label="Speeds"
         orientation="horizontal"
         :options="speedOptions"
+        :error="speedsError"
         hint="Correspondence and UltraBullet are never played."
       />
+      <EFieldset legend="Takes challenges" variant="plain">
+        <div class="pair">
+          <ESwitch v-model="draft.accept_rated" label="Rated" />
+          <ESwitch v-model="draft.accept_casual" label="Casual" />
+          <ESwitch v-model="draft.accept_people" label="From people" />
+          <ESwitch v-model="draft.accept_bots" label="From bots" />
+        </div>
+      </EFieldset>
+      <EFieldset legend="Game length" variant="plain">
+        <div class="pair">
+          <ENumberField v-model="minInitial" label="Shortest" suffix="min" :min="0" :max="180" :step="0.5" />
+          <ENumberField
+            v-model="maxInitial"
+            label="Longest"
+            suffix="min"
+            :min="0"
+            :max="180"
+            :step="1"
+            :error="longestError"
+          />
+          <ENumberField v-model="draft.min_increment" label="Least added time" suffix="s" :min="0" :max="180" />
+          <ENumberField
+            v-model="draft.max_increment"
+            label="Most added time"
+            suffix="s"
+            :min="0"
+            :max="180"
+            :error="largestError"
+          />
+        </div>
+      </EFieldset>
       <div class="pair">
-        <ESwitch v-model="draft.accept_rated" label="Rated games" />
-        <ESwitch v-model="draft.accept_casual" label="Casual games" />
-        <ESwitch v-model="draft.accept_people" label="From people" />
-        <ESwitch v-model="draft.accept_bots" label="From bots" />
+        <ENumberField v-model="draft.max_games" label="Games at once" :min="1" :max="16" />
       </div>
-      <div class="pair">
-        <ENumberField v-model="minInitial" label="Shortest game" suffix="min" :min="0" :max="180" :step="0.5" />
-        <ENumberField v-model="maxInitial" label="Longest game" suffix="min" :min="0" :max="180" :step="1" />
-        <ENumberField v-model="draft.min_increment" label="Smallest added time" suffix="s" :min="0" :max="180" />
-        <ENumberField v-model="draft.max_increment" label="Largest added time" suffix="s" :min="0" :max="180" />
-      </div>
-      <ENumberField v-model="draft.max_games" label="Games at once" :min="1" :max="16" />
       <ETextField
         v-model="seekText"
         label="Clocks to look for games at"
+        :error="clocksError"
         hint="Minutes plus seconds, separated by commas: 3+0, 3+2, 5+3."
         autocomplete="off"
       />
@@ -132,15 +175,16 @@ async function save() {
           />
         </div>
       </EDisclosure>
-    </EStack>
+    </EForm>
     <template #actions>
-      <EButton :loading="busy" @click="save">Save rules</EButton>
+      <EButton type="submit" form="bot-rules" :loading="busy" :disabled="blocked">Save rules</EButton>
       <EButton variant="outline" @click="open = false">Cancel</EButton>
     </template>
   </EDialog>
 </template>
 
 <style scoped>
+/* Grouped fields sit two to a row; the form itself puts every group on its own row. */
 .pair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
