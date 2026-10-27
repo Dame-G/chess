@@ -54,9 +54,12 @@ export const useDameless = defineStore("dameless", () => {
     harness.value = await ok(client.GET("/api/harness"));
   }
 
-  /** Starts a check of the harness (an idea, tag `harness`): `main` against a branch identical to it. */
-  async function checkHarness(pairs?: number) {
-    const idea = await ok(client.POST("/api/harness/check", { body: { pairs: pairs ?? null } }));
+  /**
+   * Starts a check of the harness (an idea, tag `harness`): `main` against a branch identical to it, for determinism
+   * at fixed nodes, then symmetry in timed games (the server's default lengths).
+   */
+  async function checkHarness() {
+    const idea = await ok(client.POST("/api/harness/check", { body: {} }));
     await loadHarness();
     return idea;
   }
@@ -93,6 +96,7 @@ export const useDameless = defineStore("dameless", () => {
     if (levels.value) void loadLevels().catch(() => {});
   });
   listen("version.upserted", again);
+  listen("upstream.synced", again);
   listen("idea.upserted", (idea) => {
     again();
     if (harness.value && idea.tags.includes("harness")) void loadHarness().catch(() => {});

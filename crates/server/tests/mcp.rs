@@ -119,7 +119,13 @@ async fn calls_read_and_write_through_the_routes() {
     // Waiting: a version's build, which the fake toolchain finishes at once.
     let (code, version) = t.post("/api/versions", json!({ "ref": "deeper" })).await;
     assert_eq!(code, 201, "{version}");
-    let (_, work) = t.get("/api/work").await;
+    // The build is queued just after the version is answered: wait until it is listed.
+    let has_build = |w: &Value| {
+        ["running", "queued", "recent"]
+            .iter()
+            .any(|k| w[*k].as_array().is_some_and(|a| a.iter().any(|w| w["kind"] == "build")))
+    };
+    let work = t.until("the build queued", "/api/work", has_build).await;
     let build = work["running"]
         .as_array()
         .unwrap()

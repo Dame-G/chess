@@ -582,6 +582,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
         (b.line.type === "champion" ? b.line.number : 0) > (a.line.type === "champion" ? a.line.number : 0) ? b : a,
       ),
       line: variant("empty") ? line.slice(0, 1) : line,
+      upstream: null,
       ideas: {
         running: sorted.filter((i) => i.status === "running"),
         queued: sorted.filter((i) => i.status === "queued"),
@@ -1071,7 +1072,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
           last: null,
           summary: variant("untrusted")
             ? "The harness has not been checked on this machine."
-            : "Checked on this machine 3 days ago: an identical copy did not pass (+0.4 ± 2.1 Elo).",
+            : "Checked on this machine 3 days ago: deterministic over 1000 pairs; symmetric over 4000 pairs at +0.4 ± 2.1 Elo.",
         });
     }
 

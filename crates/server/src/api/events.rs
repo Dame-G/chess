@@ -158,6 +158,8 @@ pub enum EventData {
     DatasetUpserted(Box<dameless_core::training::Dataset>),
     #[serde(rename = "net.upserted")]
     NetUpserted(Box<dameless_core::training::Net>),
+    #[serde(rename = "upstream.synced")]
+    UpstreamSynced(Box<dameless_core::upstream::UpstreamSync>),
     /// Not a domain event: the stream has a hole, so fetch what is shown again.
     #[serde(rename = "reload")]
     Reload(Reload),

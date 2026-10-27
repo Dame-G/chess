@@ -10,7 +10,9 @@ use dameless_core::{
     lichess::BotStatus,
     progress::{ProgressPoint, dameless_series},
     spsa::{self, Tunable},
+    upstream::{UpstreamSettings, UpstreamStatus, UpstreamSync},
     version::{Build, Version},
+    work::Work,
 };
 use dameless_store::IdeaFilter;
 use dameless_work::{PruneRequest, VersionRef};
@@ -33,8 +35,10 @@ pub struct IdeaLists {
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct DamelessView {
     pub champion: Version,
-    /// The champion line, newest first.
+    /// The champion line, newest first. A champion taken from upstream carries `upstream`: the commits it brought.
     pub line: Vec<Version>,
+    /// The last sync with upstream Reckless, whatever its outcome (a failure says why, having changed nothing).
+    pub upstream: Option<UpstreamSync>,
     pub ideas: IdeaLists,
     /// The bot, when its Lichess account is connected.
     pub connection: Option<BotStatus>,
@@ -62,7 +66,8 @@ pub async fn get_dameless(State(app): State<Arc<App>>) -> ApiResult<Json<Dameles
     let bot = app.connections.status(ConnectionKey::Bot);
     let connection = if bot.configured { bot.bot } else { None };
     let strength = dameless_series(&line, None).points;
-    Ok(Json(DamelessView { champion, line, ideas, connection, strength }))
+    let upstream = app.upstream.status().await?.last;
+    Ok(Json(DamelessView { champion, line, upstream, ideas, connection, strength }))
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -189,6 +194,35 @@ pub async fn push(State(app): State<Arc<App>>) -> ApiResult<Json<Pushed>> {
     dameless_work::push(&app.hub).await?;
     let head = app.versions.repo().resolve(dameless_work::versions::MAIN).await.map(|c| c.sha).unwrap_or_default();
     Ok(Json(Pushed { remote: "origin".into(), head }))
+}
+
+/// Taking upstream Reckless: the automatic sync's setting, the last sync (merged, up to date or failed, with the
+/// upstream commits it brought), one running, and when the next automatic one is due.
+#[utoipa::path(get, path = "/api/upstream", operation_id = "upstream_status", tag = "dameless",
+    responses((status = 200, body = UpstreamStatus)))]
+pub async fn upstream_status(State(app): State<Arc<App>>) -> ApiResult<Json<UpstreamStatus>> {
+    Ok(Json(app.upstream.status().await?))
+}
+
+/// Turns the automatic sync with upstream on or off (on by default: every six hours).
+#[utoipa::path(put, path = "/api/upstream", operation_id = "set_upstream_settings", tag = "dameless",
+    request_body = UpstreamSettings, responses((status = 200, body = UpstreamStatus)))]
+pub async fn set_upstream_settings(
+    State(app): State<Arc<App>>,
+    Json(b): Json<UpstreamSettings>,
+) -> ApiResult<Json<UpstreamStatus>> {
+    Ok(Json(app.upstream.set_settings(b).await?))
+}
+
+/// Takes upstream Reckless now: fetches the fork's `upstream` remote and, when `upstream/main` has commits the champion
+/// lacks, merges them into the fork's `main` locally (fast-forward, or a merge commit with its measured `Bench:` line),
+/// builds and benches the result and makes it the next champion. No trials: upstream's commits are tested on its own
+/// fleet. A conflict, a failed build or bench, or a dirty checkout of `main` changes nothing. Never pushes. Answers the
+/// work; 409 while a sync runs or without an `upstream` remote.
+#[utoipa::path(post, path = "/api/upstream/sync", operation_id = "sync_upstream", tag = "dameless",
+    responses((status = 201, body = Work), (status = 409, body = dameless_core::error::ErrorBody)))]
+pub async fn sync_upstream(State(app): State<Arc<App>>) -> ApiResult<(StatusCode, Json<Work>)> {
+    Ok((StatusCode::CREATED, Json(app.upstream.sync().await?)))
 }
 
 #[derive(Deserialize, IntoParams)]

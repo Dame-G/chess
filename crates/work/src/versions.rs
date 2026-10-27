@@ -374,6 +374,35 @@ impl Versions {
         Ok(v)
     }
 
+    /// Records a commit on no branch under a fixed name (moved to the commit each time), so it can be built: an upstream
+    /// merge before it is checked and becomes the champion.
+    pub(crate) async fn scratch_version(&self, name: &str, commit: &str) -> Result<Version, Error> {
+        let parent = self.champion().await.ok().map(|c| c.id);
+        let v = self
+            .inner
+            .hub
+            .store
+            .upsert_version(NewVersion {
+                name: name.to_owned(),
+                commit: commit.to_owned(),
+                branch: None,
+                line: Line::Other,
+                parent,
+                bench: None,
+                net: None,
+            })
+            .await?;
+        self.emit(&v);
+        Ok(v)
+    }
+
+    /// Tells clients a version changed (one written outside this service, such as its upstream record).
+    pub(crate) async fn announce(&self, id: VersionId) -> Result<Version, Error> {
+        let v = self.inner.hub.store.version(id).await?.ok_or_else(|| Error::not_found(format!("No version {id}")))?;
+        self.emit(&v);
+        Ok(v)
+    }
+
     /// The champion: the tip of the fork's `main`, numbered on the champion line.
     pub async fn champion(&self) -> Result<Version, Error> {
         let _line = self.inner.champion.lock().await;

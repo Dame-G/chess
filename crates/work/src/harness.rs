@@ -1,27 +1,29 @@
 //! Check the harness: a ready-made custom idea that plays the champion against a functionally identical branch, so a
-//! machine whose testing would accept a change that does nothing is caught before any result on it is trusted. The
-//! rules and verdicts are in `core::harness`; this runs them.
+//! machine whose testing does not treat identical engines as identical is caught before any result on it is trusted.
+//! The rules and verdicts are in `core::harness`; this runs them.
 //!
 //! The identical branch, `harness/identical`, is made by the app: one commit on top of `main`'s tip that changes only
 //! a comment, with `main`'s `Bench:` line (the bench is the same, as nothing that plays changed). It is written with
 //! git's plumbing (`engine::git::commit_files`), so the user's checkout is never touched, and made again from the
 //! current tip for every check.
 //!
-//! The idea's first trial is VSTC at [0, 3]; with `pairs`, a second trial plays that many pairs for the symmetry
-//! check. Both always run. When the last ends, the check is judged, the idea ends kept (passed) or dropped (failed)
-//! with the check's sentence as its verdict, and the result is stored in `meta` as `harness.check` with the machine
-//! and tools it certifies.
+//! The idea has two trials of fixed pairs: the determinism part at 25,000 nodes (1,000 pairs by default), then the
+//! symmetry part at VSTC (4,000 pairs). When the determinism part fails, the symmetry part is skipped: the check has
+//! failed, and hours of timed games would not change that. When the check ends it is judged, the idea ends kept
+//! (passed) or dropped (failed) with the check's sentence as its verdict, and the result is stored in `meta` as
+//! `harness.check` with the machine and tools it certifies.
 
 use std::{path::Path, sync::Arc};
 
 use dameless_core::{
     Error, IdeaId,
-    harness::{self, Environment, HarnessCheck, HarnessStatus},
-    ideas::{self as funnel, Author, Idea, IdeaKind, IdeaStatus, TrialStatus},
-    stats::Verdict,
+    game::Outcome,
+    harness::{self, Environment, HarnessCheck, HarnessStatus, PlayedGame},
+    ideas::{self as funnel, Author, Idea, IdeaKind, IdeaStatus, Trial, TrialStatus},
+    time::TimeControl,
 };
 use dameless_engine::git::CommitFiles;
-use dameless_store::{IdeaFilter, IdeaUpdate, now};
+use dameless_store::{GameFilter, IdeaFilter, IdeaUpdate, now};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -38,19 +40,27 @@ pub const META_KEY: &str = "harness.check";
 /// `POST /api/harness/check`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HarnessCheckRequest {
-    /// Also play this many pairs for the symmetry check (the UI offers 2,000); none skips it.
+    /// Pairs of the determinism part, at 25,000 nodes (default 1,000).
     #[serde(default)]
-    pub pairs: Option<u32>,
+    pub determinism_pairs: Option<u32>,
+    /// Pairs of the symmetry part, at VSTC (default 4,000).
+    #[serde(default)]
+    pub symmetry_pairs: Option<u32>,
 }
 
-/// What a harness check idea carries in its spec: what it certifies.
+/// What a harness check idea carries in its spec: what it certifies, and how long each part is.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HarnessRun {
     pub environment: Environment,
     /// `main`'s tip it was made from.
     pub engine_commit: String,
-    /// Whether its second trial is the symmetry run.
-    pub symmetry: bool,
+    /// Pairs of the determinism part (its first trial). Zero for a check queued before there was one (an SPRT), which
+    /// cannot be judged by today's rules.
+    #[serde(default)]
+    pub determinism_pairs: u32,
+    /// Pairs of the symmetry part (its second trial).
+    #[serde(default)]
+    pub symmetry_pairs: u32,
 }
 
 /// The harness check. Cheap to clone.
@@ -118,10 +128,12 @@ impl Harness {
     }
 
     /// Starts a check: makes `harness/identical` again from `main`'s tip and queues the idea. 409 while one runs or
-    /// without fastchess and the book.
+    /// without fastchess and the book; 400 for a part of no pairs.
     pub async fn start_check(&self, req: HarnessCheckRequest) -> Result<Idea, Error> {
-        if req.pairs == Some(0) {
-            return Err(Error::bad_request("A symmetry run needs at least one pair"));
+        let determinism_pairs = req.determinism_pairs.unwrap_or(harness::DETERMINISM_PAIRS);
+        let symmetry_pairs = req.symmetry_pairs.unwrap_or(harness::SYMMETRY_PAIRS);
+        if determinism_pairs == 0 || symmetry_pairs == 0 {
+            return Err(Error::bad_request("Each part of the check needs at least one pair"));
         }
         if let Some(i) = self.running().await? {
             return Err(Error::conflict(format!("The harness is being checked already (idea {})", i.id)));
@@ -131,18 +143,15 @@ impl Harness {
         let environment = self.environment();
         let engine_commit = self.make_identical().await?;
 
-        let mut plan = funnel::custom(harness::PRESET, Some(harness::BOUNDS), None);
-        if let Some(p) = req.pairs {
-            plan.extend(funnel::custom(harness::PRESET, None, Some(p)));
-        }
-        let custom = CustomTrial { preset: harness::PRESET, bounds: Some(harness::BOUNDS), pairs: None };
+        let mut plan = funnel::custom(harness::DETERMINISM_PRESET, None, Some(determinism_pairs));
+        plan.extend(funnel::custom(harness::SYMMETRY_PRESET, None, Some(symmetry_pairs)));
+        let custom = CustomTrial { preset: harness::DETERMINISM_PRESET, bounds: None, pairs: Some(determinism_pairs) };
         let request = NewIdeaRequest {
             title: "Check the harness".into(),
             hypothesis: format!(
-                "An engine identical to the champion is rejected at [{}, {}]: testing on this machine does not \
-                 accept a change that does nothing.",
-                harness::BOUNDS[0],
-                harness::BOUNDS[1]
+                "An engine identical to the champion plays the same game twice from every opening at fixed nodes \
+                 ({determinism_pairs} pairs), and over {symmetry_pairs} timed pairs scores 0 Elo with symmetric \
+                 pairs: testing on this machine treats identical engines as identical."
             ),
             kind: IdeaKind::Gain,
             branch: harness::BRANCH.into(),
@@ -162,7 +171,7 @@ impl Harness {
             long: false,
             tune: None,
             custom: Some(custom),
-            harness: Some(HarnessRun { environment, engine_commit, symmetry: req.pairs.is_some() }),
+            harness: Some(HarnessRun { environment, engine_commit, determinism_pairs, symmetry_pairs }),
         };
         self.ideas.insert_spec(request, spec).await
     }
@@ -208,46 +217,108 @@ impl Harness {
     }
 }
 
-/// Ends a harness check idea once its last trial is over: judges it, stores the result for the machine, and ends the
-/// idea kept (passed) or dropped (failed). An SPRT that did not decide (it broke off) stores nothing and fails the idea.
+/// The determinism part's verdict, from its trial and the games it stored.
+async fn determinism(ideas: &Ideas, trial: &Trial, run: &HarnessRun) -> Result<harness::Determinism, Error> {
+    let store = &ideas.hub().store;
+    let mut summaries = Vec::new();
+    loop {
+        let filter = GameFilter {
+            trial: Some(trial.id),
+            before: summaries.last().map(|s: &dameless_core::game::GameSummary| s.id),
+            limit: dameless_store::games::MAX_LIMIT,
+            ..Default::default()
+        };
+        let page = store.games(filter).await?;
+        if page.is_empty() {
+            break;
+        }
+        summaries.extend(page);
+    }
+    let mut games = Vec::with_capacity(summaries.len());
+    for s in summaries {
+        let Some(g) = store.game(s.id).await? else { continue };
+        let result = match g.summary.outcome {
+            Some(Outcome::WhiteWins) => "1-0",
+            Some(Outcome::BlackWins) => "0-1",
+            Some(Outcome::Draw) => "1/2-1/2",
+            None => "*",
+        };
+        games.push(PlayedGame {
+            opening: g.start_fen.unwrap_or_else(|| "startpos".into()),
+            moves: g.moves.into_iter().map(|m| m.uci).collect(),
+            result: result.into(),
+        });
+    }
+    let nodes = match trial.played.or(trial.time) {
+        Some(TimeControl::Nodes { nodes }) => nodes,
+        _ => 0,
+    };
+    Ok(harness::determinism(&trial.penta, &games, u64::from(run.determinism_pairs), nodes))
+}
+
+/// Whether a harness check is over after trial `index`: after the determinism part when it failed (the symmetry part
+/// would not change the verdict), and after its last trial.
+pub(crate) async fn over_after(ideas: &Ideas, id: IdeaId, index: usize, run: &HarnessRun) -> Result<bool, Error> {
+    if index > 0 || run.determinism_pairs == 0 {
+        return Ok(false);
+    }
+    let trials = ideas.hub().store.trials(id).await?;
+    let Some(first) = trials.first() else { return Ok(false) };
+    Ok(first.status != TrialStatus::Passed || !determinism(ideas, first, run).await?.passed)
+}
+
+/// Ends a harness check idea once it is over: judges it, stores the result for the machine, and ends the idea kept
+/// (passed) or dropped (failed). A part that broke off (its pairs not all played) stores nothing and fails the idea.
 pub(crate) async fn finish(ideas: &Ideas, id: IdeaId, run: &HarnessRun) -> Result<(), Error> {
     let store = &ideas.hub().store;
     let trials = store.trials(id).await?;
-    let sprt_trial = trials.first().ok_or_else(|| Error::internal(format!("Harness check {id} has no trial")))?;
-    let bounds = sprt_trial.bounds.unwrap_or(harness::BOUNDS);
-    let s = funnel::sprt(bounds);
-    let decided = s.verdict(s.llr(&sprt_trial.penta)) != Verdict::Continue;
-    let symmetry =
-        trials.get(1).filter(|t| run.symmetry && t.status == TrialStatus::Passed).map(|t| harness::symmetry(&t.penta));
-    let (passed, elo, summary) = harness::judge(&sprt_trial.penta, bounds, symmetry.as_ref());
-    let (status, verdict) = if !decided {
-        (IdeaStatus::Failed, format!("Failed: {summary}"))
+    let fail = |verdict: String| IdeaUpdate {
+        status: Some(IdeaStatus::Failed),
+        verdict: Some(verdict),
+        ended_at: Some(now()),
+        ..Default::default()
+    };
+    let first = trials.first().ok_or_else(|| Error::internal(format!("Harness check {id} has no trial")))?;
+    let update = if run.determinism_pairs == 0 {
+        fail("Failed: this check was queued by an older Dameless; start a new one".into())
+    } else if first.status != TrialStatus::Passed {
+        fail(format!("Failed: the determinism part did not finish ({})", first.detail.clone().unwrap_or_default()))
     } else {
-        let check = HarnessCheck {
-            machine: run.environment.machine.clone(),
-            at: now(),
-            idea: id,
-            passed,
-            elo,
-            symmetry,
-            engine_commit: run.engine_commit.clone(),
-            fastchess: run.environment.fastchess.clone(),
-            book: run.environment.book.clone(),
-            summary: summary.clone(),
-        };
-        store.put_meta(META_KEY, &check).await?;
-        if passed {
-            (IdeaStatus::Kept, format!("Harness checked: {summary}"))
+        let det = determinism(ideas, first, run).await?;
+        let symmetry_run = trials
+            .get(1)
+            .filter(|t| det.passed && t.status == TrialStatus::Passed)
+            .map(|t| (&t.penta, u64::from(run.symmetry_pairs)));
+        if det.passed && symmetry_run.is_none() {
+            fail("Failed: the symmetry part did not finish".into())
         } else {
-            (IdeaStatus::Dropped, format!("Harness check failed: {summary}"))
+            for t in trials.iter().skip(1).filter(|t| t.status == TrialStatus::Waiting) {
+                ideas.save_trial(&Trial { status: TrialStatus::Skipped, ..t.clone() }).await?;
+            }
+            let (passed, elo, symmetry, summary) = harness::judge(&det, symmetry_run);
+            let check = HarnessCheck {
+                machine: run.environment.machine.clone(),
+                at: now(),
+                idea: id,
+                passed,
+                determinism: Some(det),
+                elo,
+                symmetry,
+                engine_commit: run.engine_commit.clone(),
+                fastchess: run.environment.fastchess.clone(),
+                book: run.environment.book.clone(),
+                summary: summary.clone(),
+            };
+            store.put_meta(META_KEY, &check).await?;
+            let (status, verdict) = if passed {
+                (IdeaStatus::Kept, format!("Harness checked: {summary}"))
+            } else {
+                (IdeaStatus::Dropped, format!("Harness check failed: {summary}"))
+            };
+            IdeaUpdate { status: Some(status), verdict: Some(verdict), ended_at: Some(now()), ..Default::default() }
         }
     };
-    store
-        .update_idea(
-            id,
-            IdeaUpdate { status: Some(status), verdict: Some(verdict), ended_at: Some(now()), ..Default::default() },
-        )
-        .await?;
+    store.update_idea(id, update).await?;
     ideas.emit_idea(id).await?;
     Ok(())
 }

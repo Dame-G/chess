@@ -28,6 +28,7 @@ use dameless_hub::{Executor, WorkContext};
 use dameless_store::{IdeaUpdate, NewVersion, now};
 use futures::{StreamExt, stream::FuturesUnordered};
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 
 use super::{Ideas, TrialWork};
 use crate::{toolchain::require_tools, versions::VersionRef};
@@ -131,7 +132,9 @@ impl Executor for TuneExecutor {
                 };
                 let cancel = cx.cancel.clone();
                 async move {
-                    let result = tc.round(&round, &cancel, &mut |_| {}, &mut |_| {}).await;
+                    // A tune's rounds are two games each: they finish rather than wind down.
+                    let never = CancellationToken::new();
+                    let result = tc.round(&round, &cancel, &never, &mut |_| {}, &mut |_| {}).await;
                     (worker, batch, result)
                 }
             };

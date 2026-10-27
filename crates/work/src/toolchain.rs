@@ -40,11 +40,13 @@ pub trait Toolchain: Send + Sync {
     /// What `<binary> spsa` prints: an `spsa` build's tunables in OpenBench's format.
     async fn spsa(&self, binary: &Path) -> Result<String>;
 
-    /// Plays one fastchess round to the end.
+    /// Plays one fastchess round to the end, or until `wind_down` fires: then it stops at once and returns the pairs
+    /// that finished (`ended_early`). `cancel` stops it and returns `Cancelled`.
     async fn round(
         &self,
         round: &Round,
         cancel: &CancellationToken,
+        wind_down: &CancellationToken,
         on_progress: &mut (dyn FnMut(Progress) + Send),
         log: &mut (dyn for<'s> FnMut(&'s str) + Send),
     ) -> Result<RoundResult>;
@@ -90,10 +92,11 @@ impl Toolchain for Reckless {
         &self,
         round: &Round,
         cancel: &CancellationToken,
+        wind_down: &CancellationToken,
         on_progress: &mut (dyn FnMut(Progress) + Send),
         log: &mut (dyn for<'s> FnMut(&'s str) + Send),
     ) -> Result<RoundResult> {
-        fastchess::run_round(round, cancel, on_progress, log).await
+        fastchess::run_round(round, cancel, wind_down, on_progress, log).await
     }
 
     fn tools(&self, dir: &Path) -> Installed {

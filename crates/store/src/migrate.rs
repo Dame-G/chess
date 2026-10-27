@@ -12,6 +12,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_init.sql"),
     include_str!("../migrations/0002_player.sql"),
     include_str!("../migrations/0003_training.sql"),
+    include_str!("../migrations/0004_upstream.sql"),
 ];
 
 /// Applies the migrations the database has not seen, each in its own transaction.

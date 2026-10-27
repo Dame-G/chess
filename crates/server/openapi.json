@@ -2070,7 +2070,7 @@
         "tags": [
           "harness"
         ],
-        "summary": "Starts a harness check: `main` against a branch identical to it at VSTC [0, 3] (which must reject it), and with\n`pairs`, a symmetry run of that many pairs. Answers its idea. 409 while one runs or without fastchess and the book.",
+        "summary": "Starts a harness check: `main` against a branch identical to it, first for determinism (pairs at 25,000 nodes, each\nof which must be the same game twice; 1,000 by default), then for symmetry (timed pairs at VSTC, 4,000 by default,\nwhose Elo must hold 0 and whose pentanomial must be symmetric). Answers its idea. 409 while one runs or without\nfastchess and the book; 400 for a part of no pairs.",
         "operationId": "check_harness",
         "requestBody": {
           "content": {
@@ -3547,6 +3547,83 @@
         }
       }
     },
+    "/api/upstream": {
+      "get": {
+        "tags": [
+          "dameless"
+        ],
+        "summary": "Taking upstream Reckless: the automatic sync's setting, the last sync (merged, up to date or failed, with the\nupstream commits it brought), one running, and when the next automatic one is due.",
+        "operationId": "upstream_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpstreamStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "dameless"
+        ],
+        "summary": "Turns the automatic sync with upstream on or off (on by default: every six hours).",
+        "operationId": "set_upstream_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpstreamSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpstreamStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/upstream/sync": {
+      "post": {
+        "tags": [
+          "dameless"
+        ],
+        "summary": "Takes upstream Reckless now: fetches the fork's `upstream` remote and, when `upstream/main` has commits the champion\nlacks, merges them into the fork's `main` locally (fast-forward, or a merge commit with its measured `Bench:` line),\nbuilds and benches the result and makes it the next champion. No trials: upstream's commits are tested on its own\nfleet. A conflict, a failed build or bench, or a dirty checkout of `main` changes nothing. Never pushes. Answers the\nwork; 409 while a sync runs or without an `upstream` remote.",
+        "operationId": "sync_upstream",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Work"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/versions": {
       "get": {
         "tags": [
@@ -4987,7 +5064,7 @@
             "items": {
               "$ref": "#/components/schemas/Version"
             },
-            "description": "The champion line, newest first."
+            "description": "The champion line, newest first. A champion taken from upstream carries `upstream`: the commits it brought."
           },
           "strength": {
             "type": "array",
@@ -4995,6 +5072,17 @@
               "$ref": "#/components/schemas/ProgressPoint"
             },
             "description": "Each champion version and its cumulative Elo over `v1` (each promotion's deciding estimate added up, the\nerrors in quadrature), oldest first."
+          },
+          "upstream": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UpstreamSync",
+                "description": "The last sync with upstream Reckless, whatever its outcome (a failure says why, having changed nothing)."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -5307,6 +5395,52 @@
           },
           "uci": {
             "type": "string"
+          }
+        }
+      },
+      "Determinism": {
+        "type": "object",
+        "description": "How the determinism part came out.",
+        "required": [
+          "passed",
+          "pairs",
+          "nodes",
+          "uneven",
+          "openings",
+          "detail"
+        ],
+        "properties": {
+          "detail": {
+            "type": "string",
+            "description": "One sentence for people."
+          },
+          "nodes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Nodes a move.",
+            "minimum": 0
+          },
+          "openings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The openings (start FENs) whose games differed, at most [`OPENINGS_KEPT`]."
+          },
+          "pairs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Pairs played.",
+            "minimum": 0
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "uneven": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Pairs that did not score exactly 1, or whose games differed.",
+            "minimum": 0
           }
         }
       },
@@ -6348,6 +6482,24 @@
           },
           {
             "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/UpstreamSync"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "upstream.synced"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "Not a domain event: the stream has a hole, so fetch what is shown again.",
             "required": [
               "data",
@@ -6803,11 +6955,22 @@
               "null"
             ]
           },
+          "determinism": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Determinism",
+                "description": "The determinism part; none for a check made before it existed (an SPRT at VSTC [0, 3])."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "elo": {
             "oneOf": [
               {
                 "$ref": "#/components/schemas/Estimate",
-                "description": "Logistic Elo of the identical engine ± 95 %."
+                "description": "Logistic Elo of the identical engine ± 95 %, from the symmetry run."
               },
               {
                 "type": "null"
@@ -6841,7 +7004,8 @@
           "symmetry": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/Symmetry"
+                "$ref": "#/components/schemas/Symmetry",
+                "description": "The symmetry part; none when the determinism part failed first."
               },
               {
                 "type": "null"
@@ -6854,13 +7018,22 @@
         "type": "object",
         "description": "`POST /api/harness/check`.",
         "properties": {
-          "pairs": {
+          "determinism_pairs": {
             "type": [
               "integer",
               "null"
             ],
             "format": "int32",
-            "description": "Also play this many pairs for the symmetry check (the UI offers 2,000); none skips it.",
+            "description": "Pairs of the determinism part, at 25,000 nodes (default 1,000).",
+            "minimum": 0
+          },
+          "symmetry_pairs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Pairs of the symmetry part, at VSTC (default 4,000).",
             "minimum": 0
           }
         }
@@ -6907,7 +7080,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/HarnessCheck",
-                "description": "The last check, in full."
+                "description": "The last check, in full: its determinism and symmetry parts."
               },
               {
                 "type": "null"
@@ -10596,7 +10769,7 @@
       },
       "Symmetry": {
         "type": "object",
-        "description": "How symmetric the pairs of identical engines came out.",
+        "description": "How symmetric the timed pairs of identical engines came out.",
         "required": [
           "passed",
           "pairs",
@@ -10628,6 +10801,15 @@
             "description": "`(WD − LD) / √(WD + LD)`, the same for the half points."
           }
         }
+      },
+      "SyncOutcome": {
+        "type": "string",
+        "description": "How a sync ended.",
+        "enum": [
+          "up_to_date",
+          "merged",
+          "failed"
+        ]
       },
       "Theme": {
         "type": "object",
@@ -11704,6 +11886,172 @@
           }
         }
       },
+      "UpstreamCommit": {
+        "type": "object",
+        "description": "One upstream commit a sync brought.",
+        "required": [
+          "sha",
+          "subject"
+        ],
+        "properties": {
+          "sha": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string",
+            "description": "Its first line."
+          }
+        }
+      },
+      "UpstreamMerge": {
+        "type": "object",
+        "description": "What a champion taken from upstream brought: the range of upstream commits merged into the fork's `main`.",
+        "required": [
+          "base",
+          "upstream",
+          "commits",
+          "fast_forward"
+        ],
+        "properties": {
+          "base": {
+            "type": "string",
+            "description": "The fork's `main` before (the last champion's commit)."
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UpstreamCommit"
+            },
+            "description": "The upstream commits the champion lacked, newest first."
+          },
+          "fast_forward": {
+            "type": "boolean",
+            "description": "`main` simply moved to upstream's commit (the fork had nothing of its own on top); else a merge commit."
+          },
+          "upstream": {
+            "type": "string",
+            "description": "The upstream commit merged (upstream's `main` then)."
+          }
+        }
+      },
+      "UpstreamSettings": {
+        "type": "object",
+        "description": "The automatic sync's settings (`meta` key `upstream.settings`).",
+        "required": [
+          "auto"
+        ],
+        "properties": {
+          "auto": {
+            "type": "boolean",
+            "description": "Look for new upstream commits every six hours and take them (on by default)."
+          }
+        }
+      },
+      "UpstreamStatus": {
+        "type": "object",
+        "description": "`GET /api/upstream`.",
+        "required": [
+          "settings",
+          "remote"
+        ],
+        "properties": {
+          "last": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UpstreamSync",
+                "description": "The last sync, whatever its outcome."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_at": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp",
+                "description": "When the automatic sync looks next (none while it is off)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "remote": {
+            "type": "boolean",
+            "description": "The engine checkout has a remote named `upstream`; without one there is nothing to sync."
+          },
+          "running": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WorkId",
+                "description": "A sync queued or running now."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "settings": {
+            "$ref": "#/components/schemas/UpstreamSettings"
+          }
+        }
+      },
+      "UpstreamSync": {
+        "type": "object",
+        "description": "One sync, as the logbook and `GET /api/upstream` show it (also sent as `upstream.synced`).",
+        "required": [
+          "at",
+          "outcome",
+          "detail",
+          "work"
+        ],
+        "properties": {
+          "at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "champion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Its name, `v3`."
+          },
+          "detail": {
+            "type": "string",
+            "description": "One sentence for people: \"v3 from upstream: 4 commits (69aea908..a814d54e), bench 2837905\"."
+          },
+          "merge": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UpstreamMerge",
+                "description": "What it brought (when merged), or would have brought (a failed merge)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/SyncOutcome"
+          },
+          "version": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/VersionId",
+                "description": "The champion it made (when merged)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "work": {
+            "$ref": "#/components/schemas/WorkId",
+            "description": "The work item that ran it."
+          }
+        }
+      },
       "Version": {
         "type": "object",
         "description": "One commit of Dameless that matters: the champion line, an idea's change, an upstream tip.",
@@ -11774,6 +12122,17 @@
               {
                 "$ref": "#/components/schemas/VersionId",
                 "description": "The champion it was built on."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "upstream": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UpstreamMerge",
+                "description": "A champion taken from upstream Reckless: the upstream commits it brought."
               },
               {
                 "type": "null"
@@ -11987,7 +12346,8 @@
           "calibrate",
           "datagen",
           "train",
-          "dataset_import"
+          "dataset_import",
+          "upstream"
         ]
       },
       "WorkLists": {

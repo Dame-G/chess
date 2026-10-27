@@ -188,6 +188,11 @@ pub struct Fake {
     pub pair_scale: std::sync::atomic::AtomicU32,
     /// The installed fastchess's file name, when not the default `fastchess` (a test of a tool upgrade).
     pub fastchess_name: Mutex<Option<String>>,
+    /// What rounds at a node limit play, when not what [`Fake::rounds`] set (a harness check's determinism part).
+    pub node_rounds: Mutex<Option<[u32; 5]>>,
+    /// Writes a round's PGN (the round, the pairs that finished) instead of [`sample_pgn`].
+    #[allow(clippy::type_complexity)]
+    pub pgn: Mutex<Option<Box<dyn Fn(&Round, u32) -> String + Send + Sync>>>,
 }
 
 impl Fake {
@@ -306,17 +311,23 @@ impl Toolchain for Fake {
         &self,
         round: &Round,
         cancel: &CancellationToken,
+        wind_down: &CancellationToken,
         on_progress: &mut (dyn FnMut(Progress) + Send),
         _log: &mut (dyn for<'s> FnMut(&'s str) + Send),
     ) -> Result<RoundResult> {
         let delay = *self.round_delay.lock().unwrap();
-        tokio::select! {
-            _ = tokio::time::sleep(delay) => {}
+        // Wound down midway, half the pairs had finished.
+        let finished = tokio::select! {
+            _ = tokio::time::sleep(delay) => round.pairs,
             _ = cancel.cancelled() => return Err(dameless_engine::Cancelled.into()),
-        }
-        let Some(weights) = *self.default_round.lock().unwrap() else { bail!("no rounds set") };
+            _ = wind_down.cancelled() => round.pairs / 2,
+        };
+        let ended_early = finished < round.pairs;
+        let at_nodes = matches!(round.each.limit, dameless_engine::fastchess::Limit::Nodes { .. });
+        let node_weights = if at_nodes { *self.node_rounds.lock().unwrap() } else { None };
+        let Some(weights) = node_weights.or(*self.default_round.lock().unwrap()) else { bail!("no rounds set") };
         let scale = self.pair_scale.load(Ordering::SeqCst).max(1);
-        let penta = spread(round.pairs * scale, weights);
+        let penta = spread(finished * scale, weights);
         let [ll, ld, dd, wd, ww] = penta;
         let totals = Totals { penta, wins: wd + 2 * ww, draws: ld + 2 * dd + wd, losses: 2 * ll + ld };
         self.played.lock().unwrap().push(Played {
@@ -327,9 +338,13 @@ impl Toolchain for Fake {
         if let Some(dir) = round.pgn.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        std::fs::write(&round.pgn, sample_pgn(round.pairs, &round.dev.name, &round.base.name))?;
+        let pgn = match &*self.pgn.lock().unwrap() {
+            Some(make) => make(round, finished),
+            None => sample_pgn(finished, &round.dev.name, &round.base.name),
+        };
+        std::fs::write(&round.pgn, pgn)?;
         on_progress(Progress::Totals(totals));
-        Ok(RoundResult { totals, pgn: round.pgn.clone() })
+        Ok(RoundResult { totals, pgn: round.pgn.clone(), ended_early })
     }
 
     fn tools(&self, dir: &Path) -> Installed {

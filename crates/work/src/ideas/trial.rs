@@ -5,11 +5,20 @@
 //! - **Speed:** paired `bench` runs, alternating which goes first, as the old nonfunctional stage.
 //! - **Games:** the clock is scaled once at the start (`copies` = planned games at once × threads, both builds; a copy
 //!   with another node count fails the trial as non-deterministic), then rounds: cores from the ledger, one fastchess
-//!   round of about four pairs per core, the round's pairs added to the trial, the SPRT checked, the games stored, a
-//!   safe point. A stopped or restarted trial carries on from the rounds it has, which live on the trial itself.
+//!   round of about twelve pairs per game slot, the round's pairs added to the trial, the SPRT checked, the games
+//!   stored, a checkpoint, a safe point. A stopped or restarted trial carries on from the rounds it has, which live on
+//!   the trial itself.
+//!
+//! Rounds are long, so slots do not sit idle in a round's tail (fastchess starts afresh each round), but a round never
+//! makes anyone wait it out: it is **wound down** as soon as the SPRT decides on the running counts, a pause is asked
+//! (live play needs the cores, or a person paused it), work of higher priority waits for cores, or the trial is
+//! stopped. Winding down stops fastchess at once and keeps the pairs that finished (see
+//! `engine::fastchess::complete_pairs`), so the round is recorded like any other and the trial pauses, yields or stops
+//! within about a second, losing only the games in flight.
 
 use std::{
     path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
@@ -29,6 +38,7 @@ use dameless_core::{
 use dameless_engine::fastchess::{self, Adjudication, Book, BookFormat, Each, Limit, Player, Round};
 use dameless_hub::{Executor, WorkContext};
 use dameless_store::{NewGame, now};
+use tokio_util::sync::CancellationToken;
 
 use super::{Ideas, TrialWork};
 use crate::toolchain::require_tools;
@@ -39,6 +49,35 @@ pub(super) struct TrialExecutor {
 
 /// trial.progress is sent at most this often while a round plays.
 const PROGRESS_EVERY: Duration = Duration::from_secs(1);
+
+/// Game pairs a round plays per game slot. Each round starts fastchess afresh and its last games leave slots idle while
+/// they finish; at four pairs a slot that tail cost about 5 % of the slots' time. Rounds this long are fine because a
+/// round winds down early whenever something needs it to (see the module's notes).
+pub(crate) const PAIRS_PER_SLOT: u32 = 12;
+
+/// How often a playing round looks for a reason to end early.
+const LOOK_EVERY: Duration = Duration::from_millis(250);
+
+/// Waits for a reason to wind the round down: the trial was stopped, the SPRT decided on the running counts, a pause
+/// was asked (live play, or a person), or work of higher priority waits for cores. Returns it, for the log.
+async fn reason_to_end_early(cx: &WorkContext, decided: &AtomicBool) -> &'static str {
+    let mut look = tokio::time::interval(LOOK_EVERY);
+    loop {
+        tokio::select! {
+            _ = cx.cancel.cancelled() => return "stopped",
+            _ = look.tick() => {}
+        }
+        if decided.load(Ordering::Relaxed) {
+            return "the SPRT decided";
+        }
+        if cx.pause_asked() {
+            return "a pause was asked";
+        }
+        if cx.hub.ledger.waiting_ahead_of(cx.priority) {
+            return "work of higher priority waits for cores";
+        }
+    }
+}
 
 /// The two sides of a trial, built.
 struct Sides {
@@ -236,7 +275,7 @@ impl TrialExecutor {
             let min = settings.threads.max(2);
             let Some(grant) = cx.cores(min, hub.ledger.total().max(min)).await else { return Err(cx.stopped()) };
             let concurrency = (grant.cores() / settings.threads).max(1);
-            let mut n = u64::from(4 * concurrency);
+            let mut n = u64::from(PAIRS_PER_SLOT * concurrency);
             if let Some(r) = remaining {
                 n = n.min(r);
             }
@@ -259,22 +298,42 @@ impl TrialExecutor {
             cx.log(format!("Round {}: {n} pairs, {concurrency} games at once", rounds + 1));
             let before = trial.penta;
             let mut last_sent: Option<Instant> = None;
+            let decided = AtomicBool::new(false);
             let (bus, id, idea_id, wdl) = (hub.bus.clone(), trial.id, idea.id, trial.wdl);
             let mut on_progress = |p: fastchess::Progress| {
-                if let fastchess::Progress::Totals(t) = p
-                    && last_sent.is_none_or(|s| s.elapsed() >= PROGRESS_EVERY)
-                {
+                let fastchess::Progress::Totals(t) = p else { return };
+                let penta = before.add(&penta_of(t.penta));
+                if let Some(b) = bounds {
+                    let s = funnel::sprt(b);
+                    if s.verdict(s.llr(&penta)) != Verdict::Continue {
+                        decided.store(true, Ordering::Relaxed);
+                    }
+                }
+                if last_sent.is_none_or(|s| s.elapsed() >= PROGRESS_EVERY) {
                     last_sent = Some(Instant::now());
-                    let penta = before.add(&penta_of(t.penta));
                     let (llr, elo, _) = Trial::statistics(&penta, bounds);
                     let wdl = [wdl[0] + t.wins, wdl[1] + t.draws, wdl[2] + t.losses];
                     bus.emit(Payload::TrialProgress(TrialProgress { id, idea: idea_id, penta, wdl, llr, elo }));
                 }
             };
             let mut log = |line: &str| cx.log(line);
-            let result = match tc.round(&round, &cx.cancel, &mut on_progress, &mut log).await {
+            // A stop winds the round down too, so the pairs it finished are kept before the trial stops.
+            let (wind_down, never) = (CancellationToken::new(), CancellationToken::new());
+            let outcome = {
+                let playing = tc.round(&round, &never, &wind_down, &mut on_progress, &mut log);
+                tokio::pin!(playing);
+                tokio::select! {
+                    r = &mut playing => r,
+                    why = reason_to_end_early(cx, &decided) => {
+                        cx.log(format!("Ending round {} early: {why}", rounds + 1));
+                        wind_down.cancel();
+                        playing.await
+                    }
+                }
+            };
+            let result = match outcome {
                 Ok(r) => r,
-                Err(e) if dameless_engine::is_cancelled(&e) || cx.cancel.is_cancelled() => return Err(cx.stopped()),
+                Err(e) if dameless_engine::is_cancelled(&e) => return Err(cx.stopped()),
                 Err(e) => return Err(Error::internal(format!("fastchess failed: {e:#}"))),
             };
             drop(grant);
@@ -305,6 +364,9 @@ impl TrialExecutor {
             let eta =
                 total.and_then(|t| Progress::eta(done - played_before, t - played_before, started.elapsed().as_secs()));
             cx.progress_now(Progress { done, total, unit: "pairs".into(), eta_seconds: eta, text: Some(text) }).await?;
+            if cx.cancel.is_cancelled() {
+                return Err(cx.stopped());
+            }
         }
         Ok(funnel::games(&trial.penta, bounds, trial.scaling.map(|s| (played, s.scale))))
     }

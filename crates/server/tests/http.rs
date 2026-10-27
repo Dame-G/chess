@@ -348,6 +348,17 @@ async fn versions_ideas_and_work() {
     let (status, health) = t.get("/api/diagnostics").await;
     assert_eq!(status, 200, "{health}");
     assert!(health["items"].as_array().unwrap().iter().any(|i| i["key"] == "fastchess"));
+
+    // Upstream: the test checkout has no upstream remote, so there is nothing to sync; the setting toggles.
+    let (status, u) = t.get("/api/upstream").await;
+    assert_eq!(status, 200, "{u}");
+    assert_eq!((&u["settings"]["auto"], &u["remote"], &u["last"]), (&json!(true), &json!(false), &Value::Null));
+    let (status, off) = t.put("/api/upstream", json!({ "auto": false })).await;
+    assert_eq!((status, &off["settings"]["auto"], &off["next_at"]), (200, &json!(false), &Value::Null));
+    let (status, refused) = t.post("/api/upstream/sync", json!({})).await;
+    assert_eq!(status, 409, "{refused}");
+    let (_, logbook) = t.get("/api/dameless").await;
+    assert!(logbook.get("upstream").is_some_and(Value::is_null), "{logbook}");
     t.stop().await;
 }
 

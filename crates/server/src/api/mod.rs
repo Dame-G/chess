@@ -90,6 +90,8 @@ fn routes() -> (OpenApiRouter<Arc<App>>, OpenApiRouter<Arc<App>>) {
         // Dameless
         .routes(routes!(dameless::get_dameless))
         .routes(routes!(dameless::push))
+        .routes(routes!(dameless::upstream_status, dameless::set_upstream_settings))
+        .routes(routes!(dameless::sync_upstream))
         .routes(routes!(dameless::list_versions, dameless::make_version))
         .routes(routes!(dameless::list_builds))
         .routes(routes!(dameless::delete_build))

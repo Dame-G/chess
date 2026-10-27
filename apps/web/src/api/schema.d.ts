@@ -747,8 +747,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Starts a harness check: `main` against a branch identical to it at VSTC [0, 3] (which must reject it), and with
-         *     `pairs`, a symmetry run of that many pairs. Answers its idea. 409 while one runs or without fastchess and the book.
+         * Starts a harness check: `main` against a branch identical to it, first for determinism (pairs at 25,000 nodes, each
+         *     of which must be the same game twice; 1,000 by default), then for symmetry (timed pairs at VSTC, 4,000 by default,
+         *     whose Elo must hold 0 and whose pentanomial must be symmetric). Answers its idea. 409 while one runs or without
+         *     fastchess and the book; 400 for a part of no pairs.
          */
         post: operations["check_harness"];
         delete?: never;
@@ -1307,6 +1309,50 @@ export interface paths {
         get: operations["list_tunables"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/upstream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Taking upstream Reckless: the automatic sync's setting, the last sync (merged, up to date or failed, with the
+         *     upstream commits it brought), one running, and when the next automatic one is due.
+         */
+        get: operations["upstream_status"];
+        /** Turns the automatic sync with upstream on or off (on by default: every six hours). */
+        put: operations["set_upstream_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/upstream/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Takes upstream Reckless now: fetches the fork's `upstream` remote and, when `upstream/main` has commits the champion
+         *     lacks, merges them into the fork's `main` locally (fast-forward, or a merge commit with its measured `Bench:` line),
+         *     builds and benches the result and makes it the next champion. No trials: upstream's commits are tested on its own
+         *     fleet. A conflict, a failed build or bench, or a dirty checkout of `main` changes nothing. Never pushes. Answers the
+         *     work; 409 while a sync runs or without an `upstream` remote.
+         */
+        post: operations["sync_upstream"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1890,13 +1936,14 @@ export interface components {
             champion: components["schemas"]["Version"];
             connection?: components["schemas"]["BotStatus"] | null;
             ideas: components["schemas"]["IdeaLists"];
-            /** @description The champion line, newest first. */
+            /** @description The champion line, newest first. A champion taken from upstream carries `upstream`: the commits it brought. */
             line: components["schemas"]["Version"][];
             /**
              * @description Each champion version and its cumulative Elo over `v1` (each promotion's deciding estimate added up, the
              *     errors in quadrature), oldest first.
              */
             strength: components["schemas"]["ProgressPoint"][];
+            upstream?: components["schemas"]["UpstreamSync"] | null;
         };
         /** @description `GET /api/datasets`: every dataset, and the room left. */
         DataStatus: {
@@ -2015,6 +2062,29 @@ export interface components {
              */
             score: number;
             uci: string;
+        };
+        /** @description How the determinism part came out. */
+        Determinism: {
+            /** @description One sentence for people. */
+            detail: string;
+            /**
+             * Format: int64
+             * @description Nodes a move.
+             */
+            nodes: number;
+            /** @description The openings (start FENs) whose games differed, at most [`OPENINGS_KEPT`]. */
+            openings: string[];
+            /**
+             * Format: int64
+             * @description Pairs played.
+             */
+            pairs: number;
+            passed: boolean;
+            /**
+             * Format: int64
+             * @description Pairs that did not score exactly 1, or whose games differed.
+             */
+            uneven: number;
         };
         /** @enum {string} */
         Direction: "incoming" | "outgoing";
@@ -2332,6 +2402,10 @@ export interface components {
             /** @enum {string} */
             kind: "net.upserted";
         } | {
+            data: components["schemas"]["UpstreamSync"];
+            /** @enum {string} */
+            kind: "upstream.synced";
+        } | {
             /** @description Not a domain event: the stream has a hole, so fetch what is shown again. */
             data: components["schemas"]["Reload"];
             /** @enum {string} */
@@ -2450,6 +2524,7 @@ export interface components {
         HarnessCheck: {
             at: components["schemas"]["Timestamp"];
             book?: string | null;
+            determinism?: components["schemas"]["Determinism"] | null;
             elo?: components["schemas"]["Estimate"] | null;
             /** @description The champion's commit it was played with. */
             engine_commit: string;
@@ -2466,9 +2541,14 @@ export interface components {
         HarnessCheckRequest: {
             /**
              * Format: int32
-             * @description Also play this many pairs for the symmetry check (the UI offers 2,000); none skips it.
+             * @description Pairs of the determinism part, at 25,000 nodes (default 1,000).
              */
-            pairs?: number | null;
+            determinism_pairs?: number | null;
+            /**
+             * Format: int32
+             * @description Pairs of the symmetry part, at VSTC (default 4,000).
+             */
+            symmetry_pairs?: number | null;
         };
         /**
          * @description `GET /api/harness`: whether results on this machine can be trusted. Trials' verdicts show `summary` beside them
@@ -3768,7 +3848,7 @@ export interface components {
             /** @enum {string} */
             type: "version";
         };
-        /** @description How symmetric the pairs of identical engines came out. */
+        /** @description How symmetric the timed pairs of identical engines came out. */
         Symmetry: {
             /** @description One sentence for people. */
             detail: string;
@@ -3786,6 +3866,11 @@ export interface components {
              */
             z_halves: number;
         };
+        /**
+         * @description How a sync ended.
+         * @enum {string}
+         */
+        SyncOutcome: "up_to_date" | "merged" | "failed";
         /** @description What a drill is about: the opening family of its game, and the phase it came from. */
         Theme: {
             opening?: string | null;
@@ -4157,6 +4242,50 @@ export interface components {
             /** @description Every parameter after this step, in the order of the tune's parameters. */
             values: number[];
         };
+        /** @description One upstream commit a sync brought. */
+        UpstreamCommit: {
+            sha: string;
+            /** @description Its first line. */
+            subject: string;
+        };
+        /** @description What a champion taken from upstream brought: the range of upstream commits merged into the fork's `main`. */
+        UpstreamMerge: {
+            /** @description The fork's `main` before (the last champion's commit). */
+            base: string;
+            /** @description The upstream commits the champion lacked, newest first. */
+            commits: components["schemas"]["UpstreamCommit"][];
+            /** @description `main` simply moved to upstream's commit (the fork had nothing of its own on top); else a merge commit. */
+            fast_forward: boolean;
+            /** @description The upstream commit merged (upstream's `main` then). */
+            upstream: string;
+        };
+        /** @description The automatic sync's settings (`meta` key `upstream.settings`). */
+        UpstreamSettings: {
+            /** @description Look for new upstream commits every six hours and take them (on by default). */
+            auto: boolean;
+        };
+        /** @description `GET /api/upstream`. */
+        UpstreamStatus: {
+            last?: components["schemas"]["UpstreamSync"] | null;
+            next_at?: components["schemas"]["Timestamp"] | null;
+            /** @description The engine checkout has a remote named `upstream`; without one there is nothing to sync. */
+            remote: boolean;
+            running?: components["schemas"]["WorkId"] | null;
+            settings: components["schemas"]["UpstreamSettings"];
+        };
+        /** @description One sync, as the logbook and `GET /api/upstream` show it (also sent as `upstream.synced`). */
+        UpstreamSync: {
+            at: components["schemas"]["Timestamp"];
+            /** @description Its name, `v3`. */
+            champion?: string | null;
+            /** @description One sentence for people: "v3 from upstream: 4 commits (69aea908..a814d54e), bench 2837905". */
+            detail: string;
+            merge?: components["schemas"]["UpstreamMerge"] | null;
+            outcome: components["schemas"]["SyncOutcome"];
+            version?: components["schemas"]["VersionId"] | null;
+            /** @description The work item that ran it. */
+            work: components["schemas"]["WorkId"];
+        };
         /** @description One commit of Dameless that matters: the champion line, an idea's change, an upstream tip. */
         Version: {
             /**
@@ -4175,6 +4304,7 @@ export interface components {
             name: string;
             net?: components["schemas"]["NetId"] | null;
             parent?: components["schemas"]["VersionId"] | null;
+            upstream?: components["schemas"]["UpstreamMerge"] | null;
         };
         /**
          * Format: int64
@@ -4251,7 +4381,7 @@ export interface components {
          */
         WorkId: number;
         /** @enum {string} */
-        WorkKind: "build" | "trial" | "tune" | "review" | "import" | "promote" | "calibrate" | "datagen" | "train" | "dataset_import";
+        WorkKind: "build" | "trial" | "tune" | "review" | "import" | "promote" | "calibrate" | "datagen" | "train" | "dataset_import" | "upstream";
         /** @description The queue as people see it. */
         WorkLists: {
             /** @description In the order it will run. */
@@ -6720,6 +6850,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    upstream_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpstreamStatus"];
+                };
+            };
+        };
+    };
+    set_upstream_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpstreamSettings"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpstreamStatus"];
+                };
+            };
+        };
+    };
+    sync_upstream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Work"];
                 };
             };
             409: {

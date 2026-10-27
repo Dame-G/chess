@@ -90,9 +90,9 @@ async fn a_gain_runs_its_funnel_and_is_kept() {
     assert!(idea.trials[0].detail.as_deref().unwrap().starts_with("bench "));
     assert!(idea.ended_at.is_some());
 
-    // Rounds of four pairs per core (two cores, one thread a game).
+    // Rounds of twelve pairs per game slot (two cores, one thread a game).
     let played = lab.fake.played();
-    assert!(played.iter().all(|p| p.pairs == 8 && p.concurrency == 2), "{played:?}");
+    assert!(played.iter().all(|p| p.pairs == 24 && p.concurrency == 2), "{played:?}");
     // Every game of every round is stored, numbered within its trial, onto the board.
     let short = lab.ideas.trial(idea.id, idea.trials[2].id).await.unwrap();
     assert_eq!(short.played, Some(Preset::Stc.settings().time), "the fake benches at the reference speed");
@@ -177,14 +177,14 @@ async fn a_custom_trial_plays_its_pairs_and_requests_are_checked() {
     lab.repo.commit("test/comment", "main", &[("README.md", "x\n")], None);
     lab.fake.rounds(DRAWS);
     let mut req = request("False accepts", IdeaKind::Gain, "test/comment");
-    req.custom = Some(CustomTrial { preset: Preset::Vstc, bounds: None, pairs: Some(20) });
+    req.custom = Some(CustomTrial { preset: Preset::Vstc, bounds: None, pairs: Some(50) });
     let idea = lab.ideas.create(req).await.unwrap();
     let idea = ended(&lab, idea.id).await;
     assert_eq!(idea.status, IdeaStatus::Kept);
     assert_eq!(idea.trials.len(), 1);
-    assert_eq!(idea.trials[0].pairs, 20);
-    // Three cores: 12 pairs, then the 8 left.
-    assert_eq!(lab.fake.played().iter().map(|p| p.pairs).collect::<Vec<_>>(), [12, 8]);
+    assert_eq!(idea.trials[0].pairs, 50);
+    // Three cores: 36 pairs, then the 14 left.
+    assert_eq!(lab.fake.played().iter().map(|p| p.pairs).collect::<Vec<_>>(), [36, 14]);
 
     assert_eq!(lab.ideas.create(request("", IdeaKind::Gain, "x")).await.unwrap_err().status(), 400);
     assert_eq!(lab.ideas.create(request("No branch", IdeaKind::Gain, "nope")).await.unwrap_err().status(), 400);
@@ -230,7 +230,7 @@ async fn a_stopped_idea_resumes_with_the_rounds_it_played() {
     let idea = lab.ideas.create(request("Slow", IdeaKind::Gain, "slow")).await.unwrap();
     let screen = idea.trials[1].id;
     eventually("two rounds of the screen", || async {
-        lab.ideas.trial(idea.id, screen).await.unwrap().penta.pairs() >= 16
+        lab.ideas.trial(idea.id, screen).await.unwrap().penta.pairs() >= 48
     })
     .await;
     let stopped = lab.ideas.stop(idea.id).await.unwrap();
@@ -352,6 +352,76 @@ async fn a_kept_idea_is_promoted_to_champion() {
     assert_eq!(work.status, dameless_core::work::WorkStatus::Failed);
     assert!(work.error.unwrap().contains("uncommitted"));
     assert_eq!(lab.ideas.versions().champion().await.unwrap().name, "v2");
+}
+
+/// The trial's work item, while it runs.
+async fn running_work(lab: &Lab, trial: TrialId) -> dameless_core::work::Work {
+    for _ in 0..1000 {
+        let running = lab.scheduler.list(0).await.unwrap().running;
+        if let Some(w) = running.into_iter().find(|w| w.subject == Subject::Trial { id: trial }) {
+            return w;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("no trial running")
+}
+
+#[tokio::test]
+async fn a_pause_winds_a_long_round_down_and_keeps_its_finished_pairs() {
+    let lab = lab(2).await;
+    lab.repo.commit("long", "main", &[("src/search.rs", "fn search() { long(); }\n")], None);
+    lab.fake.rounds(EVEN);
+    // A round that would take a minute: the pause must not wait for it.
+    *lab.fake.round_delay.lock().unwrap() = Duration::from_secs(60);
+    let idea = lab.ideas.create(request("Long", IdeaKind::Gain, "long")).await.unwrap();
+    let screen = idea.trials[1].id;
+    let work = running_work(&lab, screen).await;
+    eventually("the screen's first round playing", || async {
+        lab.ideas.trial(idea.id, screen).await.unwrap().status == TrialStatus::Running && lab.fake.played().is_empty()
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let asked = std::time::Instant::now();
+    lab.scheduler.pause(work.id, "A live game").await.unwrap();
+    // Half of the round's 24 pairs had finished when it was wound down: they are kept, games and all.
+    eventually("the wound-down round recorded", || async {
+        lab.ideas.trial(idea.id, screen).await.unwrap().penta.pairs() == 12
+    })
+    .await;
+    assert!(asked.elapsed() < Duration::from_secs(5), "the pause waited {:?}", asked.elapsed());
+    eventually("its games stored", || async { lab.hub.store.count_trial_games(screen).await.unwrap() == 24 }).await;
+    assert_eq!(lab.hub.store.trial_rounds(screen).await.unwrap().map(|r| r.0), Some(1));
+    let log = std::fs::read_to_string(lab.hub.config.work_log_path(work.id)).unwrap();
+    assert!(log.contains("Ending round 1 early: a pause was asked"), "{log}");
+    lab.ideas.stop(idea.id).await.unwrap();
+    assert_eq!(ended(&lab, idea.id).await.status, IdeaStatus::Stopped);
+}
+
+#[tokio::test]
+async fn a_round_ends_early_for_work_of_higher_priority() {
+    let lab = lab(2).await;
+    lab.repo.commit("busy", "main", &[("src/search.rs", "fn search() { busy(); }\n")], None);
+    lab.fake.rounds(EVEN);
+    *lab.fake.round_delay.lock().unwrap() = Duration::from_secs(60);
+    let idea = lab.ideas.create(request("Busy", IdeaKind::Gain, "busy")).await.unwrap();
+    let screen = idea.trials[1].id;
+    let work = running_work(&lab, screen).await;
+    eventually("the screen playing", || async {
+        lab.ideas.trial(idea.id, screen).await.unwrap().status == TrialStatus::Running && lab.hub.ledger.free() == 0
+    })
+    .await;
+    // A build asks for cores: the round winds down and the build is served before the trial's next round.
+    let waiting =
+        lab.hub.ledger.request_cores(dameless_core::WorkId(9999), dameless_core::work::Priority::Interactive, 1, 1);
+    eventually("the round wound down", || async { waiting.grant().is_some() }).await;
+    let log = std::fs::read_to_string(lab.hub.config.work_log_path(work.id)).unwrap();
+    assert!(log.contains("early: work of higher priority waits for cores"), "{log}");
+    assert_eq!(lab.ideas.trial(idea.id, screen).await.unwrap().penta.pairs(), 12);
+    drop(waiting);
+    lab.ideas.stop(idea.id).await.unwrap();
+    assert_eq!(ended(&lab, idea.id).await.status, IdeaStatus::Stopped);
+    let t = lab.ideas.trial(idea.id, screen).await.unwrap();
+    assert_eq!(u64::from(lab.hub.store.count_trial_games(screen).await.unwrap()), t.penta.pairs() * 2);
 }
 
 #[tokio::test]

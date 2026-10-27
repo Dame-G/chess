@@ -489,12 +489,14 @@ function pair() {
     <ConfirmDialog
       v-model:open="checking"
       title="Check the harness?"
-      description="The champion plays an identical copy of itself, at short games, until the trial decides."
+      description="The champion plays an identical copy of itself: 1,000 pairs at fixed nodes, where every pair must be the same game twice, then 4,000 pairs of quick timed games, which must come out even and symmetric."
       confirm="Start the check"
       :busy="checkBusy"
       @confirm="checkHarness"
     >
-      <p class="text">It takes the machine's cores for a while, usually under an hour. Other work waits its turn.</p>
+      <p class="text">
+        It takes the machine's cores for a few hours. Other work waits its turn, and live games still come first.
+      </p>
     </ConfirmDialog>
 
     <ConfirmDialog

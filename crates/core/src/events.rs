@@ -17,6 +17,7 @@ use crate::{
     score::Score,
     stats::Pentanomial,
     training::{Dataset, Net},
+    upstream::UpstreamSync,
     version::{Estimate, Llr, Version},
     work::Work,
 };
@@ -96,10 +97,13 @@ pub enum EventKind {
     /// [`Net`].
     #[serde(rename = "net.upserted")]
     NetUpserted,
+    /// [`UpstreamSync`]: a sync with upstream Reckless ended (merged, up to date, or failed).
+    #[serde(rename = "upstream.synced")]
+    UpstreamSynced,
 }
 
 impl EventKind {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::GameUpserted,
         Self::GameMoved,
         Self::GameUndone,
@@ -124,6 +128,7 @@ impl EventKind {
         Self::TrainProgress,
         Self::DatasetUpserted,
         Self::NetUpserted,
+        Self::UpstreamSynced,
     ];
 
     /// The name on the wire: `game.upserted`.
@@ -153,6 +158,7 @@ impl EventKind {
             Self::TrainProgress => "train.progress",
             Self::DatasetUpserted => "dataset.upserted",
             Self::NetUpserted => "net.upserted",
+            Self::UpstreamSynced => "upstream.synced",
         }
     }
 
@@ -413,6 +419,7 @@ pub enum Payload {
     TrainProgress(TrainProgress),
     DatasetUpserted(Box<Dataset>),
     NetUpserted(Box<Net>),
+    UpstreamSynced(Box<UpstreamSync>),
 }
 
 impl Payload {
@@ -442,6 +449,7 @@ impl Payload {
             Self::TrainProgress(_) => EventKind::TrainProgress,
             Self::DatasetUpserted(_) => EventKind::DatasetUpserted,
             Self::NetUpserted(_) => EventKind::NetUpserted,
+            Self::UpstreamSynced(_) => EventKind::UpstreamSynced,
         }
     }
 
@@ -468,6 +476,7 @@ impl Payload {
             Self::LevelsUpdated(_) => Topic::Player(PlayerKey::Dameless),
             Self::TrainProgress(p) => p.idea.map_or(Topic::Work, Topic::Idea),
             Self::DatasetUpserted(_) | Self::NetUpserted(_) => Topic::Training,
+            Self::UpstreamSynced(_) => Topic::Versions,
         }
     }
 
@@ -498,6 +507,7 @@ impl Payload {
             Self::TrainProgress(p) => serde_json::to_value(p),
             Self::DatasetUpserted(p) => serde_json::to_value(p),
             Self::NetUpserted(p) => serde_json::to_value(p),
+            Self::UpstreamSynced(p) => serde_json::to_value(p),
         };
         // Every payload is plain data with string keys and finite numbers, which always serializes.
         v.unwrap_or(serde_json::Value::Null)
