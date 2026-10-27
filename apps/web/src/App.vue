@@ -53,9 +53,7 @@ watchEffect(() => {
         <GamesRail class="ws-rail" />
         <BoardStage class="ws-stage" />
         <Panel class="ws-panel" />
-        <div v-if="sheet" class="ws-sheet">
-          <RouterView />
-        </div>
+        <RouterView v-if="sheet" />
       </div>
 
       <template #footer>
@@ -123,33 +121,14 @@ watchEffect(() => {
   background: var(--e-surface);
 }
 
-/* A sheet takes the panel's place beside the board, which shrinks to fit and stays visible and live. */
+/* A sheet takes the panel's place beside the board, which shrinks to fit and stays visible and live: the sheet docks
+   over the column kept for it. */
 .ws--sheet {
-  grid-template-columns: 18rem minmax(0, 1fr) minmax(30rem, 40rem);
+  grid-template-columns: 18rem minmax(0, 1fr) var(--e-panel-width-md);
 }
 
 .ws--sheet .ws-panel {
   display: none;
-}
-
-.ws-sheet {
-  min-inline-size: 0;
-  min-block-size: 0;
-  border-inline-start: var(--line);
-  animation: sheet-in var(--e-duration-move, 0.18s) ease-out both;
-}
-
-@keyframes sheet-in {
-  from {
-    opacity: 0;
-    transform: translateX(1.5rem);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ws-sheet {
-    animation: none;
-  }
 }
 
 .foot :deep(.e-appfooter-inner),
@@ -157,7 +136,8 @@ watchEffect(() => {
   padding-block: 0;
 }
 
-/* Stacked below 75rem: the board first, then the panel, then the rail; the page scrolls. Sheets cover the window. */
+/* Stacked below 75rem: the board first, then the panel, then the rail; the page scrolls.
+   Sheets cover the window (ESheet's modalBelow). */
 @media (width < 75rem) {
   .shell {
     height: auto;
@@ -188,13 +168,6 @@ watchEffect(() => {
 
   .ws--sheet {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .ws-sheet {
-    position: fixed;
-    inset: 0;
-    z-index: 20;
-    border: 0;
   }
 }
 </style>

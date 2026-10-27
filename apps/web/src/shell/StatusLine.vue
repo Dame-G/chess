@@ -2,9 +2,10 @@
 import { computed } from "vue";
 import { PhPause, PhPlay, PhStop } from "@phosphor-icons/vue";
 import { useToast } from "@eos-ui/vue";
+import { EButton } from "@eos-ui/vue/components/EButton";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
 import { EProgress } from "@eos-ui/vue/components/EProgress";
-import { EToggletip } from "@eos-ui/vue/components/EToggletip";
+import { EPopover } from "@eos-ui/vue/components/EPopover";
 import type { Work, WorkId } from "../api/types";
 import { ago, duration } from "../format";
 import { useGames } from "../stores/games";
@@ -58,10 +59,12 @@ const fraction = (w: Work) => (w.progress?.total ? w.progress.done / w.progress.
 
 <template>
   <div class="status">
-    <EToggletip label="Background work" title="Background work" class="work">
+    <EPopover label="Background work" title="Background work" side="top" align="start">
       <template #trigger>
-        <span class="dot" :class="`dot--${state}`" aria-hidden="true"></span>
-        <span class="sentence">{{ sentence }}</span>
+        <EButton variant="quiet" size="sm" class="work-trigger">
+          <span class="dot" :class="`dot--${state}`" aria-hidden="true"></span>
+          <span class="sentence">{{ sentence }}</span>
+        </EButton>
       </template>
       <div class="queue">
         <section v-if="work.running.length" aria-label="Running">
@@ -117,7 +120,7 @@ const fraction = (w: Work) => (w.progress?.total ? w.progress.done / w.progress.
           Nothing has run yet.
         </p>
       </div>
-    </EToggletip>
+    </EPopover>
     <span v-if="policy.reason" class="fairplay" role="status">{{ policy.reason }}</span>
   </div>
 </template>
@@ -133,19 +136,21 @@ const fraction = (w: Work) => (w.progress?.total ? w.progress.done / w.progress.
   font: var(--e-type-small);
 }
 
-.work {
-  display: inline-flex;
-  align-items: center;
-  overflow: hidden;
-  min-width: 0;
-  max-width: 100%;
-  color: var(--e-ink);
+.work-trigger {
+  justify-content: flex-start;
+  inline-size: auto;
+  max-inline-size: 100%;
+  min-inline-size: 0;
   font: var(--e-type-small);
+  font-weight: 400;
   text-decoration: none;
 }
 
-.work :deep(svg) {
-  display: none;
+.work-trigger :deep(.e-button-label) {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  min-inline-size: 0;
 }
 
 .sentence {
@@ -182,7 +187,6 @@ const fraction = (w: Work) => (w.progress?.total ? w.progress.done / w.progress.
 .queue {
   display: grid;
   gap: var(--e-gap-base);
-  min-width: min(26rem, 80vw);
 }
 
 .rows {

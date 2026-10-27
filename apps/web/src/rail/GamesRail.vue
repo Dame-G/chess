@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { PhCaretDown, PhCaretRight } from "@phosphor-icons/vue";
-import { EButton } from "@eos-ui/vue/components/EButton";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
+import { EList } from "@eos-ui/vue/components/EList";
+import { EListRow } from "@eos-ui/vue/components/EListRow";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
-import type { GameId, TrialId } from "../api/types";
+import { EVirtualList } from "@eos-ui/vue/components/EVirtualList";
+import type { GameId, GameSummary, TrialId } from "../api/types";
 import { clockOf } from "../sheets/idea";
 import { useBoard } from "../board/board";
 import { useGames } from "../stores/games";
@@ -15,7 +17,10 @@ import { stored } from "../stored";
 import GameRow from "./GameRow.vue";
 import { FILTERS, railRows, stageLabel, type RailFilter, type RailRow } from "./rail";
 
-/** The Games rail: every game in one list, live ones pinned, a trial's games folded into one row that opens. */
+/**
+ * The Games rail: every game in one windowed list, live ones pinned, a trial's games folded into one row that opens
+ * (its games follow it, indented, while it is open).
+ */
 const games = useGames();
 const ideas = useIdeas();
 const versions = useVersions();
@@ -24,6 +29,7 @@ const board = useBoard();
 const filter = stored<RailFilter>("rail.filter", "all");
 const rows = computed(() => railRows(games.list, filter.value));
 const opened = ref(new Set<TrialId>());
+const TRIAL = "trial:";
 
 function toggle(id: TrialId) {
   const next = new Set(opened.value);
@@ -47,7 +53,33 @@ function trialTitle(row: Extract<RailRow, { type: "trial" }>) {
   };
 }
 
-const open = (id: GameId) => void board.openGame(id);
+/** What the list shows, top to bottom: a game, a trial's row, or a trial's game while it is open. */
+type Item =
+  { key: string; game: GameSummary; nested: boolean } | { key: string; trial: Extract<RailRow, { type: "trial" }> };
+const items = computed<Item[]>(() =>
+  rows.value.flatMap((row): Item[] =>
+    row.type === "game"
+      ? [{ key: row.key, game: row.game, nested: false }]
+      : [
+          { key: row.key, trial: row },
+          ...(opened.value.has(row.trial)
+            ? row.games.map((g) => ({ key: `${row.key}-${g.id}`, game: g, nested: true }))
+            : []),
+        ],
+  ),
+);
+
+/** The game on the board is the list's current row; picking a row does not make it current until the board shows it. */
+const current = computed({
+  get: () => (board.drilling ? null : board.gameId),
+  set: () => {},
+});
+
+/** A trial's row opens or closes; a game opens on the board. */
+function pick(key: GameId | string) {
+  if (typeof key === "string" && key.startsWith(TRIAL)) toggle(Number(key.slice(TRIAL.length)) as TrialId);
+  else void board.openGame(key as GameId);
+}
 </script>
 
 <template>
@@ -55,50 +87,30 @@ const open = (id: GameId) => void board.openGame(id);
     <div class="rail-head">
       <ESegmented v-model="filter" label="Show games" hide-label size="sm" :options="FILTERS" class="filter" />
     </div>
-    <div class="rail-list" role="list" aria-label="Games list">
-      <ESkeleton v-if="!games.loaded" :lines="10" label="Loading games" class="pad" />
-      <EEmptyState v-else-if="!rows.length" class="pad" title="No games here yet" size="sm" bare>
-        Games you play, Dameless's games on Lichess and trial games all land here.
-      </EEmptyState>
-      <template v-for="row in rows" :key="row.key">
-        <GameRow
-          v-if="row.type === 'game'"
-          :game="row.game"
-          :current="!board.drilling && board.gameId === row.game.id"
-          @open="open(row.game.id)"
-        />
-        <template v-else>
-          <div role="listitem">
-            <EButton
-              variant="quiet"
-              size="sm"
-              block
-              class="trial"
-              :icon="opened.has(row.trial) ? PhCaretDown : PhCaretRight"
-              :aria-expanded="opened.has(row.trial)"
-              @click="toggle(row.trial)"
-            >
-              <span class="trial-text">
-                <span class="trial-title"
-                  ><span v-if="row.live" class="pulse" aria-label="Live"></span>{{ trialTitle(row).title }}</span
-                >
-                <span class="trial-detail">{{ trialTitle(row).detail }} · {{ row.games.length }} games here</span>
-              </span>
-            </EButton>
-          </div>
-          <template v-if="opened.has(row.trial)">
-            <GameRow
-              v-for="g in row.games"
-              :key="g.id"
-              :game="g"
-              nested
-              :current="!board.drilling && board.gameId === g.id"
-              @open="open(g.id)"
-            />
+    <ESkeleton v-if="!games.loaded" :lines="10" label="Loading games" class="pad" />
+    <EEmptyState v-else-if="!rows.length" class="pad" title="No games here yet" size="sm" bare>
+      Games you play, Dameless's games on Lichess and trial games all land here.
+    </EEmptyState>
+    <EList v-else v-model="current" label="Games" class="rail-list" @select="pick">
+      <EVirtualList v-slot="{ item }" :items="items" :row-height="56" measure item-key="key">
+        <GameRow v-if="'game' in item" :game="item.game" :nested="item.nested" />
+        <EListRow
+          v-else
+          :value="`${TRIAL}${item.trial.trial}`"
+          :live="item.trial.live"
+          :subtitle="trialTitle(item.trial).detail"
+        >
+          <template #leading>
+            <component :is="opened.has(item.trial.trial) ? PhCaretDown : PhCaretRight" aria-hidden="true" />
           </template>
-        </template>
-      </template>
-    </div>
+          <template #trailing>{{ item.trial.games.length }}<span class="e-sr"> games here</span></template>
+          <template #title>
+            {{ trialTitle(item.trial).title
+            }}<span class="e-sr">, {{ opened.has(item.trial.trial) ? "open" : "closed" }}</span>
+          </template>
+        </EListRow>
+      </EVirtualList>
+    </EList>
   </nav>
 </template>
 
@@ -130,50 +142,11 @@ const open = (id: GameId) => void board.openGame(id);
 }
 
 .rail-list {
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
 }
 
 .pad {
   padding: var(--ws-pad);
-}
-
-.trial {
-  height: auto;
-  white-space: normal;
-  justify-content: flex-start;
-  min-height: 0;
-  padding: var(--e-gap-snug) var(--ws-pad);
-  border-radius: 0;
-  border-block-start: var(--line);
-  text-align: start;
-  text-decoration: none;
-}
-
-.trial-text {
-  flex: 1 1 auto;
-  display: grid;
-  gap: 0.125rem;
-  min-width: 0;
-}
-
-.trial-title {
-  display: flex;
-  align-items: center;
-  gap: var(--e-gap-tight);
-  font-weight: 600;
-}
-
-.trial-detail {
-  color: var(--e-muted);
-  font: var(--e-type-small);
-  font-weight: 400;
-}
-
-.pulse {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--e-danger);
 }
 </style>

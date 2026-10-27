@@ -378,21 +378,25 @@ const rep: Repertoire = {
   ],
 };
 
+/** The tree flattened depth first, to read it as the rows a person sees fully open. */
+const flat = (branches: ReturnType<typeof outline>): ReturnType<typeof outline>[number]["row"][] =>
+  branches.flatMap((b) => [b.row, ...flat(b.children)]);
+
 describe("the repertoire tree", () => {
   it("shows your top two moves and the top three replies you met", () => {
-    const rows = outline(rep, new Set(["e2e4"]));
-    // Root: your two moves (c4 is the third and is left out). Under e4, expanded: the replies, three of four.
-    expect(rows.map((r) => `${r.depth}:${r.san}`)).toEqual(["0:e4", "1:e5", "1:c5", "1:e6", "0:d4"]);
+    const rows = flat(outline(rep));
+    // Root: your two moves (c4 is the third and is left out). Under e4: the replies, three of four.
+    expect(rows.map((r) => `${r.depth}:${r.san}`)).toEqual(["0:e4", "1:e5", "2:Nf3", "1:c5", "1:e6", "0:d4", "1:d5"]);
     expect(rows[0]).toMatchObject({ id: "e2e4", yours: true, number: "1.", games: 7, expandable: true, ply: 1 });
     expect(rows[1]).toMatchObject({ yours: false, number: "1…", line: ["e2e4", "e7e5"] });
   });
 
-  it("leaves what is collapsed out and what has no moves unexpandable", () => {
-    const rows = outline(rep, new Set());
-    expect(rows.map((r) => r.san)).toEqual(["e4", "d4"]);
-    const open = outline(rep, new Set(["e2e4", "e2e4 e7e5"]));
-    const nf3 = open.find((r) => r.san === "Nf3");
+  it("nests the moves that lead on and marks what has none unexpandable", () => {
+    const tree = outline(rep);
+    expect(tree.map((b) => b.row.san)).toEqual(["e4", "d4"]);
+    const nf3 = flat(tree).find((r) => r.san === "Nf3");
     expect(nf3).toMatchObject({ depth: 2, expandable: false });
+    expect(tree[0]!.children.map((b) => b.row.san)).toEqual(["e5", "c5", "e6"]);
   });
 
   it("opens along the main line", () => {
@@ -408,7 +412,7 @@ describe("the repertoire tree", () => {
         node("a", 1, false, [move("g8f6", "Nf6", "start", 4, 1)]),
       ],
     };
-    const rows = outline(loop, new Set(["g1f3", "g1f3 g8f6"]));
+    const rows = flat(outline(loop));
     expect(rows.map((r) => r.san)).toEqual(["Nf3", "Nf6"]);
     expect(rows[1]!.expandable).toBe(false);
   });

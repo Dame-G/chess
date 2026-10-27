@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
+import { ESheet } from "@eos-ui/vue/components/ESheet";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { ELink } from "@eos-ui/vue/components/ELink";
@@ -17,13 +18,15 @@ import TuneView from "../parts/TuneView.vue";
 import { useIdeas } from "../stores/ideas";
 import { useVersions } from "../stores/versions";
 import { clockOf, KIND_WORD, STAGE_WORD, STATUS_TONE, STATUS_WORD, TRIAL_TONE } from "./idea";
-import SheetFrame from "./SheetFrame.vue";
+import SheetBack from "./SheetBack.vue";
+import { useSheet } from "./useSheet";
 
 /**
  * An idea: what it is for, how it is going or ended, the funnel as a row of stages each with its status and deciding
  * number, and under it the chosen stage's evidence: the gauge, Elo, the pairs, the clock it was played at, its games,
  * and for a tune its trajectory. Stop, Resume and Promote are in the head, Push the fork after promoting.
  */
+const sheet = useSheet();
 const route = useRoute();
 const ideas = useIdeas();
 const versions = useVersions();
@@ -83,7 +86,8 @@ const tune = computed(() => ideas.tuneStates[id.value]);
 </script>
 
 <template>
-  <SheetFrame :title="idea?.title ?? 'Idea'" :description="idea?.hypothesis">
+  <ESheet v-bind="sheet.bind" :title="idea?.title ?? 'Idea'" :description="idea?.hypothesis">
+    <template #leading><SheetBack :show="sheet.canGoBack" @back="sheet.back" /></template>
     <EEmptyState v-if="missing" title="No such idea">It may have been removed, or the link is wrong.</EEmptyState>
     <div v-else-if="!idea" aria-busy="true"><ESkeleton :lines="5" label="Loading the idea" /></div>
     <template v-else>
@@ -149,7 +153,7 @@ const tune = computed(() => ideas.tuneStates[id.value]);
         </p>
       </section>
     </template>
-  </SheetFrame>
+  </ESheet>
 </template>
 
 <style scoped>

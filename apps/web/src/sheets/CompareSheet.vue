@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { PhX } from "@phosphor-icons/vue";
+import { ESheet } from "@eos-ui/vue/components/ESheet";
 import { ECheckboxGroup } from "@eos-ui/vue/components/ECheckboxGroup";
 import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
@@ -19,13 +20,15 @@ import Term from "../parts/Term.vue";
 import TopPlayers from "../parts/TopPlayers.vue";
 import { usePlayers } from "../stores/players";
 import { addressQuery, compareGroups, type CompareAddress, LIMITS, leads, parseAddress, SPEEDS } from "./compare";
-import SheetFrame from "./SheetFrame.vue";
+import SheetBack from "./SheetBack.vue";
+import { useSheet } from "./useSheet";
 
 /**
  * Compare: players as columns, rows grouped (results, accuracy, moves per game, time, openings), the leader of a row
  * tinted. The address holds everything (`?players=you,dameless,lichess:x&speeds=blitz&rated=true&limit=100`), so a
  * comparison is a link. Add someone by name or pasted profile link, or from the leaderboard.
  */
+const sheet = useSheet();
 const route = useRoute();
 const router = useRouter();
 const players = usePlayers();
@@ -86,10 +89,12 @@ const stale = computed(
 </script>
 
 <template>
-  <SheetFrame
+  <ESheet
+    v-bind="sheet.bind"
     title="Compare"
     description="Players side by side over the games they have here, reviewed by the same engine."
   >
+    <template #leading><SheetBack :show="sheet.canGoBack" @back="sheet.back" /></template>
     <ENotice v-if="failed" tone="danger" title="The comparison did not load" class="gap">{{ failed }}</ENotice>
 
     <section class="sec" aria-label="Filters">
@@ -187,7 +192,7 @@ const stale = computed(
         <Term k="accuracy" /> and <Term k="acpl" /> come from the same engine for everyone, so they compare fairly.
       </p>
     </section>
-  </SheetFrame>
+  </ESheet>
 </template>
 
 <style scoped>

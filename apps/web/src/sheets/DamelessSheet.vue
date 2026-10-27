@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
+import { ESheet } from "@eos-ui/vue/components/ESheet";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
@@ -21,12 +22,14 @@ import { useIdeas } from "../stores/ideas";
 import { useProgress } from "../stores/progress";
 import { useVersions } from "../stores/versions";
 import { KIND_WORD, progressWord, STATUS_TONE, STATUS_WORD } from "./idea";
-import SheetFrame from "./SheetFrame.vue";
+import SheetBack from "./SheetBack.vue";
+import { useSheet } from "./useSheet";
 
 /**
  * Dameless: the champion and its strength line over the versions, the ideas running and queued, the logbook of every
  * idea, New idea (one dialog for every kind), and Out in the world: the bot on Lichess.
  */
+const sheet = useSheet();
 const dameless = useDameless();
 const ideas = useIdeas();
 const progress = useProgress();
@@ -99,10 +102,12 @@ watch(creating, (open) => {
 </script>
 
 <template>
-  <SheetFrame
+  <ESheet
+    v-bind="sheet.bind"
     title="Dameless"
     description="The engine: its strength over its versions, the ideas being tried, and its games on Lichess."
   >
+    <template #leading><SheetBack :show="sheet.canGoBack" @back="sheet.back" /></template>
     <ENotice v-if="failed" tone="danger" title="Dameless did not load" class="gap">{{ failed }}</ENotice>
 
     <section class="sec" aria-labelledby="d-strength">
@@ -172,7 +177,7 @@ watch(creating, (open) => {
     </section>
 
     <NewIdea v-model:open="creating" />
-  </SheetFrame>
+  </ESheet>
 </template>
 
 <style scoped>

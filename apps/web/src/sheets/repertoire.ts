@@ -7,7 +7,7 @@ export const positionKey = (fen: string): string => fen.split(" ").slice(0, 4).j
 const YOURS = 2;
 const REPLIES = 3;
 
-/** A row of the compact tree: one move of the repertoire, with how often, how much and how it went. */
+/** A row of the tree: one move of the repertoire, with how often, how much and how it went. */
 export interface OutlineRow {
   /** The moves from the start that lead here, which makes a row's identity (transpositions have several). */
   id: string;
@@ -44,44 +44,49 @@ function shownMoves(n: RepertoireNode) {
 /** The root of the tree: the start position, the node reached in no moves. */
 const rootOf = (rep: Repertoire): RepertoireNode | undefined => rep.nodes.find((n) => n.ply === 0) ?? rep.nodes[0];
 
+/** A row of the tree with the moves that lead on from it. */
+export interface OutlineBranch {
+  row: OutlineRow;
+  children: OutlineBranch[];
+}
+
 /**
- * The tree as an outline for a compact list: depth first, each move a row, a node's moves shown only where its row is
- * expanded (`expanded` holds row ids). A position reached again along the same path (a cycle) ends the branch.
+ * The repertoire as a tree, each move a branch with the moves that lead on from it. A position reached again along
+ * the same path (a cycle) ends the branch.
  */
-export function outline(rep: Repertoire, expanded: ReadonlySet<string>): OutlineRow[] {
+export function outline(rep: Repertoire): OutlineBranch[] {
   const nodes = byKey(rep);
   const root = rootOf(rep);
-  const rows: OutlineRow[] = [];
-  if (!root) return rows;
+  if (!root) return [];
 
-  const walk = (node: RepertoireNode, path: string[], seen: ReadonlySet<string>, depth: number) => {
-    for (const m of shownMoves(node)) {
+  const walk = (node: RepertoireNode, path: string[], seen: ReadonlySet<string>, depth: number): OutlineBranch[] =>
+    shownMoves(node).map((m) => {
       const line = [...path, m.uci];
-      const id = line.join(" ");
       const next = nodes.get(m.next);
       const onward = next && !seen.has(next.key) && shownMoves(next).length > 0;
       const ply = path.length + 1;
-      rows.push({
-        id,
-        depth,
-        key: m.next,
-        ply,
-        yours: node.your_turn,
-        uci: m.uci,
-        san: m.san,
-        number: `${Math.ceil(ply / 2)}${ply % 2 === 1 ? "." : "…"}`,
-        games: m.games,
-        share: m.share,
-        score: m.score,
-        leaves: m.leaves_theory === true,
-        expandable: !!onward,
-        line,
-      });
-      if (onward && expanded.has(id)) walk(next, line, new Set([...seen, next.key]), depth + 1);
-    }
-  };
-  walk(root, [], new Set([root.key]), 0);
-  return rows;
+      const children = onward ? walk(next, line, new Set([...seen, next.key]), depth + 1) : [];
+      return {
+        row: {
+          id: line.join(" "),
+          depth,
+          key: m.next,
+          ply,
+          yours: node.your_turn,
+          uci: m.uci,
+          san: m.san,
+          number: `${Math.ceil(ply / 2)}${ply % 2 === 1 ? "." : "…"}`,
+          games: m.games,
+          share: m.share,
+          score: m.score,
+          leaves: m.leaves_theory === true,
+          expandable: !!onward,
+          line,
+        },
+        children,
+      };
+    });
+  return walk(root, [], new Set([root.key]), 0);
 }
 
 /** The ids of the rows along the main line (the most played move at each position), to open the tree on. */

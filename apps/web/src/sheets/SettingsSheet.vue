@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useToast } from "@eos-ui/vue";
+import { ESheet } from "@eos-ui/vue/components/ESheet";
 import { EActions } from "@eos-ui/vue/components/EActions";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ECopyButton } from "@eos-ui/vue/components/ECopyButton";
@@ -18,7 +19,8 @@ import { choice, type Choice } from "../scheme";
 import { useConnections } from "../stores/connections";
 import { useDameless } from "../stores/dameless";
 import { usePolicy } from "../stores/policy";
-import SheetFrame from "./SheetFrame.vue";
+import SheetBack from "./SheetBack.vue";
+import { useSheet } from "./useSheet";
 
 /**
  * Settings: the two Lichess connections (your login, the bot's token), the machine (cores, the engine checkout, the
@@ -26,6 +28,7 @@ import SheetFrame from "./SheetFrame.vue";
  * can be trusted here, the theme, and the token the hosted app needs. Logging out and disconnecting ask first; so do
  * freeing disk space, after saying what it would free, and checking the harness, which plays games for a while.
  */
+const sheet = useSheet();
 const policy = usePolicy();
 const connections = useConnections();
 const dameless = useDameless();
@@ -240,10 +243,12 @@ function pair() {
 </script>
 
 <template>
-  <SheetFrame
+  <ESheet
+    v-bind="sheet.bind"
     title="Settings"
     description="Lichess connections, the machine, the theme and the token for the hosted app."
   >
+    <template #leading><SheetBack :show="sheet.canGoBack" @back="sheet.back" /></template>
     <section class="sec" aria-labelledby="s-you">
       <h2 id="s-you" class="part-title">Your Lichess account</h2>
       <EDescriptionList :items="lichessItems(you)" />
@@ -435,7 +440,7 @@ function pair() {
     >
       <p class="text">Only binaries that no trial, tune, game or the bot uses are removed. Nothing else is touched.</p>
     </ConfirmDialog>
-  </SheetFrame>
+  </ESheet>
 </template>
 
 <style scoped>

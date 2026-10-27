@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import { PhGearSix, PhMagnifyingGlass, PhPlus } from "@phosphor-icons/vue";
 import { EAppHeader } from "@eos-ui/vue/components/EAppHeader";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
 import { EKbd } from "@eos-ui/vue/components/EKbd";
+import { EStatLink } from "@eos-ui/vue/components/EStatLink";
 import { formatShortcut } from "@eos-ui/vue";
 import { isLive } from "../board/modes";
 import { useConnections } from "../stores/connections";
@@ -17,6 +18,7 @@ import { useUi } from "./ui";
 /** The header: the wordmark, the command bar, You and Dameless as links to their sheets, New game, settings. */
 const ui = useUi();
 const router = useRouter();
+const route = useRoute();
 const connections = useConnections();
 const versions = useVersions();
 const games = useGames();
@@ -39,14 +41,20 @@ const keys = formatShortcut("mod+k");
     </template>
     <template #actions>
       <EButton v-if="!playing" size="sm" :icon="PhPlus" class="new" @click="ui.startNewGame()">New game</EButton>
-      <RouterLink to="/you" class="who" aria-label="You: your profile">
-        <span class="who-name">You</span>
-        <span v-if="connections.youRating" class="who-figure num">{{ connections.youRating }}</span>
-      </RouterLink>
-      <RouterLink to="/dameless" class="who" aria-label="Dameless: the engine's profile">
-        <span class="who-name">Dameless</span>
-        <span v-if="versions.current" class="who-figure num">{{ versions.current.name }}</span>
-      </RouterLink>
+      <EStatLink
+        label="You"
+        :value="connections.youRating || undefined"
+        to="/you"
+        :link-component="RouterLink"
+        :current="route.path === '/you'"
+      />
+      <EStatLink
+        label="Dameless"
+        :value="versions.current?.name"
+        to="/dameless"
+        :link-component="RouterLink"
+        :current="route.path.startsWith('/dameless')"
+      />
       <EIconButton :icon="PhGearSix" label="Settings" tooltip size="sm" @click="router.push('/settings')" />
     </template>
   </EAppHeader>
@@ -94,33 +102,6 @@ const keys = formatShortcut("mod+k");
   gap: 0.125rem;
 }
 
-/* You and Dameless: a name and its one figure, a compact link to the sheet. */
-.who {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.375rem;
-  padding: 0.375rem 0.5rem;
-  border-radius: var(--e-radius-sm);
-  color: var(--e-ink);
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.who:hover {
-  background: color-mix(in oklab, var(--e-ink) 6%, transparent);
-}
-
-.who.router-link-active {
-  box-shadow: inset 0 -0.125rem 0 var(--e-primary);
-  color: var(--e-primary);
-}
-
-.who-figure {
-  color: var(--e-muted);
-  font: 500 0.8125rem/1 var(--e-font-mono);
-}
-
 @media (width < 56rem) {
   .bar-label,
   .bar-keys {
@@ -145,10 +126,6 @@ const keys = formatShortcut("mod+k");
 }
 
 @media (width < 40rem) {
-  .who-figure {
-    display: none;
-  }
-
   .new :deep(.e-button-label) {
     display: none;
   }

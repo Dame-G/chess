@@ -1,18 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
-import { PhCaretDown, PhCaretRight } from "@phosphor-icons/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { EIconButton } from "@eos-ui/vue/components/EIconButton";
 import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
+import { ETree, type TreeNode } from "@eos-ui/vue/components/ETree";
 import type { Departure, Side } from "../api/types";
 import { useBoard } from "../board/board";
 import { INITIAL_FEN } from "../board/position";
 import { plural } from "../format";
-import { departures, mainLineIds, outline, share } from "../sheets/repertoire";
+import { departures, mainLineIds, outline, share, type OutlineBranch, type OutlineRow } from "../sheets/repertoire";
 import { useRepertoire } from "../stores/repertoire";
 import { stored } from "../stored";
 
@@ -29,31 +28,55 @@ const side = stored<Side>("repertoire.side", "white");
 onMounted(() => void repertoire.load());
 
 const rep = computed(() => repertoire.sides[side.value]);
-const expanded = ref(new Set<string>());
+/** The open moves, by id; the main line is open to begin with. */
+const expanded = ref<string[]>([]);
+// Opened on the main line when the lines first arrive; a refresh of them keeps what you opened.
 watch(
   rep,
-  (r) => {
-    if (r) expanded.value = mainLineIds(r);
+  (r, before) => {
+    if (r && !before) expanded.value = [...mainLineIds(r)];
   },
   { immediate: true },
 );
 watch(side, () => {
-  if (rep.value) expanded.value = mainLineIds(rep.value);
+  if (rep.value) expanded.value = [...mainLineIds(rep.value)];
 });
 
-const rows = computed(() => (rep.value ? outline(rep.value, expanded.value) : []));
+/** The tree for the list, and each move's figures by its id. */
+const tree = computed(() => {
+  const rows = new Map<string, OutlineRow>();
+  const node = (b: OutlineBranch): TreeNode => {
+    rows.set(b.row.id, b.row);
+    return {
+      id: b.row.id,
+      label: `${b.row.number} ${b.row.san}`,
+      ...(b.children.length ? { children: b.children.map(node) } : {}),
+    };
+  };
+  const items = rep.value ? outline(rep.value).map(node) : [];
+  return { items, rows };
+});
 const leaves = computed(() => (rep.value ? departures(rep.value) : { yours: [], theirs: [] }));
-
-function toggle(id: string) {
-  const next = new Set(expanded.value);
-  if (!next.delete(id)) next.add(id);
-  expanded.value = next;
-}
 
 /** Opens a line in Explore, on the board. */
 function show(fen: string, moves: string[]) {
   board.openFree(fen, moves);
   void router.push({ path: "/", query: board.address });
+}
+
+/** A move's games, share and score, as the tree's last column. */
+function figures(id: string): string {
+  const r = tree.value.rows.get(id);
+  return r ? `${r.games} · ${share(r.share)} · ${share(r.score)}` : "";
+}
+
+/**
+ * A move picked in the tree puts its line on the board and leaves the sheet open: picking also opens or closes the
+ * move, so the way on through the tree stays in reach (the board is beside the sheet on a wide screen).
+ */
+function pick(id: string) {
+  const row = tree.value.rows.get(id);
+  if (row) board.openFree(INITIAL_FEN, row.line);
 }
 
 const departureLine = (d: Departure) => `${Math.ceil(d.ply / 2)}${d.ply % 2 === 1 ? "." : "…"} ${d.san}`;
@@ -86,36 +109,27 @@ const departureLine = (d: Departure) => `${Math.ceil(d.ply / 2)}${d.ply % 2 === 
         {{ plural(rep.games, "game") }} as {{ side === "white" ? "White" : "Black" }}. Your moves are shown with a dot;
         the others are what you met.
       </p>
-      <ul class="tree" aria-label="Your lines">
-        <li class="head" aria-hidden="true">
-          <span></span><span>Move</span><span class="r">Games</span><span class="r">Share</span
-          ><span class="r">Score</span>
-        </li>
-        <li v-for="r in rows" :key="r.id" class="row" :style="{ '--depth': r.depth }">
-          <EIconButton
-            v-if="r.expandable"
-            :icon="expanded.has(r.id) ? PhCaretDown : PhCaretRight"
-            :label="`${expanded.has(r.id) ? 'Hide' : 'Show'} what follows ${r.number} ${r.san}`"
-            size="sm"
-            @click="toggle(r.id)"
-          />
-          <span v-else class="gap"></span>
-          <EButton
-            variant="quiet"
-            size="sm"
-            class="move"
-            :class="{ 'move--you': r.yours }"
-            :aria-label="`Show ${r.number} ${r.san} on the board`"
-            @click="show(INITIAL_FEN, r.line)"
+      <p class="legend" aria-hidden="true"><span>Move</span><span>Games · share · score</span></p>
+      <ETree
+        v-model:expanded="expanded"
+        label="Your lines"
+        :items="tree.items"
+        :model-value="null"
+        class="tree"
+        @select="pick"
+      >
+        <template #leading="{ item }">
+          <span class="dot" :class="{ 'dot--you': tree.rows.get(item.id)?.yours }" aria-hidden="true"></span>
+        </template>
+        <template #item="{ item }">
+          <span class="move mono"
+            >{{ item.label }}<span v-if="tree.rows.get(item.id)?.leaves" class="out"> out of theory</span></span
           >
-            <span class="mono">{{ r.number }} {{ r.san }}</span>
-            <span v-if="r.leaves" class="out">out of theory</span>
-          </EButton>
-          <span class="mono r">{{ r.games }}</span>
-          <span class="mono r">{{ share(r.share) }}</span>
-          <span class="mono r">{{ share(r.score) }}</span>
-        </li>
-      </ul>
+        </template>
+        <template #trailing="{ item }">
+          <span class="mono">{{ figures(item.id) }}</span>
+        </template>
+      </ETree>
 
       <div v-if="leaves.yours.length || leaves.theirs.length" class="leave">
         <div v-if="leaves.yours.length">
@@ -156,61 +170,29 @@ const departureLine = (d: Departure) => `${Math.ceil(d.ply / 2)}${d.ply % 2 === 
 </template>
 
 <style scoped>
-.tree {
-  display: grid;
+.legend {
+  display: flex;
+  justify-content: space-between;
   margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.head,
-.row {
-  display: grid;
-  grid-template-columns: 2rem minmax(0, 1fr) 3.5rem 3.5rem 3.5rem;
-  align-items: center;
-  gap: 0 var(--e-gap-tight);
-  min-width: 0;
-}
-
-.head {
   padding-block-end: var(--e-gap-tight);
   border-block-end: var(--line);
   color: var(--e-muted);
   font: var(--e-type-small);
 }
 
-.row {
-  border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 40%, transparent);
-  font-size: 0.8125rem;
-}
-
-.row > .gap {
-  inline-size: 2rem;
-}
-
-.move {
-  justify-content: flex-start;
-  gap: var(--e-gap-snug);
-  min-width: 0;
-  margin-inline-start: calc(var(--depth) * 1rem);
-  text-decoration: none;
-}
-
-.move--you::before {
+.dot {
   inline-size: 0.375rem;
   block-size: 0.375rem;
+}
+
+.dot--you {
   border-radius: 50%;
   background: var(--e-primary);
-  content: "";
 }
 
 .out {
   color: var(--e-muted);
   font: var(--e-type-small);
-}
-
-.r {
-  text-align: end;
 }
 
 .leave {
