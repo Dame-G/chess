@@ -685,7 +685,7 @@ pub struct TestArgs {
     #[arg(long, default_value = "stc")]
     pub preset: String,
     /// SPRT bounds in normalized Elo: 0,3 or -2.75,0.25.
-    #[arg(long, value_delimiter = ',', num_args = 1.., allow_hyphen_values = true)]
+    #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
     pub bounds: Option<Vec<f64>>,
     #[arg(long)]
     pub pairs: Option<u32>,
@@ -1066,6 +1066,71 @@ fn short(v: &Value) -> String {
     str_of(v).chars().take(8).collect()
 }
 
+/// A snake_case word of the API as people write it: `fifty_moves` → `fifty moves`.
+fn words(v: &Value) -> String {
+    str_of(v).replace('_', " ")
+}
+
+/// A timestamp to the minute, as the CLI shows them: `2026-10-27 05:07` (UTC).
+fn when(v: &Value) -> String {
+    v.as_str().map_or_else(|| "-".into(), |s| s.replace('T', " ").chars().take(16).collect())
+}
+
+/// A figure to `digits` decimals, or `-`.
+fn fixed(v: &Value, digits: usize) -> String {
+    v.as_f64().map_or_else(|| "-".into(), |n| format!("{n:.digits$}"))
+}
+
+/// A time control as the app writes it: `3+2`, `3 days`, `1 s a move`, `25k nodes`.
+fn tc_text(tc: &Value) -> String {
+    let n = |k: &str| tc[k].as_u64().unwrap_or(0);
+    let num = |x: f64| if x.fract() == 0.0 { format!("{x:.0}") } else { format!("{x}") };
+    match tc["type"].as_str() {
+        Some("clock") => {
+            let minutes = n("initial_ms") as f64 / 60_000.0;
+            let base = if minutes >= 1.0 && minutes.fract() == 0.0 {
+                num(minutes)
+            } else {
+                num(n("initial_ms") as f64 / 1000.0)
+            };
+            format!("{base}+{}", num(n("increment_ms") as f64 / 1000.0))
+        }
+        Some("correspondence") => format!("{} days", n("days")),
+        Some("movetime") => format!("{} s a move", num(n("ms") as f64 / 1000.0)),
+        Some("nodes") if n("nodes") >= 1000 => format!("{}k nodes", num(n("nodes") as f64 / 1000.0)),
+        Some("nodes") => format!("{} nodes", n("nodes")),
+        _ => "-".into(),
+    }
+}
+
+/// The side to move and the move number of a FEN (the standard start without one).
+fn fen_start(start_fen: &Value) -> (bool, usize) {
+    let fields: Vec<&str> = start_fen.as_str().unwrap_or_default().split_whitespace().collect();
+    let black = fields.get(1) == Some(&"b");
+    let number = fields.get(5).and_then(|n| n.parse().ok()).unwrap_or(1).max(1);
+    (black, number)
+}
+
+/// Moves written with their numbers, `21. Rfe8 Qd2 22. Bf4` or `21... Rfe8#`: `first` is the index of the first one
+/// among the game's plies (0 for the first move played from `start_fen`).
+fn numbered(sans: &[String], first: usize, start_fen: &Value) -> String {
+    let (black_first, number) = fen_start(start_fen);
+    let mut out = Vec::with_capacity(sans.len());
+    for (i, san) in sans.iter().enumerate() {
+        let k = first + i + usize::from(black_first);
+        let n = number + k / 2;
+        if k.is_multiple_of(2) {
+            out.push(format!("{n}. {san}"));
+        } else if i == 0 {
+            out.push(format!("{n}... {san}"));
+        } else {
+            out.push(san.clone());
+        }
+    }
+    out.join(" ")
+}
+
+/// A game in one line: `#12    finished  Dameless 1400 vs Dameless 1800  0-1 checkmate  1+0  29 moves  2026-10-27 05:07`.
 fn game_line(g: &Value) -> String {
     let result = match g["outcome"].as_str() {
         Some("white_wins") => "1-0",
@@ -1073,22 +1138,56 @@ fn game_line(g: &Value) -> String {
         Some("draw") => "½-½",
         _ => "*",
     };
+    let ending = g["ending"].as_str().map(|_| format!(" {}", words(&g["ending"]))).unwrap_or_default();
+    let plies = g["plies"].as_u64().unwrap_or(0);
+    let moves = plies.div_ceil(2);
     format!(
-        "#{:<5} {:<9} {} vs {}  {}  {} plies  {}",
-        g["id"],
+        "#{:<5} {:<8}  {} vs {}  {result}{ending}  {}  {moves} {}  {}",
+        g["id"].to_string(),
         str_of(&g["status"]),
         str_of(&g["white"]["name"]),
         str_of(&g["black"]["name"]),
-        result,
-        g["plies"],
-        str_of(&g["started_at"])
+        tc_text(&g["time"]),
+        if moves == 1 { "move" } else { "moves" },
+        when(&g["started_at"])
     )
+}
+
+/// `#1    v1                       69aea908  champion  bench 2837905  +3.1 ± 2.0 Elo`.
+fn version_line(x: &Value) -> String {
+    let bench = x["bench"].as_u64().map(|b| format!("  bench {b}")).unwrap_or_default();
+    let elo = if x["elo"].is_object() {
+        let e = &x["elo"];
+        let (elo, low, high) =
+            (e["elo"].as_f64().unwrap_or(0.0), e["low"].as_f64().unwrap_or(0.0), e["high"].as_f64().unwrap_or(0.0));
+        format!("  {elo:+.1} ± {:.1} Elo", (high - low) / 2.0)
+    } else {
+        String::new()
+    };
+    format!(
+        "#{:<4} {:<24} {}  {:<8}{bench}{elo}",
+        x["id"].to_string(),
+        str_of(&x["name"]),
+        short(&x["commit"]),
+        str_of(&x["line"]["type"])
+    )
+    .trim_end()
+    .to_owned()
+}
+
+/// `  build #3    ready     bench 2837905  1.21M nps  +spsa`.
+fn build_line(b: &Value) -> String {
+    let bench = b["bench"].as_u64().map(|n| format!("  bench {n}")).unwrap_or_default();
+    let nps = b["nps"].as_f64().map(|n| format!("  {:.2}M nps", n / 1e6)).unwrap_or_default();
+    let features: Vec<String> = b["features"].as_array().into_iter().flatten().map(str_of).collect();
+    let features = if features.is_empty() { String::new() } else { format!("  +{}", features.join(",")) };
+    format!("  build #{:<4} {:<8}{bench}{nps}{features}", b["id"].to_string(), str_of(&b["status"]))
 }
 
 fn idea_line(i: &Value) -> String {
     format!(
         "#{:<4} {:<8} {:<8} {}  {}",
-        i["id"],
+        i["id"].to_string(),
         str_of(&i["kind"]),
         str_of(&i["status"]),
         str_of(&i["title"]),
@@ -1098,11 +1197,17 @@ fn idea_line(i: &Value) -> String {
 
 fn work_line(w: &Value) -> String {
     let progress = w["progress"]["text"].as_str().map(|t| format!("  {t}")).unwrap_or_default();
-    format!("#{:<5} {:<9} {:<8} {}{progress}", w["id"], str_of(&w["kind"]), str_of(&w["status"]), str_of(&w["title"]))
+    format!(
+        "#{:<5} {:<9} {:<8} {}{progress}",
+        w["id"].to_string(),
+        str_of(&w["kind"]),
+        str_of(&w["status"]),
+        str_of(&w["title"])
+    )
 }
 
 fn drill_line(d: &Value) -> String {
-    format!("#{:<5} due {}  {}  {}", d["id"], str_of(&d["due"]), str_of(&d["side"]), str_of(&d["fen"]))
+    format!("#{:<5} due {}  {:<5}  {}", d["id"].to_string(), when(&d["due"]), str_of(&d["side"]), str_of(&d["fen"]))
 }
 
 fn is_final_work(w: &Value) -> bool {
@@ -1189,26 +1294,28 @@ pub async fn run(c: Client, command: Command, json: bool) -> Result<()> {
                 push(&mut q, "version", version);
                 push(&mut q, "nodes", nodes.map(|n| n.to_string()));
                 let v = c.get(&format!("/api/games/{id}/review{}", query(&q))).await?;
+                let start_fen =
+                    if json { Value::Null } else { c.get(&format!("/api/games/{id}")).await?["start_fen"].clone() };
                 print(&v, json, |v| {
                     let s = &v["summary"];
                     format!(
                         "accuracy: White {} · Black {}\n{}",
-                        str_of(&s["white"]["accuracy"]),
-                        str_of(&s["black"]["accuracy"]),
-                        lines(&v["plies"], |m| format!(
-                            "{:>3}. {:<8} {}",
-                            m["ply"],
-                            str_of(&m["san"]),
-                            str_of(&m["classification"])
-                        ))
+                        fixed(&s["white"]["accuracy"], 1),
+                        fixed(&s["black"]["accuracy"], 1),
+                        lines(&v["plies"], |m| {
+                            let index = m["ply"].as_u64().unwrap_or(1).saturating_sub(1) as usize;
+                            let mv = numbered(&[str_of(&m["san"])], index, &start_fen);
+                            format!("{mv:<14} {}", words(&m["classification"]))
+                        })
                     )
                 });
             } else if follow {
                 follow_game(&c, id, json).await?;
             } else {
                 print(&c.get(&format!("/api/games/{id}")).await?, json, |v| {
-                    let moves = v["moves"].as_array().map(|m| m.iter().map(|m| str_of(&m["san"])).collect::<Vec<_>>());
-                    format!("{}\n{}", game_line(&v["summary"]), moves.unwrap_or_default().join(" "))
+                    let moves: Vec<String> =
+                        v["moves"].as_array().into_iter().flatten().map(|m| str_of(&m["san"])).collect();
+                    format!("{}\n{}", game_line(&v["summary"]), numbered(&moves, 0, &v["start_fen"]))
                 });
             }
         }
@@ -1260,7 +1367,11 @@ pub async fn run(c: Client, command: Command, json: bool) -> Result<()> {
             print(&v, json, |g| {
                 let tail: Vec<String> =
                     g["moves"].as_array().into_iter().flatten().skip(plies).map(|m| str_of(&m["san"])).collect();
-                format!("{}  ({})", tail.join(" "), str_of(&g["summary"]["status"]))
+                let moves = numbered(&tail, plies, &g["start_fen"]);
+                match g["summary"]["status"].as_str() {
+                    Some("live" | "starting") => moves,
+                    _ => format!("{moves}\n{}", game_line(&g["summary"])),
+                }
             });
         }
         Command::Draw { game, accept, decline } => {
@@ -1325,8 +1436,8 @@ pub async fn run(c: Client, command: Command, json: bool) -> Result<()> {
                     str_of(&p["player"]["name"]),
                     p["games"],
                     p["reviewed"],
-                    str_of(&p["accuracy"]["overall"]),
-                    str_of(&p["acpl"])
+                    fixed(&p["accuracy"]["overall"], 1),
+                    fixed(&p["acpl"], 0)
                 )
             });
         }
@@ -1339,8 +1450,8 @@ pub async fn run(c: Client, command: Command, json: bool) -> Result<()> {
                     format!(
                         "{:<20} {:>4} games  accuracy {}",
                         str_of(&p["player"]["name"]),
-                        p["games"],
-                        str_of(&p["accuracy"]["overall"])
+                        p["games"].to_string(),
+                        fixed(&p["accuracy"]["overall"], 1)
                     )
                 })
             });
@@ -1411,7 +1522,7 @@ pub async fn run(c: Client, command: Command, json: bool) -> Result<()> {
             None => print(&c.get("/api/nets").await?, json, |v| {
                 lines(v, |n| {
                     let mb = n["size_bytes"].as_u64().unwrap_or(0) / 1_000_000;
-                    format!("#{:<4} {:<24} {}  {mb} MB", n["id"], str_of(&n["name"]), short(&n["sha256"]))
+                    format!("#{:<4} {:<24} {}  {mb} MB", n["id"].to_string(), str_of(&n["name"]), short(&n["sha256"]))
                 })
             }),
         },
@@ -1491,17 +1602,7 @@ pub async fn run(c: Client, command: Command, json: bool) -> Result<()> {
             let mut q = Vec::new();
             push(&mut q, "line", line);
             let v = c.get(&format!("/api/versions{}", query(&q))).await?;
-            print(&v, json, |v| {
-                lines(v, |x| {
-                    format!(
-                        "#{:<4} {:<24} {}  {}",
-                        x["id"],
-                        str_of(&x["name"]),
-                        short(&x["commit"]),
-                        str_of(&x["line"]["type"])
-                    )
-                })
-            });
+            print(&v, json, |v| lines(v, version_line));
         }
         Command::Version(VersionCommand::Make { reference, wait }) => {
             let v = c.post("/api/versions", json!({ "ref": reference })).await?;
@@ -1517,11 +1618,19 @@ pub async fn run(c: Client, command: Command, json: bool) -> Result<()> {
             } else {
                 v
             };
-            print(&v, json, pretty);
+            print(&v, json, |v| {
+                if v["version"].is_object() {
+                    format!("{}\n{}", version_line(&v["version"]), lines(&v["builds"], build_line))
+                } else {
+                    version_line(v)
+                }
+            });
         }
-        Command::Builds { version } => print(&c.get(&format!("/api/versions/{version}/builds")).await?, json, pretty),
+        Command::Builds { version } => {
+            print(&c.get(&format!("/api/versions/{version}/builds")).await?, json, |v| lines(v, build_line))
+        }
         Command::Build(BuildCommand::Delete { id }) => {
-            print(&c.delete(&format!("/api/builds/{id}")).await?, json, pretty)
+            print(&c.delete(&format!("/api/builds/{id}")).await?, json, build_line)
         }
         Command::Build(BuildCommand::Prune { older_than_days, all, dry_run }) => {
             let body = json!({ "older_than_days": older_than_days, "keep_latest": !all, "dry_run": dry_run });
@@ -1544,8 +1653,17 @@ async fn act(c: &Client, game: i64, action: &str, body: Value) -> Result<Value> 
     c.post(&format!("/api/games/{game}/actions/{action}"), body).await
 }
 
+/// The game and its standing offers: `… · White offers a draw`.
 fn offers_text(g: &Value) -> String {
-    format!("{} · offers: {}", game_line(&g["summary"]), g["offers"])
+    let mut offers = Vec::new();
+    for (kind, what) in [("draw", "offers a draw"), ("takeback", "asks for a takeback")] {
+        if let Some(side) = g["offers"][kind].as_str() {
+            let side = if side == "white" { "White" } else { "Black" };
+            offers.push(format!("{side} {what}"));
+        }
+    }
+    let offers = if offers.is_empty() { "no offers".to_owned() } else { offers.join(", ") };
+    format!("{} · {offers}", game_line(&g["summary"]))
 }
 
 /// Prints a game's moves as they come (to stderr with `--json`), then the game as it ended.
@@ -1553,9 +1671,11 @@ async fn follow_game(c: &Client, id: i64, json: bool) -> Result<()> {
     let game = c.get(&format!("/api/games/{id}")).await?;
     if matches!(game["summary"]["status"].as_str(), Some("live" | "starting")) {
         // The replay from the start of the stream's memory covers every move played so far.
+        let start_fen = game["start_fen"].clone();
         c.follow(&format!("game:{id},games"), 0, |e| match e["kind"].as_str() {
             Some("game.moved") if e["data"]["id"] == json!(id) => {
-                let line = format!("{:>3}. {}", e["data"]["ply"], str_of(&e["data"]["move"]["san"]));
+                let index = e["data"]["ply"].as_u64().unwrap_or(1).saturating_sub(1) as usize;
+                let line = numbered(&[str_of(&e["data"]["move"]["san"])], index, &start_fen);
                 if json {
                     eprintln!("{line}");
                 } else {
@@ -1571,7 +1691,7 @@ async fn follow_game(c: &Client, id: i64, json: bool) -> Result<()> {
         .await?;
     }
     let done = c.get(&format!("/api/games/{id}")).await?;
-    print(&done, json, |g| format!("{} ({})", game_line(&g["summary"]), str_of(&g["summary"]["ending"])));
+    print(&done, json, |g| game_line(&g["summary"]));
     Ok(())
 }
 
@@ -1681,7 +1801,13 @@ async fn idea(c: &Client, cmd: IdeaCommand, json: bool) -> Result<()> {
 }
 
 fn step_line(s: &Value) -> String {
-    format!("sb {:>4} batch {:>5}  loss {}  lr {}", s["superbatch"], s["batch"], str_of(&s["loss"]), str_of(&s["lr"]))
+    format!(
+        "sb {:>4} batch {:>5}  loss {}  lr {}",
+        s["superbatch"].to_string(),
+        s["batch"].to_string(),
+        str_of(&s["loss"]),
+        str_of(&s["lr"])
+    )
 }
 
 /// `20M` → 20,000,000.
@@ -1704,7 +1830,7 @@ async fn data(c: &Client, a: DataArgs, json: bool) -> Result<()> {
             let sets = lines(&v["datasets"], |d| {
                 format!(
                     "#{:<4} {:<20} {} positions  {}",
-                    d["id"],
+                    d["id"].to_string(),
                     str_of(&d["name"]),
                     d["positions"],
                     gb(&d["size_bytes"])
@@ -1775,11 +1901,13 @@ async fn levels(c: &Client, a: LevelsArgs, json: bool) -> Result<()> {
                 } else {
                     format!("{:.0}", l["rating"]["elo"].as_f64().unwrap_or_default())
                 };
-                format!("{:>2}  {:<12} {} games", l["level"]["id"], rating, l["games"])
+                format!("{:>2}  {:<12} {} games", l["level"]["id"].to_string(), rating, l["games"])
             })
         }),
         Some(LevelsAction::Plan { count }) => {
-            print(&c.get(&format!("/api/levels/plan?count={count}")).await?, json, pretty)
+            print(&c.get(&format!("/api/levels/plan?count={count}")).await?, json, |v| {
+                lines(v, |m| format!("level {} vs level {}  {} games", m["a"], m["b"], m["games"]))
+            })
         }
         Some(LevelsAction::Calibrate { count, games_per_pair, version, wait }) => {
             let body = json!({ "count": count, "games_per_pair": games_per_pair, "version": version });
@@ -1811,7 +1939,7 @@ async fn drills(c: &Client, a: DrillsArgs, json: bool) -> Result<()> {
                     "{}: best {} · next {}",
                     str_of(&r["outcome"]),
                     lines(&r["best_san"], str_of).replace('\n', ", "),
-                    str_of(&r["drill"]["due"])
+                    when(&r["drill"]["due"])
                 )
             });
         }
@@ -1934,8 +2062,15 @@ async fn eval(c: &Client, a: EvalArgs, json: bool) -> Result<()> {
 
 async fn lichess(c: &Client, a: LichessArgs, json: bool) -> Result<()> {
     let status_text = |s: &Value| {
-        let account = s["account"]["username"].as_str().unwrap_or("not connected");
-        format!("{}: {account} ({})", str_of(&s["key"]), str_of(&s["state"]))
+        let account = s["account"]["username"].as_str().unwrap_or("not linked");
+        let mut text = format!("{}: {account} ({})", str_of(&s["key"]), str_of(&s["state"]));
+        // The last word on seeking, for people: "Alpha declined (too fast). Trying another bot."
+        for note in [&s["error"], &s["bot"]["seek"]["note"], &s["you"]["seek"]["note"]] {
+            if let Some(note) = note.as_str().filter(|n| !n.is_empty()) {
+                text.push_str(&format!("\n  {note}"));
+            }
+        }
+        text
     };
     match a.account {
         None => {
@@ -2006,7 +2141,10 @@ async fn lichess(c: &Client, a: LichessArgs, json: bool) -> Result<()> {
                     };
                     settings[k.trim()] = value;
                 }
-                print(&c.put("/api/connections/bot/settings", settings).await?, json, pretty);
+                print(&c.put("/api/connections/bot/settings", settings).await?, json, |v| {
+                    let pairs = v.as_object().into_iter().flatten();
+                    pairs.map(|(k, v)| format!("{k:<16} {}", str_of(v))).collect::<Vec<_>>().join("\n")
+                });
             }
             Some(BotAction::Online) => {
                 print(&c.post("/api/connections/bot/online", json!({ "online": true })).await?, json, status_text)
@@ -2021,10 +2159,45 @@ async fn lichess(c: &Client, a: LichessArgs, json: bool) -> Result<()> {
                 let body = json!({ "username": username, "time": clock(&tc)?, "rated": rated, "color": color });
                 print(&c.post("/api/connections/bot/challenge", body).await?, json, |v| str_of(&v["url"]));
             }
-            Some(BotAction::Bots) => {
-                print(&c.get("/api/connections/bot/bots").await?, json, |v| lines(v, |b| str_of(&b["name"])))
-            }
+            Some(BotAction::Bots) => print(&c.get("/api/connections/bot/bots").await?, json, |v| {
+                lines(v, |b| {
+                    let r = |speed: &str| b["ratings"][speed]["rating"].as_u64().map_or("-".into(), |n| n.to_string());
+                    format!(
+                        "{:<24} bullet {:>5}  blitz {:>5}  rapid {:>5}",
+                        str_of(&b["name"]),
+                        r("bullet"),
+                        r("blitz"),
+                        r("rapid")
+                    )
+                })
+            }),
         },
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sans(moves: &[&str]) -> Vec<String> {
+        moves.iter().map(|m| (*m).to_owned()).collect()
+    }
+
+    #[test]
+    fn moves_are_numbered_as_people_write_them() {
+        let start = Value::Null;
+        assert_eq!(numbered(&sans(&["e4", "e5", "Nf3"]), 0, &start), "1. e4 e5 2. Nf3");
+        // Ply 42 is Black's 21st move.
+        assert_eq!(numbered(&sans(&["Rfe8#"]), 41, &start), "21... Rfe8#");
+        let black_first = json!("8/8/8/8/8/8/8/K1k5 b - - 0 30");
+        assert_eq!(numbered(&sans(&["Kc2", "Ka2"]), 0, &black_first), "30... Kc2 31. Ka2");
+    }
+
+    #[test]
+    fn time_controls_read_as_the_app_writes_them() {
+        assert_eq!(tc_text(&json!({ "type": "clock", "initial_ms": 180_000, "increment_ms": 2000 })), "3+2");
+        assert_eq!(tc_text(&json!({ "type": "clock", "initial_ms": 8000, "increment_ms": 80 })), "8+0.08");
+        assert_eq!(tc_text(&json!({ "type": "nodes", "nodes": 25_000 })), "25k nodes");
+    }
 }

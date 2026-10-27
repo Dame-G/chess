@@ -128,7 +128,7 @@ impl WorkContext {
         self.update(WorkUpdate { progress: Some(progress), ..Default::default() }).await
     }
 
-    /// Changes the title people see ("Testing deeper-lmr · long games").
+    /// Changes the title people see ("Trying deeper-lmr · long games").
     pub async fn set_title(&self, title: impl Into<String>) -> Result<(), Error> {
         self.update(WorkUpdate { title: Some(title.into()), ..Default::default() }).await
     }

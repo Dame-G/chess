@@ -3522,7 +3522,15 @@ export interface components {
         /** @description Someone at a board, as this game knew them. */
         Seat: {
             build?: components["schemas"]["BuildId"] | null;
-            /** @description What to show: "You" is shown as the Lichess username when linked; a Dameless seat by its version's name. */
+            /**
+             * Format: int32
+             * @description The level of the ladder a Dameless seat played at; none at full strength.
+             */
+            level?: number | null;
+            /**
+             * @description What to show: "You" is shown as the Lichess username when linked; a Dameless seat by its version's name, or
+             *     at a level of its ladder by its rating ("Dameless 1650").
+             */
             name: string;
             player: components["schemas"]["PlayerKey"];
             /** Format: int32 */
@@ -4234,7 +4242,7 @@ export interface components {
             started_at?: components["schemas"]["Timestamp"] | null;
             status: components["schemas"]["WorkStatus"];
             subject: components["schemas"]["Subject"];
-            /** @description "Testing deeper-lmr · short games". */
+            /** @description "Trying deeper-lmr · short games". */
             title: string;
         };
         /**

@@ -83,7 +83,7 @@ async fn the_bot_takes_challenges_by_its_rules_and_plays_them() {
     let id = l.game_of(&lid).await;
     let g = l.game(id).await;
     assert_eq!(g.summary.black.player, PlayerKey::Dameless);
-    assert_eq!(g.summary.black.name, "v1");
+    assert_eq!(g.summary.black.name, "Dameless v1");
     assert_eq!(g.summary.white.player, PlayerKey::Lichess("alice".into()));
     assert!(g.actions.is_empty(), "you do not play the bot's games");
     // A second challenge while one game runs: busy.

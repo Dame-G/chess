@@ -148,7 +148,7 @@ async fn ideas_are_dropped_by_the_first_stage_that_fails() {
     let worse = ended(&lab, worse.id).await;
     assert_eq!(worse.status, IdeaStatus::Dropped);
     assert!(
-        worse.verdict.as_deref().unwrap().starts_with("Dropped at the screen: rejected [-5, 0]"),
+        worse.verdict.as_deref().unwrap().starts_with("Dropped at the quick screen: rejected [-5, 0]"),
         "{:?}",
         worse.verdict
     );

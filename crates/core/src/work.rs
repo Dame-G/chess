@@ -115,7 +115,7 @@ pub struct Work {
     pub kind: WorkKind,
     pub status: WorkStatus,
     pub priority: Priority,
-    /// "Testing deeper-lmr · short games".
+    /// "Trying deeper-lmr · short games".
     pub title: String,
     pub subject: Subject,
     /// Cores granted now.

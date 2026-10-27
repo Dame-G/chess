@@ -498,12 +498,13 @@ impl Games {
                     let mut seat = Seat {
                         version: Some(binary.version.id),
                         build: Some(binary.build),
-                        ..Seat::new(PlayerKey::Dameless, binary.version.name.clone())
+                        ..Seat::dameless(&binary.version.name)
                     };
                     let engine = match &levels[index] {
                         Some(level) => {
                             let (name, rating) = self.inner.levels.seat_name(level).await;
                             seat.name = name;
+                            seat.level = Some(level.id);
                             seat.rating = Some(rating);
                             engine.at_level(level.clone(), None, seat_seed(seed, index)).await?
                         }

@@ -223,7 +223,7 @@ impl Ideas {
             && !req.fix_bench
         {
             return Err(Error::conflict(format!(
-                "{}. The fingerprint stage would fail on it: let the app fix the line (fix_bench), or amend the commit",
+                "{}, so its fingerprint stage would fail. Let the app fix the line (Fix the Bench: line, or --fix-bench), or amend the commit",
                 check.detail
             )));
         }
@@ -344,7 +344,7 @@ impl Ideas {
             }
             stage => (
                 if stage == Stage::Tune { WorkKind::Tune } else { WorkKind::Trial },
-                format!("Testing {} · {}", i.branch, stage.label()),
+                format!("Trying {} · {}", i.branch, stage.label()),
                 serde_json::to_value(TrialWork { idea, trial: trial.id, index }),
             ),
         };

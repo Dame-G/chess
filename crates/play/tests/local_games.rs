@@ -34,7 +34,7 @@ async fn two_engines_play_a_game_to_its_end() {
     let id = game.summary.id;
     assert_eq!(game.summary.status, GameStatus::Live);
     assert_eq!(game.summary.white.player, PlayerKey::Dameless);
-    assert_eq!(game.summary.white.name, "v1");
+    assert_eq!(game.summary.white.name, "Dameless v1");
     assert_eq!(game.summary.you, None);
     assert!(game.actions.is_empty(), "you do not play in it");
     // Each engine holds a core while it plays.

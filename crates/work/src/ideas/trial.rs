@@ -15,7 +15,7 @@ use std::{
 
 use async_trait::async_trait;
 use dameless_core::{
-    Error, PlayerKey, TrialId,
+    Error, TrialId,
     chess::pgn,
     events::{Payload, TrialProgress},
     game::{GameStatus, Seat, Source},
@@ -65,7 +65,7 @@ impl Executor for TrialExecutor {
             ideas.save_trial(&trial).await?;
         }
         ideas.mark_running(w.idea).await?;
-        cx.set_title(format!("Testing {} · {}", idea.branch, trial.stage.label())).await?;
+        cx.set_title(format!("Trying {} · {}", idea.branch, trial.stage.label())).await?;
         cx.log(format!("Idea {}: {} · {}", idea.id, idea.title, trial.stage.label()));
 
         let sides = self.sides(&idea).await?;
@@ -374,7 +374,7 @@ fn fingerprint(rule: FingerprintRule, sides: &Sides) -> StageVerdict {
 
 /// A Dameless seat at a version and build.
 fn seat((v, b, _): &(Version, Build, PathBuf)) -> Seat {
-    Seat { version: Some(v.id), build: Some(b.id), ..Seat::new(PlayerKey::Dameless, v.name.clone()) }
+    Seat { version: Some(v.id), build: Some(b.id), ..Seat::dameless(&v.name) }
 }
 
 fn penta_of(p: [u32; 5]) -> Pentanomial {

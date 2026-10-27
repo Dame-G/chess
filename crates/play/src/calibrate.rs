@@ -121,7 +121,8 @@ async fn play(games: &Games, binary: &EngineBinary, p: Pairing, cancel: &Cancell
             version: Some(binary.version.id),
             build: Some(binary.build),
             rating: Some(rating),
-            ..Seat::new(PlayerKey::Dameless, format!("{name} (level {})", level.id))
+            level: Some(level.id),
+            ..Seat::new(PlayerKey::Dameless, name)
         });
     }
     let time = TimeControl::Nodes { nodes: p.white.calibration_nodes().max(p.black.calibration_nodes()) };

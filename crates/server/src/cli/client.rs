@@ -65,9 +65,11 @@ impl Client {
             let text = res.text().await.unwrap_or_default();
             let message = serde_json::from_str::<Value>(&text)
                 .ok()
-                .and_then(|v| v["error"]["message"].as_str().map(str::to_owned))
-                .unwrap_or(text);
-            bail!("{}: {message}", status.as_u16());
+                .and_then(|v| v["error"]["message"].as_str().map(str::to_owned));
+            match message {
+                Some(message) => bail!("{message}"),
+                None => bail!("the app answered {status}: {text}"),
+            }
         }
         Ok(res)
     }

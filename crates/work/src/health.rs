@@ -379,7 +379,7 @@ impl Diagnostics {
                         _ => "",
                     }
                 );
-                let action = (level != HealthLevel::Ok).then_some(("Prune builds", "dameless builds prune"));
+                let action = (level != HealthLevel::Ok).then_some(("Prune builds", "dameless build prune"));
                 item("disk", level, "Disk", detail, action)
             }
             None => item("disk", HealthLevel::Warn, "Disk", "Free space could not be read".into(), None),
@@ -405,7 +405,7 @@ impl Diagnostics {
             HealthLevel::Ok,
             "Builds",
             format!("{count} build{} on disk, {}", if count == 1 { "" } else { "s" }, bytes_text(bytes)),
-            (count > 0).then_some(("Prune builds", "dameless builds prune")),
+            (count > 0).then_some(("Prune builds", "dameless build prune")),
         ));
 
         let h = self.harness.status().await?;

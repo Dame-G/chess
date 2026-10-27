@@ -73,7 +73,7 @@ async fn missing_and_low_things_warn_or_fail() {
     assert!(find(&h, "cuda").ok && find(&h, "cuda").detail.contains("only for training"));
     let disk = find(&h, "disk");
     assert_eq!((disk.level, disk.ok), (HealthLevel::Warn, true));
-    assert_eq!(disk.action.as_ref().unwrap().command, "dameless builds prune");
+    assert_eq!(disk.action.as_ref().unwrap().command, "dameless build prune");
 
     // The slow probes are kept for a minute: a change shows only once they are asked again.
     *probes.disk.lock().unwrap() = Some(DiskSpace { free_bytes: 3 * GB, total_bytes: 500 * GB });

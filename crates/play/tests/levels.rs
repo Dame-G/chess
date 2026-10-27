@@ -201,7 +201,7 @@ async fn calibration_plays_levels_against_each_other_and_fits_them() {
     let any = s.hub.store.games(Default::default()).await.unwrap();
     assert_eq!(any.len(), 3);
     assert!(any.iter().all(|g| g.status == GameStatus::Finished && g.white.player == PlayerKey::Dameless));
-    assert!(any.iter().all(|g| g.white.name.contains("(level")));
+    assert!(any.iter().all(|g| g.white.level.is_some() && g.white.name.starts_with("Dameless ")));
     // Every engine was let go, and none reserved cores outside the grant.
     assert_eq!(s.hub.ledger.snapshot().reserved, 0);
 }

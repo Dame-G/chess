@@ -119,13 +119,13 @@ impl Stage {
     pub fn label(self) -> &'static str {
         match self {
             Self::Fingerprint => "fingerprint",
-            Self::Screen => "screen",
+            Self::Screen => "quick screen",
             Self::Short => "short games",
             Self::Long => "long games",
             Self::Speed => "speed",
             Self::Tune => "tune",
             Self::Confirm => "confirmation",
-            Self::Custom => "test",
+            Self::Custom => "custom trial",
             Self::Train => "training",
         }
     }
@@ -529,7 +529,7 @@ pub fn games(penta: &Pentanomial, bounds: Option<[f64; 2]>, scaled: Option<(Time
     StageVerdict { passed, detail }
 }
 
-/// The idea's one sentence once it ends: "Kept: +3.1 ± 2.0 Elo at short games", "Dropped at the screen: rejected
+/// The idea's one sentence once it ends: "Kept: +3.1 ± 2.0 Elo at short games", "Dropped at the quick screen: rejected
 /// [-5, 0] after 412 games, …".
 pub fn idea_verdict(status: IdeaStatus, deciding: Option<(Stage, Option<Estimate>)>, detail: Option<&str>) -> String {
     match (status, deciding) {
@@ -691,7 +691,7 @@ mod tests {
         );
         assert_eq!(
             idea_verdict(IdeaStatus::Dropped, Some((Stage::Screen, None)), Some("rejected [-5, 0] after 412 games")),
-            "Dropped at the screen: rejected [-5, 0] after 412 games"
+            "Dropped at the quick screen: rejected [-5, 0] after 412 games"
         );
     }
 }

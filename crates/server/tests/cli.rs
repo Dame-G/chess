@@ -72,7 +72,7 @@ async fn the_binary_is_a_client() {
     // An error exits non-zero with the app's message on stderr.
     let (ok, _, err) = tokio::task::block_in_place(|| cli(&t, &["game", "999", "--json"]));
     assert!(!ok);
-    assert!(err.contains("404"), "{err}");
+    assert!(err.contains("No game 999"), "{err}");
 
     // Play a move against the fake engine and get the reply.
     let (ok, out, err) = tokio::task::block_in_place(|| {

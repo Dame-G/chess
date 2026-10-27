@@ -14,8 +14,12 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Seat {
     pub player: PlayerKey,
-    /// What to show: "You" is shown as the Lichess username when linked; a Dameless seat by its version's name.
+    /// What to show: "You" is shown as the Lichess username when linked; a Dameless seat by its version's name, or
+    /// at a level of its ladder by its rating ("Dameless 1650").
     pub name: String,
+    /// The level of the ladder a Dameless seat played at; none at full strength.
+    #[serde(default)]
+    pub level: Option<u32>,
     /// The version a Dameless seat played.
     pub version: Option<VersionId>,
     /// The exact binary a Dameless seat played.
@@ -27,7 +31,13 @@ pub struct Seat {
 impl Seat {
     /// A seat with just a player and a name.
     pub fn new(player: PlayerKey, name: impl Into<String>) -> Self {
-        Self { player, name: name.into(), version: None, build: None, rating: None, title: None }
+        Self { player, name: name.into(), level: None, version: None, build: None, rating: None, title: None }
+    }
+
+    /// Dameless at a version, named as everyone shows it: `Dameless v14`, `Dameless deeper-lmr`. (At a level of its
+    /// ladder it is named by its rating instead, `Dameless 1650`.)
+    pub fn dameless(version_name: &str) -> Self {
+        Self::new(PlayerKey::Dameless, format!("Dameless {version_name}"))
     }
 
     pub fn is_you(&self) -> bool {

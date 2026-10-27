@@ -12,7 +12,7 @@ use std::{
 };
 
 use dameless_core::{
-    ConnectionKey, Error, GameId, PlayerKey, Side, Timestamp,
+    ConnectionKey, Error, GameId, Side, Timestamp,
     events::Payload,
     game::Seat,
     lichess::{
@@ -333,7 +333,7 @@ impl Bot {
             )));
         }
         if !self.playable().await {
-            return Err(Error::conflict("choose a version for the bot to play first"));
+            return Err(Error::conflict("Choose the version the bot plays first: champion, or a version such as v14"));
         }
         let running = {
             let mut s = self.inner.state.lock().unwrap();
@@ -638,7 +638,7 @@ impl Bot {
             build: Some(binary.build),
             rating: player.rating,
             title: player.title.clone(),
-            ..Seat::new(PlayerKey::Dameless, binary.version.name.clone())
+            ..Seat::dameless(&binary.version.name)
         };
         let mirror = lichess_game::mirror();
         let ours = LichessBot::new(engine, client.clone(), id, mirror.subscribe());

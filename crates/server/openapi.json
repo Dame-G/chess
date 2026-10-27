@@ -9836,9 +9836,18 @@
               }
             ]
           },
+          "level": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The level of the ladder a Dameless seat played at; none at full strength.",
+            "minimum": 0
+          },
           "name": {
             "type": "string",
-            "description": "What to show: \"You\" is shown as the Lichess username when linked; a Dameless seat by its version's name."
+            "description": "What to show: \"You\" is shown as the Lichess username when linked; a Dameless seat by its version's name, or\nat a level of its ladder by its rating (\"Dameless 1650\")."
           },
           "player": {
             "$ref": "#/components/schemas/PlayerKey"
@@ -11957,7 +11966,7 @@
           },
           "title": {
             "type": "string",
-            "description": "\"Testing deeper-lmr · short games\"."
+            "description": "\"Trying deeper-lmr · short games\"."
           }
         }
       },
