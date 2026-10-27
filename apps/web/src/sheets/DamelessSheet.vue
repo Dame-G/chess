@@ -50,7 +50,6 @@ onMounted(async () => {
 const overview = computed(() => dameless.overview);
 const champion = computed(() => overview.value?.champion ?? versions.current);
 const strength = computed(() => overview.value?.strength ?? []);
-const last = computed(() => strength.value.at(-1));
 
 // The strength line: one step per champion version, with its margin around it.
 const x = computed(() => strength.value.map((_, i) => i + 1));
@@ -115,9 +114,6 @@ watch(creating, (open) => {
         <h2 id="d-strength" class="part-title">Strength</h2>
         <p v-if="champion" class="sec-note">
           <Term k="champion" /> <strong class="mono">{{ champion.name }}</strong>
-          <span v-if="last && strength.length > 1">
-            · <span class="mono">{{ signed(last.value, 1) }}</span> <Term k="elo" /> over v1</span
-          >
         </p>
       </div>
       <div v-if="!overview" aria-busy="true"><ESkeleton :lines="3" label="Loading the strength line" /></div>
