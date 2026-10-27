@@ -6,7 +6,7 @@ import { ECheckbox } from "@eos-ui/vue/components/ECheckbox";
 import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
-import { EStack } from "@eos-ui/vue/components/EStack";
+import { EForm } from "@eos-ui/vue/components/EForm";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import { bytes } from "../format";
 import { importConfirmText, importNeed, nameFromUrl, validName, whyNoRoom } from "../sheets/training";
@@ -47,13 +47,15 @@ const expected = computed(() => Math.round((gigabytes.value ?? 0) * 1e9));
 const need = computed(() => importNeed(expected.value));
 const noRoom = computed(() => (training.data && expected.value ? whyNoRoom(need.value.peak, training.data) : null));
 const urlError = computed(() =>
-  url.value && !/^https:\/\/\S+$/.test(url.value.trim()) ? "An https:// address." : undefined,
+  url.value && !/^https:\/\/\S+$/.test(url.value.trim())
+    ? "Start with https://, as in https://example.com/shard.zst."
+    : undefined,
 );
 const nameError = computed(() =>
-  name.value && !validName(name.value) ? "Letters, digits, dashes and underscores." : undefined,
+  name.value && !validName(name.value) ? "Use letters, digits, dashes and underscores." : undefined,
 );
 const shaError = computed(() =>
-  sha.value && !/^[0-9a-fA-F]{64}$/.test(sha.value.trim()) ? "64 hexadecimal digits." : undefined,
+  sha.value && !/^[0-9a-fA-F]{64}$/.test(sha.value.trim()) ? "A SHA-256 is 64 hexadecimal digits." : undefined,
 );
 const ready = computed(
   () =>
@@ -96,7 +98,7 @@ async function start() {
     description="One shard from the web, downloaded and converted to the engine's format."
     size="md"
   >
-    <EStack gap="base">
+    <EForm id="import-form" @submit.prevent="start">
       <ETextField v-model="url" label="Address" placeholder="https://" autocomplete="off" :error="urlError" />
       <ENumberField
         v-model="gigabytes"
@@ -130,9 +132,9 @@ async function start() {
           description="Nothing is downloaded until this is ticked."
         />
       </template>
-    </EStack>
+    </EForm>
     <template #actions>
-      <EButton :loading="busy" :disabled="!ready || !agreed" @click="start">Import</EButton>
+      <EButton type="submit" form="import-form" :loading="busy" :disabled="!ready || !agreed">Import</EButton>
       <EButton variant="outline" @click="open = false">Cancel</EButton>
     </template>
   </EDialog>

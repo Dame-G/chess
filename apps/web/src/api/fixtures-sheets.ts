@@ -4,6 +4,7 @@
  * versions, work, connections) and the way to speak on the event stream; everything here is invented too.
  */
 import { error, reply } from "./fixtures-http";
+import { settingsRoute } from "./fixtures-settings";
 import { leaders } from "./leaders";
 import type {
   BotSettings,
@@ -918,6 +919,8 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
   return (method, path, url, body) => {
     let m: RegExpMatchArray | null;
     if (method === "GET") {
+      const edge = settingsRoute(ctx.mode, path);
+      if (edge) return edge;
       if (path === "/api/dameless") return reply("/api/dameless", "get", structuredClone(overview()));
       if (path === "/api/token") return reply("/api/token", "get", { token: "dmls_4f8c0a2b9d7e41c6a3b5e8f20d19c7a4" });
       if (path === "/api/tunables") return reply("/api/tunables", "get", structuredClone(TUNABLES));

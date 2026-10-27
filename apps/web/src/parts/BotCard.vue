@@ -78,9 +78,11 @@ const answered = (e: (typeof recent.value)[number]) => {
   const c = e.challenge;
   const who = `${c.opponent.name}${c.opponent.rating ? ` (${c.opponent.rating})` : ""}`;
   const what = `${c.rated ? "rated" : "casual"} ${speedName[c.speed].toLowerCase()}${c.time ? ` ${timeControl(c.time)}` : ""}`;
-  if (e.event === "accepted") return `Accepted ${who}, ${what}`;
+  const rest = `${who}, ${what}`;
+  if (e.event === "accepted") return { verdict: "Accepted", good: true, rest };
   const why = declineWords(e.reason);
-  return `${e.event === "canceled" ? "Withdrawn" : c.direction === "outgoing" ? "Declined by" : "Declined"} ${who}, ${what}${why ? ` · ${why}` : ""}`;
+  const verdict = e.event === "canceled" ? "Withdrawn" : c.direction === "outgoing" ? "Declined by" : "Declined";
+  return { verdict, good: false, rest: `${rest}${why ? ` · ${why}` : ""}` };
 };
 </script>
 
@@ -142,7 +144,8 @@ const answered = (e: (typeof recent.value)[number]) => {
             {{ c.opponent.name }}{{ c.opponent.rating ? ` (${c.opponent.rating})` : "" }} is waiting for an answer
           </li>
           <li v-for="e in recent" :key="e.challenge.id" class="entry">
-            <span>{{ answered(e) }}</span>
+            <span :class="answered(e).good ? 'yes' : 'no'">{{ answered(e).verdict }}</span>
+            {{ answered(e).rest }}
           </li>
         </ul>
       </div>
@@ -183,6 +186,19 @@ const answered = (e: (typeof recent.value)[number]) => {
 .recent {
   display: grid;
   gap: var(--e-gap-tight);
+}
+
+.entry .yes,
+.entry .no {
+  font-weight: 600;
+}
+
+.entry .yes {
+  color: var(--e-success);
+}
+
+.entry .no {
+  color: var(--e-ink);
 }
 
 .entry {
