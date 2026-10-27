@@ -258,6 +258,11 @@ impl Toolchain for Fake {
             })
             .collect::<Vec<_>>()
             .join("\n");
+        // A build with another net searches differently: the net's bytes go into the fake bench.
+        let text = match &spec.evalfile {
+            Some(net) => format!("{text}\n{}", String::from_utf8_lossy(&std::fs::read(net)?)),
+            None => text,
+        };
         std::fs::create_dir_all(&spec.out_dir)?;
         let binary = spec.out_dir.join(dameless_engine::exe("reckless"));
         let spsa = spec.features.iter().any(|f| f == "spsa");

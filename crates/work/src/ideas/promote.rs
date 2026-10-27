@@ -5,9 +5,19 @@
 //! checkout, that checkout is fast-forwarded to the result when it has no uncommitted changes, and the promotion is
 //! refused, changing nothing, when it has. The new tip becomes champion `v<n+1>` with the Elo of the idea's deciding
 //! trial. Pushing is separate and explicit ([`crate::versions::push`]).
+//!
+//! A **net** idea changes no code, so nothing is merged: Reckless's nets live outside its repository (`networks/` is
+//! git-ignored; they are published as releases of a separate repository), and the champion line simply becomes "code
+//! X plus net Y" ([`crate::versions::Versions::crown_net`]). Every build of the champion from then on embeds that net,
+//! and a later code promotion keeps it. If the code moved since the net was tested, the net goes onto the current
+//! champion's code (the log says so); its trials were measured on the older code.
 
 use async_trait::async_trait;
-use dameless_core::{Error, IdeaId, ideas::IdeaStatus, work::WorkKind};
+use dameless_core::{
+    Error, IdeaId,
+    ideas::{IdeaKind, IdeaStatus},
+    work::WorkKind,
+};
 use dameless_engine::git::{CheckedOut, Promote};
 use dameless_hub::{Executor, WorkContext};
 use serde::{Deserialize, Serialize};
@@ -44,7 +54,27 @@ impl Executor for PromoteExecutor {
         let version =
             hub.store.version(version_id).await?.ok_or_else(|| Error::not_found("The idea's version is gone"))?;
         // Make sure the line knows the current tip before it grows.
-        versions.champion().await?;
+        let champion = versions.champion().await?;
+        if idea.kind == IdeaKind::Net {
+            let net = version.net.ok_or_else(|| Error::conflict("The net idea's version has no net"))?;
+            if champion.commit != version.commit {
+                cx.log(format!(
+                    "The champion's code moved since the net was tested ({} → {}): the net goes onto {}",
+                    &version.commit[..8.min(version.commit.len())],
+                    &champion.commit[..8.min(champion.commit.len())],
+                    champion.name
+                ));
+            }
+            let crowned = versions.crown_net(&champion.commit, net, version.elo).await?;
+            cx.log(format!("{} is the champion: {} with net {}", crowned.name, champion.name, net));
+            return Ok(serde_json::json!({
+                "idea": idea.id,
+                "version": crowned.id,
+                "name": crowned.name,
+                "commit": crowned.commit,
+                "net": net,
+            }));
+        }
         let what = version.branch.clone().unwrap_or_else(|| version.commit.clone());
         let message = format!(
             "Merge {what}: {}\n\n{}\n\nBench: {}\n",

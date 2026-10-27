@@ -19,6 +19,7 @@ use dameless_core::{
         TrialStatus,
     },
     spsa::{TuneSpec, TuneStep},
+    training::TrainSpec,
     version::Estimate,
     work::{Priority, Subject, Work, WorkKind, WorkStatus},
 };
@@ -66,6 +67,10 @@ pub struct NewIdeaRequest {
     /// A tune's settings (a tune idea without them tunes with OpenBench's defaults).
     #[serde(default)]
     pub tune: Option<TuneSpec>,
+    /// A net idea's training run (a fine-tune of its base's net with the default schedule when left out). A net idea
+    /// needs no branch: it trains for the champion's code (`branch` may be left empty).
+    #[serde(default)]
+    pub train: Option<TrainSpec>,
     /// One trial with any preset and bounds or a fixed number of pairs, instead of the funnel.
     #[serde(default)]
     pub custom: Option<CustomTrial>,
@@ -107,6 +112,9 @@ pub struct IdeaSpec {
     pub long: bool,
     #[serde(default)]
     pub tune: Option<TuneSpec>,
+    /// A net idea's training run.
+    #[serde(default)]
+    pub train: Option<TrainSpec>,
     #[serde(default)]
     pub custom: Option<CustomTrial>,
     /// Set on a harness check: what it is checking, and that every trial runs whatever the one before showed.
@@ -156,7 +164,8 @@ impl Ideas {
         s.register(Arc::new(promote::PromoteExecutor { ideas: self.clone() }));
         let hook: Arc<dyn EndHook> = Arc::new(Funnel { ideas: self.clone() });
         s.on_end(WorkKind::Trial, hook.clone());
-        s.on_end(WorkKind::Tune, hook);
+        s.on_end(WorkKind::Tune, hook.clone());
+        s.on_end(WorkKind::Train, hook);
     }
 
     pub fn versions(&self) -> &Versions {
@@ -175,6 +184,19 @@ impl Ideas {
     async fn check(&self, req: &NewIdeaRequest) -> Result<(), Error> {
         if req.title.trim().is_empty() {
             return Err(Error::bad_request("An idea needs a title"));
+        }
+        if req.kind == IdeaKind::Net && req.custom.is_none() {
+            let train = req.train.clone().unwrap_or_default();
+            if let Some(p) = train.schedule.problem() {
+                return Err(Error::bad_request(p));
+            }
+            if train.from_scratch && train.parent.is_some() {
+                return Err(Error::bad_request("A run from scratch has no parent net"));
+            }
+            if self.hub().ledger.gpus() == 0 {
+                return Err(Error::conflict("A net idea needs an NVIDIA GPU, and none was found (DAMELESS_GPUS)"));
+            }
+            return Ok(());
         }
         let branch = req.branch.trim();
         if branch.is_empty() {
@@ -211,7 +233,7 @@ impl Ideas {
     /// The branch's `Bench:` problem, for an idea whose funnel fingerprints its branch (a tune's branch is written by
     /// SPSA, and a custom test has no fingerprint stage).
     async fn bench_problem(&self, req: &NewIdeaRequest) -> Result<Option<BranchCheck>, Error> {
-        if req.custom.is_some() || req.kind == IdeaKind::Tune {
+        if req.custom.is_some() || matches!(req.kind, IdeaKind::Tune | IdeaKind::Net) {
             return Ok(None);
         }
         let check = self.check_branch(&req.branch).await?;
@@ -257,7 +279,8 @@ impl Ideas {
             Some(c) => funnel::custom(c.preset, c.bounds, c.pairs),
             None => funnel::funnel(req.kind, req.long),
         };
-        let spec = IdeaSpec { funnel: plan, long: req.long, tune, custom: req.custom, harness: None };
+        let train = (req.kind == IdeaKind::Net && req.custom.is_none()).then(|| req.train.clone().unwrap_or_default());
+        let spec = IdeaSpec { funnel: plan, long: req.long, tune, train, custom: req.custom, harness: None };
         self.insert_spec(req, spec).await
     }
 
@@ -267,7 +290,11 @@ impl Ideas {
         let base =
             self.versions().resolve(&req.base.as_deref().map_or(VersionRef::Champion, VersionRef::parse)).await?;
         let plan = spec.funnel.clone();
-        let branch = req.branch.trim().to_owned();
+        let mut branch = req.branch.trim().to_owned();
+        if spec.train.is_some() && branch.is_empty() {
+            // A net idea trains for its base's code.
+            branch = base.branch.clone().unwrap_or_else(|| crate::versions::MAIN.to_owned());
+        }
         let idea = store
             .insert_idea(NewIdea {
                 title: req.title.trim().to_owned(),
@@ -293,8 +320,9 @@ impl Ideas {
                 )
                 .await?;
         }
-        // A tune's version is the branch SPSA writes; every other idea's is its branch.
-        if spec.tune.is_none() {
+        // A tune's version is the branch SPSA writes, a net idea's the base's code with the net it trains; every other
+        // idea's is its branch.
+        if spec.tune.is_none() && spec.train.is_none() {
             let version = self.versions().idea_version(&branch, idea.id, Some(base.id)).await?;
             store.update_idea(idea.id, IdeaUpdate { version: Some(version.id), ..Default::default() }).await?;
         }
@@ -307,15 +335,26 @@ impl Ideas {
         let store = &self.hub().store;
         let i = store.idea(idea).await?.ok_or_else(|| Error::not_found(format!("No idea {idea}")))?;
         let trial = i.trials.get(index).ok_or_else(|| Error::internal(format!("Idea {idea} has no trial {index}")))?;
-        let kind = if trial.stage == Stage::Tune { WorkKind::Tune } else { WorkKind::Trial };
+        let (kind, title, spec) = match trial.stage {
+            Stage::Train => {
+                let train = self.spec(idea).await?.train.unwrap_or_default();
+                let work =
+                    crate::train::TrainWork { train, idea: Some(idea), trial: Some(trial.id), index: Some(index) };
+                (WorkKind::Train, format!("Training a net for {}", i.title), serde_json::to_value(work))
+            }
+            stage => (
+                if stage == Stage::Tune { WorkKind::Tune } else { WorkKind::Trial },
+                format!("Testing {} · {}", i.branch, stage.label()),
+                serde_json::to_value(TrialWork { idea, trial: trial.id, index }),
+            ),
+        };
         self.scheduler()
             .submit(NewWork {
                 kind,
                 priority: Priority::Idea,
-                title: format!("Testing {} · {}", i.branch, trial.stage.label()),
+                title,
                 subject: Subject::Trial { id: trial.id },
-                spec: serde_json::to_value(TrialWork { idea, trial: trial.id, index })
-                    .map_err(|e| Error::internal(e.to_string()))?,
+                spec: spec.map_err(|e| Error::internal(e.to_string()))?,
             })
             .await
     }
@@ -358,7 +397,7 @@ impl Ideas {
         let lists = self.scheduler().list(0).await?;
         Ok(lists.running.into_iter().chain(lists.queued).find(|w| {
             matches!(w.subject, Subject::Trial { id } if idea.trials.iter().any(|t| t.id == id))
-                && matches!(w.kind, WorkKind::Trial | WorkKind::Tune)
+                && matches!(w.kind, WorkKind::Trial | WorkKind::Tune | WorkKind::Train)
         }))
     }
 
@@ -435,14 +474,14 @@ impl Ideas {
     }
 
     /// Saves a trial and tells clients.
-    async fn save_trial(&self, t: &Trial) -> Result<(), Error> {
+    pub(crate) async fn save_trial(&self, t: &Trial) -> Result<(), Error> {
         self.hub().store.save_trial(t.clone()).await?;
         self.emit_trial(t);
         Ok(())
     }
 
     /// Marks an idea running when its first trial starts.
-    async fn mark_running(&self, id: IdeaId) -> Result<(), Error> {
+    pub(crate) async fn mark_running(&self, id: IdeaId) -> Result<(), Error> {
         let idea = self.get(id).await?;
         if idea.status == IdeaStatus::Queued {
             self.hub()
@@ -558,7 +597,8 @@ impl Funnel {
     async fn handle(&self, work: &Work) -> Result<(), Error> {
         let store = &self.ideas.hub().store;
         let Some(spec) = store.work_spec(work.id).await? else { return Ok(()) };
-        let w: TrialWork = serde_json::from_value(spec).map_err(|e| Error::internal(e.to_string()))?;
+        // A training run of no idea has no trial to move along.
+        let Ok(w) = serde_json::from_value::<TrialWork>(spec) else { return Ok(()) };
         let idea = self.ideas.get(w.idea).await?;
         if idea.status.is_final() {
             return Ok(());

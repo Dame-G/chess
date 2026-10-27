@@ -76,7 +76,9 @@ impl Executor for TuneExecutor {
         cx.set_title(format!("Tuning {}", idea.branch)).await?;
 
         let versions = ideas.versions();
-        let tuned = versions.resolve(&VersionRef::Name(idea.branch.clone())).await?;
+        let mut tuned = versions.resolve(&VersionRef::Name(idea.branch.clone())).await?;
+        // Tuned with the net its base plays with (a champion can be code plus a trained net).
+        tuned.net = hub.store.version(idea.base).await?.and_then(|v| v.net);
         let (build, bin) = versions.binary_of(&tuned, &["spsa"]).await?;
         let _hold = versions.in_use().hold(build.id, format!("tune:{}", idea.id));
         let tc = versions.toolchain();
@@ -301,7 +303,9 @@ impl TuneExecutor {
                 net: None,
             })
             .await?;
+        // The Bench: line is the commit's own: measured with its own net.
         let (build, _) = versions.binary_of(&version, &[]).await?;
+        let base_net = store.version(idea.base).await?.and_then(|v| v.net);
         let bench = build.bench.ok_or_else(|| Error::internal("the tuned build has no bench"))?;
         let commit = if commit.bench == Some(bench) {
             commit.sha
@@ -318,8 +322,8 @@ impl TuneExecutor {
                 branch: Some(branch.clone()),
                 line: Line::Idea { idea: idea.id },
                 parent: Some(idea.base),
-                bench: Some(bench),
-                net: None,
+                bench: if base_net.is_some() { None } else { Some(bench) },
+                net: base_net,
             })
             .await?;
         versions.hub().bus.emit(Payload::VersionUpserted(Box::new(version.clone())));

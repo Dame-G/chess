@@ -46,6 +46,7 @@ fn request(title: &str, kind: IdeaKind, branch: &str) -> NewIdeaRequest {
         notes: None,
         long: false,
         tune: None,
+        train: None,
         custom: None,
         fix_bench: false,
     }

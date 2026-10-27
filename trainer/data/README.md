@@ -130,7 +130,7 @@ size again in free disk while it runs. Big sets (the relabelled binpacks, tens t
   source, score units, generator, created/updated, and every file with its sha256. `data manifest <dir>` (or
   `manifest::build_and_write`) rebuilds it; counts are reused for unchanged files.
 - A datagen executor runs `data datagen --json --engine <datagen build> --out <dataset dir> --threads <cores>
---positions <n> --max-size <setting>` (progress lines on stderr, the report as JSON on stdout), or calls
+--positions <n> --max-size <setting>` (progress on stderr: with `--json`, one JSON object per line, `{"positions", "games", "bytes", "target_positions", "max_bytes", "session_positions", "positions_per_second", "elapsed_seconds"}`; the report as JSON on stdout), or calls
   `datagen::run` with a stop flag and a progress callback. Stopping is killing the process or setting the flag;
   resuming is running it again on the same directory.
 - An import executor downloads binpack shards (with the user's go-ahead), then `data convert <shard>.binpack -o

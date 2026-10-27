@@ -371,7 +371,12 @@ fn run(cli: Cli) -> Result<()> {
             };
             let stop = AtomicBool::new(false);
             let report = data::datagen::run(&config, &args.out, &stop, &|p| {
-                if !json {
+                if json {
+                    // One JSON object per line on stderr, for the app's datagen executor; stdout keeps the report.
+                    if let Ok(line) = serde_json::to_string(p) {
+                        eprintln!("{line}");
+                    }
+                } else {
                     eprintln!(
                         "{} positions, {} games, {:.1} MB, {:.0} positions/s",
                         p.positions,

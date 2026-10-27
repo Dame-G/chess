@@ -175,10 +175,13 @@ struct Inner {
     repo: Repo,
     in_use: InUse,
     /// Builds queued and not yet ended, by commit and features, so two callers wait on one build.
-    pending: tokio::sync::Mutex<HashMap<(String, Vec<String>), dameless_core::WorkId>>,
+    pending: tokio::sync::Mutex<HashMap<BuildKey, dameless_core::WorkId>>,
     /// Serialises changes to the champion line.
     champion: tokio::sync::Mutex<()>,
 }
+
+/// What the build cache keys a build by: commit, features and net.
+type BuildKey = (String, Vec<String>, Option<NetId>);
 
 /// Features sorted and without repeats, as the build cache keys them.
 fn features_of(features: &[&str]) -> Vec<String> {
@@ -343,6 +346,34 @@ impl Versions {
         Ok(v)
     }
 
+    /// Records a net idea's version: `base`'s code with `net`, named `v14 + net-3`. It has no `Bench:` line (the
+    /// commit's is measured with its own net); its builds embed the net.
+    pub async fn net_version(
+        &self,
+        idea: IdeaId,
+        base: &Version,
+        net: NetId,
+        net_name: &str,
+    ) -> Result<Version, Error> {
+        let code = base.name.split(" + ").next().unwrap_or(&base.name);
+        let v = self
+            .inner
+            .hub
+            .store
+            .upsert_version(NewVersion {
+                name: dameless_core::training::code_and_net(code, net_name),
+                commit: base.commit.clone(),
+                branch: None,
+                line: Line::Idea { idea },
+                parent: Some(base.id),
+                bench: None,
+                net: Some(net),
+            })
+            .await?;
+        self.emit(&v);
+        Ok(v)
+    }
+
     /// The champion: the tip of the fork's `main`, numbered on the champion line.
     pub async fn champion(&self) -> Result<Version, Error> {
         let _line = self.inner.champion.lock().await;
@@ -378,11 +409,29 @@ impl Versions {
     }
 
     /// Records a promotion: `commit` (the new tip of `main`) is the next champion, with its Elo over the last.
+    /// The champion's net carries over.
     pub async fn crown(&self, commit: &str, bench: Option<u64>, elo: Option<Estimate>) -> Result<Version, Error> {
+        self.crown_as(commit, bench, elo, None).await
+    }
+
+    /// Records a promoted net: the champion's code `commit` with `net` is the next champion. From then on the champion
+    /// line is code plus that net, and every build of it embeds the net (a later code promotion keeps it).
+    pub async fn crown_net(&self, commit: &str, net: NetId, elo: Option<Estimate>) -> Result<Version, Error> {
+        self.crown_as(commit, None, elo, Some(net)).await
+    }
+
+    async fn crown_as(
+        &self,
+        commit: &str,
+        bench: Option<u64>,
+        elo: Option<Estimate>,
+        new_net: Option<NetId>,
+    ) -> Result<Version, Error> {
         let _line = self.inner.champion.lock().await;
         let store = &self.inner.hub.store;
         let current = store.champion().await?;
-        if let Some(c) = current.as_ref().filter(|c| c.commit == commit) {
+        let net = new_net.or_else(|| current.as_ref().and_then(|c| c.net));
+        if let Some(c) = current.as_ref().filter(|c| c.commit == commit && c.net == net) {
             return Ok(c.clone());
         }
         let number = current.as_ref().map_or(1, |c| match c.line {
@@ -395,8 +444,8 @@ impl Versions {
                 commit: commit.to_owned(),
                 branch: Some(MAIN.to_owned()),
                 line: Line::Champion { number },
-                net: current.as_ref().and_then(|c| c.net),
-                bench: if current.as_ref().is_some_and(|c| c.net.is_some()) { None } else { bench },
+                net,
+                bench: if net.is_some() { None } else { bench },
                 parent: current.map(|c| c.id),
             })
             .await?;
@@ -427,7 +476,8 @@ impl Versions {
     pub async fn binary_of(&self, version: &Version, features: &[&str]) -> Result<(Build, PathBuf), Error> {
         let features = features_of(features);
         let store = &self.inner.hub.store;
-        if let Some(b) = store.cached_build(&version.commit, &features).await?
+        let net = version.net;
+        if let Some(b) = store.cached_build_with_net(&version.commit, &features, net).await?
             && Path::new(&b.path).is_file()
         {
             let path = PathBuf::from(&b.path);
@@ -435,7 +485,7 @@ impl Versions {
         }
         let id = {
             let mut pending = self.inner.pending.lock().await;
-            let key = (version.commit.clone(), features.clone());
+            let key = (version.commit.clone(), features.clone(), net);
             let live = match pending.get(&key) {
                 Some(id) => store.work(*id).await?.filter(|w| !w.status.is_final()).map(|w| w.id),
                 None => None,
@@ -443,7 +493,13 @@ impl Versions {
             match live {
                 Some(id) => id,
                 None => {
-                    let label = if features.is_empty() { String::new() } else { format!(" +{}", features.join("+")) };
+                    let mut label =
+                        if features.is_empty() { String::new() } else { format!(" +{}", features.join("+")) };
+                    if let Some(n) = net
+                        && !version.name.contains(" + ")
+                    {
+                        label += &format!(" with net {n}");
+                    }
                     let work = self
                         .inner
                         .scheduler
@@ -456,7 +512,7 @@ impl Versions {
                                 version: version.id,
                                 commit: version.commit.clone(),
                                 features: features.clone(),
-                                net: None,
+                                net,
                             })
                             .map_err(|e| Error::internal(e.to_string()))?,
                         })
@@ -468,7 +524,7 @@ impl Versions {
         };
         let work = self.inner.scheduler.wait(id).await?;
         match work.status {
-            WorkStatus::Done => match store.cached_build(&version.commit, &features).await? {
+            WorkStatus::Done => match store.cached_build_with_net(&version.commit, &features, net).await? {
                 Some(b) => {
                     let path = PathBuf::from(&b.path);
                     Ok((b, path))
@@ -594,7 +650,7 @@ impl Executor for BuildExecutor {
         let hub = &v.inner.hub;
         let store = &hub.store;
         let version = store.version(spec.version).await?.ok_or_else(|| Error::not_found("The version is gone"))?;
-        if let Some(b) = store.cached_build(&spec.commit, &spec.features).await?
+        if let Some(b) = store.cached_build_with_net(&spec.commit, &spec.features, spec.net).await?
             && Path::new(&b.path).is_file()
         {
             cx.log(format!("Already built: build {}.", b.id));
@@ -603,7 +659,19 @@ impl Executor for BuildExecutor {
         let Some(grant) = cx.cores(1, hub.ledger.total()).await else { return Err(cx.stopped()) };
         let builds = hub.config.builds_dir();
         let label = if spec.features.is_empty() { "plain".to_owned() } else { spec.features.join("+") };
-        let out_dir = builds.join(format!("{}-{label}", short(&spec.commit)));
+        let evalfile = match spec.net {
+            Some(id) => {
+                let net = store.net(id).await?.ok_or_else(|| Error::not_found(format!("No net {id}")))?;
+                if !Path::new(&net.path).is_file() {
+                    return Err(Error::conflict(format!("The net {} is missing from {}", net.name, net.path)));
+                }
+                cx.log(format!("Embedding net {} ({})", net.name, short(&net.sha256)));
+                Some(PathBuf::from(net.path))
+            }
+            None => None,
+        };
+        let net_label = spec.net.map(|n| format!("-net{n}")).unwrap_or_default();
+        let out_dir = builds.join(format!("{}-{label}{net_label}", short(&spec.commit)));
         let binary = out_dir.join(dameless_engine::exe("reckless"));
         let record = store
             .insert_build(NewBuild {
@@ -626,7 +694,7 @@ impl Executor for BuildExecutor {
             target_dir: builds.join("target"),
             out_dir,
             networks_dir: Some(builds.join("networks")),
-            evalfile: None,
+            evalfile,
         };
         cx.log(format!("Building {} ({}) {label}", version.name, short(&spec.commit)));
         let mut log = |line: &str| cx.log(line);
@@ -648,7 +716,11 @@ impl Executor for BuildExecutor {
             }
         };
         drop(grant);
-        let expected = v.inner.repo.resolve(&spec.commit).await.ok().and_then(|c| c.bench);
+        // A commit's Bench: line is measured with its own net; with another, there is nothing to compare.
+        let expected = match spec.net {
+            Some(_) => None,
+            None => v.inner.repo.resolve(&spec.commit).await.ok().and_then(|c| c.bench),
+        };
         let suspect = expected.is_some_and(|e| e != bench.nodes);
         match expected {
             Some(e) if suspect => cx.log(format!(
@@ -656,6 +728,10 @@ impl Executor for BuildExecutor {
                 bench.nodes
             )),
             Some(_) => cx.log(format!("Bench {} matches the commit, {} nps", bench.nodes, bench.nps)),
+            None if spec.net.is_some() => cx.log(format!(
+                "Bench {}, {} nps (with a trained net: the commit's Bench: line does not apply)",
+                bench.nodes, bench.nps
+            )),
             None => cx.log(format!("Bench {}, {} nps (the commit has no Bench: line)", bench.nodes, bench.nps)),
         }
         let b = store.update_build(record.id, BuildStatus::Ready, Some(bench.nodes), Some(bench.nps)).await?;

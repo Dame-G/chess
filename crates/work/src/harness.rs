@@ -152,10 +152,12 @@ impl Harness {
             notes: None,
             long: false,
             tune: None,
+            train: None,
             custom: Some(custom),
             fix_bench: false,
         };
         let spec = IdeaSpec {
+            train: None,
             funnel: plan,
             long: false,
             tune: None,

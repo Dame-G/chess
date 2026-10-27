@@ -195,11 +195,12 @@ pub struct Version {
     pub branch: Option<String>,
     pub line: Line,                   // Champion { number } | Idea { idea: IdeaId } | Upstream | Other
     pub parent: Option<VersionId>,    // the champion it was built on
-    pub bench: Option<u64>,           // the commit's Bench: line
+    pub bench: Option<u64>,           // the commit's Bench: line (none for a version with a trained net)
+    pub net: Option<NetId>,           // the net its builds embed; none = the commit's own (R4: "v14 + net-3")
     pub elo: Option<Estimate>,        // against its parent, from the deciding trial: {elo, low, high}
     pub created_at: Timestamp,
 }
-pub struct Build {                    // diagnostics only; a cache keyed by (commit, features)
+pub struct Build {                    // diagnostics only; a cache keyed by (commit, features, net)
     pub id: BuildId, pub version: VersionId, pub features: Vec<String>,
     pub bench: Option<u64>, pub nps: Option<u64>, pub path: String, pub status: BuildStatus,
 }
@@ -208,7 +209,7 @@ pub struct Build {                    // diagnostics only; a cache keyed by (com
 ### Ideas, trials, tunes
 
 ```rust
-pub enum IdeaKind { Gain, Neutral, Speed, Tune }
+pub enum IdeaKind { Gain, Neutral, Speed, Tune, Net }
 pub enum IdeaStatus { Queued, Running, Kept, Dropped, Stopped, Failed }
 pub enum Author { You, Claude }
 
@@ -258,6 +259,7 @@ The funnels copy Reckless's OpenBench (unchanged from the old harness, see `AGEN
 | neutral | fingerprint (bench must change) → screen → short STC [-2.75, 0.25] → long (opt-in)                                       |
 | speed   | fingerprint (bench must be identical) → speed (paired nps comparison, no games)                                          |
 | tune    | tune (SPSA writes the change) → fingerprint → screen → confirm STC [0, 4] → long [0, 4] (opt-in)                         |
+| net     | train (a run makes the net; the version is the base's code with it) → fingerprint → screen → short [0, 3] → long (opt-in) |
 
 An idea can also be a single **custom** trial (any preset and bounds or a fixed number of pairs): what `chess test` was, including the false-accept check.
 
@@ -313,7 +315,7 @@ A **weak spot** is a position before one of your mistakes or blunders in a revie
 ### Work
 
 ```rust
-pub enum WorkKind { Build, Trial, Tune, Review, Import, Promote }
+pub enum WorkKind { Build, Trial, Tune, Review, Import, Promote, Calibrate, Datagen, Train, DatasetImport }
 pub enum WorkStatus { Queued, Running, Paused, Done, Failed, Stopped }
 pub enum Priority { Live = 0, Interactive = 1, Review = 2, Idea = 3 }   // lower runs first
 
@@ -337,7 +339,7 @@ One stream, `GET /api/events?since=<id>&topics=<t,…>` (SSE, `Last-Event-ID` re
 pub struct Event { pub id: u64, pub topic: String, pub kind: EventKind, pub data: serde_json::Value }
 ```
 
-Topics: `game:<id>`, `games` (summaries of every game), `idea:<id>`, `ideas`, `work`, `player:<key>`, `connection:you`, `connection:bot`, `versions`, `policy`, `eval:<session>`. No `topics` means all except `eval:*` and `game:<id>` detail.
+Topics: `game:<id>`, `games` (summaries of every game), `idea:<id>`, `ideas`, `work`, `player:<key>`, `connection:you`, `connection:bot`, `versions`, `policy`, `eval:<session>`, `training` (nets and datasets). No `topics` means all except `eval:*` and `game:<id>` detail.
 
 Kinds (a closed enum in `core::events`, each with a typed payload in the OpenAPI document):
 
@@ -360,6 +362,9 @@ Kinds (a closed enum in `core::events`, each with a typed payload in the OpenAPI
 | `challenge`           | `Challenge` with `event: created                                             | accepted        | declined | canceled` | yes |
 | `policy.changed`      | `Policy`                                                                     | yes             |
 | `eval.info`           | `{ session, depth, lines: [{ score, pv }] , nodes, nps }`                    | no              |
+| `train.progress`      | `{ work, idea?, superbatch, superbatches, batch, loss, lr, positions_per_sec, grad_norm, … }` (1/s; `idea:<id>` or `work`) | yes |
+| `net.upserted`        | `Net` (topic `training`)                                                     | yes             |
+| `dataset.upserted`    | `Dataset` (topic `training`)                                                 | yes             |
 
 The web client keeps one normalised store per resource and applies these: an `*.upserted` replaces the object, `game.moved`/`game.undone` patch the open game.
 
@@ -378,6 +383,7 @@ pub enum Assist { Allowed, ExplorerOnly /* every live game is correspondence */,
 ## Scheduler and resources (`crates/work`, ledger in `crates/hub`)
 
 - **Cores:** `DAMELESS_CORES`, default physical cores − 1. A ledger in `hub` hands out cores.
+- **The GPU** (R4): `DAMELESS_GPUS`, default 1 when nvidia-smi finds one. The ledger grants it whole (`grant_gpu`, `cx.gpu()`) to one training run at a time, which also takes 2–4 cores for its data loader, so trials keep playing beside it. Datagen and training each have a lane; a dataset import is network work (no lane, no cores). Datasets share a disk cap (`DAMELESS_DATA_CAP_GB`), and nothing that writes much starts with less than 15 GB free. See the roadmap's R4 contract.
 - **Live first.** A local or Lichess game with a Dameless seat reserves its threads (1 per engine by default) for as long as it runs. Live evaluation on the board reserves 1 core (more if asked). These are reservations, not work items.
 - **Work** takes what is left, by priority (`Review` before `Idea`), oldest first within a priority. A trial asks for `concurrency` cores (default: all that are free, at least 2) and plays in **rounds**: each round runs fastchess with the cores granted at the start of that round for about `4 × cores` game pairs, then the trial updates its statistics and checks SPRT. Between rounds the scheduler may grant more or fewer cores, or pause the trial. Scaling is measured once at the trial's start with the planned concurrency and is part of the trial's record.
 - **Lanes:** the scheduler runs one item at a time per lane — builds; trials and tunes together; reviews; promotions — and starts an item only while a core is free; cores themselves come from the ledger when the item asks (`cx.cores`). So a trial waiting for its build never blocks the build (builds are queued at `Interactive`), and an idea's trials run one after another.
@@ -450,6 +456,12 @@ work        (id INTEGER PRIMARY KEY, kind, status, priority, title, subject JSON
              progress JSON, cores, paused_for, error, created_at, started_at, ended_at)
 connections (key TEXT PRIMARY KEY, account JSON, settings JSON, state JSON, updated_at)   -- tokens are files, never rows
 meta        (key TEXT PRIMARY KEY, value JSON)
+datasets    (id, name UNIQUE, format, positions, games, size_bytes, source JSON, source_kind, score_units, path, created_at,
+             updated_at)                                         -- R4; read from each dataset's manifest.json
+nets        (id, name UNIQUE, sha256 UNIQUE, path, arch, size_bytes, parent, dataset, run JSON, metrics JSON, created_at)
+train_steps (work, seq, idea, superbatch, batch, loss, lr, grad_norm, positions_per_sec, elapsed_seconds,
+             PRIMARY KEY (work, seq))                            -- a run's loss chart
+             -- versions.net and builds.net (NULL: the commit's own net); the build cache is (commit_sha, features, net)
 ```
 
 A game's offers, clocks and actions are not columns: they belong to the game being played, which `play` holds in memory and overlays on the stored record.
