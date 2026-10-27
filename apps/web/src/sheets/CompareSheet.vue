@@ -242,7 +242,7 @@ const stale = computed(
 .label-col {
   position: sticky;
   inset-inline-start: 0;
-  z-index: 1;
+  z-index: var(--e-z-raised);
   inline-size: 9.5rem;
   min-inline-size: 9.5rem;
   background: var(--e-surface);
