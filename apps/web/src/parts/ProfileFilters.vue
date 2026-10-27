@@ -45,4 +45,26 @@ const speeds = [
   flex-wrap: wrap;
   gap: var(--e-gap-snug);
 }
+
+/* On a phone each switch takes the sheet's width, its options sharing it, instead of two ragged rows. */
+@media (width < 36rem) {
+  .filters > :deep(*) {
+    flex: 1 1 100%;
+  }
+
+  .filters :deep(.e-seg) {
+    display: flex;
+    inline-size: 100%;
+  }
+
+  .filters :deep(.e-seg-opt) {
+    display: flex;
+    flex: 1 1 auto;
+  }
+
+  .filters :deep(.e-seg-text) {
+    flex: 1;
+    justify-content: center;
+  }
+}
 </style>

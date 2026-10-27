@@ -109,27 +109,22 @@ const departureLine = (d: Departure) => `${Math.ceil(d.ply / 2)}${d.ply % 2 === 
         {{ plural(rep.games, "game") }} as {{ side === "white" ? "White" : "Black" }}. Your moves are shown with a dot;
         the others are what you met.
       </p>
-      <p class="legend" aria-hidden="true"><span>Move</span><span>Games · share · score</span></p>
-      <ETree
-        v-model:expanded="expanded"
-        label="Your lines"
-        :items="tree.items"
-        :model-value="null"
-        class="tree"
-        @select="pick"
-      >
-        <template #leading="{ item }">
-          <span class="dot" :class="{ 'dot--you': tree.rows.get(item.id)?.yours }" aria-hidden="true"></span>
-        </template>
-        <template #item="{ item }">
-          <span class="move mono"
-            >{{ item.label }}<span v-if="tree.rows.get(item.id)?.leaves" class="out"> out of theory</span></span
-          >
-        </template>
-        <template #trailing="{ item }">
-          <span class="mono">{{ figures(item.id) }}</span>
-        </template>
-      </ETree>
+      <div class="tree">
+        <p class="legend" aria-hidden="true"><span>Move</span><span>Games · share · score</span></p>
+        <ETree v-model:expanded="expanded" label="Your lines" :items="tree.items" :model-value="null" @select="pick">
+          <template #leading="{ item }">
+            <span class="dot" :class="{ 'dot--you': tree.rows.get(item.id)?.yours }" aria-hidden="true"></span>
+          </template>
+          <template #item="{ item }">
+            <span class="move mono"
+              >{{ item.label }}<span v-if="tree.rows.get(item.id)?.leaves" class="out"> out of theory</span></span
+            >
+          </template>
+          <template #trailing="{ item }">
+            <span class="mono">{{ figures(item.id) }}</span>
+          </template>
+        </ETree>
+      </div>
 
       <div v-if="leaves.yours.length || leaves.theirs.length" class="leave">
         <div v-if="leaves.yours.length">
@@ -142,7 +137,7 @@ const departureLine = (d: Departure) => `${Math.ceil(d.ply / 2)}${d.ply % 2 === 
               <span class="sec-note">
                 {{ plural(d.games, "game") }}, {{ share(d.score) }} score ·
                 <ELink :link-component="RouterLink" :to="{ path: '/', query: { game: String(d.example) } }"
-                  >latest</ELink
+                  >latest game</ELink
                 >
               </span>
             </li>
@@ -158,7 +153,7 @@ const departureLine = (d: Departure) => `${Math.ceil(d.ply / 2)}${d.ply % 2 === 
               <span class="sec-note">
                 {{ plural(d.games, "game") }}, {{ share(d.score) }} score ·
                 <ELink :link-component="RouterLink" :to="{ path: '/', query: { game: String(d.example) } }"
-                  >latest</ELink
+                  >latest game</ELink
                 >
               </span>
             </li>
@@ -174,7 +169,7 @@ const departureLine = (d: Departure) => `${Math.ceil(d.ply / 2)}${d.ply % 2 === 
   display: flex;
   justify-content: space-between;
   margin: 0;
-  padding-block-end: var(--e-gap-tight);
+  padding: 0 0.5rem var(--e-gap-tight);
   border-block-end: var(--line);
   color: var(--e-muted);
   font: var(--e-type-small);
@@ -195,9 +190,38 @@ const departureLine = (d: Departure) => `${Math.ceil(d.ply / 2)}${d.ply % 2 === 
   font: var(--e-type-small);
 }
 
+/* A denser tree than eos's default row: a line of play is a few characters, and there can be many. */
+.tree :deep(.e-tree-row) {
+  min-block-size: 2rem;
+  padding-block: 0.125rem;
+}
+
+.move,
+.tree :deep(.e-listrow-trail) {
+  white-space: nowrap;
+}
+
+/* A phone has no width for eos's indent per move: a line of play goes ten moves deep. */
+@media (width < 36rem) {
+  .tree :deep(.e-tree-row) {
+    padding-inline-start: calc(0.5rem + (var(--_level) - 1) * 0.875rem);
+  }
+
+  .tree :deep(.e-listrow-trail) {
+    font-size: 0.8125rem;
+  }
+}
+
 .leave {
   display: grid;
   gap: var(--e-gap-base);
+  margin-block-start: var(--e-gap-snug);
+  padding-block-start: var(--e-gap-base);
+  border-block-start: var(--line);
+}
+
+.leave .part-title {
+  margin-block-end: var(--e-gap-tight);
 }
 
 .dep {
@@ -205,5 +229,11 @@ const departureLine = (d: Departure) => `${Math.ceil(d.ply / 2)}${d.ply % 2 === 
   flex-wrap: wrap;
   align-items: center;
   gap: 0 var(--e-gap-snug);
+  padding-block: 0.125rem;
+  border-block-end: var(--line);
+}
+
+.dep:last-child {
+  border-block-end: 0;
 }
 </style>

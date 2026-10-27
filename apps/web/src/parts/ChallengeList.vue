@@ -88,13 +88,22 @@ const describe = (c: Challenge) =>
   border-block-end: var(--line);
 }
 
+/* The section below draws its own rule. */
+.item:last-child {
+  border-block-end: 0;
+}
+
 .who {
   display: grid;
+  flex: 1 1 10rem;
   min-width: 0;
 }
 
 .name {
+  overflow: hidden;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .title {

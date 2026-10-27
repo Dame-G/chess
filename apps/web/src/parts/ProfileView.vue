@@ -129,18 +129,21 @@ const gameMoments = computed(() => {
           <dt>Games</dt>
           <dd>
             {{ profile.games }}
-            <small v-if="profile.games">{{ profile.reviewed }} reviewed</small>
+            <small class="fig-sub">{{ profile.reviewed }} reviewed</small>
           </dd>
         </div>
         <div class="fig">
           <dt>Score</dt>
           <dd>
-            {{ percent(profile.results.overall.score) }}<small v-if="profile.results.overall.score != null"> %</small>
+            {{ percent(profile.results.overall.score)
+            }}<small v-if="profile.results.overall.score != null" class="unit">%</small>
           </dd>
         </div>
         <div class="fig">
           <dt><Term k="accuracy" /></dt>
-          <dd>{{ percent(profile.accuracy.overall) }}</dd>
+          <dd>
+            {{ percent(profile.accuracy.overall) }}<small v-if="profile.accuracy.overall != null" class="unit">%</small>
+          </dd>
         </div>
         <div class="fig">
           <dt><Term k="acpl" /></dt>
@@ -166,7 +169,10 @@ const gameMoments = computed(() => {
     </section>
 
     <section v-if="reviewed" class="sec" aria-labelledby="p-acc">
-      <h2 id="p-acc" class="part-title">Accuracy by phase and speed</h2>
+      <div class="sec-head">
+        <h2 id="p-acc" class="part-title">Accuracy by phase and speed</h2>
+        <p class="sec-note">Percent</p>
+      </div>
       <ul class="plain meters">
         <li v-for="row in [...phases, ...speeds]" :key="row.label" class="meter">
           <span class="meter-label">{{ row.label }}</span>
@@ -183,7 +189,10 @@ const gameMoments = computed(() => {
     </section>
 
     <section v-if="profile.games" class="sec" aria-labelledby="p-res">
-      <h2 id="p-res" class="part-title">Results</h2>
+      <div class="sec-head">
+        <h2 id="p-res" class="part-title">Results</h2>
+        <p class="sec-note">Won-drawn-lost, score %</p>
+      </div>
       <ul class="plain results">
         <li v-for="s in sides" :key="s.label" class="result">
           <span class="result-label">{{ s.label }}</span>
@@ -200,6 +209,11 @@ const gameMoments = computed(() => {
       <div class="sec-head">
         <h2 id="p-moves" class="part-title">Moves per game</h2>
         <p class="sec-note">Over {{ plural(profile.reviewed, "reviewed game") }}</p>
+      </div>
+      <div class="classes-legend" aria-hidden="true">
+        <p v-for="n in 2" :key="n" class="class-legend">
+          <span class="class-rate">Per game</span><span class="class-total">Total</span>
+        </p>
       </div>
       <ul class="plain classes">
         <li v-for="r in classRows" :key="r.c" class="class" :class="r.tone ? `rv-${r.tone}` : 'class--quiet'">
@@ -219,7 +233,7 @@ const gameMoments = computed(() => {
             <th scope="col">Opening</th>
             <th scope="col" class="e-num">Games</th>
             <th scope="col" class="open-bar">Won · drawn · lost</th>
-            <th scope="col" class="e-num">Score</th>
+            <th scope="col" class="e-num">Score, %</th>
           </tr>
         </thead>
         <tbody>
@@ -374,6 +388,47 @@ const gameMoments = computed(() => {
   gap: var(--e-gap-snug);
 }
 
+/* A figure with a note under it is taller than its neighbours; the neighbours' numbers stay on the same line. */
+.fig {
+  align-content: start;
+}
+
+.fig-sub {
+  display: block;
+  margin-block-start: 0.125rem;
+}
+
+.unit {
+  margin-inline-start: 0.1875rem;
+}
+
+.classes-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--e-gap-base);
+  margin-block-end: calc(-1 * var(--e-gap-snug));
+  color: var(--e-muted);
+  font: var(--e-type-small);
+}
+
+.class-legend {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr) 3rem 2.5rem;
+  gap: var(--e-gap-tight);
+  margin: 0;
+  padding-block-end: 0.1875rem;
+  border-block-end: var(--line);
+}
+
+.class-legend span {
+  text-align: end;
+  white-space: nowrap;
+}
+
+.class-legend span:first-child {
+  grid-column: 3;
+}
+
 .classes {
   grid-auto-flow: column;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -485,6 +540,14 @@ const gameMoments = computed(() => {
 }
 
 @media (width < 36rem) {
+  .classes-legend {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .class-legend:last-child {
+    display: none;
+  }
+
   .classes {
     grid-auto-flow: row;
     grid-template-columns: minmax(0, 1fr);

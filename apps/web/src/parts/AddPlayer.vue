@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { EButton } from "@eos-ui/vue/components/EButton";
-import { ETextField } from "@eos-ui/vue/components/ETextField";
+import { ESearchBar } from "@eos-ui/vue/components/ESearchBar";
 import { ApiError } from "../api/client";
 import { nameOfKey, playerFromInput } from "../sheets/compare";
 import { usePlayers } from "../stores/players";
@@ -19,6 +18,7 @@ const error = ref("");
 const busy = ref(false);
 
 async function add() {
+  if (!text.value.trim() || busy.value) return;
   const key = playerFromInput(text.value);
   error.value = "";
   if (!key) {
@@ -48,35 +48,31 @@ async function add() {
 </script>
 
 <template>
-  <form class="add" @submit.prevent="add">
-    <ETextField
+  <div class="add">
+    <h2 class="part-title">Add a player</h2>
+    <ESearchBar
       v-model="text"
-      class="field"
       label="Add a player"
       placeholder="A Lichess name or a link to their profile"
-      autocomplete="off"
-      :error="error || undefined"
+      action="Add"
+      :loading="busy"
       :disabled="full"
-      :hint="full ? 'Five players is the most that fit side by side.' : undefined"
+      @submit="add"
     />
-    <EButton type="submit" variant="outline" :loading="busy" :disabled="full || !text.trim()">Add</EButton>
-  </form>
+    <p v-if="error" class="err" role="alert">{{ error }}</p>
+    <p v-else-if="full" class="sec-note">Five players is the most that fit side by side.</p>
+  </div>
 </template>
 
 <style scoped>
 .add {
-  display: flex;
-  align-items: flex-start;
+  display: grid;
   gap: var(--e-gap-snug);
 }
 
-.field {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* Lines up the button with the input, below the label. */
-.add :deep(.e-button) {
-  margin-block-start: 1.5rem;
+.err {
+  margin: 0;
+  color: var(--e-danger);
+  font: var(--e-type-small);
 }
 </style>

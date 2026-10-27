@@ -5,12 +5,12 @@ import { useToast } from "@eos-ui/vue";
 import { ESheet } from "@eos-ui/vue/components/ESheet";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
-import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import type { Player, ProfileFilter } from "../api/types";
 import ChallengeList from "../parts/ChallengeList.vue";
 import DrillsCard from "../parts/DrillsCard.vue";
 import ProfileFilters from "../parts/ProfileFilters.vue";
 import ProfileHead from "../parts/ProfileHead.vue";
+import ProfileSkeleton from "../parts/ProfileSkeleton.vue";
 import ProfileView from "../parts/ProfileView.vue";
 import ProgressChart from "../parts/ProgressChart.vue";
 import RepertoireView from "../parts/RepertoireView.vue";
@@ -94,10 +94,11 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
       <ChallengeList :challenges="challenges" connection="you" />
     </section>
 
-    <ENotice v-if="failed" tone="danger" title="Your profile did not load" class="gap">{{ failed }}</ENotice>
-    <div v-else-if="!profile" class="loading" aria-busy="true">
-      <ESkeleton :lines="4" />
-    </div>
+    <ENotice v-if="failed" tone="danger" title="Your profile did not load" class="gap">
+      {{ failed }}
+      <template #actions><EButton variant="outline" size="sm" @click="load">Try again</EButton></template>
+    </ENotice>
+    <ProfileSkeleton v-else-if="!profile" label="Loading your profile" />
     <template v-else>
       <section class="sec" aria-label="Games and review">
         <ProfileFilters v-model="filter" />
@@ -141,9 +142,5 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
 <style scoped>
 .gap {
   margin-block-end: var(--e-gap-base);
-}
-
-.loading {
-  padding-block: var(--e-gap-base);
 }
 </style>
