@@ -300,8 +300,12 @@ async fn live_play_pauses_the_lowest_priority_work_until_cores_are_back() {
     trials.release.store(false, Ordering::SeqCst);
     let all = hub.ledger.reserve("game:2", 4);
     eventually("paused again", || async { status(&s, trial.id).await == WorkStatus::Paused }).await;
+    // The first pause may have been lifted before the trial reached its safe point (and so never logged): count from
+    // here. The trial is still in its unit, so it cannot have logged this pause yet.
+    let log_path = hub.config.work_log_path(trial.id);
+    let pauses = std::fs::read_to_string(&log_path).unwrap_or_default().matches("Paused: A live game").count();
     trials.release.store(true, Ordering::SeqCst);
-    logged(&s, trial.id, "Paused: A live game", 2).await;
+    logged(&s, trial.id, "Paused: A live game", pauses + 1).await;
     let at = trials.units.load(Ordering::SeqCst);
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(status(&s, trial.id).await, WorkStatus::Paused);
