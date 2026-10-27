@@ -84,6 +84,7 @@ function openPasted() {
             variant="quiet"
             class="line-btn"
             :aria-label="`Play ${l.san.split(' ')[1] ?? ''}`"
+            :title="l.san"
             @click="l.first && board.exploreMove(l.first)"
           >
             <span class="line-score num">{{ l.score }}</span>
@@ -145,8 +146,11 @@ function openPasted() {
   font: var(--e-type-small);
 }
 
+/* Room for the engine's lines before they arrive, so what is under them does not jump. */
 .lines {
   display: grid;
+  min-height: 5.625rem;
+  align-content: start;
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   margin: 0;
@@ -161,7 +165,7 @@ function openPasted() {
   justify-content: flex-start;
   gap: var(--e-gap-snug);
   width: 100%;
-  min-height: 1.875rem;
+  height: 1.875rem;
   padding-inline: 0.25rem;
   text-align: start;
   text-decoration: none;

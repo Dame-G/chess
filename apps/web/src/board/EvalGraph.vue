@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
@@ -16,6 +16,8 @@ const props = defineProps<{
   cursor: number;
   /** Judged moves: the colour token of each position's mark (`--rv-blunder`), `null` for the rest. */
   marks?: (string | null)[];
+  /** What to say about each position while the pointer is over it, such as `17. Rd8#  +8.60`. */
+  tips?: string[];
   height?: number;
 }>();
 const emit = defineEmits<{ select: [index: number] }>();
@@ -24,6 +26,11 @@ const el = ref<HTMLElement>();
 let plot: uPlot | undefined;
 let observer: ResizeObserver | undefined;
 let dragging = false;
+/** The position under the pointer and its x in the plot, for the hover line and its readout. */
+const hover = ref<{ index: number; x: number } | null>(null);
+const tip = computed(() => (hover.value ? (props.tips?.[hover.value.index] ?? "") : ""));
+/** The readout sits on the side of the line with room: left of it past the middle. */
+const tipLeft = computed(() => !!hover.value && !!el.value && hover.value.x > el.value.clientWidth / 2);
 
 /** uPlot draws on a canvas, so colours are read from the page's tokens when it draws. */
 function css(name: string, fallback: string) {
@@ -44,7 +51,7 @@ function options(width: number): uPlot.Options {
     height: h,
     padding: [2, 0, 2, 0],
     legend: { show: false },
-    cursor: { y: false, points: { show: false }, drag: { x: false, y: false } },
+    cursor: { x: false, y: false, points: { show: false }, drag: { x: false, y: false } },
     select: { show: false, left: 0, top: 0, width: 0, height: 0 },
     scales: { x: { time: false }, y: { range: [-1, 1] } },
     axes: [{ show: false }, { show: false }],
@@ -113,10 +120,20 @@ function options(width: number): uPlot.Options {
             emit("select", at(e));
           });
           u.over.addEventListener("pointermove", (e) => {
+            hover.value = { index: at(e), x: e.clientX - u.over.getBoundingClientRect().left };
             if (dragging) emit("select", at(e));
           });
-          u.over.addEventListener("pointerup", () => (dragging = false));
-          u.over.addEventListener("pointercancel", () => (dragging = false));
+          u.over.addEventListener("pointerleave", () => {
+            if (!dragging) hover.value = null;
+          });
+          u.over.addEventListener("pointerup", (e) => {
+            dragging = false;
+            if (e.pointerType !== "mouse") hover.value = null;
+          });
+          u.over.addEventListener("pointercancel", () => {
+            dragging = false;
+            hover.value = null;
+          });
         },
       ],
     },
@@ -160,6 +177,17 @@ onBeforeUnmount(() => {
 <template>
   <figure class="graph" :aria-label="label">
     <div ref="el" class="graph-plot"></div>
+    <template v-if="hover">
+      <span class="graph-line" :style="{ left: `${hover.x}px` }" aria-hidden="true"></span>
+      <span
+        v-if="tip"
+        class="graph-tip num"
+        :class="{ 'graph-tip--left': tipLeft }"
+        :style="{ left: `${hover.x}px` }"
+        aria-hidden="true"
+        >{{ tip }}</span
+      >
+    </template>
   </figure>
 </template>
 
@@ -169,11 +197,40 @@ onBeforeUnmount(() => {
   --graph-black: #2a2420;
   --graph-mid: rgb(200 120 60 / 80%);
 
+  position: relative;
   margin: 0;
   min-width: 0;
   overflow: hidden;
   border-radius: var(--e-radius-sm);
-  box-shadow: 0 0 0 1px var(--e-border);
+  box-shadow: 0 0 0 1px var(--e-border-strong, var(--e-border));
+}
+
+/* The hover line follows the pointer; the readout hangs from the top edge beside it. */
+.graph-line {
+  position: absolute;
+  inset-block: 0;
+  width: 1px;
+  background: var(--e-muted);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.graph-tip {
+  position: absolute;
+  top: 0.125rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--e-radius-sm);
+  background: var(--e-ink);
+  color: var(--e-surface);
+  font: 600 0.6875rem/1.2 var(--e-font-mono);
+  margin-inline-start: 0.375rem;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.graph-tip--left {
+  margin-inline-start: 0;
+  transform: translateX(calc(-100% - 0.375rem));
 }
 
 .graph-plot :deep(.u-over) {

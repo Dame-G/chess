@@ -4,7 +4,7 @@ import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { useToast } from "@eos-ui/vue";
 import type { Side } from "../api/types";
-import { isLevelSeat, other, pawns, seatName, sideResult, winChance } from "../format";
+import { isLevelSeat, other, pawns, scoreText, seatName, sideResult, winChance } from "../format";
 import { answerArrow } from "./drill";
 import { useDrills } from "../stores/drills";
 import { useGames } from "../stores/games";
@@ -157,22 +157,35 @@ const graph = computed(() => {
   const n = board.plies.length;
   const values: (number | null)[] = Array.from({ length: n }, () => null);
   const marks: (string | null)[] = Array.from({ length: n }, () => null);
+  const scores: (string | null)[] = Array.from({ length: n }, () => null);
   const r = review.value;
   const share = (p: number) => 2 * winChance(p) - 1;
   if (r?.plies.length) {
     values[0] = share(pawns(r.plies[0]!.eval_before));
+    scores[0] = scoreText(r.plies[0]!.eval_before);
     for (const p of r.plies) {
-      values[p.ply] = share(pawns(p.eval_after, p.side === "white" ? "black" : "white"));
+      const turn = p.side === "white" ? "black" : "white";
+      values[p.ply] = share(pawns(p.eval_after, turn));
+      scores[p.ply] = scoreText(p.eval_after, turn);
       const tone = markOf(p.classification).tone;
       marks[p.ply] = tone && tone !== "great" ? `--rv-${tone}` : null;
     }
   } else {
     values[0] = 0;
     g.value?.moves.forEach((m, i) => {
-      if (m.eval) values[i + 1] = share(pawns(m.eval));
+      if (m.eval) {
+        values[i + 1] = share(pawns(m.eval));
+        scores[i + 1] = scoreText(m.eval);
+      }
     });
   }
-  return { values, marks };
+  // What the pointer reads out over each position: the move, then the score where there is one.
+  const tips = values.map((_, i) => {
+    const san = board.plies[i]?.san;
+    const move = i === 0 || !san ? "Start" : `${Math.ceil(i / 2)}${i % 2 ? "." : "…"} ${san}`;
+    return scores[i] ? `${move}  ${scores[i]}` : move;
+  });
+  return { values, marks, tips };
 });
 const graphShown = computed(() => analysis.value && !!g.value && !board.exploring && board.plies.length > 1);
 
@@ -233,6 +246,7 @@ onBeforeUnmount(() => stepQuery?.removeEventListener("change", setStep));
           label="The evaluation through the game. Click or drag to go to a move."
           :values="graph.values"
           :marks="graph.marks"
+          :tips="graph.tips"
           :cursor="board.ply"
           class="graph"
           @select="board.go"
@@ -247,7 +261,7 @@ onBeforeUnmount(() => stepQuery?.removeEventListener("change", setStep));
 /* The board drives the layout. Its side is the largest square the stage allows, less the strips, the foot and the
    padding; the stage is the size container, so only the panel and the rail absorb slack. */
 .stage {
-  --col: 2rem;
+  --col: 1.75rem;
   --egap: var(--e-gap-snug);
   --pad: var(--e-gap-base);
   --strip: 2.25rem;

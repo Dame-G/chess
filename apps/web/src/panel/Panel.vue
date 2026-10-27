@@ -69,7 +69,7 @@ const hints = computed(() => (policy.allowed && games.review ? games.review.plie
 <style scoped>
 .panel {
   display: grid;
-  grid-template-rows: auto minmax(9rem, 1fr);
+  grid-template-rows: auto minmax(12rem, 1fr);
   min-height: 0;
   height: 100%;
 }
@@ -82,11 +82,13 @@ const hints = computed(() => (policy.allowed && games.review ? games.review.plie
 .tabs {
   min-height: 0;
   max-height: 55dvh;
-  overflow-y: auto;
+  overflow: hidden auto;
   border-block-end: var(--line);
 }
 
 .tabs :deep([role="tablist"]) {
+  box-sizing: border-box;
+  max-width: 100%;
   padding-inline: var(--ws-pad);
 }
 

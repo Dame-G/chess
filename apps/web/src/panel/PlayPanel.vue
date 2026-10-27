@@ -83,7 +83,7 @@ const where = computed(() => {
   const tc = timeControl(x.time);
   if (x.source.type === "lichess")
     return `${tc} · ${speedName[x.source.speed]} on Lichess${x.source.rated ? ", rated" : ""}`;
-  return `${tc} · here`;
+  return `${tc} · local game`;
 });
 </script>
 

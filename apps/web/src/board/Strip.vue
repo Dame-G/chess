@@ -45,7 +45,9 @@ const low = computed(() => left.value !== null && left.value < 20_000);
       <span class="name">{{ name }}</span>
       <span v-if="seat.rating" class="rating num">{{ seat.rating }}</span>
     </span>
-    <span v-if="result" class="result num" :aria-label="`Scored ${result}`">{{ result }}</span>
+    <span v-if="result" class="result num" :title="`Scored ${result}`" :aria-label="`Scored ${result}`">{{
+      result
+    }}</span>
     <span
       v-if="left !== null"
       class="clock num"
