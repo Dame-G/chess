@@ -20,7 +20,7 @@ use dameless_core::{
     Error,
     events::{AssistKind, Payload, WorkLog},
     ids::WorkId,
-    work::{Progress, WorkKind},
+    work::{Priority, Progress, WorkKind},
 };
 use dameless_store::work::WorkUpdate;
 use serde::{Serialize, de::DeserializeOwned};
@@ -58,6 +58,8 @@ pub struct WorkContext {
     pub hub: Arc<Hub>,
     /// Fires when the item is stopped (by a person, or the server shutting down).
     pub cancel: CancellationToken,
+    /// The item's priority: where its requests for cores and the GPU stand in the ledger's line.
+    pub priority: Priority,
     spec: serde_json::Value,
     checkpoint: Option<serde_json::Value>,
     control: watch::Receiver<Control>,
@@ -70,7 +72,8 @@ pub struct WorkContext {
 const PROGRESS_EVERY: Duration = Duration::from_millis(1000);
 
 impl WorkContext {
-    /// Made by the scheduler for each run of an item.
+    /// Made by the scheduler for each run of an item, at [`Priority::Interactive`] until
+    /// [`WorkContext::with_priority`] says otherwise.
     pub fn new(
         hub: Arc<Hub>,
         id: WorkId,
@@ -81,7 +84,24 @@ impl WorkContext {
         control: watch::Receiver<Control>,
     ) -> Self {
         let log = std::fs::OpenOptions::new().create(true).append(true).open(hub.config.work_log_path(id)).ok();
-        Self { id, kind, hub, cancel, spec, checkpoint, control, log: Mutex::new(log), last_progress: Mutex::new(None) }
+        Self {
+            id,
+            kind,
+            hub,
+            cancel,
+            priority: Priority::Interactive,
+            spec,
+            checkpoint,
+            control,
+            log: Mutex::new(log),
+            last_progress: Mutex::new(None),
+        }
+    }
+
+    /// The item's priority, which orders its requests for cores and the GPU against other work's.
+    pub fn with_priority(mut self, priority: Priority) -> Self {
+        self.priority = priority;
+        self
     }
 
     /// A context with no scheduler behind it, for tests of an executor: never paused, cancelled through the returned
@@ -142,13 +162,16 @@ impl WorkContext {
         self.hub.bus.emit(Payload::WorkLog(WorkLog { id: self.id, line: line.to_owned() }));
     }
 
-    /// Asks for cores from the ledger, waiting until at least `min` are free. `None` when stopped while waiting.
-    /// Hold the grant only while using it (a trial's round), so the scheduler can rebalance between units.
+    /// Asks for cores from the ledger, waiting until at least `min` are free and no work of higher priority (or of the
+    /// same priority, asking earlier) waits ahead of this item. `None` when stopped while waiting. Hold the grant only
+    /// while using it (a trial's round), so the scheduler can rebalance between units and others get their turn.
     pub async fn cores(&self, min: u32, max: u32) -> Option<Grant> {
         let ledger = self.hub.ledger.clone();
         let mut changed = ledger.changed();
+        // In line from now until granted; dropped (leaving the line) if this wait is stopped or cancelled.
+        let request = ledger.request_cores(self.id, self.priority, min, max);
         loop {
-            if let Some(grant) = ledger.grant(self.id, min, max) {
+            if let Some(grant) = request.grant() {
                 let _ = self.update(WorkUpdate { cores: Some(grant.cores()), ..Default::default() }).await;
                 return Some(grant);
             }
@@ -167,9 +190,10 @@ impl WorkContext {
             return None;
         }
         let mut changed = ledger.changed();
+        let request = ledger.request_gpu(self.id, self.priority);
         let mut said = false;
         loop {
-            if let Some(grant) = ledger.grant_gpu(self.id) {
+            if let Some(grant) = request.grant() {
                 return Some(grant);
             }
             if !said {

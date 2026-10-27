@@ -52,10 +52,17 @@ async fn a_session_streams_whites_scores_a_few_times_a_second() {
     assert_eq!(started.version, h.champion.id);
     assert_eq!(started.fen, Position::after(None, &["e4"]).unwrap().fen());
     assert_eq!(h.hub.ledger.snapshot().reserved, 1);
-    tokio::time::sleep(Duration::from_millis(600)).await;
-    let got = infos(&mut sub);
+    // Listen for at least 600 ms, and until the first report has come however slow the machine is.
+    let t0 = std::time::Instant::now();
+    let mut got = Vec::new();
+    while got.is_empty() || t0.elapsed() < Duration::from_millis(600) {
+        assert!(t0.elapsed() < Duration::from_secs(10), "no eval.info");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        got.extend(infos(&mut sub));
+    }
     // The engine reports every 10 ms; the board hears at most five a second (and a first one at once).
-    assert!(!got.is_empty() && got.len() <= 5, "{} events", got.len());
+    let allowed = 2 + (t0.elapsed().as_millis() / 200) as usize;
+    assert!(got.len() <= allowed, "{} events in {:?}", got.len(), t0.elapsed());
     let last = got.last().unwrap();
     assert_eq!(last.session, started.session);
     assert_eq!(last.lines.len(), 2);
@@ -71,9 +78,16 @@ async fn a_session_streams_whites_scores_a_few_times_a_second() {
     // White to move: the second line is worse for White.
     let started = h.eval.start_session(request("tab-1", &[])).await.unwrap();
     eventually(async || !infos(&mut sub).is_empty()).await;
-    tokio::time::sleep(Duration::from_millis(250)).await;
+    // Wait for a report of both lines (the first ones may hold only one), however long it takes.
+    let t0 = std::time::Instant::now();
+    let last = loop {
+        assert!(t0.elapsed() < Duration::from_secs(10), "no report of two lines");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        if let Some(last) = infos(&mut sub).into_iter().rfind(|i| i.lines.len() == 2) {
+            break last;
+        }
+    };
     h.eval.stop_session(&started.session).await;
-    let last = infos(&mut sub).pop().unwrap_or_else(|| panic!("no event after the first"));
     assert_eq!(cp(last.lines[1].score) - cp(last.lines[0].score), -25);
 }
 

@@ -134,9 +134,9 @@ pub async fn finished_game(
     hub.store.insert_game(game).await.unwrap()
 }
 
-/// Waits until `check` holds, for at most five seconds.
+/// Waits until `check` holds, for at most fifteen seconds (a loaded CI runner is slow).
 pub async fn eventually(mut check: impl AsyncFnMut() -> bool) {
-    let until = tokio::time::Instant::now() + Duration::from_secs(5);
+    let until = tokio::time::Instant::now() + Duration::from_secs(15);
     while !check().await {
         assert!(tokio::time::Instant::now() < until, "timed out");
         tokio::time::sleep(Duration::from_millis(10)).await;

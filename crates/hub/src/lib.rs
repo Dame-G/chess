@@ -18,7 +18,7 @@ pub mod work;
 
 pub use bus::{Bus, Next, Subscription, TopicFilter};
 pub use config::{Config, LichessUrls};
-pub use ledger::{GpuGrant, Grant, Ledger, LedgerSnapshot, Reservation};
+pub use ledger::{CoreRequest, GpuGrant, GpuRequest, Grant, Ledger, LedgerSnapshot, Reservation};
 pub use policy::PolicyState;
 pub use secrets::Secrets;
 pub use work::{Control, Executor, WorkContext};

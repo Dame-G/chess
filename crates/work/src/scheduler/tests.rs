@@ -72,7 +72,13 @@ impl Executor for Fake {
             if !cx.safe_point(None).await {
                 return Err(cx.stopped());
             }
-            let Some(grant) = cx.cores(1, cx.hub.ledger.total()).await else { return Err(cx.stopped()) };
+            // Network work (imports) takes no cores.
+            let grant = if self.kind.uses_cores() {
+                let Some(grant) = cx.cores(1, cx.hub.ledger.total()).await else { return Err(cx.stopped()) };
+                Some(grant)
+            } else {
+                None
+            };
             loop {
                 tokio::time::sleep(Duration::from_millis(20)).await;
                 if self.release.load(Ordering::SeqCst) || cx.cancel.is_cancelled() {
@@ -106,6 +112,17 @@ fn forever() -> Job {
     Job { forever: true, ..Default::default() }
 }
 
+/// Waits until the item's log holds `needle` at least `times` times: the executor writes "Paused: …" once it has
+/// stopped at its safe point, which is when it can no longer do units.
+async fn logged(s: &Scheduler, id: WorkId, needle: &str, times: usize) {
+    let path = s.hub().config.work_log_path(id);
+    eventually(needle, || {
+        let path = path.clone();
+        async move { std::fs::read_to_string(path).unwrap_or_default().matches(needle).count() >= times }
+    })
+    .await;
+}
+
 async fn status(s: &Scheduler, id: WorkId) -> WorkStatus {
     s.get(id).await.unwrap().status
 }
@@ -136,18 +153,26 @@ async fn runs_by_priority_then_age_one_at_a_time_per_lane() {
 async fn imports_run_at_once_and_builds_do_not_wait_for_trials() {
     let (hub, _dir) = bare_hub(4);
     let s = Scheduler::new(hub);
-    for kind in [WorkKind::Import, WorkKind::Trial, WorkKind::Build] {
+    let trials = Fake::new(WorkKind::Trial);
+    s.register(trials.clone());
+    for kind in [WorkKind::Import, WorkKind::Build] {
         s.register(Fake::new(kind));
     }
     s.start().await.unwrap();
+    // The trial asks for every core for each unit, hands them back and asks again at once.
     let t = s.submit(new(WorkKind::Trial, Priority::Idea, forever())).await.unwrap();
+    eventually("the trial playing", || async { trials.units.load(Ordering::SeqCst) > 0 }).await;
     let i1 = s.submit(new(WorkKind::Import, Priority::Review, forever())).await.unwrap();
     let i2 = s.submit(new(WorkKind::Import, Priority::Review, forever())).await.unwrap();
     let b = s.submit(new(WorkKind::Build, Priority::Interactive, units(1))).await.unwrap();
-    // The build runs although a trial holds its lane: a trial waits for its builds.
+    // The build runs although a trial holds its lane and takes every core between units: the ledger serves the
+    // waiting build first.
     assert_eq!(s.wait(b.id).await.unwrap().status, WorkStatus::Done);
     eventually("both imports running", || async { s.is_running(i1.id) && s.is_running(i2.id) }).await;
     assert!(s.is_running(t.id));
+    // And the trial gets its cores again once the build is done.
+    let after = trials.units.load(Ordering::SeqCst);
+    eventually("trial units after the build", || async { trials.units.load(Ordering::SeqCst) > after + 1 }).await;
     for id in [t.id, i1.id, i2.id] {
         s.stop(id).await.unwrap();
         assert_eq!(s.wait(id).await.unwrap().status, WorkStatus::Stopped);
@@ -227,7 +252,7 @@ async fn pauses_and_resumes_running_and_queued_work() {
     eventually("a unit done", || async { fake.units.load(Ordering::SeqCst) > 0 }).await;
     let paused = s.pause(w.id, PAUSED_BY_YOU).await.unwrap();
     assert_eq!((paused.status, paused.paused_for.as_deref()), (WorkStatus::Paused, Some(PAUSED_BY_YOU)));
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    logged(&s, w.id, "Paused: Paused by you", 1).await;
     let at = fake.units.load(Ordering::SeqCst);
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(fake.units.load(Ordering::SeqCst), at, "no units while paused");
@@ -276,7 +301,7 @@ async fn live_play_pauses_the_lowest_priority_work_until_cores_are_back() {
     let all = hub.ledger.reserve("game:2", 4);
     eventually("paused again", || async { status(&s, trial.id).await == WorkStatus::Paused }).await;
     trials.release.store(true, Ordering::SeqCst);
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    logged(&s, trial.id, "Paused: A live game", 2).await;
     let at = trials.units.load(Ordering::SeqCst);
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(status(&s, trial.id).await, WorkStatus::Paused);

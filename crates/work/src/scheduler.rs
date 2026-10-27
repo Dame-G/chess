@@ -3,7 +3,10 @@
 //! Work is stored first (`work` table) and then started by a loop when its executor is free: queued items by priority,
 //! then oldest first. Each kind has a lane that runs one item at a time (builds; trials and tunes together; reviews;
 //! promotions), so a trial waiting for its build never blocks the build, and imports, which only use the network, run
-//! at once. Cores are not handed out here: a running item asks the ledger for them itself (`cx.cores`), between units.
+//! at once. Cores are not handed out here: a running item asks the ledger for them itself (`cx.cores`), between units,
+//! and the ledger serves waiting items by priority, then in the order they asked. An item that needs cores starts once
+//! one is free, or when lower-priority work holds some: that work hands them back at its next unit and the item, by
+//! then waiting in line, is served first.
 //!
 //! Live play comes first. When a live game or live evaluation reserves cores and the ledger is oversubscribed, the
 //! lowest-priority running CPU work is paused at its next safe point; it is resumed once cores are free again. A person
@@ -353,16 +356,27 @@ impl Scheduler {
                 return Ok(());
             }
             let Some(executor) = self.inner.executors.lock().unwrap().get(&w.kind).cloned() else { continue };
-            let busy = {
+            let (busy, lower) = {
                 let running = self.inner.running.lock().unwrap();
-                lane(w.kind).is_some_and(|l| running.values().any(|r| lane(r.kind) == Some(l)))
+                let busy = lane(w.kind).is_some_and(|l| running.values().any(|r| lane(r.kind) == Some(l)));
+                let rank = w.priority.rank();
+                let lower: Vec<WorkId> = running.iter().filter(|(_, r)| r.rank > rank).map(|(id, _)| *id).collect();
+                (busy, lower)
             };
-            if busy || (needs_a_core(w.kind) && self.inner.hub.ledger.free() == 0) {
+            if busy || (needs_a_core(w.kind) && !self.core_coming(&lower)) {
                 continue;
             }
             self.launch(w, executor).await?;
         }
         Ok(())
+    }
+
+    /// Whether an item would get a core soon: one is free, or running work of lower priority (`lower`) holds some. That
+    /// work hands its cores back at its next unit and the ledger then serves the item first, so it starts now and waits
+    /// in line rather than racing the lower-priority work for the cores each time they come back.
+    fn core_coming(&self, lower: &[WorkId]) -> bool {
+        let ledger = &self.inner.hub.ledger;
+        ledger.free() > 0 || (!lower.is_empty() && ledger.snapshot().grants.iter().any(|g| lower.contains(&g.work)))
     }
 
     async fn launch(&self, w: Work, executor: Arc<dyn Executor>) -> Result<(), Error> {
@@ -397,7 +411,7 @@ impl Scheduler {
         self.log(w.id, if checkpoint.is_some() { "Started again, from its checkpoint." } else { "Started." });
         self.emit(&work);
 
-        let cx = WorkContext::new(hub.clone(), w.id, w.kind, spec, checkpoint, cancel, rx);
+        let cx = WorkContext::new(hub.clone(), w.id, w.kind, spec, checkpoint, cancel, rx).with_priority(w.priority);
         let this = self.clone();
         let id = w.id;
         tokio::spawn(async move {
