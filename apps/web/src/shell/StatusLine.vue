@@ -17,6 +17,8 @@ import { useWork } from "../stores/work";
  * with stop and pause). It is the only place background work appears. At its end, the fair-play note when analysis is
  * off.
  */
+/** `compact` is the header's indicator below 75rem: a dot and a count, with the same queue under it. */
+const props = defineProps<{ compact?: boolean }>();
 const work = useWork();
 const policy = usePolicy();
 const games = useGames();
@@ -49,6 +51,11 @@ const state = computed(() =>
         : "idle",
 );
 
+/** Work running, paused or waiting: the number the compact indicator shows. */
+const active = computed(() => work.running.length + work.queued.length);
+/** With the footer's fair-play note gone, an idle compact dot turns amber while analysis is off. */
+const dotState = computed(() => (props.compact && policy.reason && state.value === "idle" ? "paused" : state.value));
+
 async function run(f: (id: WorkId) => Promise<unknown>, id: WorkId) {
   try {
     await f(id);
@@ -64,15 +71,28 @@ const fraction = (w: Work) => (w.progress?.total ? w.progress.done / w.progress.
 </script>
 
 <template>
-  <div class="status">
-    <EPopover label="Background work" title="Background work" side="top" align="start">
+  <div class="status" :class="{ 'status--compact': compact }">
+    <EPopover
+      label="Background work"
+      title="Background work"
+      :side="compact ? 'bottom' : 'top'"
+      :align="compact ? 'end' : 'start'"
+    >
       <template #trigger>
-        <EButton variant="quiet" size="sm" class="work-trigger">
-          <span class="dot" :class="`dot--${state}`" aria-hidden="true"></span>
-          <span class="sentence" :title="sentence">{{ sentence }}</span>
+        <EButton
+          variant="quiet"
+          size="sm"
+          class="work-trigger"
+          :aria-label="compact ? `Background work: ${sentence}` : undefined"
+        >
+          <span class="dot" :class="`dot--${dotState}`" aria-hidden="true"></span>
+          <span v-if="compact" class="count num" aria-hidden="true">{{ active || "" }}</span>
+          <span v-else class="sentence" :title="sentence">{{ sentence }}</span>
         </EButton>
       </template>
       <div class="queue">
+        <p v-if="compact && policy.reason" class="fairplay-note" role="status">{{ policy.reason }}</p>
+        <p v-if="compact" class="sentence-note">{{ sentence }}</p>
         <section v-if="work.running.length" aria-label="Running">
           <p class="part-title">Running</p>
           <ul class="rows">
@@ -127,7 +147,7 @@ const fraction = (w: Work) => (w.progress?.total ? w.progress.done / w.progress.
         </p>
       </div>
     </EPopover>
-    <span v-if="policy.reason" class="fairplay" role="status">{{ policy.reason }}</span>
+    <span v-if="policy.reason && !compact" class="fairplay" role="status">{{ policy.reason }}</span>
   </div>
 </template>
 
@@ -185,6 +205,37 @@ const fraction = (w: Work) => (w.progress?.total ? w.progress.done / w.progress.
 
 .dot--error {
   background: var(--e-danger);
+}
+
+.status--compact {
+  min-height: 0;
+}
+
+.status--compact .work-trigger {
+  gap: 0.375rem;
+}
+
+.status--compact .dot {
+  margin-inline-end: 0;
+}
+
+.count {
+  font: var(--e-type-small);
+  font-weight: 600;
+}
+
+.sentence-note,
+.fairplay-note {
+  margin: 0;
+}
+
+.sentence-note {
+  color: var(--e-muted);
+}
+
+.fairplay-note {
+  color: var(--e-warning-ink, var(--e-warning));
+  font-weight: 600;
 }
 
 .fairplay {

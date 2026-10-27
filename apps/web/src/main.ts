@@ -12,7 +12,7 @@ import "./base.css";
 import { useTransport } from "./api/client";
 import { fixtureMode } from "./api/mode";
 import App from "./App.vue";
-import { router } from "./router";
+import { prefetchSheets, router } from "./router";
 import { startScheme } from "./scheme";
 import { startStores } from "./stores/boot";
 import { saddleLight, themeCss } from "./theme";
@@ -34,3 +34,4 @@ const app = createApp(App)
 void startStores();
 await router.isReady();
 app.mount("#app");
+prefetchSheets();

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onScopeDispose, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { PhGearSix, PhMagnifyingGlass, PhPlus } from "@phosphor-icons/vue";
 import { EAppHeader } from "@eos-ui/vue/components/EAppHeader";
@@ -13,6 +13,7 @@ import { useConnections } from "../stores/connections";
 import { useGames } from "../stores/games";
 import { useVersions } from "../stores/versions";
 import Logo from "./Logo.vue";
+import StatusLine from "./StatusLine.vue";
 import { useUi } from "./ui";
 
 /** The header: the wordmark, the command bar, You and Dameless as links to their sheets, New game, settings. */
@@ -26,6 +27,13 @@ const games = useGames();
 /** New game is the header's one filled button, while You have no game running. */
 const playing = computed(() => games.list.some((g) => g.you && isLive(g)));
 const keys = formatShortcut("mod+k");
+
+/** On a phone the links keep their names and drop their figures (rating, version); the sheets show them. */
+const phone = matchMedia("(width < 30rem)");
+const tight = ref(phone.matches);
+const onPhone = (e: MediaQueryListEvent) => (tight.value = e.matches);
+phone.addEventListener("change", onPhone);
+onScopeDispose(() => phone.removeEventListener("change", onPhone));
 </script>
 
 <template>
@@ -47,22 +55,40 @@ const keys = formatShortcut("mod+k");
       </EButton>
     </template>
     <template #actions>
-      <EButton v-if="!playing" size="sm" :icon="PhPlus" class="new" @click="ui.startNewGame()">New game</EButton>
+      <EButton v-if="!playing" size="sm" :icon="PhPlus" class="new" aria-label="New game" @click="ui.startNewGame()">
+        <template #default><span class="new-label">New game</span></template>
+      </EButton>
+      <StatusLine compact class="work-compact" />
       <EStatLink
         label="You"
-        :value="connections.youRating || undefined"
+        :value="tight ? undefined : connections.youRating || undefined"
         to="/you"
         :link-component="RouterLink"
         :current="route.path === '/you'"
       />
       <EStatLink
         label="Dameless"
-        :value="versions.current?.name"
+        :value="tight ? undefined : versions.current?.name"
         to="/dameless"
         :link-component="RouterLink"
         :current="route.path.startsWith('/dameless')"
       />
-      <EIconButton :icon="PhGearSix" label="Settings" tooltip size="sm" @click="router.push('/settings')" />
+      <EStatLink
+        label="Settings"
+        to="/settings"
+        :link-component="RouterLink"
+        :current="route.path === '/settings'"
+        class="settings-link"
+      />
+      <EIconButton
+        :icon="PhGearSix"
+        label="Settings"
+        tooltip
+        size="sm"
+        class="settings-icon"
+        :aria-current="route.path === '/settings' ? 'page' : undefined"
+        @click="router.push('/settings')"
+      />
     </template>
   </EAppHeader>
 </template>
@@ -111,7 +137,27 @@ const keys = formatShortcut("mod+k");
   gap: 0.125rem;
 }
 
+/* Wide: Settings is a link beside You and Dameless, and the status line at the foot shows the work. Narrow, the icon
+   replaces the word, and (stacked, below 75rem) the work indicator moves up here. */
+.top :deep(.settings-icon) {
+  display: none;
+}
+
+@media (width >= 75rem) {
+  .top .work-compact {
+    display: none;
+  }
+}
+
 @media (width < 56rem) {
+  .top .settings-link {
+    display: none;
+  }
+
+  .top :deep(.settings-icon) {
+    display: grid;
+  }
+
   .bar-label,
   .bar-keys {
     display: none;
@@ -132,7 +178,7 @@ const keys = formatShortcut("mod+k");
 }
 
 @media (width < 40rem) {
-  .new :deep(.e-button-label) {
+  .new-label {
     display: none;
   }
 }

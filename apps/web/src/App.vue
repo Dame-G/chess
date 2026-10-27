@@ -57,7 +57,7 @@ watchEffect(() => {
       </div>
 
       <template #footer>
-        <EAppFooter class="foot">
+        <EAppFooter class="shell-foot">
           <StatusLine />
         </EAppFooter>
       </template>
@@ -100,11 +100,12 @@ watchEffect(() => {
 
 .ws {
   --ws-pad: 0.75rem;
+  --ws-rail: clamp(18rem, 20vw - 4rem, 22rem);
   --line: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 55%, transparent);
 
   position: relative;
   display: grid;
-  grid-template-columns: 18rem minmax(0, 1fr) minmax(21rem, 27rem);
+  grid-template-columns: var(--ws-rail) minmax(0, 1fr) minmax(21rem, 30rem);
   height: 100%;
   min-height: 0;
 }
@@ -126,15 +127,15 @@ watchEffect(() => {
 /* A sheet takes the panel's place beside the board, which shrinks to fit and stays visible and live: the sheet docks
    over the column kept for it. */
 .ws--sheet {
-  grid-template-columns: 18rem minmax(0, 1fr) var(--e-panel-width-md);
+  grid-template-columns: var(--ws-rail) minmax(0, 1fr) var(--e-panel-width-md);
 }
 
 .ws--sheet .ws-panel {
   display: none;
 }
 
-.foot :deep(.e-appfooter-inner),
-.foot {
+.shell-foot :deep(.e-appfooter-inner),
+.shell-foot {
   padding-block: 0;
 }
 
@@ -159,6 +160,11 @@ watchEffect(() => {
     order: 2;
     border-block-start: var(--line);
     border-inline-start: 0;
+  }
+
+  /* The status line moves into the header (a compact indicator), so the page does not end on it. */
+  .shell-foot {
+    display: none;
   }
 
   .ws-rail {
