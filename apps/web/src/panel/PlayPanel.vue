@@ -145,7 +145,7 @@ const where = computed(() => {
         Take back
       </EButton>
       <EButton v-if="can('abort')" size="sm" variant="outline" @click="act('abort')">Abort</EButton>
-      <EButton v-if="can('resign')" size="sm" variant="danger" @click="confirmResign = true">Resign</EButton>
+      <EButton v-if="can('resign')" size="sm" variant="outline" @click="confirmResign = true">Resign</EButton>
     </EActions>
 
     <EDialog v-model:open="confirmResign" title="Resign this game?" role="alertdialog" size="sm">

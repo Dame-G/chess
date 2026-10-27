@@ -53,7 +53,7 @@ const describe = (c: Challenge) =>
       <div class="sheet-actions">
         <template v-if="c.direction === 'incoming'">
           <EButton
-            variant="secondary"
+            variant="outline"
             size="sm"
             :disabled="!c.playable"
             :loading="busy === c.id"

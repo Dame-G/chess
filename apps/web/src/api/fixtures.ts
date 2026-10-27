@@ -1002,7 +1002,7 @@ const connections: Connections = {
         min_increment: 0,
         max_increment: 30,
         from_position: false,
-        accept_humans: true,
+        accept_people: true,
         accept_bots: true,
         max_games: 1,
         seek_clocks: ["3+0", "3+2", "5+3"],

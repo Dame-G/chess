@@ -167,6 +167,20 @@ const LEVEL: Record<HealthLevel, { tone: "success" | "info" | "warning" | "dange
   warn: { tone: "warning", word: "Check" },
   fail: { tone: "danger", word: "Missing" },
 };
+/** fastchess or the book is missing: the one thing Install tools fixes. */
+const toolsMissing = computed(() =>
+  (dameless.health?.items ?? []).some((i) => (i.key === "fastchess" || i.key === "book") && i.level === "fail"),
+);
+const installing = ref(false);
+const installBusy = ref(false);
+async function installTools() {
+  installBusy.value = true;
+  const r = await attempt("The tools were not installed", () => dameless.installTools());
+  installBusy.value = false;
+  if (!r) return;
+  installing.value = false;
+  toast.show({ title: "The tools are installed", tone: "success" });
+}
 const harness = computed(() => dameless.harness);
 const checking = ref(false);
 const checkBusy = ref(false);
@@ -291,6 +305,9 @@ function pair() {
           </div>
         </li>
       </ul>
+      <div v-if="toolsMissing" class="sheet-actions">
+        <EButton variant="outline" @click="installing = true">Install tools</EButton>
+      </div>
     </section>
 
     <section class="sec" aria-labelledby="s-harness">
@@ -353,7 +370,7 @@ function pair() {
           autocomplete="off"
         />
         <EActions>
-          <EButton variant="secondary" :disabled="!url || !token" @click="pair">Connect</EButton>
+          <EButton variant="outline" :disabled="!url || !token" @click="pair">Connect</EButton>
         </EActions>
       </EStack>
     </section>
@@ -377,6 +394,21 @@ function pair() {
             ? "Games you are playing on Lichess carry on there. You can log in again at any time."
             : "Games it is playing finish first. You will need a token to connect it again."
         }}
+      </p>
+    </ConfirmDialog>
+
+    <ConfirmDialog
+      v-model:open="installing"
+      title="Install the tools?"
+      description="Downloads fastchess and the opening book, which trials need."
+      confirm="Install"
+      :busy="installBusy"
+      @confirm="installTools"
+    >
+      <p class="text">
+        fastchess v1.8.2 comes from its GitHub release (github.com/Disservin/fastchess), and the UHO opening book from
+        the Stockfish books repository (github.com/official-stockfish/books). Together a few tens of megabytes; they go
+        into the tools folder in the data directory. This can take a minute.
       </p>
     </ConfirmDialog>
 

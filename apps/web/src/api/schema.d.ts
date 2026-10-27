@@ -1533,7 +1533,7 @@ export interface components {
              * @description Accept challenges from people.
              * @default true
              */
-            accept_humans: boolean;
+            accept_people: boolean;
             /**
              * @description Accept rated challenges.
              * @default true

@@ -102,7 +102,7 @@ async function save() {
       <div class="pair">
         <ESwitch v-model="draft.accept_rated" label="Rated games" />
         <ESwitch v-model="draft.accept_casual" label="Casual games" />
-        <ESwitch v-model="draft.accept_humans" label="From people" />
+        <ESwitch v-model="draft.accept_people" label="From people" />
         <ESwitch v-model="draft.accept_bots" label="From bots" />
       </div>
       <div class="pair">

@@ -897,6 +897,9 @@ pub enum BotAction {
     Settings {
         #[arg(long = "set", value_name = "KEY=VALUE")]
         set: Vec<String>,
+        /// Accept challenges from people (true or false).
+        #[arg(long, alias = "humans", value_name = "BOOL")]
+        people: Option<bool>,
     },
     /// Go online (across restarts, until offline).
     Online,
@@ -2126,7 +2129,7 @@ async fn lichess(c: &Client, a: LichessArgs, json: bool) -> Result<()> {
                 print(&c.put("/api/connections/bot/token", json!({ "token": token.trim() })).await?, json, status_text);
             }
             Some(BotAction::Logout) => print(&c.delete("/api/connections/bot").await?, json, status_text),
-            Some(BotAction::Settings { set }) => {
+            Some(BotAction::Settings { set, people }) => {
                 let status = c.get("/api/connections").await?;
                 let mut settings = status["bot"]["bot"]["settings"].clone();
                 if !settings.is_object() {
@@ -2140,6 +2143,9 @@ async fn lichess(c: &Client, a: LichessArgs, json: bool) -> Result<()> {
                         serde_json::from_str(v).unwrap_or_else(|_| Value::String(v.to_owned()))
                     };
                     settings[k.trim()] = value;
+                }
+                if let Some(people) = people {
+                    settings["accept_people"] = Value::Bool(people);
                 }
                 print(&c.put("/api/connections/bot/settings", settings).await?, json, |v| {
                     let pairs = v.as_object().into_iter().flatten();

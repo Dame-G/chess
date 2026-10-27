@@ -64,7 +64,7 @@ export function useEventToasts() {
         duration: 0,
         action: () =>
           h("span", { class: "toast-actions" }, [
-            button("Accept", () => void connections.accept(c.connection, c.id).catch(() => {})),
+            button("Accept", () => void connections.accept(c.connection, c.id).catch(() => {}), "secondary"),
             button("Decline", () => void connections.decline(c.connection, c.id).catch(() => {})),
           ]),
       });

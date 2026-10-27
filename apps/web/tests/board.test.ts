@@ -81,7 +81,7 @@ describe("modes and what opens first", () => {
     expect(modesFor({ status: "finished", you: null })).toEqual(["review", "explore"]);
   });
 
-  it("opens your live game, then the bot's, then a trial's, then your last finished game", () => {
+  it("opens your live game, then the bot's, then a local engine game, then a trial's, then your last finished game", () => {
     const bot = {
       ...base,
       id: 2,
@@ -97,7 +97,10 @@ describe("modes and what opens first", () => {
       source: { type: "trial" as const, trial: 1, index: 0 },
     };
     const mine = { ...base, id: 4, status: "live" as const };
+    const engines = { ...base, id: 6, you: null, status: "live" as const, source: { type: "local" as const } };
     expect(firstGame([trial, bot, mine])?.id).toBe(4);
+    expect(firstGame([trial, engines])?.id).toBe(6);
+    expect(firstGame([engines, bot])?.id).toBe(2);
     expect(firstGame([trial, bot])?.id).toBe(2);
     expect(firstGame([trial])?.id).toBe(3);
     expect(firstGame([{ ...base, id: 5, you: null }, base])?.id).toBe(1);

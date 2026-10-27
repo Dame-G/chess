@@ -40,7 +40,8 @@ pub struct BotSettings {
     /// Also accept standard chess from a set position (Lichess's `fromPosition`). Other variants are always declined.
     pub from_position: bool,
     /// Accept challenges from people.
-    pub accept_humans: bool,
+    #[serde(alias = "accept_humans")]
+    pub accept_people: bool,
     /// Accept challenges from other bots.
     pub accept_bots: bool,
     /// Games at once. Challenges beyond this are declined as `later`. Default 1.
@@ -70,7 +71,7 @@ impl Default for BotSettings {
             min_increment: 0,
             max_increment: 30,
             from_position: false,
-            accept_humans: true,
+            accept_people: true,
             accept_bots: true,
             max_games: 1,
             seek_clocks: vec!["3+0".into(), "3+2".into(), "5+3".into()],
@@ -270,7 +271,7 @@ pub fn decide(c: &Offer, s: &BotSettings, busy: usize, playable: bool) -> Result
     if c.from_bot && !s.accept_bots {
         return Err(Decline::NoBot);
     }
-    if !c.from_bot && !s.accept_humans {
+    if !c.from_bot && !s.accept_people {
         return Err(Decline::OnlyBot);
     }
     if !playable {
@@ -337,7 +338,7 @@ mod tests {
         assert_eq!(decide(&c, &BotSettings { accept_rated: false, ..s() }, 0, true), Err(Decline::Casual));
         let casual = Offer { rated: false, ..c.clone() };
         assert_eq!(decide(&casual, &BotSettings { accept_casual: false, ..s() }, 0, true), Err(Decline::Rated));
-        assert_eq!(decide(&c, &BotSettings { accept_humans: false, ..s() }, 0, true), Err(Decline::OnlyBot));
+        assert_eq!(decide(&c, &BotSettings { accept_people: false, ..s() }, 0, true), Err(Decline::OnlyBot));
         let bot = Offer { from_bot: true, ..c.clone() };
         assert_eq!(decide(&bot, &BotSettings { accept_bots: false, ..s() }, 0, true), Err(Decline::NoBot));
         assert_eq!(decide(&c, &s(), 1, true), Err(Decline::Later));

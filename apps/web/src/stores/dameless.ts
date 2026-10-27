@@ -43,6 +43,13 @@ export const useDameless = defineStore("dameless", () => {
     health.value = await ok(client.GET("/api/diagnostics"));
   }
 
+  /** Downloads fastchess and the opening book (answers when done), then reads the health again. */
+  async function installTools() {
+    const report = await ok(client.POST("/api/setup"));
+    await loadHealth();
+    return report;
+  }
+
   async function loadHarness() {
     harness.value = await ok(client.GET("/api/harness"));
   }
@@ -106,6 +113,7 @@ export const useDameless = defineStore("dameless", () => {
     loadPlan,
     calibrate,
     loadHealth,
+    installTools,
     loadHarness,
     checkHarness,
     loadToken,

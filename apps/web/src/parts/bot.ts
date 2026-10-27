@@ -45,9 +45,9 @@ export function rulesSummary(s: BotSettings): string {
           : "No";
   const speeds = list(s.speeds.map((x: Speed) => speedName[x]));
   const who =
-    s.accept_humans && s.accept_bots
+    s.accept_people && s.accept_bots
       ? "people and bots"
-      : s.accept_humans
+      : s.accept_people
         ? "people only"
         : s.accept_bots
           ? "bots only"
