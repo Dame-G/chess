@@ -14,6 +14,7 @@ import { error, reply } from "./fixtures-http";
 import { createLearnRoutes } from "./fixtures-learn";
 import { createSheetRoutes } from "./fixtures-sheets";
 import { shellVariant } from "./fixtures-shell";
+import { variantResponse } from "./fixtures-variants";
 import { fixtureMode } from "./mode";
 import type {
   AppEvent,
@@ -1471,6 +1472,8 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
 
   const variant = await shellVariant(method, path, () => [...games.values()].map((s) => clone(s.game.summary)));
   if (variant) return variant;
+  const varied = variantResponse(method, path);
+  if (varied) return varied;
   const learn = learnRoutes(method, path, url, body);
   if (learn) return learn;
   const sheet = await sheetRoutes(method, path, url, body);

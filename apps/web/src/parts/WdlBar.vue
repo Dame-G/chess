@@ -25,16 +25,14 @@ const words = computed(
 
 <style scoped>
 .wdl {
-  display: flex;
-  align-items: center;
-  gap: var(--e-gap-snug);
+  display: grid;
+  gap: 0.125rem;
   min-width: 0;
 }
 
+/* The bar takes the cell's whole width, so its edges line up with the meters above it; the counts sit under it. */
 .wdl-bar {
   display: flex;
-  flex: 1 1 auto;
-  min-inline-size: 3rem;
   block-size: 0.5rem;
   overflow: hidden;
   border-radius: var(--e-radius-sm);
@@ -54,10 +52,9 @@ const words = computed(
 }
 
 .wdl-text {
-  flex: none;
-  min-inline-size: 5.5ch;
   color: var(--e-muted);
-  font-size: 0.8125rem;
-  text-align: end;
+  font-size: 0.75rem;
+  line-height: 1;
+  white-space: nowrap;
 }
 </style>

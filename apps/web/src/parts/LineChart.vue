@@ -78,6 +78,22 @@ function timeValues(u: uPlot, ticks: number[]): string[] {
   });
 }
 
+/**
+ * The width a vertical axis reserves: its widest label and the gap, measured when it draws, so a label like "+100%"
+ * never reaches into the plot.
+ */
+function axisWidth(format: (v: number) => string): uPlot.Axis.Size {
+  return (u, values) => {
+    const pxRatio = devicePixelRatio || 1;
+    const labels = values?.length ? values : [format(0)];
+    u.ctx.save();
+    u.ctx.font = `11px ${css("--e-font-mono", "monospace")}`;
+    const widest = Math.max(...labels.map((v) => u.ctx.measureText(String(v)).width / pxRatio));
+    u.ctx.restore();
+    return Math.ceil(Math.max(widest + 4 + 6, 28));
+  };
+}
+
 function options(width: number): uPlot.Options {
   const mono = css("--e-font-mono", "monospace");
   const font = `11px ${mono}`;
@@ -110,14 +126,14 @@ function options(width: number): uPlot.Options {
             : {}),
         size: 24,
       },
-      { ...axisBase, size: 40, values: (_u, ticks) => ticks.map((t) => fmt(t)) },
+      { ...axisBase, size: axisWidth(fmt), values: (_u, ticks) => ticks.map((t) => fmt(t)) },
       ...(hasRight
         ? [
             {
               ...axisBase,
               scale: "y2",
               side: 1 as const,
-              size: 40,
+              size: axisWidth(rfmt),
               grid: { show: false },
               values: (_u: uPlot, ticks: number[]) => ticks.map((t) => rfmt(t)),
             },

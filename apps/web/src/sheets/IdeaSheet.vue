@@ -5,10 +5,12 @@ import { ESheet } from "@eos-ui/vue/components/ESheet";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { ELink } from "@eos-ui/vue/components/ELink";
+import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { EStamp } from "@eos-ui/vue/components/EStamp";
 import { EVisuallyHidden } from "@eos-ui/vue/components/EVisuallyHidden";
 import { ETag } from "@eos-ui/vue/components/ETag";
+import { ApiError } from "../api/client";
 import { ago, plusMinus } from "../format";
 import IdeaActions from "../parts/IdeaActions.vue";
 import Notes from "../parts/Notes.vue";
@@ -16,6 +18,7 @@ import Term from "../parts/Term.vue";
 import TrainView from "../parts/TrainView.vue";
 import TrialEvidence from "../parts/TrialEvidence.vue";
 import TuneView from "../parts/TuneView.vue";
+import { useDameless } from "../stores/dameless";
 import { useIdeas } from "../stores/ideas";
 import { useVersions } from "../stores/versions";
 import { KIND_WORD, STAGE_WORD, STATUS_TONE, STATUS_WORD, TRIAL_TONE } from "./idea";
@@ -30,21 +33,27 @@ import { useSheet } from "./useSheet";
 const sheet = useSheet();
 const route = useRoute();
 const ideas = useIdeas();
+const dameless = useDameless();
 const versions = useVersions();
 
 const id = computed(() => Number(route.params["id"]));
 const idea = computed(() => ideas.ideas[id.value]);
 const missing = ref(false);
+/** Why the idea could not be read, when it is not that there is no such idea. */
+const failed = ref<string | null>(null);
 const selected = ref<string | undefined>();
 
 async function open() {
   missing.value = false;
+  failed.value = null;
   selected.value = undefined;
+  if (!dameless.harness) void dameless.loadHarness().catch(() => {});
   if (!ideas.ideas[id.value]) {
     try {
       await ideas.loadIdea(id.value);
-    } catch {
-      missing.value = true;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) missing.value = true;
+      else failed.value = e instanceof Error ? e.message : String(e);
       return;
     }
   }
@@ -89,6 +98,10 @@ const tune = computed(() => ideas.tuneStates[id.value]);
   <ESheet v-bind="sheet.bind" :title="idea?.title ?? 'Idea'" :description="idea?.hypothesis">
     <template #leading><SheetBack :show="sheet.canGoBack" @back="sheet.back" /></template>
     <EEmptyState v-if="missing" title="No such idea">It may have been removed, or the link is wrong.</EEmptyState>
+    <ENotice v-else-if="failed" tone="danger" title="The idea did not load">
+      {{ failed }}
+      <template #actions><EButton variant="outline" @click="open">Try again</EButton></template>
+    </ENotice>
     <div v-else-if="!idea" aria-busy="true"><ESkeleton :lines="5" label="Loading the idea" /></div>
     <template v-else>
       <section class="sec" aria-label="The idea">
@@ -117,6 +130,14 @@ const tune = computed(() => ideas.tuneStates[id.value]);
           <h2 id="i-funnel" class="part-title">The trials</h2>
           <p class="sec-note">Each stage must pass before the next one runs.</p>
         </div>
+        <ENotice
+          v-if="dameless.harness && !dameless.harness.trusted && dameless.harness.running == null && trials.length"
+          tone="warning"
+          title="Results on this machine are not trusted yet"
+        >
+          {{ dameless.harness.summary }}
+          <ELink :link-component="RouterLink" to="/settings">Check the harness in Settings</ELink>.
+        </ENotice>
         <p v-if="!trials.length" class="sec-note">
           {{ idea.status === "queued" ? "It is waiting its turn. The first stage checks the bench." : "No trial ran." }}
         </p>
