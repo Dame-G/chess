@@ -62,7 +62,12 @@ export interface SheetContext {
   mode: string | null;
 }
 
-type Handler = (method: string, path: string, url: URL, body: Record<string, unknown>) => Response | undefined;
+type Handler = (
+  method: string,
+  path: string,
+  url: URL,
+  body: Record<string, unknown>,
+) => Response | undefined | Promise<Response>;
 
 // ---- Players
 
@@ -227,6 +232,27 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
     draw: 0.2,
     seed: 505,
   });
+
+  // States to look at: `lichess:broken…` fails to load, `lichess:slow…` loads slowly, `lichess:nogames` has no games
+  // here; You is the same with `?fixtures=youbroken`, `?fixtures=slow` and `?fixtures=newcomer` (no games at all).
+  roster.set("lichess:nogames", {
+    name: "nogames",
+    title: null,
+    rating: { rapid: 1500 },
+    games: 0,
+    reviewed: 0,
+    accuracy: 80,
+    win: 0.5,
+    draw: 0.05,
+    seed: 606,
+  });
+  if (ctx.mode === "newcomer") Object.assign(roster.get("you")!, { games: 0, reviewed: 0 });
+  const profileQuirk = (key: string): "broken" | "slow" | null =>
+    /^lichess:broken/.test(key) || (key === "you" && ctx.mode === "youbroken")
+      ? "broken"
+      : /^lichess:slow/.test(key) || (key === "you" && ctx.mode === "slow")
+        ? "slow"
+        : null;
 
   /** A name Lichess knows: anything shaped like a name, except the ones the fixtures say are not there. */
   const exists = (key: string) => !/^lichess:(nosuch|nobody|zzz)/.test(key);
@@ -938,6 +964,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       if (path === "/api/token") return reply("/api/token", "get", { token: "dmls_4f8c0a2b9d7e41c6a3b5e8f20d19c7a4" });
       if (path === "/api/tunables") return reply("/api/tunables", "get", structuredClone(TUNABLES));
       if (path === "/api/players/top") {
+        if (ctx.mode === "topbroken") return error(502, "upstream", "Lichess did not answer.");
         const speed = url.searchParams.get("speed") ?? "blitz";
         const rows = (LEADERBOARD[speed] ?? LEADERBOARD["blitz"]!).map(
           ([username, title, rating], i): LeaderboardEntry => ({
@@ -953,10 +980,14 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       if ((m = path.match(/^\/api\/players\/([^/]+)\/profile$/))) {
         const key = decodeURIComponent(m[1]!);
         const filter = filterOf(url);
+        const quirk = profileQuirk(key);
+        if (quirk === "broken") return error(500, "internal", "The profile could not be added up. Try again.");
         const p = build(key, filter);
-        return p
+        const answer = p
           ? reply("/api/players/{key}/profile", "get", p)
           : error(404, "not_found", "Lichess has no such player.");
+        // A slow answer, to see the loading state: `lichess:slow…`, or You with `?fixtures=slow`.
+        return quirk === "slow" ? new Promise<Response>((done) => setTimeout(() => done(answer), 6000)) : answer;
       }
       if ((m = path.match(/^\/api\/players\/([^/]+)$/))) {
         const p = player(decodeURIComponent(m[1]!));
@@ -965,6 +996,8 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       if (path === "/api/compare") {
         const keys = (url.searchParams.get("players") ?? "you,dameless").split(",").filter(Boolean);
         const filter = filterOf(url);
+        if (keys.some((k) => profileQuirk(k) === "broken"))
+          return error(500, "internal", "The comparison could not be added up. Try again.");
         const profiles = keys.map((k) => build(k, filter)).filter((p): p is Profile => !!p);
         if (profiles.length !== keys.length) return error(404, "not_found", "Lichess has no such player.");
         return reply("/api/compare", "get", { profiles, leaders: leaders(profiles) });

@@ -1473,7 +1473,7 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
   if (variant) return variant;
   const learn = learnRoutes(method, path, url, body);
   if (learn) return learn;
-  const sheet = sheetRoutes(method, path, url, body);
+  const sheet = await sheetRoutes(method, path, url, body);
   if (sheet) return sheet;
 
   let m: RegExpMatchArray | null;

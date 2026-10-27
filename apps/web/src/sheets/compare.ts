@@ -185,10 +185,10 @@ export function compareGroups(profiles: readonly Profile[]): GroupSpec[] {
         { id: "t-endgame", label: "Endgame", get: (p) => p.time.endgame_ms, text: seconds },
         {
           id: "t-trouble",
-          label: "Time-trouble blunders per game",
+          label: "Time-trouble blunders",
           leader: "time_trouble",
           get: (p) => (p.time.games ? p.time.time_trouble_blunders_per_game : null),
-          text: two,
+          text: (v) => `${two(v)} a game`,
         },
       ],
     },

@@ -238,8 +238,11 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+/* The canvas keeps the width it was drawn at until the observer redraws it; clipping lets the box shrink first, so a
+   narrowing window never widens the sheet. */
 .chart-plot {
   min-width: 0;
+  overflow-x: clip;
 }
 
 .chart-plot :deep(.u-over) {
