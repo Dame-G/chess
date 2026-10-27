@@ -185,10 +185,22 @@ async function start() {
     size="md"
   >
     <EStack gap="base">
-      <ESegmented v-model="opponent" label="Opponent" :options="opponents" />
+      <ESegmented
+        v-model="opponent"
+        label="Opponent"
+        :options="opponents"
+        :hint="
+          !fromPosition && !connections.you.configured
+            ? 'Lichess and Stockfish need your Lichess account: link it on the You page.'
+            : undefined
+        "
+        class="wide"
+      />
       <template v-if="opponent === 'dameless'">
-        <ESelect v-if="versionOptions.length" v-model="version" label="Version" :options="versionOptions" />
-        <ESelect v-model="strength" label="Strength" :options="strengthOptions" />
+        <EStack gap="base" wrap-below="26rem">
+          <ESelect v-if="versionOptions.length" v-model="version" label="Version" :options="versionOptions" />
+          <ESelect v-model="strength" label="Strength" :options="strengthOptions" />
+        </EStack>
         <ESwitch
           v-if="!fromPosition"
           v-model="book"
@@ -212,10 +224,17 @@ async function start() {
             { value: 'seek', label: 'Find a game' },
             { value: 'challenge', label: 'Challenge someone' },
           ]"
+          class="wide"
         />
         <ETextField v-if="lichessHow === 'challenge'" v-model="username" label="Lichess username" autocomplete="off" />
       </template>
-      <ESegmented v-model="clock" label="Time control" :options="clocks" hint="Minutes + seconds added each move." />
+      <ESegmented
+        v-model="clock"
+        label="Time control"
+        :options="clocks"
+        hint="Minutes + seconds added each move."
+        class="wide"
+      />
       <ESegmented
         v-model="color"
         label="You play"
@@ -224,6 +243,7 @@ async function start() {
           { value: 'random', label: 'Either' },
           { value: 'black', label: 'Black' },
         ]"
+        class="wide"
       />
       <ESwitch v-if="opponent === 'lichess'" v-model="rated" label="Rated" />
     </EStack>
@@ -239,3 +259,21 @@ async function start() {
     </template>
   </EDialog>
 </template>
+
+<style scoped>
+/* The choices fill the dialog's width, each option an equal share. */
+.wide,
+.wide :deep(.e-seg) {
+  inline-size: 100%;
+}
+
+.wide :deep(.e-seg-opt) {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.wide :deep(.e-seg-text) {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+</style>

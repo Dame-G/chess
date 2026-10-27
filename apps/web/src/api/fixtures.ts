@@ -13,6 +13,7 @@ import { playUci, setup, uciOf } from "../board/position";
 import { error, reply } from "./fixtures-http";
 import { createLearnRoutes } from "./fixtures-learn";
 import { createSheetRoutes } from "./fixtures-sheets";
+import { shellVariant } from "./fixtures-shell";
 import { fixtureMode } from "./mode";
 import type {
   AppEvent,
@@ -1468,6 +1469,8 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
   if (path === "/api/events") return streamResponse(url, init?.signal);
   await new Promise((r) => setTimeout(r, 40 + Math.random() * 80));
 
+  const variant = await shellVariant(method, path, () => [...games.values()].map((s) => clone(s.game.summary)));
+  if (variant) return variant;
   const learn = learnRoutes(method, path, url, body);
   if (learn) return learn;
   const sheet = sheetRoutes(method, path, url, body);

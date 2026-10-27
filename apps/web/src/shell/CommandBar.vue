@@ -11,7 +11,7 @@ import { useGames } from "../stores/games";
 import { useIdeas } from "../stores/ideas";
 import { usePolicy } from "../stores/policy";
 import { useVersions } from "../stores/versions";
-import { choice } from "../scheme";
+import { choice, shown } from "../scheme";
 import { readVerb, type Verb } from "./commands";
 import { useStartDrills } from "./drillFlow";
 import { useUi } from "./ui";
@@ -73,8 +73,8 @@ const verbs = computed<CommandItem[]>(() => [
   { id: "do:shortcuts", label: "Keyboard shortcuts", group: "Do", shortcut: "?" },
   { id: "do:new-idea", label: "New idea", description: "new idea", group: "Do", keywords: ["test", "experiment"] },
   {
-    id: `do:theme-${choice.value === "dark" ? "light" : "dark"}`,
-    label: choice.value === "dark" ? "Light theme" : "Dark theme",
+    id: `do:theme-${shown.value === "dark" ? "light" : "dark"}`,
+    label: shown.value === "dark" ? "Light theme" : "Dark theme",
     group: "Do",
     keywords: ["scheme", "mode"],
   },
@@ -211,7 +211,7 @@ async function select(item: CommandItem) {
     v-model:query="query"
     :items="items"
     label="Command bar"
-    placeholder="Go to, find a game, or type a command: play 5+3 dameless"
+    placeholder="Go to, find a game, or type: play 5+3 dameless"
     @select="select"
   />
 </template>
