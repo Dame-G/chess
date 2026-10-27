@@ -253,12 +253,12 @@ pub struct Trial {
 
 The funnels copy Reckless's OpenBench (unchanged from the old harness, see `AGENTS.md`):
 
-| Kind    | Stages                                                                                                                   |
-| ------- | ------------------------------------------------------------------------------------------------------------------------ |
-| gain    | fingerprint (bench must change) → screen VSTC 4+0.04 [-5, 0] → short STC 8+0.08 [0, 3] → long LTC 40+0.4 [0, 3] (opt-in) |
-| neutral | fingerprint (bench must change) → screen → short STC [-2.75, 0.25] → long (opt-in)                                       |
-| speed   | fingerprint (bench must be identical) → speed (paired nps comparison, no games)                                          |
-| tune    | tune (SPSA writes the change) → fingerprint → screen → confirm STC [0, 4] → long [0, 4] (opt-in)                         |
+| Kind    | Stages                                                                                                                    |
+| ------- | ------------------------------------------------------------------------------------------------------------------------- |
+| gain    | fingerprint (bench must change) → screen VSTC 4+0.04 [-5, 0] → short STC 8+0.08 [0, 3] → long LTC 40+0.4 [0, 3] (opt-in)  |
+| neutral | fingerprint (bench must change) → screen → short STC [-2.75, 0.25] → long (opt-in)                                        |
+| speed   | fingerprint (bench must be identical) → speed (paired nps comparison, no games)                                           |
+| tune    | tune (SPSA writes the change) → fingerprint → screen → confirm STC [0, 4] → long [0, 4] (opt-in)                          |
 | net     | train (a run makes the net; the version is the base's code with it) → fingerprint → screen → short [0, 3] → long (opt-in) |
 
 An idea can also be a single **custom** trial (any preset and bounds or a fixed number of pairs): what `chess test` was, including the false-accept check.
@@ -343,28 +343,28 @@ Topics: `game:<id>`, `games` (summaries of every game), `idea:<id>`, `ideas`, `w
 
 Kinds (a closed enum in `core::events`, each with a typed payload in the OpenAPI document):
 
-| Kind                  | Payload                                                                      | Kept for replay |
-| --------------------- | ---------------------------------------------------------------------------- | --------------- |
-| `game.upserted`       | `GameSummary`                                                                | yes             |
-| `game.moved`          | `{ id, ply, move: Move, clocks, fen }`                                       | yes             |
-| `game.undone`         | `{ id, plies }` (takebacks)                                                  | yes             |
-| `game.changed`        | `{ id, offers, actions, clocks, opponent_gone: Option<{claim_in_seconds}> }` | yes             |
-| `game.thinking`       | `{ id, ply, side, depth, score, nodes, nps, pv }`, at most 5/s               | no              |
-| `idea.upserted`       | `Idea`                                                                       | yes             |
-| `trial.upserted`      | `Trial`                                                                      | yes             |
-| `trial.progress`      | `{ id, idea, penta, wdl, llr, elo }` (throttled 1/s, topic `idea:<id>`)      | yes             |
-| `tune.progress`       | `{ idea, iteration, values, result }`                                        | yes             |
-| `work.upserted`       | `Work`                                                                       | yes             |
-| `work.log`            | `{ id, line }`                                                               | no              |
-| `version.upserted`    | `Version`                                                                    | yes             |
-| `review.upserted`     | `{ game, accuracy: SidePair<f32> }` (fetch the review for detail)            | yes             |
-| `connection.upserted` | `ConnectionStatus`                                                           | yes             |
-| `challenge`           | `Challenge` with `event: created                                             | accepted        | declined | canceled` | yes |
-| `policy.changed`      | `Policy`                                                                     | yes             |
-| `eval.info`           | `{ session, depth, lines: [{ score, pv }] , nodes, nps }`                    | no              |
-| `train.progress`      | `{ work, idea?, superbatch, superbatches, batch, loss, lr, positions_per_sec, grad_norm, … }` (1/s; `idea:<id>` or `work`) | yes |
-| `net.upserted`        | `Net` (topic `training`)                                                     | yes             |
-| `dataset.upserted`    | `Dataset` (topic `training`)                                                 | yes             |
+| Kind                  | Payload                                                                                                                    | Kept for replay |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| `game.upserted`       | `GameSummary`                                                                                                              | yes             |
+| `game.moved`          | `{ id, ply, move: Move, clocks, fen }`                                                                                     | yes             |
+| `game.undone`         | `{ id, plies }` (takebacks)                                                                                                | yes             |
+| `game.changed`        | `{ id, offers, actions, clocks, opponent_gone: Option<{claim_in_seconds}> }`                                               | yes             |
+| `game.thinking`       | `{ id, ply, side, depth, score, nodes, nps, pv }`, at most 5/s                                                             | no              |
+| `idea.upserted`       | `Idea`                                                                                                                     | yes             |
+| `trial.upserted`      | `Trial`                                                                                                                    | yes             |
+| `trial.progress`      | `{ id, idea, penta, wdl, llr, elo }` (throttled 1/s, topic `idea:<id>`)                                                    | yes             |
+| `tune.progress`       | `{ idea, iteration, values, result }`                                                                                      | yes             |
+| `work.upserted`       | `Work`                                                                                                                     | yes             |
+| `work.log`            | `{ id, line }`                                                                                                             | no              |
+| `version.upserted`    | `Version`                                                                                                                  | yes             |
+| `review.upserted`     | `{ game, accuracy: SidePair<f32> }` (fetch the review for detail)                                                          | yes             |
+| `connection.upserted` | `ConnectionStatus`                                                                                                         | yes             |
+| `challenge`           | `Challenge` with `event: created                                                                                           | accepted        | declined | canceled` | yes |
+| `policy.changed`      | `Policy`                                                                                                                   | yes             |
+| `eval.info`           | `{ session, depth, lines: [{ score, pv }] , nodes, nps }`                                                                  | no              |
+| `train.progress`      | `{ work, idea?, superbatch, superbatches, batch, loss, lr, positions_per_sec, grad_norm, … }` (1/s; `idea:<id>` or `work`) | yes             |
+| `net.upserted`        | `Net` (topic `training`)                                                                                                   | yes             |
+| `dataset.upserted`    | `Dataset` (topic `training`)                                                                                               | yes             |
 
 The web client keeps one normalised store per resource and applies these: an `*.upserted` replaces the object, `game.moved`/`game.undone` patch the open game.
 
@@ -470,70 +470,147 @@ Trial games are read from fastchess's PGN after each round into `games` (`source
 
 ## API (`crates/server`)
 
-Resource routes; actions are `POST` sub-routes. Every route has a `utoipa` path, and `scripts/api-types.mjs` regenerates `apps/web/src/api/schema.d.ts` from `openapi.json`. Errors are `{ error: { code, message } }` with codes `bad_request` 400, `unauthorized` 401, `not_found` 404, `conflict` 409, `fair_play` 409, `rate_limited` 429, `upstream` 502, and `internal` 500 for anything unexpected (core::error::Error carries one of these codes, so every crate shares the vocabulary).
+Resource routes; actions are `POST` sub-routes. Every route has a `utoipa` path, so `crates/server/openapi.json` (`dameless openapi`) is complete and typed, and `scripts/api-types.mjs` (`corepack pnpm api`; `api:check` fails on stale files) regenerates `apps/web/src/api/schema.d.ts` from it. Errors are `{ error: { code, message } }` with codes `bad_request` 400, `unauthorized` 401, `forbidden` 403 (a foreign `Host` or `Origin`), `not_found` 404, `conflict` 409, `fair_play` 409, `rate_limited` 429 (with `Retry-After` when known), `upstream` 502, and `internal` 500 for anything unexpected (core::error::Error carries one of these codes, so every crate shares the vocabulary). A body, query or path that does not read is a `bad_request` in the same shape.
+
+**Who may call** (`api::guard`): every request but `GET /api/health` and the login callback carries `Authorization: Bearer <token>` (the event stream also takes `?token=`, for `EventSource`). Bound to loopback, every request (the UI's pages too) must name a loopback `Host` (DNS rebinding), and a request with an `Origin` must come from the app itself (`http://<host>`) or the hosted UI `https://chess.dame.gg`, which gets CORS (with `Authorization`, `Last-Event-ID` and private-network access). The UI the app serves gets the token in its page: `<meta name="dameless-token" content="…">`. Every answer carries `X-Frame-Options: DENY`, `nosniff` and `no-referrer`. The web UI is `apps/web/dist`, read from disk in debug builds and embedded (rust-embed) in release, with paths that are not files answered by `index.html`.
+
+Versions in requests and queries are plain strings read by `VersionRef::parse`: `champion` (or `main`), `v14`, `#12` (an id), a branch, tag or commit. Seats of a local game are `you`, `dameless`, `dameless:<version>`, `dameless@<level>`, `dameless:<version>@<level>`. Player keys are `you`, `dameless`, `lichess:<name>`, `stockfish:<n>`.
 
 ```
-GET    /api/health                                   no token
-GET    /api/status                                   machine, version, cores, engine checkout, policy
+GET    /api/health                                   { ok, version }; no token
+GET    /api/status                                   { version, machine: { os, cpu, physical_cores, logical_cores, memory_bytes, data_dir,
+                                                       engine: { dir, found, branch, commit, dirty }, builds: { count, bytes } },
+                                                       cores, ledger, policy, lichess_url, next_event }
+GET    /api/token                                    { token } (Settings: pairing the hosted UI)
+POST   /api/setup                                    downloads fastchess and the book (explicit) → { log }
+GET    /api/diagnostics                              work's Health (Settings › Machine); behind the token, since it names paths
 
-GET    /api/games?player=&source=&status=&speed=&rated=&before=&limit=   GameSummary[], newest first
-POST   /api/games                                    start a local game { white, black, time, from?: {fen, moves} | book, … }
+GET    /api/games?player=&source=&status=&speed=&rated=&trial=&since=&before=&limit=&calibration=
+                                                     GameSummary[], live first then newest; lists are comma-separated;
+                                                     calibration games are left out unless calibration=true|all
+POST   /api/games                                    NewGameRequest { white, black, time, from?: {type: position, fen, moves} | {type: book},
+                                                     hash?, threads?, adjudicate?, seed? } → 201 Game
+POST   /api/games/import                             { pgn, you?: white|black } → 201 GameSummary[] (finished local games)
 GET    /api/games/{id}                               Game
-GET    /api/games/{id}/pgn
-POST   /api/games/{id}/actions/{action}              move {uci} | offer_draw | accept_draw | … (see the Referee)
+GET    /api/games/{id}/pgn                           application/x-chess-pgn
+POST   /api/games/{id}/actions/{action}              move { uci } (UCI or SAN) | offer_draw | accept_draw | … → Game (see the Referee)
 POST   /api/games/{id}/stop                          stop a live game: a game you sit in is resigned (aborted before each
                                                      side has moved), an engine game aborted, the bot's resigned on Lichess
-POST   /api/games/import                             { pgn } a game you paste, as a Local finished game
 GET    /api/games/{id}/review?version=&nodes=        Review (404 without one)
 
-POST   /api/eval                                     start a session { fen, moves, version?, multipv, budget } → { session }
-DELETE /api/eval/{session}
-GET    /api/explorer?db=lichess|masters|player&…     Lichess's answer, as is (needs the you connection)
-GET    /api/tablebase?fen=
+POST   /api/eval                                     { fen?, moves, version?, multipv, budget: {type: depth|nodes|infinite, …}, threads?, client }
+                                                     → EvalSession { session, version, fen }; `eval.info` on `eval:<session>`
+GET    /api/eval                                     the sessions running ([{ session, client }]); one that reached its budget is gone
+DELETE /api/eval/{session}                           { stopped }
+GET    /api/explorer?db=lichess|masters|player&fen=&play=&speeds=&ratings=&modes=&since=&until=&moves=&top_games=&recent_games=&player=&color=
+                                                     Lichess's answer, as is (needs the you connection: 409 without it)
+GET    /api/tablebase?fen=                           Lichess's answer, as is
 
-POST   /api/reviews                                  work
+POST   /api/reviews                                  { games | player, limit?, speeds?, rated?, version?, nodes?, concurrency? } → 202 Work
+GET    /api/players/top?speed=blitz&nb=10            [{ key, username, title, rating, progress }] (Lichess's leaderboard)
 GET    /api/players/{key}                            Player
-GET    /api/players/{key}/profile?speeds=&rated=&since=&limit=
-GET    /api/compare?players=…&…
-GET    /api/players/top?speed=blitz                  Lichess leaderboard
-POST   /api/players/{key}/import                     work (lichess:<name>: their history; you: your history)
+GET    /api/players/{key}/profile?speeds=&rated=&since=&limit=   Profile
+GET    /api/compare?players=…&speeds=&rated=&since=&limit=       Comparison
+POST   /api/players/{key}/import                     { max?, since?, speeds?, rated? } → 202 Work (lichess:<name>: their history,
+                                                     refused while you play; you: your history)
+GET    /api/players/you/repertoire?side=&max_plies=&min_games=&limit=   Repertoire (409 fair_play while the explorer is not allowed)
+GET    /api/progress?window=10                       Progress
 
-GET    /api/dameless                                 champion, line, ideas, bot, strength
-GET    /api/versions?line=&all=                      Version[]
-POST   /api/versions                                 { ref } make a version of a branch, tag or commit (builds it)
+GET    /api/levels                                   LevelsOverview { levels: [{ level, rating, games }], you, suggested, updated_at }
+GET    /api/levels/plan?count=3                      PlannedMatch[]
+POST   /api/levels/calibrate                         { matches?, count?, games_per_pair?, version? } → 202 Work
+GET    /api/drills                                   Drill[] (soonest due first)
+POST   /api/drills                                   { limit? } → 201 Drill[] made from your weak spots
+GET    /api/drills/today?new_per_day=&limit=         DrillsToday { drills, due, new, started_today }
+POST   /api/drills/{id}/answer                       { move } → DrillAnswerResult
+DELETE /api/drills/{id}                              204
+GET    /api/drills/trend?window=50                   HitRatePoint[]
+
+GET    /api/dameless                                 { champion, line, ideas: { running, queued, recent }, connection: BotStatus?,
+                                                       strength: ProgressPoint[] (cumulative Elo over v1, oldest first) }
+GET    /api/versions?line=                           Version[]
+POST   /api/versions                                 { ref } → 201 Version; its build is queued (see /api/work)
 GET    /api/versions/{id}/builds                     Build[] (diagnostics)
-DELETE /api/builds/{id}
-POST   /api/builds/prune                             { older_than_days?, dry_run }
-POST   /api/dameless/push                            push the fork's main to origin (explicit, confirmed in the UI)
+DELETE /api/builds/{id}                              Build (409 while in use)
+POST   /api/builds/prune                             { older_than_days?, keep_latest? (true), dry_run } → { builds, bytes, in_use, dry_run }
+GET    /api/tunables?branch=                         Tunable[] from the branch's spsa build; 409 (and the build queued) while there is none
+POST   /api/dameless/push                            push the fork's main to origin (explicit, confirmed in the UI) → { remote, head }
 
-GET    /api/ideas?status=&tag=                       Idea[]
-POST   /api/ideas                                    { title, hypothesis, kind, branch, base?, author?, tags?, long?, tune?, custom? }
-POST   /api/ideas/batch                              { ideas: [...], tag }
+GET    /api/ideas?status=&tag=&limit=                Idea[]
+POST   /api/ideas                                    NewIdeaRequest { title, hypothesis, kind, branch, base?, author?, tags?, notes?, long?,
+                                                     tune?, custom?, fix_bench? } → 201 Idea
+POST   /api/ideas/batch                              { ideas: [...], tag } → 201 Idea[]
+GET    /api/ideas/check-branch?branch=               BranchCheck (never builds)
+POST   /api/ideas/fix-bench                          { branch, commit? } → BranchCheck
 GET    /api/ideas/{id}                               Idea with trials
 GET    /api/ideas/{id}/trials/{trial}                Trial
-GET    /api/ideas/{id}/tune                          { spec, steps }
-POST   /api/ideas/{id}/stop | /resume | /promote
+GET    /api/ideas/{id}/tune                          { spec, params: [{ name, start, min, max }], steps }
+POST   /api/ideas/{id}/stop | /resume                Idea
+POST   /api/ideas/{id}/promote                       the new champion Version, once the merge is done (409 when refused)
+POST   /api/harness/check                            { pairs? } → 201 Idea
+GET    /api/harness                                  HarnessStatus
 
-GET    /api/work                                     Work[] (running, queued, recent)
-POST   /api/work/{id}/stop | /pause | /resume
-GET    /api/work/{id}/log
+GET    /api/nets | /api/nets/{id}                    Net[] (newest first) | Net
+GET    /api/datasets                                 DataStatus { cap_bytes, used_bytes, disk_free_bytes, keep_free_bytes, datasets }
+POST   /api/datasets/datagen                         DatagenRequest { name?, positions, threads?, soft_nodes?, opening?, version? } → 201 Work
+POST   /api/datasets/import                          ImportRequest { url, expected_bytes, sha256?, name, confirm } → 201 Work (400 without confirm)
+DELETE /api/datasets/{id}                            { confirm: true } → Dataset
+POST   /api/ideas/{id}/dataset                       { name? } → 201 Dataset from the idea's trial games
+POST   /api/train                                    TrainSpec → 201 Work (a run outside any idea; 409 without a GPU)
+GET    /api/ideas/{id}/train                         TrainView { spec, steps, net } (net ideas: POST /api/ideas with kind: net and train)
+GET    /api/work/{id}/train                          TrainStep[]
+
+GET    /api/work?recent=20                           { running, queued, recent }
+GET    /api/work/{id}                                Work
+POST   /api/work/{id}/stop | /pause | /resume        Work
+GET    /api/work/{id}/log                            text/plain
 
 GET    /api/connections                              { you: ConnectionStatus, bot: ConnectionStatus }
-POST   /api/connections/you/login                    { return_to? } → { url } (OAuth PKCE)
-GET    /api/connections/you/callback                 outside the guard and the OpenAPI document (as today)
-PUT    /api/connections/{key}/token                  { token }
-DELETE /api/connections/{key}                        log out (revokes at Lichess for you)
-POST   /api/connections/you/seek                     { time, rated, color, rating_range? };  DELETE to cancel
-POST   /api/connections/{key}/challenge              { username | ai_level | my_bot, time, rated, color }
-POST   /api/connections/{key}/challenges/{id}/accept | /decline ;  DELETE …/challenges/{id}
-PUT    /api/connections/bot/settings                 BotSettings (version, hash, rules, seek clocks…)
-POST   /api/connections/bot/online                   { online: bool }
-POST   /api/connections/bot/seek                     { mode: once|always|off }
+POST   /api/connections/you/login                    { return_to? } → { url, expires_in_seconds } (OAuth PKCE; the redirect is
+                                                     http://<the request's Host>/api/connections/you/callback)
+GET    /api/connections/you/callback                 outside the guard and the OpenAPI document: 303 to return_to
+PUT    /api/connections/{key}/token                  { token } → ConnectionStatus
+DELETE /api/connections/{key}                        log out (revokes at Lichess for you) → ConnectionStatus
+POST   /api/connections/you/seek                     { time, rated, color, rating_range? } → ConnectionStatus;  DELETE to cancel
+POST   /api/connections/{key}/challenge              { username | ai_level | my_bot, time, rated, color } → 201 ChallengeSent
+POST   /api/connections/{key}/challenges/{id}/accept | /decline { reason? } ;  DELETE …/challenges/{id}
+                                                     (you only: the bot answers challenges by its settings, 400)
+PUT    /api/connections/bot/settings                 BotSettings → BotSettings
+POST   /api/connections/bot/online                   { online: bool } → ConnectionStatus
+POST   /api/connections/bot/seek                     { mode: once|always|off } → ConnectionStatus
+GET    /api/connections/bot/bots                     OnlineBot[]
 
-GET    /api/events?since=&topics=                    SSE
+GET    /api/events?since=&topics=&token=             SSE
 ```
 
-The CLI mirrors it: `dameless games`, `dameless game <id>`, `dameless play --white you --black dameless --tc 5+3`, `dameless move <game> e4`, `dameless draw|resign|takeback|abort <game>`, `dameless review <game>…|--player you`, `dameless profile you`, `dameless compare you lichess:cutemouse83`, `dameless idea new --kind gain --branch deeper-lmr --title … --hypothesis …`, `dameless ideas`, `dameless idea <id>`, `dameless idea promote <id>`, `dameless test --dev x --base main --preset vstc --bounds 0,3` (a custom idea), `dameless tune --branch spsa/tunables …`, `dameless versions`, `dameless work`, `dameless lichess you|bot …`, `dameless eval --fen … --depth 20`, `dameless status`, `dameless token`, `dameless setup`, `dameless serve`. Every command takes `--json`; `--wait` / `--follow` where something runs. A test checks that every OpenAPI operation has a command.
+**The event stream**: each event is `id: <id>`, `event: <kind>`, `data: { id, topic, kind, data }` (the `Event` schema: a union of every kind with its typed payload). `since` or `Last-Event-ID` replays the kept events after it, then live ones follow. When events after that id are no longer kept, or a slow client fell behind and events were dropped, a `reload` event (no SSE id; envelope id 0, topic `stream`, `data: { reason }`) tells the client to fetch what it shows again. A comment every 15 seconds keeps idle connections open; streams end when the app stops.
+
+**The CLI** (`crates/server/src/cli`) mirrors the routes; `dameless::cli::COMMANDS` maps every operation id to its command, and a test checks it against the document. Every command takes `--json` (one JSON document on stdout; errors on stderr, non-zero exit); `--wait` (work, ideas, builds) and `--follow` (games) where something runs. It finds the app at `DAMELESS_URL` (default http://127.0.0.1:7979), with `DAMELESS_TOKEN` or the token in the data directory (`DAMELESS_DATA`). Tokens for Lichess are read from stdin, never from the command line.
+
+```
+dameless serve | openapi | health | status | diagnostics | token | setup | push | events [--topics] [--since]
+dameless games [--player --source --status --speed --rated --trial --calibration --limit]
+dameless game <id> [--pgn | --review [--version --nodes] | --follow]
+dameless play --white you --black dameless@5 --tc 5+3 | --nodes N | --movetime MS [--fen --moves … | --book] [--follow]
+dameless move <game> e4 [--no-wait] | draw <game> [--accept|--decline] | takeback <game> [--accept|--decline]
+dameless resign|abort|stop <game> | claim <game> [--draw]
+dameless import you | lichess:<name> [--max --since --speeds --rated --wait] | import --pgn <file|-> [--you white]
+dameless review <game>… | --player you [--limit --version --nodes --wait]
+dameless player <key> | profile <key> | compare <key>… [--speeds --rated --since --limit] | players top [speed] [--nb]
+dameless repertoire --side white | progress | levels [plan | calibrate] | drills [today | make | answer <id> <move> | delete <id> | trend]
+dameless eval [--fen --moves --version --depth|--nodes --multipv] (streams until done) | eval --list | eval --stop <session>
+dameless explorer [--db --fen --play …] | tablebase --fen <fen, _ for spaces>
+dameless dameless | versions [--line] | version make <ref> [--wait] | builds <version> | build delete <id> | build prune [--all --dry-run]
+dameless ideas | idea new [--kind net …]|list|show|trial|tune|stop|resume|promote|batch|check-branch|fix-bench …
+dameless test --dev x --base main --preset vstc --bounds 0,3 [--pairs N] [--wait]       (a custom idea)
+dameless tune --branch spsa/tunables [--params a,b --iterations --pairs --tc 8+0.08 | --nodes] [--wait]
+dameless tunables <branch> | harness [check --pairs 2000 --wait]
+dameless nets [--id N] | data [datagen --positions 20M | import <url> --bytes N --name d [--yes] | delete <id|name> --yes | from-trials <idea>]
+dameless train [--dataset 3 … --parent N --from-scratch --superbatches 20 …] [--wait] | train show <idea> | train steps <work>
+dameless work [show|stop|pause|resume|log|wait <id>]
+dameless lichess | lichess you [login | token | logout | seek --tc 10+5 | seek --stop | challenge … | accept|decline|cancel <id>]
+dameless lichess bot [token | logout | settings --set key=value | online | offline | seek once|always|off | challenge … | bots]
+```
 
 ## The web app (`apps/web`)
 

@@ -10,6 +10,8 @@ use utoipa::ToSchema;
 pub enum ErrorCode {
     BadRequest,
     Unauthorized,
+    /// A request from somewhere the app does not answer: a foreign `Host` (DNS rebinding) or `Origin`.
+    Forbidden,
     NotFound,
     Conflict,
     /// Analysis asked for while you play on Lichess.
@@ -27,6 +29,7 @@ impl ErrorCode {
         match self {
             Self::BadRequest => 400,
             Self::Unauthorized => 401,
+            Self::Forbidden => 403,
             Self::NotFound => 404,
             Self::Conflict | Self::FairPlay => 409,
             Self::RateLimited => 429,
@@ -39,6 +42,7 @@ impl ErrorCode {
         match self {
             Self::BadRequest => "bad_request",
             Self::Unauthorized => "unauthorized",
+            Self::Forbidden => "forbidden",
             Self::NotFound => "not_found",
             Self::Conflict => "conflict",
             Self::FairPlay => "fair_play",
@@ -59,6 +63,8 @@ pub enum Error {
     BadRequest(String),
     #[error("{0}")]
     Unauthorized(String),
+    #[error("{0}")]
+    Forbidden(String),
     #[error("{0}")]
     NotFound(String),
     #[error("{0}")]
@@ -104,6 +110,7 @@ impl Error {
         match self {
             Self::BadRequest(_) => ErrorCode::BadRequest,
             Self::Unauthorized(_) => ErrorCode::Unauthorized,
+            Self::Forbidden(_) => ErrorCode::Forbidden,
             Self::NotFound(_) => ErrorCode::NotFound,
             Self::Conflict(_) => ErrorCode::Conflict,
             Self::FairPlay(_) => ErrorCode::FairPlay,

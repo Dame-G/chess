@@ -238,7 +238,8 @@ impl Executor for Calibrate {
                 let mut pairings = Vec::with_capacity(at_once as usize);
                 for k in 0..at_once {
                     let n = state.done[i] + k;
-                    let (white, black) = if n.is_multiple_of(2) { (a.clone(), b.clone()) } else { (b.clone(), a.clone()) };
+                    let (white, black) =
+                        if n.is_multiple_of(2) { (a.clone(), b.clone()) } else { (b.clone(), a.clone()) };
                     pairings.push(Pairing { white, black, seed: rng.next_u64(), start_fen: opening(&book, &mut rng)? });
                 }
                 let results =

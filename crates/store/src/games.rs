@@ -160,6 +160,8 @@ pub struct GameFilter {
     pub limit: u32,
     /// Live games before finished ones (then newest first within each). The cursor follows the same order.
     pub live_first: bool,
+    /// Only calibration games between levels (true), or none of them (false); both when `None`.
+    pub calibration: Option<bool>,
 }
 
 /// How many games a list holds when the filter gives no limit.
@@ -325,6 +327,12 @@ impl Store {
             }
             if let Some(trial) = filter.trial {
                 sql += &format!(" AND g.trial = {}", arg(Value::Integer(trial.0), &mut args));
+            }
+            if let Some(calibration) = filter.calibration {
+                let not = if calibration { "" } else { "NOT " };
+                sql += &format!(
+                    " AND {not}EXISTS (SELECT 1 FROM level_games lg WHERE lg.game = g.id AND lg.calibration = 1)"
+                );
             }
             if let Some(since) = &filter.since {
                 sql += &format!(" AND g.started_at >= {}", arg(Value::Text(since.0.clone()), &mut args));
