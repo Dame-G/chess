@@ -4,8 +4,7 @@
 pub mod pgn;
 
 use shakmaty::{
-    Bitboard, CastlingMode, Chess, Color, EnPassantMode, KnownOutcome, Move, Outcome as ShakOutcome, Position as _,
-    Rank, Role,
+    CastlingMode, Chess, Color, EnPassantMode, KnownOutcome, Move, Outcome as ShakOutcome, Position as _, Role,
     fen::Fen,
     san::{San, SanPlus},
     uci::UciMove,
@@ -245,15 +244,6 @@ impl Position {
             return Some(GameEnd::draw(Ending::FiftyMoves));
         }
         None
-    }
-
-    /// The pieces (not pawns or kings) on the board, and how many of each side's own pieces stand on its back rank,
-    /// for telling the phase of the game.
-    pub fn phase_counts(&self) -> (u32, u32, u32) {
-        let board = self.pos.board();
-        let pieces = (board.occupied() & !board.pawns() & !board.kings()).count() as u32;
-        let back = |color: Color, rank: Rank| (board.by_color(color) & Bitboard::from_rank(rank)).count() as u32;
-        (pieces, back(Color::White, Rank::First), back(Color::Black, Rank::Eighth))
     }
 }
 

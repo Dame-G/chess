@@ -97,11 +97,6 @@ pub struct Progress {
 }
 
 impl Progress {
-    /// The fraction done, 0 to 1, when the total is known.
-    pub fn fraction(&self) -> Option<f64> {
-        self.total.filter(|t| *t > 0).map(|t| (self.done as f64 / t as f64).min(1.0))
-    }
-
     /// Seconds left at the pace so far, from how long it has run.
     pub fn eta(done: u64, total: u64, elapsed_seconds: u64) -> Option<u64> {
         (done > 0 && total >= done).then(|| elapsed_seconds * (total - done) / done)

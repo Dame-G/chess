@@ -103,14 +103,6 @@ impl Side {
             Self::Black => "Black",
         }
     }
-
-    /// `1` for White and `-1` for Black: what a White score is multiplied by to read from this side.
-    pub fn sign(self) -> i32 {
-        match self {
-            Self::White => 1,
-            Self::Black => -1,
-        }
-    }
 }
 
 impl From<shakmaty::Color> for Side {

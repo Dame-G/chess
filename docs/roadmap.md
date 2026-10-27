@@ -334,7 +334,7 @@ What was built:
 2. **First real use with the user**, who logs in themselves:
    - your Lichess account: one game from the app, with moves, premoves, offers and abort, the lock lifting, and an import
    - the bot online, with one game.
-3. **The old runner is stopped** (port 7878, `C:\dev\chess-live`). `next` is merged into `main`, which deploys chess.dame.gg.
+3. **The old app is stopped and retired.** `next` is merged into `main`, which deploys chess.dame.gg.
 4. **A Linux handoff doc:** clone, toolchain (Rust, Node, clang, CUDA), `dameless setup`, check the harness, then data and the first real training runs on the big partition.
 
 ## Order and what can run at once

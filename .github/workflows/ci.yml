@@ -18,7 +18,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # The runner: formatting, lints (warnings fail) and tests, including the statistics checked against reference runs.
+  # The Rust workspace: formatting, lints (warnings fail) and tests, including the statistics checked against reference runs.
   runner:
     runs-on: ubuntu-latest
     # The whole Rust suite is long on a two-core runner.
@@ -31,7 +31,7 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --locked
-      # The web client's types come from the runner's OpenAPI document: fails when the committed ones are stale.
+      # The web client's types come from the server's OpenAPI document: fails when the committed ones are stale.
       - run: pnpm api:check
 
   # The web app: lint, formatting, types, unused code, tests and the production build.

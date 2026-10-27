@@ -421,7 +421,6 @@ dependencies = [
  "sysinfo",
  "tempfile",
  "tokio",
- "tokio-stream",
  "tokio-util",
  "tower",
  "tower-http 0.7.1",
@@ -2424,7 +2423,6 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
- "tokio-util",
 ]
 
 [[package]]

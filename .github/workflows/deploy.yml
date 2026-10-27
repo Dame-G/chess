@@ -1,6 +1,6 @@
 name: Deploy
 
-# After CI passes on main, the web app goes to chess.dame.gg. It is static: all data stays with each runner.
+# After CI passes on main, the web app goes to chess.dame.gg. It is static: all data stays with each local app.
 on:
   workflow_run:
     workflows: [CI]

@@ -2,7 +2,7 @@
 resolver = "3"
 members = ["crates/*"]
 # Data directories in the repo hold engine worktrees, which cargo must not take for members of this workspace.
-exclude = ["trainer", "data", ".data", ".data-web"]
+exclude = ["trainer", ".data", ".data-web"]
 
 [workspace.package]
 version = "0.1.0"
@@ -45,7 +45,6 @@ tar = "0.4.46"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["full"] }
-tokio-stream = { version = "0.1.19", features = ["sync"] }
 tokio-util = "0.7.20"
 tower = { version = "0.5.3", features = ["util"] }
 tower-http = { version = "0.7.1", features = ["cors", "set-header", "trace"] }

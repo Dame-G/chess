@@ -657,19 +657,17 @@ Keyboard: `←/→` moves, `Home/End`, `F` flip, `Space` engine on/off (Explore)
 
 ### Client architecture
 
-- `api/client.ts`: openapi-fetch typed by `schema.d.ts`; the base URL and token (same origin, or a paired remote runner for the hosted site).
+- `api/client.ts`: openapi-fetch typed by `schema.d.ts`; the base URL and token (same origin, or the paired local app for the hosted site).
 - `api/stream.ts`: one SSE connection, typed events, resumes with the last id, dispatches into stores.
 - `stores/` (Pinia): `games` (summaries by id, the open game in detail), `ideas`, `work`, `connections`, `policy`, `versions`, `players`. Each loads with one GET and stays current from events. No component fetches on its own.
 - `board/`: `Board.vue` (chessground wrapper), `EvalBar`, `EvalGraph` (uPlot), `MoveList`, `Strip` (a seat: name, rating, clock), `Transport`. `position.ts` (chessops) holds the game tree and the cursor.
 - `panel/`: `PlayPanel`, `WatchPanel`, `ReviewPanel`, `ExplorePanel`, `DrillPanel`.
 - `rail/`, `sheets/` (`You`, `Dameless`, `Idea`, `Player`, `Compare`, `Settings`), `shell/` (header, command bar, status line, toasts, new-game dialog).
 
-## Working on the rebuild
+## Working on the app
 
-- Branch `next`, worktree `C:\dev\chess-next`. The old app keeps running from `C:\dev\chess-live` on port 7878 and **must not be disturbed**: never build into `C:\dev\chess\target`, never stop the preview server `chess-runner`, never use port 7878 or the old data folder `chess-harness`.
-- The old code is the reference for every ported part: `C:\dev\chess\runner\src` and `C:\dev\chess\web\src` (branch `main`). Port what is correct (stats, scaling, judge, compare, Lichess rules, seek, quota, OAuth, import, fastchess driving, UCI) with its tests; reshape it to this design rather than copying its structure.
-- No data migration: the new app starts with an empty database.
+- `C:\dev\chess` is the development checkout of `main`; the live app runs from a worktree of its own, so half-finished code cannot break it.
 - **Never touch real accounts.** No agent logs in to Lichess, stores a real token, or talks to lichess.org; every Lichess path is tested against the mock server (`dameless_lichess::testing::MockLichess`, behind the crate's `mock` feature so `play` and `server` test against the same mock).
-- Each agent owns its crate or directory and commits only its own paths: `git commit -m "…" -- <paths>`, never `git add -A`, never leave files staged. Use your own `CARGO_TARGET_DIR` (`C:\dev\chess-next\target-<you>`); `target*/` is ignored.
+- Each agent owns its crate or directory and commits only its own paths: `git commit -m "…" -- <paths>`, never `git add -A`, never leave files staged. Build into the shared `CARGO_TARGET_DIR` `target-shared` (cargo locks it) or your own `target-<you>`; `target*/` is ignored.
 - Gates per crate before committing: `cargo fmt`, `cargo clippy -p <crate> --all-targets -- -D warnings`, `cargo test -p <crate>`. Web: `corepack pnpm lint`, `format:check`, `typecheck`, `test`, `knip`.
-- Doc comments say what a thing is and why, in plain sentences, as the old code does. No commented-out code, no TODOs without an owner.
+- Doc comments say what a thing is and why, in plain sentences. No commented-out code, no TODOs without an owner.
