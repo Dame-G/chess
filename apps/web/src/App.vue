@@ -105,7 +105,7 @@ watchEffect(() => {
 
   position: relative;
   display: grid;
-  grid-template-columns: var(--ws-rail) minmax(0, 1fr) minmax(21rem, 27rem);
+  grid-template-columns: var(--ws-rail) minmax(0, 1fr) minmax(21rem, 30rem);
   height: 100%;
   min-height: 0;
 }
