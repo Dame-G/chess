@@ -21,7 +21,7 @@ import TuneView from "../parts/TuneView.vue";
 import { useDameless } from "../stores/dameless";
 import { useIdeas } from "../stores/ideas";
 import { useVersions } from "../stores/versions";
-import { KIND_WORD, STAGE_WORD, STATUS_TONE, STATUS_WORD, TRIAL_TONE } from "./idea";
+import { KIND_WORD, STAGE_WORD, STATUS_TONE, STATUS_WORD, TRIAL_TONE, TRIAL_WORD } from "./idea";
 import SheetBack from "./SheetBack.vue";
 import { useSheet } from "./useSheet";
 
@@ -151,7 +151,7 @@ const tune = computed(() => ideas.tuneStates[id.value]);
             >
               <span class="stage-name">{{ STAGE_WORD[t.stage] }}</span>
               <span class="stage-line">
-                <EStamp size="sm" :tone="TRIAL_TONE[t.status]" :label="t.status" />
+                <EStamp size="sm" :tone="TRIAL_TONE[t.status]" :label="TRIAL_WORD[t.status]" />
                 <span class="stage-num mono">{{ decider(t) }}</span>
               </span>
             </EButton>

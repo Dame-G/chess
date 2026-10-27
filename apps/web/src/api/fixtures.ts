@@ -718,8 +718,11 @@ function trialGames(trialId: number, first: GameId, count: number, dev: number, 
     );
   }
 }
-trialGames(3, 101, 8, 20, 14, 40);
-trialGames(6, 201, 6, 21, 13, 60 * 25);
+// The `empty` variant has no ideas, so it has no trial games either (a trial's row is named from its idea).
+if (!(fixtureMode() ?? "").split("+").includes("empty")) {
+  trialGames(3, 101, 8, 20, 14, 40);
+  trialGames(6, 201, 6, 21, 13, 60 * 25);
+}
 
 // ---- Reviews
 

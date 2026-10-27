@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
-import { shortDate } from "../format";
+import { shortDate, timeOfDay } from "../format";
 import type { ChartSeries, ReferenceLine } from "./chart";
 
 /**
@@ -72,9 +72,7 @@ function timeValues(u: uPlot, ticks: number[]): string[] {
   const span = (u.scales["x"]?.max ?? 0) - (u.scales["x"]?.min ?? 0);
   return ticks.map((t) => {
     const d = new Date(t * 1000);
-    return span < 2 * 86_400
-      ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
-      : shortDate(d.toISOString());
+    return span < 2 * 86_400 ? timeOfDay(d) : shortDate(d.toISOString());
   });
 }
 

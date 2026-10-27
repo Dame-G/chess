@@ -9,6 +9,7 @@ import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { EVirtualList } from "@eos-ui/vue/components/EVirtualList";
 import type { GameId, GameSummary, TrialId } from "../api/types";
+import { plural } from "../format";
 import { clockOf } from "../sheets/idea";
 import { useBoard } from "../board/board";
 import { useGames } from "../stores/games";
@@ -42,7 +43,7 @@ function toggle(id: TrialId) {
 /** "deeper-lmr vs v14 · short games · 412 pairs", from the idea the trial belongs to. */
 function trialTitle(row: Extract<RailRow, { type: "trial" }>) {
   const found = ideas.ofTrial(row.trial);
-  if (!found) return { title: `Trial ${row.trial}`, detail: `${row.games.length} games` };
+  if (!found) return { title: `Trial ${row.trial}`, detail: plural(row.games.length, "game") };
   const { idea, trial } = found;
   const dev = versions.name(idea.version) ?? idea.branch;
   const base = versions.name(idea.base) ?? "the champion";

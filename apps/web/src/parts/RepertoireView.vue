@@ -101,8 +101,7 @@ const departureLine = (d: Departure) => `${Math.ceil(d.ply / 2)}${d.ply % 2 === 
     <ENotice v-if="repertoire.failed" tone="danger" title="Your openings did not load">{{ repertoire.failed }}</ENotice>
     <ESkeleton v-else-if="!rep" :lines="4" label="Loading your openings" />
     <p v-else-if="rep.games === 0" class="sec-note">
-      No games as {{ side === "white" ? "White" : "Black" }} yet. Your lines appear after a few games from the standard
-      start.
+      No games as {{ side === "white" ? "White" : "Black" }} yet. Your lines appear after a few games.
     </p>
     <template v-else>
       <p class="sec-note">

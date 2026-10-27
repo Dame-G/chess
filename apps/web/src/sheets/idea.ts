@@ -23,6 +23,16 @@ export const STATUS_TONE: Record<IdeaStatus, Tone> = {
   failed: "danger",
 };
 
+/** A trial's state as its stamp says it, written like an idea's. */
+export const TRIAL_WORD: Record<TrialStatus, string> = {
+  waiting: "Waiting",
+  running: "Running",
+  passed: "Passed",
+  failed: "Failed",
+  stopped: "Stopped",
+  skipped: "Skipped",
+};
+
 export const TRIAL_TONE: Record<TrialStatus, Tone> = {
   waiting: "neutral",
   running: "info",

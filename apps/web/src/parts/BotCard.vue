@@ -7,7 +7,7 @@ import { ELink } from "@eos-ui/vue/components/ELink";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import type { SeekMode } from "../api/types";
-import { speedName, timeControl } from "../format";
+import { speedName, timeControl, timeOfDay } from "../format";
 import { useConnections } from "../stores/connections";
 import { declineWords, rulesSummary } from "./bot";
 import BotSettingsDialog from "./BotSettingsDialog.vue";
@@ -69,7 +69,7 @@ const limit = computed(() => {
   const b = bot.value;
   if (!b) return null;
   if (b.bot_limit_until)
-    return `Played 100 games against bots today. It looks again at ${new Date(b.bot_limit_until).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}.`;
+    return `Played 100 games against bots today. It looks again at ${timeOfDay(b.bot_limit_until)}.`;
   return `${b.bot_games_today} of 100 games against bots in the last day.`;
 });
 
@@ -157,12 +157,10 @@ const answered = (e: (typeof recent.value)[number]) => {
 </template>
 
 <style scoped>
-/* Below 75rem the sheet is the whole window: the card stays to a readable line. */
 .world {
   display: grid;
   gap: var(--e-gap-snug);
   min-width: 0;
-  max-inline-size: 42rem;
 }
 
 .line {

@@ -72,7 +72,7 @@ async function make() {
     <ENotice v-if="failed" tone="danger" title="Drills did not load">{{ failed }}</ENotice>
     <template v-else-if="drills.loaded">
       <div class="today">
-        <p class="count">{{ todayText(today ?? { drills: [], due: 0, new: 0 }) }}</p>
+        <p v-if="!few || drills.total" class="count">{{ todayText(today ?? { drills: [], due: 0, new: 0 }) }}</p>
         <div class="sheet-actions">
           <EButton v-if="count" variant="outline" size="sm" @click="startDrills">Start</EButton>
           <EButton v-if="few" variant="outline" size="sm" :loading="making" @click="make">
@@ -81,7 +81,7 @@ async function make() {
         </div>
       </div>
       <p v-if="few && !drills.total" class="sec-note">
-        No drills yet. They are made from the mistakes and blunders in games Dameless has reviewed.
+        No drills yet. Review your games, and your mistakes become drills.
       </p>
       <p v-if="trend.length > 1" class="key" aria-hidden="true">
         <span class="k k-dot">Each day</span><span class="k k-line">Last 50 answers</span>
