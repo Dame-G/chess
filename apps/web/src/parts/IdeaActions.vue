@@ -2,9 +2,9 @@
 import { computed, ref } from "vue";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import type { Idea } from "../api/types";
+import ConfirmDialog from "./ConfirmDialog.vue";
 import { useDameless } from "../stores/dameless";
 import { useIdeas } from "../stores/ideas";
 import { useVersions } from "../stores/versions";
@@ -96,36 +96,32 @@ async function push() {
     <p v-if="pushed" class="sec-note">Pushed at {{ pushed }}.</p>
     <ENotice v-if="problem && !promoting && !pushing" tone="danger" title="That did not work">{{ problem }}</ENotice>
 
-    <EDialog
+    <ConfirmDialog
       v-model:open="promoting"
       :title="`Make ${change} the new champion ${next}`"
       description="Its change is merged into the fork's main on this machine."
-      size="sm"
+      :confirm="`Promote to ${next}`"
+      :busy="busy === 'promote'"
+      @confirm="promote"
     >
       <p class="text">
         Future ideas will be tested against {{ next }}. If the checkout has uncommitted changes, nothing is merged and
         you are told why. Nothing is pushed.
       </p>
       <ENotice v-if="problem" tone="danger" title="It was not promoted">{{ problem }}</ENotice>
-      <template #actions>
-        <EButton :loading="busy === 'promote'" @click="promote">Promote to {{ next }}</EButton>
-        <EButton variant="outline" @click="promoting = false">Cancel</EButton>
-      </template>
-    </EDialog>
+    </ConfirmDialog>
 
-    <EDialog
+    <ConfirmDialog
       v-model:open="pushing"
       title="Push the fork to its remote?"
       description="This publishes the fork's main, with every promotion in it."
-      size="sm"
+      confirm="Push main"
+      :busy="busy === 'push'"
+      @confirm="push"
     >
       <p class="text">Pushing is never automatic. Once pushed, other people can fetch these commits.</p>
       <ENotice v-if="problem" tone="danger" title="It was not pushed">{{ problem }}</ENotice>
-      <template #actions>
-        <EButton :loading="busy === 'push'" @click="push">Push main</EButton>
-        <EButton variant="outline" @click="pushing = false">Cancel</EButton>
-      </template>
-    </EDialog>
+    </ConfirmDialog>
   </div>
 </template>
 

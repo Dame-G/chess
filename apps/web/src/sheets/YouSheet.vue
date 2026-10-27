@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { useToast } from "@eos-ui/vue";
 import { ESheet } from "@eos-ui/vue/components/ESheet";
 import { EButton } from "@eos-ui/vue/components/EButton";
+import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import type { Player, ProfileFilter } from "../api/types";
 import ChallengeList from "../parts/ChallengeList.vue";
@@ -15,7 +16,9 @@ import ProfileView from "../parts/ProfileView.vue";
 import ProgressChart from "../parts/ProgressChart.vue";
 import RepertoireView from "../parts/RepertoireView.vue";
 import ReviewBar from "../parts/ReviewBar.vue";
+import { useUi } from "../shell/ui";
 import { useConnections } from "../stores/connections";
+import { usePolicy } from "../stores/policy";
 import { ALL_GAMES, usePlayers } from "../stores/players";
 import { useProgress } from "../stores/progress";
 import SheetBack from "./SheetBack.vue";
@@ -36,6 +39,23 @@ const toast = useToast();
 const filter = ref<ProfileFilter>({ ...ALL_GAMES });
 const failed = ref<string | null>(null);
 const profile = computed(() => players.profileOf("you", filter.value));
+const ui = useUi();
+const policy = usePolicy();
+/** No game at all with nothing filtered out: the first run, not an empty filter. */
+const firstRun = computed(
+  () => profile.value?.games === 0 && !filter.value.speeds?.length && filter.value.rated == null && !filter.value.since,
+);
+const importing = ref(false);
+async function importMine() {
+  importing.value = true;
+  try {
+    await players.importHistory("you", { max: 50 });
+  } catch (e) {
+    toast.show({ title: "That did not start", message: e instanceof Error ? e.message : String(e), tone: "warning" });
+  } finally {
+    importing.value = false;
+  }
+}
 const linked = computed(() => connections.you.configured && !!connections.you.account);
 
 async function load() {
@@ -89,9 +109,10 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
 
     <ProfileHead v-if="player && linked" :player="player" />
 
-    <section v-if="challenges.length" class="sec" aria-labelledby="y-ch">
+    <section v-if="linked" class="sec" aria-labelledby="y-ch">
       <h2 id="y-ch" class="part-title">Your challenges</h2>
-      <ChallengeList :challenges="challenges" connection="you" />
+      <ChallengeList v-if="challenges.length" :challenges="challenges" connection="you" />
+      <p v-else class="sec-note">None waiting. Challenges to you on Lichess show here.</p>
     </section>
 
     <ENotice v-if="failed" tone="danger" title="Your profile did not load" class="gap">
@@ -99,6 +120,19 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
       <template #actions><EButton variant="outline" size="sm" @click="load">Try again</EButton></template>
     </ENotice>
     <ProfileSkeleton v-else-if="!profile" label="Loading your profile" />
+    <EEmptyState v-else-if="firstRun" title="No games yet">
+      Play one against Dameless{{ linked ? ", or bring in your Lichess games" : "" }}. Your profile, drills and openings
+      are built from your games.
+      <template #action>
+        <div class="sheet-actions">
+          <EButton @click="ui.startNewGame()">New game</EButton>
+          <EButton v-if="linked" variant="outline" :loading="importing" :disabled="!policy.allowed" @click="importMine">
+            Import my Lichess games
+          </EButton>
+          <EButton v-else variant="outline" :loading="logging" @click="login">Log in with Lichess</EButton>
+        </div>
+      </template>
+    </EEmptyState>
     <template v-else>
       <section class="sec" aria-label="Games and review">
         <ProfileFilters v-model="filter" />
@@ -110,11 +144,7 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
           :games="profile.games"
           :pending="profile.pending_review"
         />
-        <p v-if="profile.games === 0" class="sec-note">
-          No games match. Play one against Dameless from New game{{
-            linked ? "" : ", or log in to bring in your Lichess history"
-          }}.
-        </p>
+        <p v-if="profile.games === 0" class="sec-note">No games match these filters.</p>
       </section>
 
       <ProfileView :profile="profile" is-you />

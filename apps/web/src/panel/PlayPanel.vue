@@ -3,11 +3,11 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useToast } from "@eos-ui/vue";
 import { EActions } from "@eos-ui/vue/components/EActions";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import type { SeatAction, Side } from "../api/types";
 import { other, seatName, speedName, timeControl } from "../format";
 import { useBoard } from "../board/board";
+import ConfirmDialog from "../parts/ConfirmDialog.vue";
 import { useGames } from "../stores/games";
 
 /**
@@ -97,7 +97,7 @@ const where = computed(() => {
         <EButton size="sm" variant="outline" :loading="busy === 'accept_draw'" @click="act('accept_draw')">
           Accept
         </EButton>
-        <EButton size="sm" variant="outline" :loading="busy === 'decline_draw'" @click="act('decline_draw')">
+        <EButton size="sm" variant="quiet" :loading="busy === 'decline_draw'" @click="act('decline_draw')">
           Decline
         </EButton>
       </EActions>
@@ -105,7 +105,7 @@ const where = computed(() => {
     <ENotice v-if="g?.offers.takeback === theirs" tone="info" :title="`${opponent} asks to take back a move`">
       <EActions>
         <EButton size="sm" variant="outline" @click="act('accept_takeback')">Accept</EButton>
-        <EButton size="sm" variant="outline" @click="act('decline_takeback')">Decline</EButton>
+        <EButton size="sm" variant="quiet" @click="act('decline_takeback')">Decline</EButton>
       </EActions>
     </ENotice>
     <p v-if="g?.offers.draw === yourSide" class="note">You offered a draw.</p>
@@ -148,13 +148,9 @@ const where = computed(() => {
       <EButton v-if="can('resign')" size="sm" variant="outline" @click="confirmResign = true">Resign</EButton>
     </EActions>
 
-    <EDialog v-model:open="confirmResign" title="Resign this game?" role="alertdialog" size="sm">
+    <ConfirmDialog v-model:open="confirmResign" title="Resign this game?" confirm="Resign" danger @confirm="resign">
       {{ opponent }} wins the game.
-      <template #actions>
-        <EButton variant="danger" @click="resign">Resign</EButton>
-        <EButton variant="outline" @click="confirmResign = false">Keep playing</EButton>
-      </template>
-    </EDialog>
+    </ConfirmDialog>
   </div>
 </template>
 

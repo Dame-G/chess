@@ -174,6 +174,12 @@ export function shortDate(iso: string, now = new Date()): string {
   return `${d.getDate()} ${MONTHS[d.getMonth()]}${year}`;
 }
 
+/** A time of day as `14:30`, in the viewer's time zone. */
+export function timeOfDay(when: string | number | Date): string {
+  const d = new Date(when);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 /** Seconds a review takes per game on this machine, as the design quotes it. */
 const REVIEW_SECONDS_PER_GAME = 20;
 

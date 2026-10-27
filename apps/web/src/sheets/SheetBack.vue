@@ -19,4 +19,10 @@ defineEmits<{ back: [] }>();
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Below 75rem a sheet is the whole window: its content keeps one readable line length (42rem), level with the title,
+   so all six sheets match. Beside the board the sheet is narrower than this and nothing changes. */
+.e-sheet-body > * {
+  max-inline-size: 42rem;
+}
 </style>

@@ -14,7 +14,7 @@ import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import { connect, connection } from "../api/client";
 import type { ConnectionKey, ConnectionStatus, HealthLevel, Pruned } from "../api/types";
-import { bytes, plural } from "../format";
+import { bytes, plural, shortDate } from "../format";
 import ConfirmDialog from "../parts/ConfirmDialog.vue";
 import { choice, type Choice } from "../scheme";
 import { useConnections } from "../stores/connections";
@@ -106,11 +106,7 @@ const lichessItems = (c: ConnectionStatus) => {
       ? [
           {
             label: "Login ends",
-            text: new Date(c.you.expires_at).toLocaleDateString("en-GB", {
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-            }),
+            text: shortDate(c.you.expires_at),
           },
         ]
       : []),
@@ -513,11 +509,6 @@ function pair() {
 </template>
 
 <style scoped>
-/* Below 75rem the sheet is the whole window: keep each section to a readable line, level with the title. */
-.sec {
-  max-inline-size: 42rem;
-}
-
 /* A form in a section: its fields as wide as the section, its button under them. */
 .token {
   display: grid;

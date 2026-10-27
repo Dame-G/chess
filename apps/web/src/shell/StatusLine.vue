@@ -104,6 +104,7 @@ const fraction = (w: Work) => (w.progress?.total ? w.progress.done / w.progress.
                   v-if="w.status === 'running'"
                   :icon="PhPause"
                   :label="`Pause ${w.title}`"
+                  tooltip
                   size="sm"
                   @click="run(work.pause, w.id)"
                 />
@@ -111,10 +112,17 @@ const fraction = (w: Work) => (w.progress?.total ? w.progress.done / w.progress.
                   v-else
                   :icon="PhPlay"
                   :label="`Resume ${w.title}`"
+                  tooltip
                   size="sm"
                   @click="run(work.resume, w.id)"
                 />
-                <EIconButton :icon="PhStop" :label="`Stop ${w.title}`" size="sm" @click="run(work.stop, w.id)" />
+                <EIconButton
+                  :icon="PhStop"
+                  :label="`Stop ${w.title}`"
+                  tooltip
+                  size="sm"
+                  @click="run(work.stop, w.id)"
+                />
               </span>
             </li>
           </ul>
@@ -125,7 +133,13 @@ const fraction = (w: Work) => (w.progress?.total ? w.progress.done / w.progress.
             <li v-for="w in work.queued" :key="w.id" class="row">
               <span class="row-text">{{ w.title }}</span>
               <span class="row-actions">
-                <EIconButton :icon="PhStop" :label="`Cancel ${w.title}`" size="sm" @click="run(work.stop, w.id)" />
+                <EIconButton
+                  :icon="PhStop"
+                  :label="`Cancel ${w.title}`"
+                  tooltip
+                  size="sm"
+                  @click="run(work.stop, w.id)"
+                />
               </span>
             </li>
           </ul>

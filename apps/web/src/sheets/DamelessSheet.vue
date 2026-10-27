@@ -144,8 +144,8 @@ watch(creating, (open) => {
 
     <section v-if="progress.chart && both" class="sec" aria-labelledby="d-progress">
       <div class="sec-head">
-        <h2 id="d-progress" class="part-title">You and Dameless</h2>
-        <ELink :link-component="RouterLink" to="/you">Your progress</ELink>
+        <h2 id="d-progress" class="part-title">Progress</h2>
+        <ELink :link-component="RouterLink" to="/you">Your profile</ELink>
       </div>
       <ProgressChart :chart="progress.chart" compact />
     </section>
