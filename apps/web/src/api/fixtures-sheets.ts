@@ -215,6 +215,19 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
     seed: 404,
   });
 
+  // A long name and a thousand games, to see how the player sheets and Compare hold up.
+  roster.set("lichess:the_quick_brown_fox_jumps_over", {
+    name: "The_Quick_Brown_Fox_Jumps_Over",
+    title: "GM",
+    rating: { bullet: 2701, blitz: 2744, rapid: 2688, classical: 2610 },
+    games: 1243,
+    reviewed: 1243,
+    accuracy: 91.2,
+    win: 0.63,
+    draw: 0.2,
+    seed: 505,
+  });
+
   /** A name Lichess knows: anything shaped like a name, except the ones the fixtures say are not there. */
   const exists = (key: string) => !/^lichess:(nosuch|nobody|zzz)/.test(key);
 

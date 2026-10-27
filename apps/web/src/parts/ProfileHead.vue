@@ -5,8 +5,11 @@ import { ETag } from "@eos-ui/vue/components/ETag";
 import type { Player } from "../api/types";
 import { speedName } from "../format";
 
-/** Who a profile is about: the name, the title, and the Lichess ratings per speed. */
-const props = defineProps<{ player: Player; games?: number }>();
+/**
+ * Who a profile is about: the name, the title, and the Lichess ratings per speed. `hideName` leaves the name out where
+ * the sheet's own title already says it.
+ */
+const props = defineProps<{ player: Player; games?: number; hideName?: boolean }>();
 
 const ratings = computed(() =>
   (["bullet", "blitz", "rapid", "classical"] as const).flatMap((s) => {
@@ -22,7 +25,7 @@ const profileUrl = computed(() =>
 <template>
   <header class="head">
     <div class="who">
-      <h2 class="name">{{ player.name }}</h2>
+      <h2 v-if="!hideName" class="name">{{ player.name }}</h2>
       <ETag v-if="player.title" :label="player.title" size="sm" />
       <ELink v-if="profileUrl" :href="profileUrl" external class="out">On Lichess</ELink>
     </div>
@@ -51,7 +54,9 @@ const profileUrl = computed(() =>
 }
 
 .name {
+  min-width: 0;
   margin: 0;
+  overflow-wrap: anywhere;
   font: var(--e-type-h4, 600 1.125rem/1.2 var(--e-font-sans));
 }
 
@@ -62,8 +67,8 @@ const profileUrl = computed(() =>
 
 .ratings {
   grid-auto-flow: column;
-  grid-auto-columns: max-content;
-  gap: var(--e-gap-base);
+  grid-auto-columns: minmax(4.25rem, max-content);
+  gap: var(--e-gap-snug) var(--e-gap-base);
   overflow-x: auto;
 }
 

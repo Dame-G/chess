@@ -4,7 +4,7 @@ import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { todayText } from "../board/drill";
-import { plural } from "../format";
+import { plural, shortDate } from "../format";
 import { useStartDrills } from "../shell/drillFlow";
 import { useDrills } from "../stores/drills";
 import type { ChartSeries } from "./chart";
@@ -38,7 +38,7 @@ const hover = ref<number | null>(null);
 const readout = computed(() => {
   const p = trend.value[hover.value ?? trend.value.length - 1];
   if (!p) return "";
-  return `${p.date} · ${p.passes} of ${plural(p.answers, "answer")} · last 50 answers ${Math.round(p.rolling * 100)}%`;
+  return `${shortDate(`${p.date}T12:00:00Z`)} · ${p.passes} of ${plural(p.answers, "answer")} · last 50 answers ${Math.round(p.rolling * 100)}%`;
 });
 
 const making = ref(false);
@@ -83,6 +83,9 @@ async function make() {
       <p v-if="few && !drills.total" class="sec-note">
         No drills yet. They are made from the mistakes and blunders in games Dameless has reviewed.
       </p>
+      <p v-if="trend.length > 1" class="key" aria-hidden="true">
+        <span class="k k-dot">Each day</span><span class="k k-line">Last 50 answers</span>
+      </p>
       <LineChart
         v-if="trend.length > 1"
         label="Your drill hit rate over time"
@@ -113,6 +116,35 @@ async function make() {
 .count {
   margin: 0;
   font-weight: 600;
+}
+
+.key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--e-gap-base);
+  margin: 0;
+  color: var(--e-muted);
+  font: var(--e-type-small);
+}
+
+.k::before {
+  display: inline-block;
+  margin-inline-end: 0.375rem;
+  vertical-align: middle;
+  content: "";
+}
+
+.k-dot::before {
+  inline-size: 0.375rem;
+  block-size: 0.375rem;
+  border-radius: 50%;
+  background: var(--e-muted);
+}
+
+.k-line::before {
+  inline-size: 0.875rem;
+  block-size: 2px;
+  background: var(--e-primary);
 }
 
 .readout {

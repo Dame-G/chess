@@ -82,6 +82,13 @@ const profiles = computed(() => comparison.value?.profiles ?? []);
 const groups = computed(() => compareGroups(profiles.value));
 const to = (key: string) => (key === "you" ? "/you" : key === "dameless" ? "/dameless" : `/players/${key}`);
 const cell = (v: number | null | undefined, text: (v: number) => string) => (v == null ? "—" : text(v));
+/** Whether column `i` leads a row. A row where everyone ties has no leader worth marking. */
+function leading(row: Parameters<typeof leads>[1], i: number): boolean {
+  const c = comparison.value;
+  if (!c || !leads(c, row, i)) return false;
+  const lead = c.leaders.find((l) => l.row === row);
+  return !lead || lead.players.length < c.profiles.length;
+}
 const stale = computed(
   () =>
     !!comparison.value && comparison.value.profiles.map((p) => p.player.key).join() !== address.value.players.join(),
@@ -149,14 +156,9 @@ const stale = computed(
                 <Term v-if="r.term" :k="r.term" :text="r.label" />
                 <template v-else>{{ r.label }}</template>
               </th>
-              <td
-                v-for="(p, i) in profiles"
-                :key="p.player.key"
-                class="e-num"
-                :class="{ lead: comparison && leads(comparison, r.leader, i) }"
-              >
+              <td v-for="(p, i) in profiles" :key="p.player.key" class="e-num" :class="{ lead: leading(r.leader, i) }">
                 {{ cell(r.get(p), r.text) }}
-                <EVisuallyHidden v-if="comparison && leads(comparison, r.leader, i)"> (leads)</EVisuallyHidden>
+                <EVisuallyHidden v-if="leading(r.leader, i)"> (leads)</EVisuallyHidden>
               </td>
             </tr>
           </tbody>
@@ -221,19 +223,28 @@ const stale = computed(
 /* The table is wider than a phone: it scrolls sideways inside eos's region while the labels stay in view. */
 .table :deep(table) {
   min-inline-size: 34rem;
+  table-layout: fixed;
 }
 
 .table :deep(td),
 .table :deep(th) {
+  vertical-align: middle;
+}
+
+.table :deep(thead th) {
   vertical-align: top;
+}
+
+.table :deep(thead th.label-col) {
+  background: var(--e-surface-tint);
 }
 
 .label-col {
   position: sticky;
   inset-inline-start: 0;
   z-index: 1;
-  inline-size: 9rem;
-  min-inline-size: 9rem;
+  inline-size: 9.5rem;
+  min-inline-size: 9.5rem;
   background: var(--e-surface);
   font-family: var(--e-font-sans);
   font-weight: 500;
@@ -261,7 +272,9 @@ const stale = computed(
 }
 
 .who-name {
+  min-width: 0;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .who-sub {
@@ -291,6 +304,26 @@ const stale = computed(
 .opens {
   vertical-align: top;
   text-align: start;
+}
+
+/* The checkboxes share the switches' height, so the three labels and controls sit on one line. */
+.filters :deep(.e-checkgroup-items) {
+  align-items: center;
+  gap: 0 var(--e-gap-base);
+  min-block-size: 2.125rem;
+}
+
+.filters :deep(.e-choice) {
+  align-items: center;
+  min-block-size: 2.125rem;
+  padding-block: 0;
+}
+
+@media (width < 36rem) {
+  .label-col {
+    inline-size: 7rem;
+    min-inline-size: 7rem;
+  }
 }
 
 .muted {

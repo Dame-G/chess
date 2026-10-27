@@ -5,11 +5,11 @@ import { ESheet } from "@eos-ui/vue/components/ESheet";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
-import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { ApiError } from "../api/client";
 import type { ProfileFilter } from "../api/types";
 import ProfileFilters from "../parts/ProfileFilters.vue";
 import ProfileHead from "../parts/ProfileHead.vue";
+import ProfileSkeleton from "../parts/ProfileSkeleton.vue";
 import ProfileView from "../parts/ProfileView.vue";
 import ReviewBar from "../parts/ReviewBar.vue";
 import { ALL_GAMES, usePlayers } from "../stores/players";
@@ -69,10 +69,13 @@ const compare = () => router.push({ path: "/compare", query: { players: `you,${k
       Lichess has no player called {{ nameOfKey(key) }}. Check the spelling, or paste a link to their profile in
       Compare.
     </EEmptyState>
-    <ENotice v-else-if="failed" tone="danger" title="This profile did not load">{{ failed }}</ENotice>
-    <div v-else-if="!profile" aria-busy="true"><ESkeleton :lines="4" /></div>
+    <ENotice v-else-if="failed" tone="danger" title="This profile did not load">
+      {{ failed }}
+      <template #actions><EButton variant="outline" size="sm" @click="load">Try again</EButton></template>
+    </ENotice>
+    <ProfileSkeleton v-else-if="!profile" :label="`Loading ${name}`" />
     <template v-else>
-      <ProfileHead :player="profile.player" />
+      <ProfileHead :player="profile.player" hide-name />
       <section class="sec" aria-label="Games and review">
         <ProfileFilters v-if="profile.games" v-model="filter" />
         <ReviewBar

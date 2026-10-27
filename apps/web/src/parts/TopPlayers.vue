@@ -16,19 +16,16 @@ const speed = ref<Speed>("blitz");
 const failed = ref(false);
 const rows = computed(() => players.top[speed.value]);
 
-watch(
-  speed,
-  async (s) => {
-    failed.value = false;
-    if (players.top[s]) return;
-    try {
-      await players.loadTop(s);
-    } catch {
-      failed.value = true;
-    }
-  },
-  { immediate: true },
-);
+async function load(s: Speed) {
+  failed.value = false;
+  if (players.top[s]) return;
+  try {
+    await players.loadTop(s);
+  } catch {
+    failed.value = true;
+  }
+}
+watch(speed, load, { immediate: true });
 
 const key = (username: string) => `lichess:${username.toLowerCase()}`;
 const has = (username: string) => props.taken.includes(key(username));
@@ -39,6 +36,7 @@ const has = (username: string) => props.taken.includes(key(username));
     <ESegmented
       v-model="speed"
       label="Leaderboard"
+      hide-label
       size="sm"
       :options="[
         { value: 'bullet', label: 'Bullet' },
@@ -46,7 +44,10 @@ const has = (username: string) => props.taken.includes(key(username));
         { value: 'rapid', label: 'Rapid' },
       ]"
     />
-    <p v-if="failed" class="sec-note">Lichess did not answer. Try again in a moment.</p>
+    <div v-if="failed" class="fail">
+      <p class="sec-note">Lichess did not answer.</p>
+      <EButton variant="outline" size="sm" @click="load(speed)">Try again</EButton>
+    </div>
     <ESkeleton v-else-if="!rows" :lines="5" label="Loading the leaderboard" />
     <ol v-else class="plain list">
       <li v-for="(p, i) in rows" :key="p.key" class="item">
@@ -71,6 +72,13 @@ const has = (username: string) => props.taken.includes(key(username));
   gap: var(--e-gap-snug);
 }
 
+.fail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--e-gap-snug);
+}
+
 .list {
   gap: 0;
 }
@@ -92,6 +100,12 @@ const has = (username: string) => props.taken.includes(key(username));
 
 .progress {
   text-align: end;
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .title {
