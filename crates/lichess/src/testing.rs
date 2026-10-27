@@ -451,6 +451,8 @@ struct Inner {
     tablebase: Option<Value>,
     codes: HashMap<String, OAuthCode>,
     grant_as: Option<String>,
+    /// How the mock plays for users in games whose setup leaves it unsaid (games from challenges and seeks).
+    default_reply: Option<(Reply, bool)>,
     next_id: u64,
 }
 
@@ -558,7 +560,11 @@ impl Inner {
         })
     }
 
-    fn start_game(&mut self, setup: GameSetup) -> String {
+    fn start_game(&mut self, mut setup: GameSetup) -> String {
+        if let (Reply::None, Some((reply, accepts))) = (setup.reply, self.default_reply) {
+            setup.reply = reply;
+            setup.accepts_offers |= accepts;
+        }
         let id = setup.id.clone().unwrap_or_else(|| self.fresh_id("g"));
         let initial = setup.clock.map_or(u64::from(setup.days.unwrap_or(1)) * 86_400_000, |(l, _)| u64::from(l) * 1000);
         let game = Game {
@@ -825,14 +831,19 @@ impl Drop for MockLichess {
 impl MockLichess {
     /// Starts a mock on a free port of 127.0.0.1.
     pub async fn start() -> Self {
+        Self::start_on("127.0.0.1:0").await.expect("a free port")
+    }
+
+    /// Starts a mock on `addr` (a fixed port, for the `mock_server` example a running app is pointed at).
+    pub async fn start_on(addr: &str) -> std::io::Result<Self> {
         let shared: Shared = Arc::new(Mutex::new(Inner::default()));
         let app = router(shared.clone());
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("a free port");
-        let url = format!("http://{}", listener.local_addr().expect("an address"));
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        let url = format!("http://{}", listener.local_addr()?);
         let server = tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
         });
-        Self { url, shared, server }
+        Ok(Self { url, shared, server })
     }
 
     fn inner(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -986,10 +997,14 @@ impl MockLichess {
 
     /// Plays `uci` for the side to move, whoever it is. Panics if the move is illegal or the game is over.
     pub fn opponent_move(&self, id: &str, uci: &str) {
-        let mut inner = self.inner();
-        if let Err(e) = inner.apply_move(id, uci) {
+        if let Err(e) = self.try_move(id, uci) {
             panic!("the mock cannot play {uci} in {id}: {e}");
         }
+    }
+
+    /// Plays `uci` for the side to move, or says why it cannot.
+    pub fn try_move(&self, id: &str, uci: &str) -> Result<(), String> {
+        self.inner().apply_move(id, uci)
     }
 
     /// Sends a line on the game's streams, as it is.
@@ -1197,6 +1212,12 @@ impl MockLichess {
     /// redirect URI with a code.
     pub fn grant_logins_as(&self, token: &str) {
         self.inner().grant_as = Some(token.to_owned());
+    }
+
+    /// How the mock plays for users in games whose setup does not say (every game a challenge or a seek starts):
+    /// `reply`, and whether they take offers at once.
+    pub fn reply_by_default(&self, reply: Reply, accepts_offers: bool) {
+        self.inner().default_reply = Some((reply, accepts_offers));
     }
 }
 

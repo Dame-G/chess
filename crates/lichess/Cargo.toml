@@ -27,3 +27,8 @@ shakmaty = { workspace = true, optional = true }
 [dev-dependencies]
 axum.workspace = true
 shakmaty.workspace = true
+
+# A mock Lichess on a fixed port for walking the app's Lichess flows by hand (see the file's header).
+[[example]]
+name = "mock_server"
+required-features = ["mock"]
