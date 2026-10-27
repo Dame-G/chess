@@ -9,8 +9,9 @@ import { ESelect } from "@eos-ui/vue/components/ESelect";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { EStack } from "@eos-ui/vue/components/EStack";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
-import type { Color } from "../api/types";
+import type { Color, Side, TimeControl } from "../api/types";
 import { useConnections } from "../stores/connections";
+import { useDameless } from "../stores/dameless";
 import { useGames } from "../stores/games";
 import { useVersions } from "../stores/versions";
 import { stored } from "../stored";
@@ -27,13 +28,18 @@ const toast = useToast();
 const games = useGames();
 const connections = useConnections();
 const versions = useVersions();
+const dameless = useDameless();
 
 type Opponent = "dameless" | "stockfish" | "lichess";
+/** The clock choice for a game without a clock. */
+const UNTIMED = "untimed";
 const opponent = stored<Opponent>("new.opponent", "dameless");
 const clock = stored("new.clock", "5+3");
 const color = stored<Color>("new.color", "random");
 const rated = stored("new.rated", true);
 const level = stored("new.level", "5");
+/** Dameless's strength: "full", or a level of its ladder (`dameless@<level>`). */
+const strength = stored("new.strength", "full");
 const version = ref<string>("");
 const lichessHow = ref<"seek" | "challenge">("seek");
 const username = ref("");
@@ -45,6 +51,7 @@ watch(
   (open) => {
     if (open && fromPosition.value) opponent.value = "dameless";
     if (open && !version.value && versions.current) version.value = String(versions.current.id);
+    if (open && !dameless.levels) void dameless.loadLevels().catch(() => {});
   },
 );
 
@@ -57,15 +64,37 @@ const opponents = computed(() =>
         { value: "stockfish" as const, label: "Stockfish", disabled: !connections.you.configured },
       ],
 );
-/** Lichess's Board API plays no bullet; a seek must be rapid or slower (initial + 40 × increment ≥ 8 min). */
+/**
+ * Lichess's Board API plays no bullet; a seek must be rapid or slower (initial + 40 × increment ≥ 8 min). Against
+ * Dameless a game can have no clock (the engine takes a second a move), and only such a game allows takebacks.
+ */
 const clocks = computed(() =>
   opponent.value === "lichess" && lichessHow.value === "seek"
     ? ["10+0", "10+5", "15+10", "30+0"]
-    : ["3+2", "5+3", "10+5", "15+10"],
+    : opponent.value === "dameless"
+      ? [{ value: UNTIMED, label: "No clock" }, "3+2", "5+3", "10+5", "15+10"]
+      : ["3+2", "5+3", "10+5", "15+10"],
 );
-watch(clocks, (c) => {
-  if (!c.includes(clock.value)) clock.value = c[1]!;
+const clockValues = computed(() => clocks.value.map((c) => (typeof c === "string" ? c : c.value)));
+watch(clockValues, (c) => {
+  if (!c.includes(clock.value)) clock.value = c.includes("5+3") ? "5+3" : c[1]!;
 });
+const strengthOptions = computed(() => [
+  { value: "full", label: "Full strength" },
+  ...(dameless.levels?.levels ?? [])
+    .filter((l) => l.level.nodes != null)
+    .map((l) => ({
+      value: String(l.level.id),
+      label: `Level ${l.level.id} · ${l.games > 0 && l.rating ? Math.round(l.rating.elo) : `about ${l.level.nominal}`}${l.level.id === dameless.levels?.suggested ? " (suggested)" : ""}`,
+    })),
+]);
+
+/** Dameless's seat: `dameless`, at a version (`:#<id>`) and a level (`@<n>`) when chosen. */
+function damelessSeat(): string {
+  const at = version.value && Number(version.value) !== versions.current?.id ? `:#${version.value}` : "";
+  const lvl = strength.value !== "full" ? `@${strength.value}` : "";
+  return `dameless${at}${lvl}`;
+}
 const versionOptions = computed(() =>
   [...versions.line]
     .reverse()
@@ -73,18 +102,21 @@ const versionOptions = computed(() =>
 );
 
 async function start() {
-  const time = readClock(clock.value) ?? { type: "clock" as const, initial_ms: 300_000, increment_ms: 3000 };
+  const time: TimeControl =
+    clock.value === UNTIMED
+      ? { type: "movetime", ms: 1000 }
+      : (readClock(clock.value) ?? { type: "clock", initial_ms: 300_000, increment_ms: 3000 });
   busy.value = true;
   try {
     if (opponent.value === "dameless") {
-      const you = color.value === "black" ? "black" : "white";
+      const you: Side = color.value === "random" ? (Math.random() < 0.5 ? "white" : "black") : color.value;
+      const seat = damelessSeat();
+      const from = fromPosition.value;
       const s = await games.start({
-        white: you === "white" ? "you" : "dameless",
-        black: you === "white" ? "dameless" : "you",
-        color: color.value,
+        white: you === "white" ? "you" : seat,
+        black: you === "white" ? seat : "you",
         time,
-        version: version.value ? Number(version.value) : undefined,
-        from: fromPosition.value ?? undefined,
+        ...(from ? { from: { type: "position" as const, fen: from.fen, moves: from.moves } } : {}),
       });
       ui.newGame = false;
       await router.push({ path: "/", query: { game: String(s.id) } });
@@ -133,6 +165,7 @@ async function start() {
       <ESegmented v-model="opponent" label="Opponent" :options="opponents" />
       <template v-if="opponent === 'dameless'">
         <ESelect v-if="versionOptions.length" v-model="version" label="Version" :options="versionOptions" />
+        <ESelect v-model="strength" label="Strength" :options="strengthOptions" />
       </template>
       <template v-else-if="opponent === 'stockfish'">
         <ESelect v-model="level" label="Level" :options="['1', '2', '3', '4', '5', '6', '7', '8']" />

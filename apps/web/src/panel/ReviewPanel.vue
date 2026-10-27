@@ -85,7 +85,7 @@ watch(
   () => (asked.value = false),
 );
 
-const fmt = (n: number | null) => (n === null ? "–" : n.toFixed(1));
+const fmt = (n: number | null | undefined) => (n == null ? "–" : n.toFixed(1));
 </script>
 
 <template>

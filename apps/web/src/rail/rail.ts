@@ -20,7 +20,7 @@ function matches(g: GameSummary, filter: RailFilter): boolean {
     case "all":
       return true;
     case "you":
-      return g.you !== null;
+      return g.you != null;
     case "dameless":
       return hasDameless(g) && g.source.type !== "trial";
     case "lichess":
@@ -72,4 +72,5 @@ export const stageLabel: Record<Stage, string> = {
   tune: "tune",
   confirm: "confirmation",
   custom: "test",
+  train: "training",
 };

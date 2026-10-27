@@ -36,7 +36,10 @@ const busy = ref<SeatAction | null>(null);
 async function act(a: SeatAction) {
   busy.value = a;
   try {
-    await games.act(a);
+    const after = await games.act(a);
+    // An engine answers a draw offer at once: an offer that is not pending after it was declined.
+    if (a === "offer_draw" && after?.summary.status === "live" && !after.offers.draw)
+      toast.show({ title: `${opponent.value} declined the draw`, tone: "info" });
   } catch (e) {
     toast.show({
       title: "That did not go through",

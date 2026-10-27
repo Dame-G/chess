@@ -1706,11 +1706,14 @@ export interface components {
         /** @enum {string} */
         BuildStatus: "queued" | "building" | "ready" | "failed" | "deleted";
         BuildsOnDisk: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Everything under the builds directory: the builds, the nets they embed and cargo's cache.
+             */
             bytes: number;
             /**
              * Format: int32
-             * @description Build folders.
+             * @description Builds (folders holding an engine binary).
              */
             count: number;
         };
@@ -2796,6 +2799,22 @@ export interface components {
             /** @description "Windows 11 Home 24H2", "Linux 6.8 Ubuntu 24.04". */
             os: string;
         };
+        /** @description What the app runs on. */
+        MachineInfo: {
+            /** @description Built binaries on disk. */
+            builds: components["schemas"]["BuildsOnDisk"];
+            cpu?: string | null;
+            /** @description The data directory. */
+            data_dir: string;
+            engine: components["schemas"]["EngineCheckout"];
+            /** Format: int32 */
+            logical_cores?: number | null;
+            /** Format: int64 */
+            memory_bytes?: number | null;
+            os?: string | null;
+            /** Format: int32 */
+            physical_cores?: number | null;
+        };
         /** @description `POST /api/drills`. */
         MakeDrillsRequest: {
             /** @description At most this many new drills (20 when none). */
@@ -3177,6 +3196,10 @@ export interface components {
             total?: number | null;
             /** @description What is counted: `pairs`, `iterations`, `games`, `positions`. */
             unit: string;
+        };
+        /** @description Both players' lines: `GET /api/progress`. */
+        ProgressChart: {
+            series: components["schemas"]["Series"][];
         };
         /** @description One point of a series. */
         ProgressPoint: {
@@ -3699,7 +3722,7 @@ export interface components {
             ledger: components["schemas"]["LedgerSnapshot"];
             /** @description The Lichess the connections talk to. */
             lichess_url: string;
-            machine: components["schemas"]["Machine"];
+            machine: components["schemas"]["MachineInfo"];
             /**
              * Format: int64
              * @description The id the next event will get.
@@ -6469,7 +6492,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Progress"];
+                    "application/json": components["schemas"]["ProgressChart"];
                 };
             };
         };

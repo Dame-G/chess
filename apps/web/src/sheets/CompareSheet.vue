@@ -64,7 +64,7 @@ const speeds = computed({
   set: (v: Speed[]) => set({ speeds: v }),
 });
 const rated = computed({
-  get: () => (address.value.rated === null ? "both" : address.value.rated ? "rated" : "casual"),
+  get: () => (address.value.rated == null ? "both" : address.value.rated ? "rated" : "casual"),
   set: (v: string | undefined) => set({ rated: v === "rated" ? true : v === "casual" ? false : null }),
 });
 const limit = computed({
@@ -78,7 +78,7 @@ const limitOptions = LIMITS.map((n) => ({ value: String(n), label: `${n} games` 
 const profiles = computed(() => comparison.value?.profiles ?? []);
 const groups = computed(() => compareGroups(profiles.value));
 const to = (key: string) => (key === "you" ? "/you" : key === "dameless" ? "/dameless" : `/players/${key}`);
-const cell = (v: number | null, text: (v: number) => string) => (v === null ? "—" : text(v));
+const cell = (v: number | null | undefined, text: (v: number) => string) => (v == null ? "—" : text(v));
 const stale = computed(
   () =>
     !!comparison.value && comparison.value.profiles.map((p) => p.player.key).join() !== address.value.players.join(),

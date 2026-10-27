@@ -1,5 +1,5 @@
-import type { Idea, IdeaKind, IdeaStatus, Preset, Stage, TrialStatus, TrialSummary } from "../api/types";
-import { plusMinus } from "../format";
+import type { Idea, IdeaKind, IdeaStatus, Preset, Stage, Trial, TrialStatus, TrialSummary } from "../api/types";
+import { plusMinus, trialClock } from "../format";
 
 export type Tone = "neutral" | "info" | "success" | "warning" | "danger";
 
@@ -36,6 +36,7 @@ export const KIND_WORD: Record<IdeaKind, string> = {
   neutral: "Neutral",
   speed: "Speed",
   tune: "Tune",
+  net: "Net",
 };
 
 /** The stages as people read them. */
@@ -48,10 +49,11 @@ export const STAGE_WORD: Record<Stage, string> = {
   tune: "Tune",
   confirm: "Confirmation",
   custom: "Test",
+  train: "Training",
 };
 
 /** The clock each preset plays, as written (before it is scaled to this machine). */
-export const PRESET_CLOCK: Record<Preset, string> = {
+const PRESET_CLOCK: Record<Preset, string> = {
   vstc: "4+0.04",
   stc: "8+0.08",
   ltc: "40+0.4",
@@ -60,6 +62,12 @@ export const PRESET_CLOCK: Record<Preset, string> = {
   smp: "40+0.4, 6 threads",
   nodes: "25k nodes",
 };
+
+/** A trial's clock as written: the full trial's when it was fetched, else its preset's; "" when neither says. */
+export function clockOf(t: Pick<TrialSummary, "preset">, full?: Pick<Trial, "time">): string {
+  if (full?.time) return trialClock(full.time);
+  return t.preset ? PRESET_CLOCK[t.preset] : "";
+}
 
 /** The trial that decided an idea: the last one with an Elo estimate, else the last that ended either way. */
 export function decidingTrial(idea: Pick<Idea, "trials">): TrialSummary | undefined {

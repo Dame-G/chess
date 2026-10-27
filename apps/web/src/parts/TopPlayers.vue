@@ -49,14 +49,14 @@ const has = (username: string) => props.taken.includes(key(username));
     <p v-if="failed" class="sec-note">Lichess did not answer. Try again in a moment.</p>
     <ESkeleton v-else-if="!rows" :lines="5" label="Loading the leaderboard" />
     <ol v-else class="plain list">
-      <li v-for="(p, i) in rows" :key="p.id" class="item">
+      <li v-for="(p, i) in rows" :key="p.key" class="item">
         <span class="rank mono">{{ i + 1 }}</span>
         <span class="name">
           <span v-if="p.title" class="title">{{ p.title }}</span>
           {{ p.username }}
         </span>
         <span class="rating mono">{{ p.rating }}</span>
-        <span class="progress mono" :aria-label="`${p.progress} this week`">{{ signed(p.progress, 0) }}</span>
+        <span class="progress mono" :aria-label="`${p.progress ?? 0} this week`">{{ signed(p.progress ?? 0, 0) }}</span>
         <EButton variant="quiet" size="sm" :disabled="full || has(p.username)" @click="emit('add', key(p.username))">
           {{ has(p.username) ? "Added" : "Add" }}
         </EButton>

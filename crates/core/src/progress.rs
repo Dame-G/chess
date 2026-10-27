@@ -58,6 +58,7 @@ pub struct Series {
 
 /// Both players' lines: `GET /api/progress`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+#[schema(as = ProgressChart)]
 pub struct Progress {
     pub series: Vec<Series>,
 }

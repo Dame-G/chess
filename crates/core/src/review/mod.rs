@@ -28,6 +28,7 @@ pub const DEFAULT_LIMIT: u32 = 20;
 
 /// One line of a searched position. `score` is White's.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+#[schema(as = SearchLine)]
 pub struct EvalLine {
     /// The line's first move.
     pub uci: String,

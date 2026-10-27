@@ -15,7 +15,7 @@ const DECLINES: Record<string, string> = {
   onlyBot: "bots only",
 };
 
-export const declineWords = (reason: string | null): string => (reason ? (DECLINES[reason] ?? reason) : "");
+export const declineWords = (reason: string | null | undefined): string => (reason ? (DECLINES[reason] ?? reason) : "");
 
 /** `Bullet, Blitz and Rapid`. */
 function list(words: string[]): string {

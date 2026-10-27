@@ -52,7 +52,7 @@ const logging = ref(false);
 async function login() {
   logging.value = true;
   try {
-    const { url } = await connections.login();
+    const { url } = await connections.login("/you");
     window.location.assign(url);
   } catch (e) {
     logging.value = false;

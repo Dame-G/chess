@@ -48,18 +48,19 @@ const x = computed(() => strength.value.map((_, i) => i + 1));
 const series = computed<ChartSeries[]>(() => [
   {
     label: "Elo over v1",
-    values: strength.value.map((p) => p.elo),
+    values: strength.value.map((p) => p.value),
     color: "--e-primary",
     kind: "step",
     width: 2,
-    band: { low: strength.value.map((p) => p.low), high: strength.value.map((p) => p.high) },
+    band: { low: strength.value.map((p) => p.low ?? p.value), high: strength.value.map((p) => p.high ?? p.value) },
   },
 ]);
 const hover = ref<number | null>(null);
 const readout = computed(() => {
   const p = strength.value[hover.value ?? strength.value.length - 1];
   if (!p) return "";
-  return `${p.name}: ${signed(p.elo, 1)} Elo over v1, ±${((p.high - p.low) / 2).toFixed(1)}`;
+  const margin = p.high != null && p.low != null ? `, ±${((p.high - p.low) / 2).toFixed(1)}` : "";
+  return `${p.label ?? ""}: ${signed(p.value, 1)} Elo over v1${margin}`;
 });
 
 const inProgress = computed(() => [...ideas.running, ...ideas.queued]);
@@ -96,7 +97,7 @@ watch(creating, (open) => {
         <p v-if="champion" class="sec-note">
           <Term k="champion" /> <strong class="mono">{{ champion.name }}</strong>
           <span v-if="last">
-            · <span class="mono">{{ signed(last.elo, 1) }}</span> <Term k="elo" /> over v1</span
+            · <span class="mono">{{ signed(last.value, 1) }}</span> <Term k="elo" /> over v1</span
           >
         </p>
       </div>

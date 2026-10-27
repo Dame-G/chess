@@ -3,13 +3,15 @@
  * strength, the connections and the machine. `fixtures.ts` hands this module the data it shares (games, ideas, trials,
  * versions, work, connections) and the way to speak on the event stream; everything here is invented too.
  */
+import { error, reply } from "./fixtures-http";
 import { leaders } from "./leaders";
 import type {
+  BotSettings,
   Classification,
   ClassCounts,
   Connections,
   ConnectionStatus,
-  DamelessOverview,
+  DamelessView,
   EventKind,
   EventPayloads,
   Game,
@@ -17,7 +19,7 @@ import type {
   Idea,
   IdeaId,
   Moment,
-  NewIdea,
+  NewIdeaRequest,
   Phase,
   Player,
   PlayerKey,
@@ -25,13 +27,14 @@ import type {
   ProfileFilter,
   Speed,
   Status,
-  StrengthPoint,
-  TopPlayer,
+  ProgressPoint,
+  LeaderboardEntry,
   TimeControl,
   Trial,
   TrialSummary,
-  TuneParam,
-  TuneState,
+  Tunable,
+  TuneParamInfo,
+  TuneDetail,
   TuneStep,
   Version,
   WeakSpot,
@@ -43,8 +46,6 @@ export interface SheetContext {
   minutesAgo: (m: number) => string;
   rng: (seed: number) => () => number;
   emit: <K extends EventKind>(kind: K, topic: string, data: EventPayloads[K]) => void;
-  json: (data: unknown, status?: number) => Response;
-  error: (status: number, code: string, message: string) => Response;
   ideas: Idea[];
   trials: Trial[];
   versions: Version[];
@@ -163,7 +164,7 @@ function emptyCounts(): ClassCounts {
 const round = (n: number, d = 1) => Math.round(n * 10 ** d) / 10 ** d;
 
 export function createSheetRoutes(ctx: SheetContext): Handler {
-  const { json, error, emit, minutesAgo } = ctx;
+  const { emit, minutesAgo } = ctx;
 
   // ---- The people
 
@@ -262,10 +263,10 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
     const p = player(key);
     if (!r || !p) return undefined;
     const shares = (Object.keys(SHARE) as Speed[]).filter(
-      (s) => r.rating[s] !== undefined && (filter.speeds.length === 0 || filter.speeds.includes(s)),
+      (s) => r.rating[s] !== undefined && (!filter.speeds?.length || filter.speeds.includes(s)),
     );
     const shareSum = shares.reduce((a, s) => a + (SHARE[s] ?? 0), 0);
-    const ratedShare = filter.rated === null ? 1 : filter.rated ? 0.82 : 0.18;
+    const ratedShare = filter.rated == null ? 1 : filter.rated ? 0.82 : 0.18;
     const games = Math.min(filter.limit, Math.round(r.games * shareSum * ratedShare));
     const reviewed = r.games ? Math.min(games, Math.round((r.reviewed / r.games) * games)) : 0;
     const rnd = ctx.rng(r.seed);
@@ -506,7 +507,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
 
   // ---- Dameless
 
-  function strength(): StrengthPoint[] {
+  function strength(): ProgressPoint[] {
     let elo = 0;
     let variance = 0;
     return ctx.versions
@@ -520,11 +521,19 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
           variance += ((v.elo.high - v.elo.low) / 2) ** 2;
         }
         const half = Math.sqrt(variance);
-        return { version: v.id, name: v.name, elo: round(elo), low: round(elo - half), high: round(elo + half) };
+        return {
+          at: v.created_at,
+          value: round(elo),
+          low: round(elo - half),
+          high: round(elo + half),
+          game: null,
+          version: v.id,
+          label: v.name,
+        };
       });
   }
 
-  function overview(): DamelessOverview {
+  function overview(): DamelessView {
     const line = ctx.versions.filter((v) => v.line.type === "champion");
     const sorted = [...ctx.ideas].sort((a, b) => b.created_at.localeCompare(a.created_at));
     return {
@@ -537,7 +546,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
         queued: sorted.filter((i) => i.status === "queued"),
         recent: sorted.filter((i) => i.status !== "running" && i.status !== "queued").slice(0, 6),
       },
-      connection: ctx.connections.bot,
+      connection: ctx.connections.bot.bot ?? null,
       strength: strength(),
     };
   }
@@ -707,7 +716,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
 
   // ---- Tunes
 
-  const TUNABLES: TuneParam[] = [
+  const TUNABLES: Tunable[] = [
     ["rfp_margin", 76, 20, 200],
     ["rfp_depth", 8, 3, 14],
     ["nmp_base", 4, 2, 8],
@@ -723,12 +732,13 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
     max: max as number,
     c_end: Math.max(1, Math.round(((max as number) - (min as number)) / 20)),
     r_end: 0.002,
-    value: start as number,
   }));
+  /** What `GET /api/ideas/{id}/tune` says of each parameter. */
+  const paramInfo = (t: Tunable): TuneParamInfo => ({ name: t.name, start: t.start, min: t.min, max: t.max });
 
-  function tuneState(id: IdeaId): TuneState {
+  function tuneState(id: IdeaId): TuneDetail {
     const rnd = ctx.rng(900 + id);
-    const params = TUNABLES.map((p) => ({ ...p }));
+    const params = TUNABLES;
     const steps: TuneStep[] = [];
     const target = params.map((p) => p.start + (rnd() - 0.5) * (p.max - p.min) * 0.35);
     const values = params.map((p) => p.start);
@@ -744,7 +754,6 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
         penta: [1, 2, 3, 2, 0],
       });
     }
-    params.forEach((p, i) => (p.value = values[i]!));
     return {
       spec: {
         params: [],
@@ -757,14 +766,14 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
         gamma: 0.101,
         a_ratio: 0.1,
       },
-      params,
+      params: params.map(paramInfo),
       steps,
     };
   }
-  const tunes = new Map<IdeaId, TuneState>();
+  const tunes = new Map<IdeaId, TuneDetail>();
   const tuneTimers = new Map<IdeaId, ReturnType<typeof setInterval>>();
 
-  function followTune(id: IdeaId, state: TuneState) {
+  function followTune(id: IdeaId, state: TuneDetail) {
     if (tuneTimers.has(id) || ctx.ideas.find((i) => i.id === id)?.status !== "running") return;
     const rnd = ctx.rng(state.steps.length + 5);
     tuneTimers.set(
@@ -772,7 +781,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       setInterval(() => {
         const last = state.steps.at(-1)!;
         const values = last.values.map((v, i) => {
-          const p = state.params[i]!;
+          const p = TUNABLES[i]!;
           return round(Math.max(p.min, Math.min(p.max, v + (rnd() - 0.5) * (p.max - p.min) * 0.01)), 2);
         });
         const step: TuneStep = {
@@ -787,13 +796,13 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
   }
 
   /** Makes the next idea's number and queues it, then lets it start a moment later. */
-  function createIdea(body: NewIdea): Idea {
+  function createIdea(body: NewIdeaRequest): Idea {
     const id = Math.max(...ctx.ideas.map((i) => i.id)) + 1;
     const made = idea({
       id,
       title: body.title,
-      hypothesis: body.hypothesis,
-      kind: body.kind,
+      hypothesis: body.hypothesis ?? "",
+      kind: body.kind ?? "gain",
       author: body.author ?? "you",
       branch: body.branch,
       status: "queued",
@@ -841,7 +850,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
     found.version = next.id;
     emit("version.upserted", "versions", structuredClone(next));
     emit("idea.upserted", "ideas", structuredClone(found));
-    return json(next);
+    return reply("/api/ideas/{id}/promote", "post", structuredClone(next));
   }
 
   // ---- Connections
@@ -862,7 +871,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
   }
   const connectionsEmit = (c: ConnectionStatus) => {
     emit("connection.upserted", `connection:${c.key}`, structuredClone(c));
-    return json(structuredClone(c));
+    return reply("/api/connections/bot/online", "post", structuredClone(c));
   };
   const bot = () => ctx.connections.bot;
 
@@ -900,7 +909,8 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
 
   const status = ctx.status;
   status.machine = {
-    engine: { dir: "C:\\dev\\reckless", branch: "main", commit: "9e3a5e41b0c2f87d", dirty: false },
+    ...status.machine,
+    engine: { dir: "C:\\dev\\reckless", found: true, branch: "main", commit: "9e3a5e41b0c2f87d", dirty: false },
     data_dir: "C:\\Users\\dame\\AppData\\Local\\dameless",
     builds: { count: 23, bytes: 2_340_000_000 },
   };
@@ -908,36 +918,40 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
   return (method, path, url, body) => {
     let m: RegExpMatchArray | null;
     if (method === "GET") {
-      if (path === "/api/dameless") return json(structuredClone(overview()));
-      if (path === "/api/token") return json({ token: "dmls_4f8c0a2b9d7e41c6a3b5e8f20d19c7a4" });
-      if (path === "/api/tunables") return json(TUNABLES.map(({ value: _value, ...t }) => t));
+      if (path === "/api/dameless") return reply("/api/dameless", "get", structuredClone(overview()));
+      if (path === "/api/token") return reply("/api/token", "get", { token: "dmls_4f8c0a2b9d7e41c6a3b5e8f20d19c7a4" });
+      if (path === "/api/tunables") return reply("/api/tunables", "get", structuredClone(TUNABLES));
       if (path === "/api/players/top") {
         const speed = url.searchParams.get("speed") ?? "blitz";
-        const rows = (LEADERBOARD[speed] ?? LEADERBOARD["blitz"]!).map(([username, title, rating], i): TopPlayer => ({
-          id: username.toLowerCase(),
-          username,
-          title,
-          rating,
-          progress: Math.round(((i * 7) % 13) - 4),
-        }));
-        return json(rows);
+        const rows = (LEADERBOARD[speed] ?? LEADERBOARD["blitz"]!).map(
+          ([username, title, rating], i): LeaderboardEntry => ({
+            key: `lichess:${username.toLowerCase()}`,
+            username,
+            title,
+            rating,
+            progress: Math.round(((i * 7) % 13) - 4),
+          }),
+        );
+        return reply("/api/players/top", "get", rows);
       }
       if ((m = path.match(/^\/api\/players\/([^/]+)\/profile$/))) {
         const key = decodeURIComponent(m[1]!);
         const filter = filterOf(url);
         const p = build(key, filter);
-        return p ? json(p) : error(404, "not_found", "Lichess has no such player.");
+        return p
+          ? reply("/api/players/{key}/profile", "get", p)
+          : error(404, "not_found", "Lichess has no such player.");
       }
       if ((m = path.match(/^\/api\/players\/([^/]+)$/))) {
         const p = player(decodeURIComponent(m[1]!));
-        return p ? json(p) : error(404, "not_found", "Lichess has no such player.");
+        return p ? reply("/api/players/{key}", "get", p) : error(404, "not_found", "Lichess has no such player.");
       }
       if (path === "/api/compare") {
         const keys = (url.searchParams.get("players") ?? "you,dameless").split(",").filter(Boolean);
         const filter = filterOf(url);
         const profiles = keys.map((k) => build(k, filter)).filter((p): p is Profile => !!p);
         if (profiles.length !== keys.length) return error(404, "not_found", "Lichess has no such player.");
-        return json({ profiles, leaders: leaders(profiles) });
+        return reply("/api/compare", "get", { profiles, leaders: leaders(profiles) });
       }
       if ((m = path.match(/^\/api\/ideas\/(\d+)\/tune$/))) {
         const id = Number(m[1]);
@@ -949,13 +963,61 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
           tunes.set(id, state);
         }
         followTune(id, state);
-        return json(structuredClone(state));
+        return reply("/api/ideas/{id}/tune", "get", structuredClone(state));
       }
       if (path === "/api/connections") return undefined;
+      if (path === "/api/diagnostics")
+        return reply("/api/diagnostics", "get", {
+          ok: true,
+          items: [
+            { key: "fastchess", level: "ok", ok: true, title: "fastchess", detail: "fastchess 1.4.0 is installed." },
+            {
+              key: "book",
+              level: "ok",
+              ok: true,
+              title: "Opening book",
+              detail: "UHO_Lichess_4852_v1.epd is installed.",
+            },
+            { key: "engine", level: "ok", ok: true, title: "Engine checkout", detail: "C:\\dev\\reckless, on main." },
+            {
+              key: "clang",
+              level: "warn",
+              ok: true,
+              title: "clang",
+              detail: "clang is not on the PATH, so builds with Syzygy support cannot be made.",
+              action: { label: "Install it", command: "winget install LLVM.LLVM" },
+            },
+            { key: "disk", level: "ok", ok: true, title: "Disk", detail: "212 GB free on the data drive." },
+          ],
+        });
+      if (path === "/api/harness")
+        return reply("/api/harness", "get", {
+          checked: true,
+          current: true,
+          trusted: true,
+          passed: true,
+          at: minutesAgo(60 * 24 * 3),
+          idea: null,
+          running: null,
+          last: null,
+          summary: "Checked on this machine 3 days ago: an identical copy did not pass (+0.4 ± 2.1 Elo).",
+        });
+      if (path === "/api/levels")
+        return reply("/api/levels", "get", {
+          levels: [800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800].map((nominal, i) => ({
+            level: { id: i + 1, name: `Level ${i + 1}`, nodes: 300 * (i + 1), multipv: 1, temperature: 0, nominal },
+            games: 0,
+            rating: null,
+          })),
+          suggested: 7,
+          you: null,
+          updated_at: null,
+        });
     }
 
     if (method === "POST") {
-      if (path === "/api/ideas") return json(structuredClone(createIdea(body as unknown as NewIdea)), 201);
+      if (path === "/api/ideas")
+        return reply("/api/ideas", "post", structuredClone(createIdea(body as unknown as NewIdeaRequest)), 201);
       if ((m = path.match(/^\/api\/ideas\/(\d+)\/(stop|resume|promote)$/))) {
         const found = ctx.ideas.find((i) => i.id === Number(m![1]));
         if (!found) return error(404, "not_found", "No such idea.");
@@ -964,19 +1026,20 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
         found.verdict = m[2] === "stop" ? "Stopped by you." : null;
         found.ended_at = m[2] === "stop" ? new Date().toISOString() : null;
         emit("idea.upserted", "ideas", structuredClone(found));
-        return json(structuredClone(found));
+        return reply("/api/ideas/{id}/stop", "post", structuredClone(found));
       }
-      if (path === "/api/dameless/push") return json({ remote: "origin", head: "9e3a5e41b0c2" });
+      if (path === "/api/dameless/push")
+        return reply("/api/dameless/push", "post", { remote: "origin", head: "9e3a5e41b0c2" });
       if (path === "/api/builds/prune") {
         const dry = body["dry_run"] === true;
-        const result = { builds: 9, bytes: 940_000_000, dry_run: dry };
+        const result = { builds: [3, 4, 5, 6, 7, 8, 9, 10, 11], bytes: 940_000_000, dry_run: dry, in_use: [] };
         if (!dry && status.machine) {
           status.machine.builds = {
             count: status.machine.builds.count - 9,
             bytes: status.machine.builds.bytes - 940_000_000,
           };
         }
-        return json(result);
+        return reply("/api/builds/prune", "post", result);
       }
       if (path === "/api/reviews" && typeof body["player"] === "string") {
         if (status.policy.assist !== "allowed") return error(409, "fair_play", status.policy.reason ?? "");
@@ -985,10 +1048,10 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
         if (!r) return error(404, "not_found", "No such player.");
         const limit = Number(body["limit"] ?? 20);
         const todo = Math.min(limit, r.games - r.reviewed);
-        startWork(`Reviewing ${todo} games`, "review", key, todo, () => {
+        const w = startWork(`Reviewing ${todo} games`, "review", key, todo, () => {
           r.reviewed += todo;
         });
-        return json({}, 202);
+        return reply("/api/reviews", "post", structuredClone(w), 202);
       }
       if ((m = path.match(/^\/api\/players\/([^/]+)\/import$/))) {
         if (status.policy.assist === "off") return error(409, "fair_play", status.policy.reason ?? "");
@@ -996,10 +1059,10 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
         const r = entry(key);
         if (!r) return error(404, "not_found", "Lichess has no such player.");
         const max = Math.min(Number(body["max"] ?? 50), 1000);
-        startWork(`Importing ${r.name}'s games`, "import", key, max, () => {
+        const w = startWork(`Importing ${r.name}'s games`, "import", key, max, () => {
           r.games = max;
         });
-        return json({}, 202);
+        return reply("/api/players/{key}/import", "post", structuredClone(w), 202);
       }
       if (path === "/api/connections/you/login") {
         const you = ctx.connections.you;
@@ -1019,7 +1082,10 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
           });
           emit("connection.upserted", "connection:you", structuredClone(you));
         }, 600);
-        return json({ url: "/settings?lichess=connected" });
+        return reply("/api/connections/you/login", "post", {
+          url: "/settings?lichess=connected",
+          expires_in_seconds: 600,
+        });
       }
       if ((m = path.match(/^\/api\/connections\/(you|bot)\/challenges\/([^/]+)\/(accept|decline)$/))) {
         const c = ctx.connections[m[1] as "you" | "bot"];
@@ -1032,7 +1098,13 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
           reason: m[3] === "accept" ? null : "generic",
           detail: null,
         });
-        return json(structuredClone(c));
+        return reply("/api/connections/{key}/challenges/{id}/accept", "post", structuredClone(c));
+      }
+      if (path === "/api/connections/you/seek") {
+        const you = ctx.connections.you;
+        if (!you.configured) return error(409, "conflict", "Log in with Lichess first.");
+        if (you.you) you.you.seek_note = "Looking for an opponent on Lichess.";
+        return connectionsEmit(you);
       }
       if (path === "/api/connections/bot/online") {
         const b = bot();
@@ -1068,8 +1140,10 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       }
       if (path === "/api/connections/bot/settings") {
         const b = bot();
-        if (b.bot) b.bot.settings = body as unknown as NonNullable<ConnectionStatus["bot"]>["settings"];
-        return connectionsEmit(b);
+        const settings = body as unknown as BotSettings;
+        if (b.bot) b.bot.settings = settings;
+        connectionsEmit(b);
+        return reply("/api/connections/bot/settings", "put", settings);
       }
     }
 
@@ -1091,7 +1165,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
           reason: null,
           detail: null,
         });
-        return json(structuredClone(c));
+        return reply("/api/connections/{key}/challenges/{id}", "delete", structuredClone(c));
       }
     }
     return undefined;

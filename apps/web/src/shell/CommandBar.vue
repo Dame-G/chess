@@ -123,10 +123,10 @@ async function runVerb(v: Verb) {
       ui.startNewGame();
       return;
     }
+    const youWhite = Math.random() < 0.5;
     const s = await games.start({
-      white: "you",
-      black: "dameless",
-      color: "random",
+      white: youWhite ? "you" : "dameless",
+      black: youWhite ? "dameless" : "you",
       time: v.time ?? { type: "clock", initial_ms: 300_000, increment_ms: 3000 },
     });
     await router.push({ path: "/", query: { game: String(s.id) } });

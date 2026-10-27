@@ -12,8 +12,8 @@ import { EStack } from "@eos-ui/vue/components/EStack";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextarea } from "@eos-ui/vue/components/ETextarea";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
-import type { NewIdea, Preset, Tunable } from "../api/types";
-import { tuneCost, tuneCostText } from "../sheets/tune";
+import type { NewIdeaRequest, Preset, Tunable } from "../api/types";
+import { tuneCost, tuneCostText, tuneSpec } from "../sheets/tune";
 import { useIdeas } from "../stores/ideas";
 import { usePolicy } from "../stores/policy";
 import { useVersions } from "../stores/versions";
@@ -134,7 +134,7 @@ const missing = computed(() => {
 });
 
 async function create() {
-  const idea: NewIdea = {
+  const idea: NewIdeaRequest = {
     title: title.value.trim(),
     hypothesis: hypothesis.value.trim(),
     kind: kind.value === "custom" ? "gain" : kind.value,
@@ -147,11 +147,11 @@ async function create() {
     ...(hasLong.value && long.value ? { long: true } : {}),
     ...(kind.value === "tune"
       ? {
-          tune: {
+          tune: tuneSpec({
             params: chosen.value.map((name) => ({ name })),
             iterations: iterations.value ?? 1000,
             pairs,
-          },
+          }),
         }
       : {}),
     ...(kind.value === "custom"
@@ -159,7 +159,7 @@ async function create() {
           custom: {
             preset: preset.value,
             ...(stop.value === "sprt"
-              ? { bounds: [lower.value ?? 0, upper.value ?? 3] as [number, number] }
+              ? { bounds: [lower.value ?? 0, upper.value ?? 3] }
               : { pairs: fixedPairs.value ?? 1000 }),
           },
         }

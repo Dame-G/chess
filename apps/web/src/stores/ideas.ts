@@ -1,29 +1,29 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { api } from "../api/client";
+import { client, ok } from "../api/client";
 import type {
   Idea,
   IdeaId,
-  NewIdea,
+  NewIdeaRequest,
   Trial,
   TrialId,
   TrialSummary,
   TuneProgress,
-  TuneState,
-  Tunable,
-  Version,
+  TuneDetail,
 } from "../api/types";
+import { pairsOf } from "../sheets/idea";
 import { listen, reloadOnReconnect } from "./listen";
 
 const summaryOf = (t: Trial): TrialSummary => ({
   id: t.id,
   stage: t.stage,
   status: t.status,
-  time: t.time,
-  penta: t.penta,
-  llr: t.llr,
-  elo: t.elo,
-  detail: t.detail,
+  preset: t.preset ?? null,
+  bounds: t.bounds ?? null,
+  pairs: pairsOf(t.penta),
+  llr: t.llr ?? null,
+  elo: t.elo ?? null,
+  detail: t.detail ?? null,
 });
 
 /** Every idea with its trials' summaries, full trials as they are fetched or sent, and each tune's latest step. */
@@ -32,7 +32,7 @@ export const useIdeas = defineStore("ideas", () => {
   const trials = ref<Record<TrialId, Trial>>({});
   const tunes = ref<Record<IdeaId, TuneProgress>>({});
   /** Each tune idea's spec, parameters and steps, as they are fetched and then extended by `tune.progress`. */
-  const tuneStates = ref<Record<IdeaId, TuneState>>({});
+  const tuneStates = ref<Record<IdeaId, TuneDetail>>({});
   /** Each trial's evidence over the pairs played, [pairs, LLR], collected from `trial.progress` while the app is open. */
   const llrHistory = ref<Record<TrialId, [number, number][]>>({});
   const loaded = ref(false);
@@ -52,7 +52,7 @@ export const useIdeas = defineStore("ideas", () => {
   }
 
   async function load() {
-    const all = await api.get<Idea[]>("/api/ideas");
+    const all = await ok(client.GET("/api/ideas"));
     const next: Record<IdeaId, Idea> = {};
     for (const i of all) next[i.id] = i;
     ideas.value = next;
@@ -60,34 +60,34 @@ export const useIdeas = defineStore("ideas", () => {
   }
 
   async function loadTrial(idea: IdeaId, trial: TrialId) {
-    const t = await api.get<Trial>(`/api/ideas/${idea}/trials/${trial}`);
+    const t = await ok(client.GET("/api/ideas/{id}/trials/{trial}", { params: { path: { id: idea, trial } } }));
     trials.value[trial] = t;
-    const pairs = t.penta.reduce((a, b) => a + b, 0);
+    const pairs = pairsOf(t.penta);
     if (t.llr && pairs && !llrHistory.value[trial]) llrHistory.value[trial] = [[pairs, t.llr.value]];
   }
 
   /** Reads one idea in full; the list may not have it yet (a link opened cold). */
   async function loadIdea(id: IdeaId) {
-    ideas.value[id] = await api.get<Idea>(`/api/ideas/${id}`);
+    ideas.value[id] = await ok(client.GET("/api/ideas/{id}", { params: { path: { id } } }));
   }
 
   async function loadTune(id: IdeaId) {
-    tuneStates.value[id] = await api.get<TuneState>(`/api/ideas/${id}/tune`);
+    tuneStates.value[id] = await ok(client.GET("/api/ideas/{id}/tune", { params: { path: { id } } }));
   }
 
   /** The tunables a branch declares, to choose from when starting a tune. */
-  const tunables = (branch: string) => api.get<Tunable[]>("/api/tunables", { branch });
+  const tunables = (branch: string) => ok(client.GET("/api/tunables", { params: { query: { branch } } }));
 
-  async function create(idea: NewIdea): Promise<Idea> {
-    const made = await api.post<Idea>("/api/ideas", idea);
+  async function create(idea: NewIdeaRequest): Promise<Idea> {
+    const made = await ok(client.POST("/api/ideas", { body: idea }));
     ideas.value[made.id] = made;
     return made;
   }
 
-  const stop = (id: IdeaId) => api.post<Idea>(`/api/ideas/${id}/stop`);
-  const resume = (id: IdeaId) => api.post<Idea>(`/api/ideas/${id}/resume`);
+  const stop = (id: IdeaId) => ok(client.POST("/api/ideas/{id}/stop", { params: { path: { id } } }));
+  const resume = (id: IdeaId) => ok(client.POST("/api/ideas/{id}/resume", { params: { path: { id } } }));
   /** Makes a kept idea's branch the new champion; answers the new champion version. */
-  const promote = (id: IdeaId) => api.post<Version>(`/api/ideas/${id}/promote`);
+  const promote = (id: IdeaId) => ok(client.POST("/api/ideas/{id}/promote", { params: { path: { id } } }));
 
   function patchSummary(id: TrialId, patch: Partial<TrialSummary>) {
     for (const idea of Object.values(ideas.value)) {
@@ -111,20 +111,19 @@ export const useIdeas = defineStore("ideas", () => {
   listen("trial.progress", (p) => {
     if (p.llr) {
       const h = (llrHistory.value[p.id] ??= []);
-      const pairs = p.penta.reduce((a, b) => a + b, 0);
+      const pairs = pairsOf(p.penta);
       if (h.at(-1)?.[0] !== pairs) h.push([pairs, p.llr.value]);
       if (h.length > 2000) h.splice(0, h.length - 2000);
     }
     const t = trials.value[p.id];
     if (t) Object.assign(t, { penta: p.penta, wdl: p.wdl, llr: p.llr, elo: p.elo });
-    patchSummary(p.id, { penta: p.penta, llr: p.llr, elo: p.elo });
+    patchSummary(p.id, { pairs: pairsOf(p.penta), llr: p.llr ?? null, elo: p.elo ?? null });
   });
   listen("tune.progress", (p) => {
     tunes.value[p.idea] = p;
     const state = tuneStates.value[p.idea];
     if (!state || state.steps.some((x) => x.iteration === p.iteration)) return;
     state.steps.push({ iteration: p.iteration, values: p.values, result: p.result, penta: [0, 0, 0, 0, 0] });
-    state.params.forEach((param, i) => (param.value = p.values[i] ?? param.value));
   });
   reloadOnReconnect(load);
 

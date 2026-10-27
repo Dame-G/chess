@@ -221,8 +221,7 @@ describe("notes in markdown", () => {
 
 describe("ideas", () => {
   const trial = (patch: Partial<TrialSummary> & Pick<TrialSummary, "id" | "stage" | "status">): TrialSummary => ({
-    time: null,
-    penta: [0, 0, 0, 0, 0],
+    pairs: 0,
     llr: null,
     elo: null,
     detail: null,
@@ -370,7 +369,7 @@ describe("an idea's evidence over time", () => {
         id: id++,
         topic: "ideas",
         kind: "trial.progress",
-        data: { id: 7, penta, wdl: [0, 0, 0], llr: llr(value), elo: null },
+        data: { id: 7, idea: 1, penta, wdl: [0, 0, 0], llr: llr(value), elo: null },
       });
     progress([1, 2, 3, 2, 1], 0.1);
     progress([1, 2, 3, 2, 1], 0.1);

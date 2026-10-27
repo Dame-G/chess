@@ -13,8 +13,8 @@ import LineChart from "./LineChart.vue";
 const props = defineProps<{ points: TrendPoint[]; label: string }>();
 
 const data = computed(() => trendSeries(props.points));
-const hasAccuracy = computed(() => data.value.accuracy.some((a) => a !== null));
-const hasRating = computed(() => data.value.rating.some((r) => r !== null));
+const hasAccuracy = computed(() => data.value.accuracy.some((a) => a != null));
+const hasRating = computed(() => data.value.rating.some((r) => r != null));
 
 const series = computed<ChartSeries[]>(() => [
   ...(hasAccuracy.value
@@ -36,8 +36,8 @@ const readout = computed(() => {
   const result = p.points === 1 ? "won" : p.points === 0.5 ? "drawn" : p.points === 0 ? "lost" : "";
   return [
     shortDate(p.played_at),
-    p.accuracy !== null ? `accuracy ${percent(p.accuracy)}` : "not reviewed",
-    p.rating !== null ? `rating ${p.rating}` : "",
+    p.accuracy != null ? `accuracy ${percent(p.accuracy)}` : "not reviewed",
+    p.rating != null ? `rating ${p.rating}` : "",
     result,
   ]
     .filter(Boolean)

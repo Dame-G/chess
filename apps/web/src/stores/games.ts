@@ -1,32 +1,19 @@
 import { computed, ref, shallowRef } from "vue";
 import { defineStore } from "pinia";
-import { api, ApiError } from "../api/client";
+import { client, ok, ApiError } from "../api/client";
 import { stream } from "../api/stream";
 import type {
-  Color,
   Game,
   GameChanged,
   GameId,
   GameSummary,
   GameThinking,
+  NewGameRequest,
   PlayerKey,
   Review,
   SeatAction,
-  TimeControl,
 } from "../api/types";
 import { listen, reloadOnReconnect } from "./listen";
-
-/** What starting a local game asks for: the seats, the clock, and a position to start from. */
-export interface NewGameRequest {
-  white: PlayerKey;
-  black: PlayerKey;
-  /** You at random: the server picks the colours (then `white` and `black` say only who plays). */
-  color?: Color;
-  time: TimeControl;
-  /** A Dameless version by id; the champion when left out. */
-  version?: number;
-  from?: { fen: string; moves: string[] };
-}
 
 /** Live games first (they are pinned), then newest first. */
 export function byRailOrder(a: GameSummary, b: GameSummary): number {
@@ -62,7 +49,7 @@ export const useGames = defineStore("games", () => {
 
   async function load() {
     try {
-      const games = await api.get<GameSummary[]>("/api/games", { limit: 300 });
+      const games = await ok(client.GET("/api/games", { params: { query: { limit: 300 } } }));
       const next: Record<GameId, GameSummary> = {};
       for (const g of games) next[g.id] = g;
       summaries.value = next;
@@ -78,7 +65,7 @@ export const useGames = defineStore("games", () => {
   async function fetchReview(id: GameId) {
     reviewLoading.value = true;
     try {
-      const r = await api.get<Review>(`/api/games/${id}/review`);
+      const r: Review = await ok(client.GET("/api/games/{id}/review", { params: { path: { id } } }));
       if (open.value?.summary.id === id) review.value = r;
     } catch (e) {
       if (!(e instanceof ApiError && e.status === 404)) throw e;
@@ -102,7 +89,7 @@ export const useGames = defineStore("games", () => {
     stream.follow(`game:${id}`);
     openLoading.value = true;
     try {
-      const game = await api.get<Game>(`/api/games/${id}`);
+      const game: Game = await ok(client.GET("/api/games/{id}", { params: { path: { id } } }));
       // A later call asked for another game while this one was on its way.
       if (wanted !== id) return;
       open.value = game;
@@ -123,26 +110,29 @@ export const useGames = defineStore("games", () => {
     opponentGone.value = null;
   }
 
-  /** One of the seat actions (`move`, `offer_draw`, `resign`…) in the open game, as You. */
-  async function act(action: SeatAction, body?: { uci: string }) {
+  /** One of the seat actions (`move`, `offer_draw`, `resign`…) in the open game, as You; answers the game after it. */
+  async function act(action: SeatAction, body?: { uci: string }): Promise<Game | undefined> {
     const id = open.value?.summary.id;
-    if (id === undefined) return;
-    await api.post(`/api/games/${id}/actions/${action}`, body);
+    if (id === undefined) return undefined;
+    return await ok(
+      client.POST("/api/games/{id}/actions/{action}", { params: { path: { id, action } }, body: body ?? {} }),
+    );
   }
 
   /** Asks for games to be reviewed: work, whose results arrive as `review.upserted`. */
   async function requestReview(ids: GameId[]) {
-    await api.post("/api/reviews", { games: ids });
+    await ok(client.POST("/api/reviews", { body: { games: ids } }));
   }
 
   /** Reviews a player's newest games (`you`: your last `limit`). */
-  async function reviewPlayer(player: string, limit: number) {
-    await api.post("/api/reviews", { player, limit });
+  async function reviewPlayer(player: PlayerKey, limit: number) {
+    await ok(client.POST("/api/reviews", { body: { player, limit } }));
   }
 
   /** Starts a local game (`POST /api/games`) and answers its summary, already in the list. */
   async function start(request: NewGameRequest): Promise<GameSummary> {
-    const s = await api.post<GameSummary>("/api/games", request);
+    const game = await ok(client.POST("/api/games", { body: request }));
+    const s = game.summary;
     summaries.value[s.id] = s;
     startedHere.add(s.id);
     return s;
@@ -190,7 +180,7 @@ export const useGames = defineStore("games", () => {
       g.clocks = d.clocks;
       clocksAt.value = Date.now();
     }
-    opponentGone.value = d.opponent_gone;
+    opponentGone.value = d.opponent_gone ?? null;
   });
   listen("game.thinking", (d) => {
     if (!isOpen(d.id)) return;
@@ -200,7 +190,8 @@ export const useGames = defineStore("games", () => {
   });
   listen("review.upserted", (d) => {
     const s = summaries.value[d.game];
-    if (s) s.accuracy = d.accuracy;
+    const { white, black } = d.accuracy;
+    if (s) s.accuracy = white != null && black != null ? { white, black } : null;
     if (isOpen(d.game)) void fetchReview(d.game).catch(() => {});
   });
   reloadOnReconnect(load);

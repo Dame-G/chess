@@ -3266,7 +3266,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Progress"
+                  "$ref": "#/components/schemas/ProgressChart"
                 }
               }
             }
@@ -4411,12 +4411,13 @@
           "bytes": {
             "type": "integer",
             "format": "int64",
+            "description": "Everything under the builds directory: the builds, the nets they embed and cargo's cache.",
             "minimum": 0
           },
           "count": {
             "type": "integer",
             "format": "int32",
-            "description": "Build folders.",
+            "description": "Builds (folders holding an engine binary).",
             "minimum": 0
           }
         }
@@ -7801,6 +7802,64 @@
           }
         }
       },
+      "MachineInfo": {
+        "type": "object",
+        "description": "What the app runs on.",
+        "required": [
+          "data_dir",
+          "engine",
+          "builds"
+        ],
+        "properties": {
+          "builds": {
+            "$ref": "#/components/schemas/BuildsOnDisk",
+            "description": "Built binaries on disk."
+          },
+          "cpu": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data_dir": {
+            "type": "string",
+            "description": "The data directory."
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineCheckout"
+          },
+          "logical_cores": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "memory_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "os": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "physical_cores": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "MakeDrillsRequest": {
         "type": "object",
         "description": "`POST /api/drills`.",
@@ -8916,6 +8975,21 @@
           "unit": {
             "type": "string",
             "description": "What is counted: `pairs`, `iterations`, `games`, `positions`."
+          }
+        }
+      },
+      "ProgressChart": {
+        "type": "object",
+        "description": "Both players' lines: `GET /api/progress`.",
+        "required": [
+          "series"
+        ],
+        "properties": {
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Series"
+            }
           }
         }
       },
@@ -10385,7 +10459,7 @@
             "description": "The Lichess the connections talk to."
           },
           "machine": {
-            "$ref": "#/components/schemas/Machine"
+            "$ref": "#/components/schemas/MachineInfo"
           },
           "next_event": {
             "type": "integer",

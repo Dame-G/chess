@@ -187,7 +187,7 @@ export const useBoard = defineStore("board", () => {
       if (p) return { score: ply.value === 0 ? p.eval_before : p.eval_after, turn, depth: p.depth };
     }
     const t = games.thinking;
-    if (mode.value === "watch" && atEnd.value && t) return { score: t.score, turn, depth: t.depth };
+    if (mode.value === "watch" && atEnd.value && t?.score) return { score: t.score, turn, depth: t.depth };
     const moves = game.value?.moves ?? [];
     for (let i = Math.min(ply.value, moves.length) - 1; i >= 0; i--) {
       const m = moves[i]!;
@@ -211,6 +211,8 @@ export const useBoard = defineStore("board", () => {
       const line = tree.value.line(node.value);
       void evaluation.start({ fen: line.fen, moves: line.moves });
     },
+    // Also at once: a page opened straight onto a sheet (`/dameless`) explores the start position and never moves it.
+    { immediate: true },
   );
 
   return {

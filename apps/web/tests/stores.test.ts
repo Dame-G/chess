@@ -223,12 +223,13 @@ describe("ideas", () => {
     expect(ideas.ideas[1]?.trials.map((t) => t.id)).toEqual([3]);
     event("trial.progress", {
       id: 3,
+      idea: 1,
       penta: [2, 2, 3, 2, 2],
       wdl: [11, 10, 11],
       llr: { value: 1, lower: -2.94, upper: 2.94 },
       elo: null,
     });
-    expect(ideas.ideas[1]?.trials[0]?.penta).toEqual([2, 2, 3, 2, 2]);
+    expect(ideas.ideas[1]?.trials[0]?.pairs).toBe(11);
     expect(ideas.trials[3]?.wdl).toEqual([11, 10, 11]);
     expect(ideas.ofTrial(3)?.idea.title).toBe("Deeper LMR");
     event("trial.upserted", { ...trial, status: "passed" });

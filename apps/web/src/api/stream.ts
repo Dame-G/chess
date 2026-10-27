@@ -51,7 +51,10 @@ export function onEvent<K extends EventKind>(kind: K, handler: Handler<K>): () =
   return () => set.delete(handler as Handler<never>);
 }
 
-/** Runs after the stream comes back from a drop, when what was missed may not have been replayed: stores reload. */
+/**
+ * Runs when what was missed may not have been replayed: after the stream comes back from a drop, and on the server's
+ * `reload` event (the events after the last id are no longer kept, or this client fell behind). Stores reload.
+ */
 export function onReconnect(handler: () => void): () => void {
   reconnectHandlers.add(handler);
   return () => reconnectHandlers.delete(handler);
@@ -63,8 +66,24 @@ export function dispatch(event: AppEvent) {
     (handler as Handler<typeof event.kind>)(event.data as never, event);
 }
 
-/** The topics every page follows; the open game and an evaluation session are added as they come and go. */
-const BASE_TOPICS = ["games", "ideas", "work", "versions", "policy", "connection:you", "connection:bot"];
+/**
+ * The topics every page follows: game summaries and reviews, ideas with their trials, work, versions, fair play, both
+ * Lichess connections, your drills, Dameless's levels, nets and datasets. The open game and an evaluation session are
+ * added as they come and go.
+ */
+const BASE_TOPICS = [
+  "games",
+  "ideas",
+  "idea:*",
+  "work",
+  "versions",
+  "policy",
+  "connection:you",
+  "connection:bot",
+  "player:you",
+  "player:dameless",
+  "training",
+];
 
 /**
  * The one connection to `GET /api/events`. A fetch stream rather than EventSource, so the token travels in a header.
@@ -78,9 +97,11 @@ class Stream {
   private running = false;
   private stopped = false;
 
-  start(retryMs = 2000) {
+  /** Opens the stream; `since` is the last event already accounted for (the status's `next_event` − 1). */
+  start(retryMs = 2000, since?: number) {
     if (this.running) return;
     this.running = true;
+    if (since !== undefined && since >= 0) this.last = since;
     void this.loop(retryMs);
   }
 
@@ -126,7 +147,8 @@ class Stream {
           buffer = rest;
           for (const event of events) {
             if (event.id) this.last = event.id;
-            dispatch(event);
+            if (event.kind === "reload") for (const h of reconnectHandlers) h();
+            else dispatch(event);
           }
         }
         // The server closed the stream: a drop like any other.

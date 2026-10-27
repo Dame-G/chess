@@ -1,5 +1,7 @@
 import { reactive } from "vue";
-import type { ApiErrorBody, ErrorCode } from "./types";
+import createClient from "openapi-fetch";
+import type { paths } from "./schema";
+import type { ErrorBody, ErrorCode } from "./types";
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const STORAGE = "dameless.server";
@@ -8,17 +10,27 @@ const DEFAULT_SERVER = "http://127.0.0.1:7979";
 export interface Connection {
   /** The server's URL, or "" for the page's own origin. */
   url: string;
-  /** The server's token. Only the hosted app needs it. */
+  /** The server's token. The page the server serves carries it too; the hosted app is given it by hand. */
   token: string;
+}
+
+/** The token the server puts in the page it serves (`<meta name="dameless-token">`), if any. */
+function pageToken(): string {
+  try {
+    return document.querySelector<HTMLMetaElement>('meta[name="dameless-token"]')?.content ?? "";
+  } catch {
+    return "";
+  }
 }
 
 /**
  * Where the server is. Served by `dameless serve` itself (or the dev server, which proxies it), the page and the API
- * share an origin and need nothing else. On chess.dame.gg the paired server is remembered with its token in this
- * browser.
+ * share an origin: the server lets its own page in by the browser's `Sec-Fetch-Site`, and the page carries the token
+ * for browsers that send none. On chess.dame.gg the paired server is remembered with its token in this browser.
  */
 function initialConnection(location: Pick<Location, "hostname">, saved: string | null): Connection {
-  if (LOOPBACK.has(location.hostname) || location.hostname.endsWith(".localhost")) return { url: "", token: "" };
+  if (LOOPBACK.has(location.hostname) || location.hostname.endsWith(".localhost"))
+    return { url: "", token: pageToken() };
   try {
     const parsed = JSON.parse(saved ?? "") as Partial<Connection>;
     return { url: parsed.url || DEFAULT_SERVER, token: parsed.token ?? "" };
@@ -75,43 +87,48 @@ export class ApiError extends Error {
   }
 }
 
-type Query = Record<string, string | number | boolean | undefined | null>;
-
-function withQuery(path: string, query?: Query): string {
-  if (!query) return path;
-  const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
-  const text = params.toString();
-  return text ? `${path}?${text}` : path;
-}
-
-async function request<T>(method: string, path: string, body?: unknown, query?: Query): Promise<T> {
-  let res: Response;
+/**
+ * openapi-fetch builds a `Request` against a placeholder origin; this hands its path, method, headers and body to
+ * `serverFetch`, which knows the server (the page's own, or a paired one) and the transport (fixtures).
+ */
+async function retarget(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const body = request.method === "GET" || request.method === "HEAD" ? "" : await request.text();
   try {
-    res = await serverFetch(withQuery(path, query), {
-      method,
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
+    return await serverFetch(url.pathname + url.search, {
+      method: request.method,
+      headers: request.headers,
+      body: body || undefined,
+      signal: request.signal,
     });
-  } catch {
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw e;
     throw new ApiError(0, "network", "The server cannot be reached. Start it with dameless serve.");
   }
-  const text = await res.text();
-  const json: unknown = text ? JSON.parse(text) : undefined;
-  if (!res.ok) {
-    const err = (json as ApiErrorBody | undefined)?.error;
-    throw new ApiError(res.status, err?.code ?? "bad_request", err?.message ?? `${res.status} ${res.statusText}`);
-  }
-  return json as T;
+}
+
+/** The API, typed by the server's OpenAPI document: `client.GET("/api/games/{id}", { params: { path: { id } } })`. */
+export const client = createClient<paths>({ baseUrl: "http://dameless.invalid", fetch: retarget });
+
+interface Answer<T> {
+  data?: T;
+  error?: unknown;
+  response: Response;
 }
 
 /**
- * The API, one method per HTTP verb. A thin stand-in for openapi-fetch: once `schema.d.ts` is generated, these take
- * its `paths` and the type parameters go away.
+ * The answer's body, or an `ApiError` with the server's code and message. Every store goes through it:
+ * `const games = await ok(client.GET("/api/games", { params: { query: { limit: 300 } } }))`.
  */
-export const api = {
-  get: <T>(path: string, query?: Query) => request<T>("GET", path, undefined, query),
-  post: <T = void>(path: string, body?: unknown) => request<T>("POST", path, body ?? {}),
-  put: <T = void>(path: string, body: unknown) => request<T>("PUT", path, body),
-  delete: <T = void>(path: string) => request<T>("DELETE", path),
-};
+export async function ok<T>(pending: Promise<Answer<T>>): Promise<T> {
+  const { data, error, response } = await pending;
+  if (!response.ok) {
+    const body = (error as ErrorBody | undefined)?.error;
+    throw new ApiError(
+      response.status,
+      body?.code ?? "bad_request",
+      body?.message ?? `${response.status} ${response.statusText}`,
+    );
+  }
+  return data as T;
+}

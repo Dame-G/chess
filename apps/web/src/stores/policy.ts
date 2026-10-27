@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { api } from "../api/client";
+import { client, ok } from "../api/client";
 import type { Policy, Status } from "../api/types";
 import { listen, reloadOnReconnect } from "./listen";
 
@@ -19,7 +19,7 @@ export const usePolicy = defineStore("policy", () => {
   );
 
   async function load() {
-    status.value = await api.get<Status>("/api/status");
+    status.value = await ok(client.GET("/api/status"));
     policy.value = status.value.policy;
   }
 

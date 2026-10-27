@@ -40,6 +40,27 @@ async fn the_guard_wants_the_token_a_local_host_and_a_known_origin() {
     assert_eq!(res.status(), 403);
     let res = t.http.get(t.url("/")).header("host", "evil.example").send().await.unwrap();
     assert_eq!(res.status(), 403);
+    // The app's own page needs no token: its fetches and its event stream are same-origin by the browser's word.
+    let own = t.url("");
+    let res = t.http.get(t.url("/api/status")).header("sec-fetch-site", "same-origin").send().await.unwrap();
+    assert_eq!(res.status(), 200);
+    // A POST carries the page's origin (this one gets past the guard to the route, which refuses the action).
+    let res = t
+        .http
+        .post(t.url("/api/games/1/actions/fly"))
+        .header("sec-fetch-site", "same-origin")
+        .header("origin", own.trim_end_matches('/'))
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 400);
+    let res = t.http.get(t.url("/api/events")).header("sec-fetch-site", "same-origin").send().await.unwrap();
+    assert_eq!(res.status(), 200);
+    drop(res);
+    // Another website's page is cross-site, and needs the token.
+    let res = t.http.get(t.url("/api/status")).header("sec-fetch-site", "cross-site").send().await.unwrap();
+    assert_eq!(res.status(), 401);
     // The login callback is reachable without the token (and refuses an unknown login).
     let res = t.http.get(t.url("/api/connections/you/callback?state=nope&code=x")).send().await.unwrap();
     assert_eq!(res.status(), 400);

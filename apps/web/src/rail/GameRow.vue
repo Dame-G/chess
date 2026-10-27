@@ -20,7 +20,11 @@ const where = computed(() => {
   if (s.type === "lichess" || s.type === "import") return `${speedName[s.speed]}${s.rated ? " · rated" : ""}`;
   return null;
 });
-const accuracy = computed(() => props.game.accuracy);
+/** Each side's accuracy to one decimal (the server sends f32s, which read as 95.80000305175781). */
+const accuracy = computed(() => {
+  const a = props.game.accuracy;
+  return a ? { white: a.white.toFixed(1), black: a.black.toFixed(1) } : null;
+});
 </script>
 
 <template>

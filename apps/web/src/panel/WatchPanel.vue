@@ -2,7 +2,8 @@
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import { ELink } from "@eos-ui/vue/components/ELink";
-import { scoreText, seatName, speedName, timeControl, trialClock } from "../format";
+import { scoreText, seatName, speedName, timeControl } from "../format";
+import { clockOf } from "../sheets/idea";
 import { useBoard } from "../board/board";
 import { sanLine } from "../board/position";
 import { stageLabel } from "../rail/rail";
@@ -43,7 +44,8 @@ const trial = computed(() => {
   if (x?.source.type !== "trial") return null;
   const found = ideas.ofTrial(x.source.trial);
   if (!found) return null;
-  const tc = found.trial.time ? ` (${trialClock(found.trial.time)})` : "";
+  const clock = clockOf(found.trial, ideas.trials[found.trial.id]);
+  const tc = clock ? ` (${clock})` : "";
   return {
     idea: found.idea,
     text: `Game ${x.source.index + 1} of ${found.idea.title}, ${stageLabel[found.trial.stage]}${tc}`,
@@ -61,7 +63,7 @@ const trial = computed(() => {
       <template v-if="t">
         <p class="who">
           <span>{{ thinker }} is thinking</span>
-          <span class="score num">{{ scoreText(t.score) }}</span>
+          <span v-if="t.score" class="score num">{{ scoreText(t.score) }}</span>
         </p>
         <p class="pv num">{{ line }}</p>
         <p class="meta num">depth {{ t.depth }} · {{ nps }}</p>

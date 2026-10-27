@@ -37,7 +37,7 @@ const phases = computed(() => [
 ]);
 const speeds = computed(() =>
   props.profile.accuracy.by_speed
-    .filter((s) => s.speed && s.accuracy !== null)
+    .filter((s) => s.speed && s.accuracy != null)
     .map((s) => ({ label: speedName[s.speed!], value: s.accuracy, note: plural(s.reviewed, "game") })),
 );
 
@@ -70,7 +70,7 @@ const classRows = computed(() =>
   })),
 );
 
-const seconds = (ms: number | null) => (ms === null ? "—" : `${(ms / 1000).toFixed(1)} s`);
+const seconds = (ms: number | null | undefined) => (ms == null ? "—" : `${(ms / 1000).toFixed(1)} s`);
 
 const boardTo = (game: GameId, ply?: number) => ({
   path: "/",
@@ -92,7 +92,7 @@ async function playOut(spot: WeakSpot) {
       white: whiteToMove ? "you" : "dameless",
       black: whiteToMove ? "dameless" : "you",
       time: readClock(clock.value) ?? { type: "clock", initial_ms: 300_000, increment_ms: 3000 },
-      from: { fen: spot.fen, moves: [] },
+      from: { type: "position", fen: spot.fen, moves: [] },
     });
     await router.push({ path: "/", query: { game: String(s.id) } });
   } catch (e) {
@@ -129,7 +129,7 @@ const gameMoments = computed(() => {
         <div class="fig">
           <dt>Score</dt>
           <dd>
-            {{ percent(profile.results.overall.score) }}<small v-if="profile.results.overall.score !== null"> %</small>
+            {{ percent(profile.results.overall.score) }}<small v-if="profile.results.overall.score != null"> %</small>
           </dd>
         </div>
         <div class="fig">
@@ -142,7 +142,7 @@ const gameMoments = computed(() => {
         </div>
         <div class="fig">
           <dt><Term k="performance" /></dt>
-          <dd>{{ profile.opponents.performance === null ? "—" : Math.round(profile.opponents.performance) }}</dd>
+          <dd>{{ profile.opponents.performance == null ? "—" : Math.round(profile.opponents.performance) }}</dd>
         </div>
         <div class="fig">
           <dt>Win streak</dt>
@@ -167,7 +167,7 @@ const gameMoments = computed(() => {
           <span
             class="meter-bar"
             role="img"
-            :aria-label="`${row.label} accuracy ${row.value === null ? 'unknown' : percent(row.value)}`"
+            :aria-label="`${row.label} accuracy ${row.value == null ? 'unknown' : percent(row.value)}`"
           >
             <span class="meter-fill" :style="{ inlineSize: `${Math.max(0, Math.min(100, row.value ?? 0))}%` }"></span>
           </span>

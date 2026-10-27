@@ -47,6 +47,7 @@ pub struct Status {
 
 /// What the app runs on.
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = MachineInfo)]
 pub struct Machine {
     pub os: Option<String>,
     pub cpu: Option<String>,
@@ -76,8 +77,9 @@ pub struct EngineCheckout {
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct BuildsOnDisk {
-    /// Build folders.
+    /// Builds (folders holding an engine binary).
     pub count: u32,
+    /// Everything under the builds directory: the builds, the nets they embed and cargo's cache.
     pub bytes: u64,
 }
 
@@ -155,7 +157,7 @@ async fn engine_checkout(dir: &Path) -> EngineCheckout {
     }
 }
 
-/// The folders directly under `dir` and the bytes of everything in it.
+/// The builds directly under `dir` and the bytes of everything in it.
 fn disk_usage(dir: &Path) -> BuildsOnDisk {
     fn bytes(path: &Path) -> u64 {
         match std::fs::symlink_metadata(path) {
@@ -166,7 +168,11 @@ fn disk_usage(dir: &Path) -> BuildsOnDisk {
             Err(_) => 0,
         }
     }
-    let count = std::fs::read_dir(dir).map(|rd| rd.flatten().filter(|e| e.path().is_dir()).count()).unwrap_or(0);
+    // A build is a folder holding the engine; `networks` and cargo's `target` cache are not builds, though their
+    // bytes count as the disk the builds take.
+    let count = std::fs::read_dir(dir)
+        .map(|rd| rd.flatten().filter(|e| e.path().join(dameless_engine::exe("reckless")).is_file()).count())
+        .unwrap_or(0);
     BuildsOnDisk { count: count as u32, bytes: bytes(dir) }
 }
 

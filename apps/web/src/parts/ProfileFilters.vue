@@ -8,11 +8,11 @@ import { speedName } from "../format";
 const filter = defineModel<ProfileFilter>({ required: true });
 
 const speed = computed({
-  get: () => filter.value.speeds[0] ?? "all",
+  get: () => filter.value.speeds?.[0] ?? "all",
   set: (v: string | undefined) => (filter.value = { ...filter.value, speeds: !v || v === "all" ? [] : [v as Speed] }),
 });
 const rated = computed({
-  get: () => (filter.value.rated === null ? "both" : filter.value.rated ? "rated" : "casual"),
+  get: () => (filter.value.rated == null ? "both" : filter.value.rated ? "rated" : "casual"),
   set: (v: string | undefined) =>
     (filter.value = { ...filter.value, rated: v === "rated" ? true : v === "casual" ? false : null }),
 });

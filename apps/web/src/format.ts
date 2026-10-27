@@ -101,7 +101,7 @@ export function duration(seconds: number): string {
 }
 
 /** The result as a score line: `1-0`, `0-1`, `½-½`, or `*` while it runs. */
-export function resultText(outcome: Outcome | null): string {
+export function resultText(outcome: Outcome | null | undefined): string {
   if (outcome === "white_wins") return "1-0";
   if (outcome === "black_wins") return "0-1";
   if (outcome === "draw") return "½-½";
@@ -109,7 +109,7 @@ export function resultText(outcome: Outcome | null): string {
 }
 
 /** A side's score in a finished game: 1, ½ or 0. */
-export function sideResult(outcome: Outcome | null, side: Side): "1" | "½" | "0" | null {
+export function sideResult(outcome: Outcome | null | undefined, side: Side): "1" | "½" | "0" | null {
   if (!outcome) return null;
   if (outcome === "draw") return "½";
   return (outcome === "white_wins") === (side === "white") ? "1" : "0";

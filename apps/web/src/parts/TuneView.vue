@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ETable } from "@eos-ui/vue/components/ETable";
-import type { TuneState } from "../api/types";
+import type { TuneDetail } from "../api/types";
 import { signed } from "../format";
 import { tuneCost, tuneCostText } from "../sheets/tune";
 import { usePolicy } from "../stores/policy";
@@ -14,19 +14,32 @@ import Term from "./Term.vue";
  * A tune's trajectory: each constant's value through the iterations, as a share of its range so they share one scale,
  * and a table of where each started and where it is now. Pick a constant to draw its line in colour.
  */
-const props = defineProps<{ tune: TuneState; running: boolean }>();
+const props = defineProps<{ tune: TuneDetail; running: boolean }>();
 
 const policy = usePolicy();
 const picked = ref<string | null>(null);
 
 const steps = computed(() => props.tune.steps);
+/**
+ * Each constant with where it started, where it is now (the last step's value) and its range. The range and start
+ * come from the tuned branch's build; when it is not there the start is the first step's value and the range unknown.
+ */
+const params = computed(() =>
+  props.tune.params.map((p, i) => {
+    const first = steps.value[0]?.values[i];
+    const start = p.start ?? first ?? 0;
+    const value = steps.value.at(-1)?.values[i] ?? start;
+    return { name: p.name, start, value, min: p.min ?? null, max: p.max ?? null };
+  }),
+);
 const x = computed(() => steps.value.map((s) => s.iteration));
 const series = computed<ChartSeries[]>(() =>
-  props.tune.params.map((p, i) => ({
+  params.value.map((p, i) => ({
     label: p.name,
     values: steps.value.map((s) => {
       const v = s.values[i];
-      return v === undefined ? null : (100 * (v - p.start)) / (p.max - p.min || 1);
+      const span = p.max != null && p.min != null ? p.max - p.min : Math.abs(p.start);
+      return v === undefined ? null : (100 * (v - p.start)) / (span || 1);
     }),
     color: picked.value === p.name ? "--e-primary" : "--e-muted",
     width: picked.value === p.name ? 2.5 : 1,
@@ -42,7 +55,7 @@ const cost = computed(() =>
   tuneCost(props.tune.spec.iterations - done.value, props.tune.spec.pairs, policy.status?.cores ?? 8),
 );
 const rows = computed(() =>
-  props.tune.params.map((p) => {
+  params.value.map((p) => {
     const change = p.value - p.start;
     return { ...p, change, percent: p.start ? (100 * change) / p.start : 0 };
   }),
@@ -92,7 +105,7 @@ const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
           <td class="e-num">
             {{ signed(r.change, 1) }} <small class="muted">{{ signed(r.percent, 0) }}%</small>
           </td>
-          <td class="e-num muted">{{ r.min }}–{{ r.max }}</td>
+          <td class="e-num muted">{{ r.min != null && r.max != null ? `${r.min}–${r.max}` : "—" }}</td>
         </tr>
       </tbody>
     </ETable>

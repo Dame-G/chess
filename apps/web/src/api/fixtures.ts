@@ -10,6 +10,7 @@ import { makeFen } from "chessops/fen";
 import { parseSan } from "chessops/san";
 import { makeUci } from "chessops/util";
 import { playUci, setup, uciOf } from "../board/position";
+import { error, reply } from "./fixtures-http";
 import { createSheetRoutes } from "./fixtures-sheets";
 import { fixtureMode } from "./mode";
 import type {
@@ -26,6 +27,7 @@ import type {
   Idea,
   Judgement,
   Move,
+  NewGameRequest,
   Phase,
   Review,
   ReviewedMove,
@@ -385,11 +387,12 @@ const summaryOf = (t: Trial): TrialSummary => ({
   id: t.id,
   stage: t.stage,
   status: t.status,
-  time: t.time,
-  penta: t.penta,
-  llr: t.llr,
-  elo: t.elo,
-  detail: t.detail,
+  preset: t.preset ?? null,
+  bounds: t.bounds ?? null,
+  pairs: t.penta.reduce((a, b) => a + b, 0),
+  llr: t.llr ?? null,
+  elo: t.elo ?? null,
+  detail: t.detail ?? null,
 });
 
 const ideas: Idea[] = [
@@ -993,14 +996,35 @@ const status: Status = {
   policy: fairplay
     ? { assist: "off", reason: "Analysis is off while you're playing on Lichess" }
     : { assist: "allowed", reason: null },
+  machine: {
+    os: "Windows 11 Home",
+    cpu: "Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz",
+    physical_cores: 8,
+    logical_cores: 16,
+    memory_bytes: 34_359_738_368,
+    data_dir: "C:\\Users\\you\\AppData\\Local\\dameless",
+    engine: { dir: "C:\\dev\\reckless", found: true, branch: "main", commit: "4f1c2a9e", dirty: false },
+    builds: { count: 9, bytes: 412_000_000 },
+  },
+  ledger: {
+    total: 15,
+    granted: 12,
+    reserved: 0,
+    free: 3,
+    oversubscribed: false,
+    grants: [{ work: 1, cores: 12 }],
+    reservations: [],
+    gpus: 0,
+    gpu_grants: [],
+  },
+  lichess_url: "https://lichess.org",
+  next_event: 1,
 };
 
 const sheetRoutes = createSheetRoutes({
   minutesAgo,
   rng,
   emit,
-  json,
-  error,
   ideas,
   trials,
   versions,
@@ -1192,7 +1216,14 @@ function trialLoop() {
     const pairs = t.penta.reduce((a, b) => a + b, 0);
     t.llr = { value: Math.round((t.llr!.value + (r() - 0.45) * 0.05) * 100) / 100, lower: -2.94, upper: 2.94 };
     t.detail = `${pairs} pairs so far: ${t.elo!.elo >= 0 ? "+" : "−"}${Math.abs(t.elo!.elo).toFixed(1)} ± 5.9 Elo.`;
-    emit("trial.progress", "ideas", { id: 3, penta: t.penta, wdl: t.wdl, llr: t.llr, elo: t.elo });
+    emit("trial.progress", `idea:${t.idea}`, {
+      id: 3,
+      idea: t.idea,
+      penta: t.penta,
+      wdl: t.wdl,
+      llr: t.llr,
+      elo: t.elo,
+    });
     w.progress = {
       done: pairs,
       total: null,
@@ -1258,7 +1289,7 @@ function startEval(body: { fen: string; moves: string[]; multipv?: number }): st
   return session;
 }
 
-function queueReview(ids: GameId[]) {
+function queueReview(ids: GameId[]): Work {
   const id = Math.max(...work.map((w) => w.id)) + 1;
   const w: Work = {
     id,
@@ -1282,7 +1313,7 @@ function queueReview(ids: GameId[]) {
     const game = ids[done]!;
     reviewGame(game);
     const s = games.get(game)!.game.summary;
-    emit("review.upserted", "games", { game, accuracy: s.accuracy! });
+    emit("review.upserted", "games", { game, accuracy: { ...s.accuracy! } });
     emit("game.upserted", "games", { ...s });
     done++;
     w.progress = { done, total: ids.length, unit: "games", eta_seconds: 4 * (ids.length - done), text: null };
@@ -1294,6 +1325,7 @@ function queueReview(ids: GameId[]) {
     if (done < ids.length) setTimeout(step, 4000);
   };
   setTimeout(step, 4000);
+  return { ...w };
 }
 
 function act(g: Game, action: SeatAction, body: { uci?: string }): Response | undefined {
@@ -1342,22 +1374,16 @@ function act(g: Game, action: SeatAction, body: { uci?: string }): Response | un
 }
 
 let nextGameId = 500;
-function newGame(body: {
-  time?: TimeControl;
-  white?: string;
-  color?: Side | "random";
-  version?: number;
-  from?: { fen: string; moves: string[] };
-}) {
-  const tc = body.time ?? clockTc(5, 3);
-  const side: Side =
-    body.color === "random" ? (Math.random() < 0.5 ? "white" : "black") : body.white === "dameless" ? "black" : "white";
-  const version = body.version ?? 14;
+function newGame(body: NewGameRequest): Game {
+  const tc = body.time;
+  const side: Side = body.white === "you" ? "white" : "black";
+  // `dameless`, `dameless:#<id>`, `dameless@<level>`: the fixtures play v14 whatever is asked.
+  const version = 14;
   let startFen: string | null = null;
-  if (body.from) {
+  if (body.from?.type === "position") {
     const pos = setup(body.from.fen);
     if (pos) {
-      for (const m of body.from.moves) playUci(pos, m);
+      for (const m of body.from.moves ?? []) playUci(pos, m);
       startFen = makeFen(pos.toSetup());
     }
   }
@@ -1386,17 +1412,10 @@ function newGame(body: {
       if (uci) playMove(g, uci, 1600, { cp: 20 });
     });
   }
-  return s;
+  return clone(g);
 }
 
 // ---- Routing
-
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
-}
-function error(status: number, code: string, message: string): Response {
-  return json({ error: { code, message } }, status);
-}
 
 const clone = <T>(v: T): T => structuredClone(v);
 
@@ -1415,45 +1434,62 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
 
   let m: RegExpMatchArray | null;
   if (method === "GET") {
-    if (path === "/api/health") return json({ ok: true });
-    if (path === "/api/status") return json(status);
-    if (path === "/api/games") return json([...games.values()].map((s) => clone(s.game.summary)));
+    if (path === "/api/health") return reply("/api/health", "get", { ok: true, version: status.version });
+    if (path === "/api/status") return reply("/api/status", "get", clone(status));
+    if (path === "/api/games")
+      return reply(
+        "/api/games",
+        "get",
+        [...games.values()].map((s) => clone(s.game.summary)),
+      );
     if ((m = path.match(/^\/api\/games\/(\d+)$/))) {
       const s = games.get(Number(m[1]));
-      return s ? json(clone(s.game)) : error(404, "not_found", "No such game.");
+      return s ? reply("/api/games/{id}", "get", clone(s.game)) : error(404, "not_found", "No such game.");
     }
     if ((m = path.match(/^\/api\/games\/(\d+)\/review$/))) {
       const s = games.get(Number(m[1]));
-      return s?.review ? json(clone(s.review)) : error(404, "not_found", "This game has not been reviewed.");
+      return s?.review
+        ? reply("/api/games/{id}/review", "get", clone(s.review))
+        : error(404, "not_found", "This game has not been reviewed.");
     }
-    if (path === "/api/ideas") return json(clone(ideas));
+    if (path === "/api/ideas") return reply("/api/ideas", "get", clone(ideas));
     if ((m = path.match(/^\/api\/ideas\/(\d+)$/))) {
       const idea = ideas.find((i) => i.id === Number(m![1]));
-      return idea ? json(clone(idea)) : error(404, "not_found", "No such idea.");
+      return idea ? reply("/api/ideas/{id}", "get", clone(idea)) : error(404, "not_found", "No such idea.");
     }
     if ((m = path.match(/^\/api\/ideas\/(\d+)\/trials\/(\d+)$/))) {
       const t = trials.find((x) => x.id === Number(m![2]));
-      return t ? json(clone(t)) : error(404, "not_found", "No such trial.");
+      return t ? reply("/api/ideas/{id}/trials/{trial}", "get", clone(t)) : error(404, "not_found", "No such trial.");
     }
-    if (path === "/api/work") return json(clone(work));
-    if (path === "/api/connections") return json(clone(connections));
-    if (path === "/api/versions") return json(clone(versions));
+    if (path === "/api/work") {
+      const ended = (w: Work) => w.status === "done" || w.status === "failed" || w.status === "stopped";
+      return reply("/api/work", "get", {
+        running: clone(work.filter((w) => w.status === "running" || w.status === "paused")),
+        queued: clone(work.filter((w) => w.status === "queued")),
+        recent: clone(work.filter(ended)),
+      });
+    }
+    if (path === "/api/connections") return reply("/api/connections", "get", clone(connections));
+    if (path === "/api/versions") return reply("/api/versions", "get", clone(versions));
   }
   if (method === "POST") {
-    if (path === "/api/games") return json(newGame(body as { time?: TimeControl; color?: Side }), 201);
+    if (path === "/api/games") return reply("/api/games", "post", newGame(body as unknown as NewGameRequest), 201);
     if ((m = path.match(/^\/api\/games\/(\d+)\/actions\/(\w+)$/))) {
       const s = games.get(Number(m[1]));
       if (!s) return error(404, "not_found", "No such game.");
-      return act(s.game, m[2] as SeatAction, body as { uci?: string }) ?? json(clone(s.game));
+      return (
+        act(s.game, m[2] as SeatAction, body as { uci?: string }) ??
+        reply("/api/games/{id}/actions/{action}", "post", clone(s.game))
+      );
     }
     if (path === "/api/reviews") {
       if (status.policy.assist !== "allowed") return error(409, "fair_play", status.policy.reason ?? "");
-      queueReview((body["games"] as GameId[]) ?? []);
-      return json({}, 202);
+      return reply("/api/reviews", "post", queueReview((body["games"] as GameId[]) ?? []), 202);
     }
     if (path === "/api/eval") {
       if (status.policy.assist !== "allowed") return error(409, "fair_play", status.policy.reason ?? "");
-      return json({ session: startEval(body as { fen: string; moves: string[] }) });
+      const at = body as { fen: string; moves: string[] };
+      return reply("/api/eval", "post", { session: startEval(at), version: 14, fen: at.fen });
     }
     if ((m = path.match(/^\/api\/work\/(\d+)\/(stop|pause|resume)$/))) {
       const w = work.find((x) => x.id === Number(m![1]));
@@ -1462,13 +1498,13 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
       if (m[2] === "stop") w.ended_at = new Date().toISOString();
       w.paused_for = null;
       emit("work.upserted", "work", { ...w });
-      return json(clone(w));
+      return reply("/api/work/{id}/stop", "post", clone(w));
     }
   }
   if (method === "DELETE" && (m = path.match(/^\/api\/eval\/(\w+)$/))) {
     clearInterval(sessions.get(m[1]!));
     sessions.delete(m[1]!);
-    return new Response(null, { status: 204 });
+    return reply("/api/eval/{session}", "delete", { stopped: true });
   }
   return error(404, "not_found", `The fixtures have no ${method} ${path}.`);
 }

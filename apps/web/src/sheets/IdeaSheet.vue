@@ -7,7 +7,7 @@ import { ELink } from "@eos-ui/vue/components/ELink";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { EStamp } from "@eos-ui/vue/components/EStamp";
 import { ETag } from "@eos-ui/vue/components/ETag";
-import { ago, plusMinus, trialClock } from "../format";
+import { ago, plusMinus } from "../format";
 import IdeaActions from "../parts/IdeaActions.vue";
 import Notes from "../parts/Notes.vue";
 import Term from "../parts/Term.vue";
@@ -15,7 +15,7 @@ import TrialEvidence from "../parts/TrialEvidence.vue";
 import TuneView from "../parts/TuneView.vue";
 import { useIdeas } from "../stores/ideas";
 import { useVersions } from "../stores/versions";
-import { KIND_WORD, pairsOf, PRESET_CLOCK, STAGE_WORD, STATUS_TONE, STATUS_WORD, TRIAL_TONE } from "./idea";
+import { clockOf, KIND_WORD, STAGE_WORD, STATUS_TONE, STATUS_WORD, TRIAL_TONE } from "./idea";
 import SheetFrame from "./SheetFrame.vue";
 
 /**
@@ -63,11 +63,8 @@ watch(
 );
 
 const decider = (t: (typeof trials.value)[number]) =>
-  t.elo ? plusMinus(t.elo) : pairsOf(t.penta) ? `${pairsOf(t.penta).toLocaleString("en-GB")} pairs` : "";
-const clockOf = (t: NonNullable<typeof trial.value>) => {
-  const preset = ideas.trials[t.id]?.preset;
-  return t.time ? trialClock(t.time) : preset ? PRESET_CLOCK[preset] : "";
-};
+  t.elo ? plusMinus(t.elo) : t.pairs ? `${t.pairs.toLocaleString("en-GB")} pairs` : "";
+const trialClockText = (t: NonNullable<typeof trial.value>) => clockOf(t, ideas.trials[t.id]);
 
 const base = computed(() => (idea.value ? versions.name(idea.value.base) : undefined));
 const change = computed(
@@ -128,7 +125,7 @@ const tune = computed(() => ideas.tuneStates[id.value]);
         <div v-if="trial" class="panel" aria-live="polite">
           <h3 class="panel-title">
             {{ STAGE_WORD[trial.stage] }}
-            <span v-if="clockOf(trial)" class="mono sec-note"> · {{ clockOf(trial) }}</span>
+            <span v-if="trialClockText(trial)" class="mono sec-note"> · {{ trialClockText(trial) }}</span>
           </h3>
           <TuneView v-if="trial.stage === 'tune' && tune" :tune="tune" :running="trial.status === 'running'" />
           <ESkeleton v-if="!full && trial.stage !== 'tune'" :lines="4" label="Loading the stage" />

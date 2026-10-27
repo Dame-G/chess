@@ -1,6 +1,6 @@
 import { ref, shallowRef } from "vue";
 import { defineStore } from "pinia";
-import { api } from "../api/client";
+import { client, ok, serverFetch } from "../api/client";
 import { stream } from "../api/stream";
 import type { EvalInfo } from "../api/types";
 import { listen } from "./listen";
@@ -22,6 +22,12 @@ export const useEvaluation = defineStore("evaluation", () => {
   const target = shallowRef<EvalTarget | null>(null);
   const error = ref<string | null>(null);
   let generation = 0;
+  /**
+   * This tab: the server keeps one session per client and a new one replaces the old, so the id outlives a reload
+   * (kept for the tab) and a reloaded page takes over its own search rather than leaving it running.
+   */
+  const clientId = tabId();
+  const end = (s: string) => client.DELETE("/api/eval/{session}", { params: { path: { session: s } } }).catch(() => {});
 
   async function stop() {
     generation++;
@@ -31,7 +37,7 @@ export const useEvaluation = defineStore("evaluation", () => {
     target.value = null;
     if (!s) return;
     stream.unfollow(`eval:${s}`);
-    await api.delete(`/api/eval/${s}`).catch(() => {});
+    await end(s);
   }
 
   async function start(at: EvalTarget, multipv = 3) {
@@ -40,14 +46,13 @@ export const useEvaluation = defineStore("evaluation", () => {
     target.value = at;
     error.value = null;
     try {
-      const res = await api.post<{ session: string }>("/api/eval", {
-        fen: at.fen,
-        moves: at.moves,
-        multipv,
-        budget: { type: "infinite" },
-      });
+      const res = await ok(
+        client.POST("/api/eval", {
+          body: { fen: at.fen, moves: at.moves, multipv, budget: { type: "infinite" }, client: clientId },
+        }),
+      );
       if (mine !== generation) {
-        await api.delete(`/api/eval/${res.session}`).catch(() => {});
+        await end(res.session);
         return;
       }
       session.value = res.session;
@@ -57,9 +62,28 @@ export const useEvaluation = defineStore("evaluation", () => {
     }
   }
 
+  // A closed or reloaded tab stops its search: `keepalive` lets the request outlive the page.
+  addEventListener("pagehide", () => {
+    const s = session.value;
+    if (s) void serverFetch(`/api/eval/${s}`, { method: "DELETE", keepalive: true }).catch(() => {});
+  });
+
   listen("eval.info", (d) => {
     if (d.session === session.value) info.value = d;
   });
 
   return { session, info, target, error, start, stop };
 });
+
+const TAB_KEY = "dameless.tab";
+
+/** An id for this browser tab, kept in its session storage (a fresh one when that is not available). */
+function tabId(): string {
+  const fresh = `tab-${Math.random().toString(36).slice(2, 10)}`;
+  try {
+    const kept = sessionStorage.getItem(TAB_KEY);
+    if (kept) return kept;
+    sessionStorage.setItem(TAB_KEY, fresh);
+  } catch {}
+  return fresh;
+}

@@ -57,7 +57,8 @@ function clockOf(side: Side): { ms: number | null; running: boolean } {
   const first = board.plies[0]?.turn ?? "white";
   for (let i = moves.length - 1; i >= 0; i--) {
     const mover: Side = (i % 2 === 0) === (first === "white") ? "white" : "black";
-    if (mover === side && moves[i]!.clock_ms !== null) return { ms: moves[i]!.clock_ms, running: false };
+    const ms = moves[i]!.clock_ms;
+    if (mover === side && ms != null) return { ms, running: false };
   }
   return { ms: tc.initial_ms, running: false };
 }

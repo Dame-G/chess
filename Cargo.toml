@@ -1,7 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-exclude = ["trainer"]
+# Data directories in the repo hold engine worktrees, which cargo must not take for members of this workspace.
+exclude = ["trainer", "data", ".data", ".data-web"]
 
 [workspace.package]
 version = "0.1.0"

@@ -5,11 +5,13 @@ import { EActions } from "@eos-ui/vue/components/EActions";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ECopyButton } from "@eos-ui/vue/components/ECopyButton";
 import { EDescriptionList } from "@eos-ui/vue/components/EDescriptionList";
+import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
+import { EStamp } from "@eos-ui/vue/components/EStamp";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { EStack } from "@eos-ui/vue/components/EStack";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import { connect, connection } from "../api/client";
-import type { ConnectionKey, PruneResult } from "../api/types";
+import type { ConnectionKey, HealthLevel, Pruned } from "../api/types";
 import { bytes, plural } from "../format";
 import ConfirmDialog from "../parts/ConfirmDialog.vue";
 import { choice, type Choice } from "../scheme";
@@ -20,8 +22,9 @@ import SheetFrame from "./SheetFrame.vue";
 
 /**
  * Settings: the two Lichess connections (your login, the bot's token), the machine (cores, the engine checkout, the
- * binaries kept and the disk they take), the theme, and the token the hosted app needs. Logging out and disconnecting
- * ask first; so does freeing disk space, after saying what it would free.
+ * binaries kept and the disk they take), its health (what the work needs and whether it is there), whether the harness
+ * can be trusted here, the theme, and the token the hosted app needs. Logging out and disconnecting ask first; so do
+ * freeing disk space, after saying what it would free, and checking the harness, which plays games for a while.
  */
 const policy = usePolicy();
 const connections = useConnections();
@@ -37,6 +40,8 @@ const themes: { value: Choice; label: string }[] = [
 onMounted(() => {
   void dameless.loadMachine().catch(() => {});
   void dameless.loadToken().catch(() => {});
+  void dameless.loadHealth().catch(() => {});
+  void dameless.loadHarness().catch(() => {});
 });
 
 async function attempt<T>(title: string, action: () => Promise<T>): Promise<T | undefined> {
@@ -52,7 +57,7 @@ async function attempt<T>(title: string, action: () => Promise<T>): Promise<T | 
 
 const you = computed(() => connections.you);
 const bot = computed(() => connections.bot);
-const stateWord = (c: { configured: boolean; state: string; error: string | null }) =>
+const stateWord = (c: { configured: boolean; state: string; error?: string | null }) =>
   !c.configured
     ? "Not linked"
     : c.state === "online"
@@ -145,15 +150,35 @@ const machineItems = computed(() => {
   ];
 });
 
+// ---- Health and the harness
+
+const LEVEL: Record<HealthLevel, { tone: "success" | "info" | "warning" | "danger"; word: string }> = {
+  ok: { tone: "success", word: "Ready" },
+  info: { tone: "info", word: "Note" },
+  warn: { tone: "warning", word: "Check" },
+  fail: { tone: "danger", word: "Missing" },
+};
+const harness = computed(() => dameless.harness);
+const checking = ref(false);
+const checkBusy = ref(false);
+async function checkHarness() {
+  checkBusy.value = true;
+  const idea = await attempt("The check did not start", () => dameless.checkHarness());
+  checkBusy.value = false;
+  if (!idea) return;
+  checking.value = false;
+  toast.show({ title: "Checking the harness", message: "The status line shows how it goes.", tone: "info" });
+}
+
 const pruning = ref(false);
-const plan = ref<PruneResult | null>(null);
+const plan = ref<Pruned | null>(null);
 const pruneBusy = ref(false);
 async function planPrune() {
   pruneBusy.value = true;
   const r = await attempt("The check did not work", () => dameless.prune(true));
   pruneBusy.value = false;
   if (!r) return;
-  if (r.builds === 0) {
+  if (r.builds.length === 0) {
     toast.show({ title: "Nothing to free", message: "Every binary kept is the newest of its version.", tone: "info" });
     return;
   }
@@ -168,7 +193,7 @@ async function prune() {
     pruning.value = false;
     toast.show({
       title: `Freed ${bytes(r.bytes)}`,
-      message: `${plural(r.builds, "old binary", "old binaries")} removed.`,
+      message: `${plural(r.builds.length, "old binary", "old binaries")} removed.`,
       tone: "success",
     });
   }
@@ -242,6 +267,52 @@ function pair() {
       <p class="sec-note">Old engine binaries are rebuilt when needed. The newest of each version is kept.</p>
     </section>
 
+    <section class="sec" aria-labelledby="s-health">
+      <h2 id="s-health" class="part-title">Health</h2>
+      <ESkeleton v-if="!dameless.health" :lines="3" label="Checking the machine" />
+      <ul v-else class="plain health">
+        <li v-for="item in dameless.health.items" :key="item.key" class="health-item">
+          <EStamp size="sm" :tone="LEVEL[item.level].tone" :label="LEVEL[item.level].word" />
+          <div class="health-text">
+            <p class="health-title">{{ item.title }}</p>
+            <p class="sec-note">{{ item.detail }}</p>
+            <p v-if="item.action" class="sec-note">
+              {{ item.action.label }}: <code class="mono">{{ item.action.command }}</code>
+            </p>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <section class="sec" aria-labelledby="s-harness">
+      <h2 id="s-harness" class="part-title">The harness</h2>
+      <ESkeleton v-if="!harness" :lines="2" label="Reading the last check" />
+      <template v-else>
+        <p class="harness-line">
+          <EStamp
+            size="sm"
+            :tone="harness.running != null ? 'info' : harness.trusted ? 'success' : 'warning'"
+            :label="harness.running != null ? 'Checking' : harness.trusted ? 'Trusted' : 'Not checked here'"
+          />
+          <span>{{ harness.summary }}</span>
+        </p>
+        <div class="sheet-actions">
+          <EButton
+            variant="outline"
+            :disabled="harness.running != null"
+            :loading="checkBusy && !checking"
+            @click="checking = true"
+          >
+            Check the harness
+          </EButton>
+        </div>
+        <p class="sec-note">
+          Plays the champion against an identical copy. A change that does nothing should not pass; if it does, the
+          results on this machine are not to be trusted.
+        </p>
+      </template>
+    </section>
+
     <section class="sec" aria-labelledby="s-look">
       <h2 id="s-look" class="part-title">Appearance</h2>
       <ESegmented v-model="choice" label="Theme" :options="themes" />
@@ -301,10 +372,21 @@ function pair() {
     </ConfirmDialog>
 
     <ConfirmDialog
+      v-model:open="checking"
+      title="Check the harness?"
+      description="The champion plays an identical copy of itself, at short games, until the test decides."
+      confirm="Start the check"
+      :busy="checkBusy"
+      @confirm="checkHarness"
+    >
+      <p class="text">It takes the machine's cores for a while, usually under an hour. Other work waits its turn.</p>
+    </ConfirmDialog>
+
+    <ConfirmDialog
       v-model:open="pruning"
       title="Free disk space?"
       :description="
-        plan ? `${plural(plan.builds, 'old binary', 'old binaries')}, about ${bytes(plan.bytes)}.` : undefined
+        plan ? `${plural(plan.builds.length, 'old binary', 'old binaries')}, about ${bytes(plan.bytes)}.` : undefined
       "
       :confirm="plan ? `Free ${bytes(plan.bytes)}` : 'Free'"
       :busy="pruneBusy"
@@ -339,5 +421,42 @@ function pair() {
 
 .text {
   margin: 0;
+}
+
+/* The stamps share a column, as wide as the widest, so every title starts at one edge. */
+.health {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--e-gap-snug);
+}
+
+.health-item {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+}
+
+.harness-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--e-gap-snug);
+  margin: 0;
+}
+
+.health-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.health-title {
+  margin: 0;
+}
+
+.health-text .sec-note {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 </style>

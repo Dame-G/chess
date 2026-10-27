@@ -1,6 +1,6 @@
 import type { Leader, Profile } from "./types";
 
-type Pick = (p: Profile) => number | null;
+type Pick = (p: Profile) => number | null | undefined;
 
 /** The rows that have a leader, as `core::profile::leaders` defines them: `true` is higher-is-better. */
 const ROWS: [Leader["row"], Pick, boolean][] = [
@@ -24,7 +24,7 @@ const ROWS: [Leader["row"], Pick, boolean][] = [
  */
 export function leaders(profiles: readonly Profile[]): Leader[] {
   return ROWS.map(([row, pick, higher]) => {
-    const values = profiles.map(pick);
+    const values = profiles.map((p) => pick(p) ?? null);
     const present = values.filter((v): v is number => v !== null);
     if (present.length < 2) return { row, players: [] };
     const best = present.reduce((a, b) => (higher ? Math.max(a, b) : Math.min(a, b)));

@@ -4,10 +4,16 @@
 //!   another website whose name was made to point at 127.0.0.1 (DNS rebinding) sends its own name, and is refused.
 //! - **Origin.** A request a browser sends from a page carries its origin, which must be the app's own (the UI it
 //!   serves) or the hosted UI (`https://chess.dame.gg`). Any other website is refused, token or not.
-//! - **Token.** Every API request carries the bearer token, except the health check and the Lichess login's callback
-//!   (a browser arriving from lichess.org has none; the login's single-use `state` is its proof). The UI the app serves
-//!   gets the token in its page (see `web`); the CLI reads it from the data directory; the hosted UI is given it once,
-//!   by hand. An `EventSource` cannot send headers, so the event stream also takes it as `?token=`.
+//! - **Token.** Every API request carries the bearer token, except the health check, the Lichess login's callback (a
+//!   browser arriving from lichess.org has none; the login's single-use `state` is its proof) and the app's own page.
+//!   The CLI reads it from the data directory; the hosted UI is given it once, by hand. An `EventSource` cannot send
+//!   headers, so the event stream also takes it as `?token=`.
+//! - **The app's own page.** Bound to loopback, a request the browser marks `Sec-Fetch-Site: same-origin`, whose
+//!   `Origin` (when it sends one) is `http://<its Host>`, comes from a page this app served on this machine, and needs
+//!   no token. A browser sets `Sec-Fetch-Site` itself and no page can forge it, so another website's requests are
+//!   `cross-site` and still need the token; a rebound name is refused by the `Host` check first. A program on this
+//!   machine could send the header, but it could as well read the token from the page (see `web`), so this lets in
+//!   nobody who could not already get in. The page also carries the token, for browsers that send no `Sec-Fetch-Site`.
 //! - Bound to anything else (a box behind a tunnel): only the token counts.
 //!
 //! The token is compared in constant time.
@@ -16,7 +22,7 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Request, State},
-    http::{HeaderMap, header},
+    http::{HeaderMap, HeaderName, header},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -57,13 +63,20 @@ pub fn check(
     let get = |name| headers.get(name).and_then(|v| v.to_str().ok());
     let bearer = get(header::AUTHORIZATION).and_then(|v| v.strip_prefix("Bearer ")).map(str::to_owned);
     let token_ok = bearer.or(query_token).is_some_and(|given| same_secret(given.trim(), token));
-    if loopback && let Some(origin) = get(header::ORIGIN) {
-        let own = get(header::HOST).is_some_and(|host| origin.strip_prefix("http://") == Some(host));
-        if !own && origin != hosted {
-            return Err(Error::Forbidden(format!("requests from {origin} are not answered")));
-        }
+    let host = get(header::HOST).filter(|host| is_loopback_host(host));
+    let origin = get(header::ORIGIN);
+    let own_origin = origin.is_some_and(|origin| host.is_some() && origin.strip_prefix("http://") == host);
+    if loopback
+        && let Some(origin) = origin
+        && !own_origin
+        && origin != hosted
+    {
+        return Err(Error::Forbidden(format!("requests from {origin} are not answered")));
     }
-    if token_ok { Ok(()) } else { Err(Error::Unauthorized("the API token is missing or wrong".into())) }
+    // The app's own page: same-origin by the browser's word, on a loopback name, with no other origin.
+    let same_origin = get(HeaderName::from_static("sec-fetch-site")) == Some("same-origin");
+    let own_page = loopback && host.is_some() && same_origin && (origin.is_none() || own_origin);
+    if token_ok || own_page { Ok(()) } else { Err(Error::Unauthorized("the API token is missing or wrong".into())) }
 }
 
 /// `token=<t>` in a query string.
@@ -129,6 +142,35 @@ mod tests {
             Ok(())
         );
         assert_eq!(ask(false, &[host], None), Err(401));
+    }
+
+    #[test]
+    fn the_apps_own_page_needs_no_token() {
+        let host = ("host", "127.0.0.1:7979");
+        let same = ("sec-fetch-site", "same-origin");
+        // A GET or an EventSource from the page: the browser sends no Origin, only Sec-Fetch-Site.
+        assert_eq!(ask(true, &[host, same], None), Ok(()));
+        // A POST from the page carries its origin, which is the app's own.
+        assert_eq!(ask(true, &[host, same, ("origin", "http://127.0.0.1:7979")], None), Ok(()));
+        assert_eq!(ask(true, &[("host", "localhost:7979"), same, ("origin", "http://localhost:7979")], None), Ok(()));
+        // The page under another loopback name than the one it calls is another origin.
+        assert_eq!(ask(true, &[host, same, ("origin", "http://localhost:7979")], None), Err(403));
+        // The hosted UI is cross-site and still needs the token.
+        assert_eq!(ask(true, &[host, ("sec-fetch-site", "cross-site"), ("origin", HOSTED)], None), Err(401));
+        assert_eq!(ask(true, &[host, same, ("origin", HOSTED)], None), Err(401));
+        // Another website's <img> or form: cross-site, no token.
+        assert_eq!(ask(true, &[host, ("sec-fetch-site", "cross-site")], None), Err(401));
+        assert_eq!(ask(true, &[host, ("sec-fetch-site", "same-site")], None), Err(401));
+        // A typed address or a bookmark (`none`) is not the page.
+        assert_eq!(ask(true, &[host, ("sec-fetch-site", "none")], None), Err(401));
+        // A rebound name is never the app's own, even same-origin.
+        assert_eq!(ask(true, &[("host", "evil.example:7979"), same], None), Err(401));
+        assert_eq!(
+            ask(true, &[("host", "evil.example:7979"), same, ("origin", "http://evil.example:7979")], None),
+            Err(403)
+        );
+        // Not on loopback, only the token counts.
+        assert_eq!(ask(false, &[("host", "box.example"), same], None), Err(401));
     }
 
     #[test]

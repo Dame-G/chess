@@ -1,3 +1,5 @@
+import type { TuneSpec } from "../api/types";
+
 /** Seconds one scaled short game takes, wall clock, on one core. A rough figure, enough to say "hours" or "minutes". */
 const SECONDS_PER_GAME = 25;
 
@@ -25,4 +27,20 @@ export function tuneCostText(cost: TuneCost): string {
       ? " Reckless's own tunes play 95,000 games or more, so this shows the idea works, not a finished tune."
       : "";
   return `${cost.games.toLocaleString("en-GB")} games, ${when} on this machine.${note}`;
+}
+
+/**
+ * A tune's settings when the form names only the parameters, iterations and pairs: OpenBench's defaults at STC, as
+ * `core::spsa::TuneSpec::default` holds them (the server wants every field).
+ */
+export function tuneSpec(over: Pick<TuneSpec, "params" | "iterations" | "pairs">): TuneSpec {
+  return {
+    time: { type: "clock", initial_ms: 8_000, increment_ms: 80 },
+    hash: 16,
+    concurrency: null,
+    alpha: 0.602,
+    gamma: 0.101,
+    a_ratio: 0.1,
+    ...over,
+  };
 }

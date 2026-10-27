@@ -1,7 +1,7 @@
 import { ref } from "vue";
 import { defineStore } from "pinia";
-import { api } from "../api/client";
-import type { DamelessOverview, Machine, PruneResult, Status } from "../api/types";
+import { client, ok } from "../api/client";
+import type { DamelessView, HarnessStatus, Health, LevelsOverview, MachineInfo, Pruned } from "../api/types";
 import { listen, reloadOnReconnect } from "./listen";
 
 /**
@@ -9,30 +9,55 @@ import { listen, reloadOnReconnect } from "./listen";
  * Dameless sheet opens and again when a version or an idea changes under it.
  */
 export const useDameless = defineStore("dameless", () => {
-  const overview = ref<DamelessOverview | null>(null);
-  const machine = ref<Machine | null>(null);
+  const overview = ref<DamelessView | null>(null);
+  const machine = ref<MachineInfo | null>(null);
   const token = ref<string | null>(null);
+  /** The strength ladder (`dameless@<level>` seats) with each level's rating, and the level suggested for You. */
+  const levels = ref<LevelsOverview | null>(null);
+  /** What the machine has and lacks for the work (Settings › Health): fastchess, the book, the engine, the disk… */
+  const health = ref<Health | null>(null);
+  /** Whether results on this machine can be trusted: the last check of the harness, and one running. */
+  const harness = ref<HarnessStatus | null>(null);
   let wanted = false;
 
   async function load() {
     wanted = true;
-    overview.value = await api.get<DamelessOverview>("/api/dameless");
+    overview.value = await ok(client.GET("/api/dameless"));
   }
 
   async function loadMachine() {
-    machine.value = (await api.get<Status>("/api/status")).machine ?? null;
+    machine.value = (await ok(client.GET("/api/status"))).machine;
+  }
+
+  async function loadHealth() {
+    health.value = await ok(client.GET("/api/diagnostics"));
+  }
+
+  async function loadHarness() {
+    harness.value = await ok(client.GET("/api/harness"));
+  }
+
+  /** Starts a check of the harness (an idea, tag `harness`): `main` against a branch identical to it. */
+  async function checkHarness(pairs?: number) {
+    const idea = await ok(client.POST("/api/harness/check", { body: { pairs: pairs ?? null } }));
+    await loadHarness();
+    return idea;
+  }
+
+  async function loadLevels() {
+    levels.value = await ok(client.GET("/api/levels"));
   }
 
   async function loadToken() {
-    token.value = (await api.get<{ token: string }>("/api/token")).token;
+    token.value = (await ok(client.GET("/api/token"))).token;
   }
 
   /** Pushes the fork's `main` to `origin`: explicit, never automatic. */
-  const push = () => api.post<{ remote: string; head: string }>("/api/dameless/push");
+  const push = () => ok(client.POST("/api/dameless/push"));
 
   /** Frees the binaries nothing uses; with `dry_run` only says how many and how much. */
-  async function prune(dryRun: boolean): Promise<PruneResult> {
-    const result = await api.post<PruneResult>("/api/builds/prune", { dry_run: dryRun });
+  async function prune(dryRun: boolean): Promise<Pruned> {
+    const result = await ok(client.POST("/api/builds/prune", { body: { dry_run: dryRun } }));
     if (!dryRun) await loadMachine();
     return result;
   }
@@ -40,9 +65,31 @@ export const useDameless = defineStore("dameless", () => {
   const again = () => {
     if (wanted) void load().catch(() => {});
   };
+  listen("levels.updated", () => {
+    if (levels.value) void loadLevels().catch(() => {});
+  });
   listen("version.upserted", again);
-  listen("idea.upserted", again);
+  listen("idea.upserted", (idea) => {
+    again();
+    if (harness.value && idea.tags.includes("harness")) void loadHarness().catch(() => {});
+  });
   reloadOnReconnect(async () => again());
 
-  return { overview, machine, token, load, loadMachine, loadToken, push, prune };
+  return {
+    overview,
+    machine,
+    token,
+    levels,
+    health,
+    harness,
+    load,
+    loadMachine,
+    loadLevels,
+    loadHealth,
+    loadHarness,
+    checkHarness,
+    loadToken,
+    push,
+    prune,
+  };
 });

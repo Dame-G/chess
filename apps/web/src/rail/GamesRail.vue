@@ -6,7 +6,7 @@ import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import type { GameId, TrialId } from "../api/types";
-import { trialClock } from "../format";
+import { clockOf } from "../sheets/idea";
 import { useBoard } from "../board/board";
 import { useGames } from "../stores/games";
 import { useIdeas } from "../stores/ideas";
@@ -39,10 +39,9 @@ function trialTitle(row: Extract<RailRow, { type: "trial" }>) {
   const { idea, trial } = found;
   const dev = versions.name(idea.version) ?? idea.branch;
   const base = versions.name(idea.base) ?? "the champion";
-  const pairs = trial.penta.reduce((a, b) => a + b, 0);
   return {
     title: `${dev} vs ${base}`,
-    detail: [stageLabel[trial.stage], trial.time ? trialClock(trial.time) : null, `${pairs} pairs`]
+    detail: [stageLabel[trial.stage], clockOf(trial, ideas.trials[trial.id]), `${trial.pairs} pairs`]
       .filter(Boolean)
       .join(" · "),
   };

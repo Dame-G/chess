@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { api } from "../api/client";
+import { client, ok } from "../api/client";
 import type { Version, VersionId } from "../api/types";
 import { listen, reloadOnReconnect } from "./listen";
 
@@ -23,7 +23,7 @@ export const useVersions = defineStore("versions", () => {
   const name = (id: VersionId | null | undefined) => (id == null ? undefined : versions.value[id]?.name);
 
   async function load() {
-    const all = await api.get<Version[]>("/api/versions");
+    const all = await ok(client.GET("/api/versions"));
     const next: Record<VersionId, Version> = {};
     for (const v of all) next[v.id] = v;
     versions.value = next;

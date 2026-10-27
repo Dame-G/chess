@@ -49,7 +49,7 @@ export function parseAddress(query: Query): CompareAddress {
 export function addressQuery(a: CompareAddress): Record<string, string> {
   const q: Record<string, string> = { players: a.players.join(",") };
   if (a.speeds.length) q["speeds"] = a.speeds.join(",");
-  if (a.rated !== null) q["rated"] = String(a.rated);
+  if (a.rated != null) q["rated"] = String(a.rated);
   if (a.limit !== DEFAULT_LIMIT) q["limit"] = String(a.limit);
   return q;
 }
@@ -80,7 +80,7 @@ interface RowSpec {
   term?: TermKey;
   /** The row of `Comparison.leaders` that tints the leader's cell. */
   leader?: LeaderRow;
-  get: (p: Profile) => number | null;
+  get: (p: Profile) => number | null | undefined;
   /** The figure as shown. */
   text: (v: number) => string;
 }
