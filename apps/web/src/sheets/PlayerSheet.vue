@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { ESheet } from "@eos-ui/vue/components/ESheet";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
@@ -13,12 +14,14 @@ import ProfileView from "../parts/ProfileView.vue";
 import ReviewBar from "../parts/ReviewBar.vue";
 import { ALL_GAMES, usePlayers } from "../stores/players";
 import { isPlayerKey, nameOfKey } from "./compare";
-import SheetFrame from "./SheetFrame.vue";
+import SheetBack from "./SheetBack.vue";
+import { useSheet } from "./useSheet";
 
 /**
  * A person on Lichess: their games added up with the same building blocks as You. When none of their games are here,
  * the first step is to import the last fifty; then to review them; then Compare.
  */
+const sheet = useSheet();
 const route = useRoute();
 const router = useRouter();
 const players = usePlayers();
@@ -60,7 +63,8 @@ const compare = () => router.push({ path: "/compare", query: { players: `you,${k
 </script>
 
 <template>
-  <SheetFrame :title="name" description="A player on Lichess, from the games brought in here.">
+  <ESheet v-bind="sheet.bind" :title="name" description="A player on Lichess, from the games brought in here.">
+    <template #leading><SheetBack :show="sheet.canGoBack" @back="sheet.back" /></template>
     <EEmptyState v-if="missing" title="No such player">
       Lichess has no player called {{ nameOfKey(key) }}. Check the spelling, or paste a link to their profile in
       Compare.
@@ -85,5 +89,5 @@ const compare = () => router.push({ path: "/compare", query: { players: `you,${k
         </div>
       </section>
     </template>
-  </SheetFrame>
+  </ESheet>
 </template>

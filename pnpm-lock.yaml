@@ -218,11 +218,11 @@ importers:
   apps/web:
     dependencies:
       '@eos-ui/tokens':
-        specifier: ^0.18.0
-        version: 0.18.0
+        specifier: ^0.19.0
+        version: 0.19.0
       '@eos-ui/vue':
-        specifier: ^0.18.0
-        version: 0.18.0(vue@3.5.44(typescript@6.0.3))
+        specifier: ^0.19.0
+        version: 0.19.0(vue@3.5.44(typescript@6.0.3))
       '@fontsource-variable/fraunces':
         specifier: ^5.3.0
         version: 5.3.0
@@ -435,12 +435,12 @@ packages:
   '@emnapi/wasi-threads@1.2.2':
     resolution: {integrity: sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA==}
 
-  '@eos-ui/tokens@0.18.0':
-    resolution: {integrity: sha512-yhkubh39LY7Km7HM6mOzpbshrH17J78zMPTjkb11Iq1dnf4LUYVLkZntaFncSd1Z7OGKnqAtWKMrtym+aFC4bg==}
+  '@eos-ui/tokens@0.19.0':
+    resolution: {integrity: sha512-+h8Bb965sVRp7PKWWfWEnQ6QXLu7pjkVzAPh9WiZeywpIqPY4Y3ZN0kwlezgAwzTAKpepeiOK0E0bp+dImRFUA==}
     engines: {node: '>=22'}
 
-  '@eos-ui/vue@0.18.0':
-    resolution: {integrity: sha512-G4RLGt6TwsChz9VvdrMvFiT7Ut9pyG0/nNQk9/ITbDhCZr2bIkU8uPYbFiJXDM4XJcZ5tIk4lku1Uig/79ocHg==}
+  '@eos-ui/vue@0.19.0':
+    resolution: {integrity: sha512-yhN8XhO9mfkHWUxj0tDTghkffka8dHBJja0e/nto1dzMbJMmexZfqRT+FTEAS6XHcioiqQuZZNc/HHbUcYZ4+g==}
     engines: {node: '>=22'}
     peerDependencies:
       '@iconify/vue': ^5.0.0
@@ -2992,11 +2992,11 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@eos-ui/tokens@0.18.0': {}
+  '@eos-ui/tokens@0.19.0': {}
 
-  '@eos-ui/vue@0.18.0(vue@3.5.44(typescript@6.0.3))':
+  '@eos-ui/vue@0.19.0(vue@3.5.44(typescript@6.0.3))':
     dependencies:
-      '@eos-ui/tokens': 0.18.0
+      '@eos-ui/tokens': 0.19.0
       '@tanstack/vue-virtual': 3.13.48(vue@3.5.44(typescript@6.0.3))
       reka-ui: 2.11.0(vue@3.5.44(typescript@6.0.3))
       vue: 3.5.44(typescript@6.0.3)

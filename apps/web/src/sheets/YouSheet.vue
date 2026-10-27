@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useToast } from "@eos-ui/vue";
+import { ESheet } from "@eos-ui/vue/components/ESheet";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
@@ -17,13 +18,15 @@ import ReviewBar from "../parts/ReviewBar.vue";
 import { useConnections } from "../stores/connections";
 import { ALL_GAMES, usePlayers } from "../stores/players";
 import { useProgress } from "../stores/progress";
-import SheetFrame from "./SheetFrame.vue";
+import SheetBack from "./SheetBack.vue";
+import { useSheet } from "./useSheet";
 
 /**
  * You: your Lichess name and ratings, then your games added up (accuracy and rating over time, phases, results, moves,
  * openings, time, the best moments and worst blunders as links onto the board, and the weak spots to play out), what
  * is left to review, your challenges, and Compare with…. Not linked to Lichess yet: the way to log in comes first.
  */
+const sheet = useSheet();
 const connections = useConnections();
 const players = usePlayers();
 const progress = useProgress();
@@ -71,7 +74,12 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
 </script>
 
 <template>
-  <SheetFrame title="You" description="Your games added up: how you play, what to work on, and how you compare.">
+  <ESheet
+    v-bind="sheet.bind"
+    title="You"
+    description="Your games added up: how you play, what to work on, and how you compare."
+  >
+    <template #leading><SheetBack :show="sheet.canGoBack" @back="sheet.back" /></template>
     <ENotice v-if="!linked" tone="info" title="Your Lichess account is not linked" class="gap">
       Log in to see your ratings, play on Lichess from here and bring your games in.
       <template #actions>
@@ -127,7 +135,7 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
         </div>
       </section>
     </template>
-  </SheetFrame>
+  </ESheet>
 </template>
 
 <style scoped>
