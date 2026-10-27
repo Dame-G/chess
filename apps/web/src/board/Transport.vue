@@ -112,11 +112,14 @@ const total = computed(() => (board.exploring ? board.tree.end(board.node).ply :
   min-width: 0;
 }
 
+/* Tabular digits in a fixed width: stepping from move 9 to 10 moves nothing. */
 .counter {
+  min-inline-size: 8ch;
   margin-inline-start: var(--e-gap-snug);
   color: var(--e-muted);
   font: var(--e-type-small);
   font-family: var(--e-font-mono);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 

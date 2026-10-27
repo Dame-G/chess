@@ -56,46 +56,29 @@ const atBottom = computed(() => (leader.value === "white") !== flipped.value);
     :aria-valuenow="Math.round(white * 100)"
     :aria-valuetext="held ? `${held}, White ${Math.round(white * 100)}%` : 'No evaluation yet'"
   >
-    <span class="evalbar-label num" aria-hidden="true">{{ short && !atBottom ? short : "" }}</span>
-    <div class="evalbar-track">
-      <div class="evalbar-white" :style="{ transform: `scaleY(${white})` }"></div>
-      <div class="evalbar-mid"></div>
-    </div>
-    <span class="evalbar-label num" aria-hidden="true">{{ short && atBottom ? short : "" }}</span>
+    <div class="evalbar-white" :style="{ transform: `scaleY(${white})` }"></div>
+    <div class="evalbar-mid"></div>
+    <span
+      v-if="short"
+      class="evalbar-label num"
+      :class="[atBottom ? 'evalbar-label--bottom' : 'evalbar-label--top', `evalbar-label--${leader}`]"
+      aria-hidden="true"
+      >{{ short }}</span
+    >
   </div>
 </template>
 
 <style scoped>
-/* The bar sits between two label zones inside the board's height, so the board stays the governing size. */
+/* The bar is exactly the board's height and its figure sits inside it, at the leading side's end, on that side's
+   colour, so it always reads and nothing hangs above or below the board. */
 .evalbar {
-  display: grid;
-  grid-template-rows: var(--evalbar-label, 1.125rem) minmax(0, 1fr) var(--evalbar-label, 1.125rem);
-  justify-items: center;
-  width: var(--evalbar-col, 2rem);
-  min-height: 0;
-}
-
-/* Fixed-width zones with tabular figures: a new figure never moves anything. */
-.evalbar-label {
-  align-self: center;
-  inline-size: 100%;
-  contain: layout paint;
-  color: var(--e-ink);
-  font: 600 0.6875rem/1 var(--e-font-mono);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.04em;
-  text-align: center;
-  white-space: nowrap;
-}
-
-.evalbar-track {
   position: relative;
-  width: var(--evalbar, 0.875rem);
-  height: 100%;
+  width: var(--col, 1.75rem);
+  min-height: 0;
   overflow: hidden;
   border-radius: var(--e-radius-sm);
   background: #2a2420;
-  box-shadow: 0 0 0 1px var(--e-border);
+  box-shadow: 0 0 0 1px var(--e-border-strong, var(--e-border));
 }
 
 /* White's share is a scale from the bottom (the top when the board is flipped): composited, never a layout. */
@@ -118,6 +101,34 @@ const atBottom = computed(() => (leader.value === "white") !== flipped.value);
   top: 50%;
   height: 1px;
   background: rgb(200 120 60 / 80%);
+}
+
+/* Tabular digits: a new figure never moves anything. */
+.evalbar-label {
+  position: absolute;
+  inset-inline: 0;
+  padding-block: 0.25rem;
+  font: 700 0.625rem/1 var(--e-font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.08em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.evalbar-label--top {
+  top: 0;
+}
+
+.evalbar-label--bottom {
+  bottom: 0;
+}
+
+.evalbar-label--white {
+  color: #2a2420;
+}
+
+.evalbar-label--black {
+  color: #fffaf3;
 }
 
 @media (prefers-reduced-motion: reduce) {

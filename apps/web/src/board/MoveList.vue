@@ -79,7 +79,7 @@ followCurrent(list, () => props.cursor);
 <style scoped>
 .moves {
   display: grid;
-  grid-template-columns: 3rem 1fr 1fr;
+  grid-template-columns: 2.5rem 1fr 1fr;
   align-content: start;
   height: 100%;
   overflow-y: auto;

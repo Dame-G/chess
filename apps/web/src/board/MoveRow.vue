@@ -71,7 +71,7 @@ const emit = defineEmits<{ go: [ply: number] }>();
   display: grid;
   align-items: center;
   justify-content: end;
-  padding-inline: var(--e-gap-base);
+  padding-inline: var(--e-gap-snug);
   background: color-mix(in oklab, var(--e-ink) 4%, transparent);
   color: var(--e-muted);
   font: var(--e-type-small);
@@ -79,7 +79,7 @@ const emit = defineEmits<{ go: [ply: number] }>();
 
 .mv {
   justify-content: flex-start;
-  min-height: 2.25rem;
+  height: 2rem;
   padding-inline: var(--ws-pad, var(--e-pad-control));
   border-radius: 0;
   font-family: var(--e-font-mono);
@@ -117,5 +117,18 @@ const emit = defineEmits<{ go: [ply: number] }>();
   align-items: center;
   padding-inline: var(--ws-pad, var(--e-pad-control));
   color: var(--e-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mv {
+    transition: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .mv,
+  .vm {
+    height: 2.5rem;
+  }
 }
 </style>

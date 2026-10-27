@@ -137,36 +137,36 @@ const fmt = (n: number | null | undefined) => (n == null ? "–" : n.toFixed(1))
     </EActions>
 
     <p v-if="!policy.allowed" class="muted">{{ policy.reason }}</p>
-    <ESkeleton v-else-if="games.reviewLoading && !review" :lines="4" label="Loading the review" />
+    <ESkeleton v-else-if="games.reviewLoading && !review" :lines="9" label="Loading the review" />
     <template v-else-if="review">
-      <div class="sides">
-        <section v-for="side in sides" :key="side" class="side" :aria-label="`${name(side)}'s review`">
-          <p class="side-head">
-            <span class="side-name">{{ name(side) }}</span>
+      <div class="tally" role="table" aria-label="Marks by side">
+        <div class="trow thead" role="row">
+          <span role="presentation"></span>
+          <span v-for="side in sides" :key="side" role="columnheader" class="who">
+            <span class="who-name">{{ name(side) }}</span>
             <span class="acc num" title="Accuracy">{{ fmt(review.summary[side].accuracy) }}</span>
-          </p>
-          <p class="acpl num">{{ review.summary[side].acpl ?? "–" }} average centipawn loss</p>
-          <div class="counts">
-            <template v-for="c in SUMMARY_MARKS" :key="c">
-              <EButton
-                v-if="review.summary[side].counts[c]"
-                size="sm"
-                variant="quiet"
-                class="count"
-                :class="`rv-${c}`"
-                :aria-label="`${review.summary[side].counts[c]} ${markOf(c).label}: go to the next`"
-                @click="jump(side, c)"
-              >
-                <span class="count-n num">{{ review.summary[side].counts[c] }}</span>
-                <span class="count-l">{{ markOf(c).label }}</span>
-              </EButton>
-              <span v-else class="count count--none">
-                <span class="count-n num">0</span>
-                <span class="count-l">{{ markOf(c).label }}</span>
-              </span>
-            </template>
-          </div>
-        </section>
+          </span>
+        </div>
+        <div class="trow acpl" role="row">
+          <span role="rowheader">Average centipawn loss</span>
+          <span v-for="side in sides" :key="side" role="cell" class="num">{{ review.summary[side].acpl ?? "–" }}</span>
+        </div>
+        <div v-for="c in SUMMARY_MARKS" :key="c" class="trow" :class="`rv-${c}`" role="row">
+          <span role="rowheader" class="label">{{ markOf(c).label }}</span>
+          <span v-for="side in sides" :key="side" role="cell">
+            <EButton
+              v-if="review.summary[side].counts[c]"
+              size="sm"
+              variant="quiet"
+              class="count"
+              :aria-label="`${name(side)}: ${review.summary[side].counts[c]} ${markOf(c).label}, go to the next`"
+              @click="jump(side, c)"
+            >
+              {{ review.summary[side].counts[c] }}
+            </EButton>
+            <span v-else class="count count--none num">0</span>
+          </span>
+        </div>
       </div>
 
       <section v-if="move" class="move" aria-label="This move">
@@ -207,7 +207,7 @@ const fmt = (n: number | null | undefined) => (n == null ? "–" : n.toFixed(1))
 <style scoped>
 .review {
   display: grid;
-  gap: var(--e-gap-base);
+  gap: var(--e-gap-snug);
 }
 
 .result {
@@ -234,74 +234,70 @@ const fmt = (n: number | null | undefined) => (n == null ? "–" : n.toFixed(1))
   font: var(--e-type-small);
 }
 
-.sides {
+/* One table for both sides: the marks read across, You against Dameless, and the panel stays short. */
+.tally {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--e-gap-base);
+  font: var(--e-type-small);
 }
 
-.side {
+.trow {
   display: grid;
-  gap: var(--e-gap-tight);
-  align-content: start;
-  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 5.5rem 5.5rem;
+  align-items: center;
+  text-align: end;
 }
 
-.side-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin: 0;
+.trow > :first-child {
+  text-align: start;
 }
 
-.side-name {
+.thead {
+  align-items: end;
+  padding-block-end: var(--e-gap-tight);
+}
+
+.who-name {
+  display: block;
   overflow: hidden;
   font-weight: 600;
+  font-size: var(--e-type-body-size, 0.9375rem);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .acc {
-  font: 700 1.375rem/1 var(--e-font-mono);
+  display: block;
+  font: 700 1.375rem/1.2 var(--e-font-mono);
 }
 
 .acpl {
-  margin: 0;
+  padding-block-end: var(--e-gap-snug);
+  border-block-end: var(--line);
   color: var(--e-muted);
-  font: var(--e-type-small);
 }
 
-.counts {
-  display: grid;
+.acpl .num {
+  font-family: var(--e-font-mono);
+}
+
+.label {
+  color: var(--rv, var(--e-ink));
 }
 
 .count {
-  justify-content: flex-start;
-  gap: var(--e-gap-snug);
-  min-height: 1.75rem;
-  padding-inline: 0.25rem;
+  height: 1.625rem;
+  padding-inline: 0.5rem;
+  color: var(--rv);
+  font: 700 0.8125rem/1 var(--e-font-mono);
   text-decoration: none;
 }
 
 .count--none {
-  display: flex;
-  align-items: center;
+  display: inline-block;
+  padding: 0 0.5rem;
   color: var(--e-muted);
-}
-
-.count--none .count-n {
-  color: var(--e-muted);
-}
-
-.count-n {
-  min-inline-size: 2ch;
-  color: var(--rv);
-  font: 700 0.875rem/1 var(--e-font-mono);
-  text-align: end;
-}
-
-.count-l {
-  font: var(--e-type-small);
+  font: 700 0.8125rem/1.625rem var(--e-font-mono);
+  opacity: 0.7;
 }
 
 .move {

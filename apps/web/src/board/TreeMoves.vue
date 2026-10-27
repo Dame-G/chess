@@ -80,7 +80,7 @@ followCurrent(box, () => props.node.id);
 <style scoped>
 .tree {
   display: grid;
-  grid-template-columns: 3rem 1fr 1fr;
+  grid-template-columns: 2.5rem 1fr 1fr;
   align-content: start;
   height: 100%;
   overflow-y: auto;
@@ -92,7 +92,7 @@ followCurrent(box, () => props.node.id);
   display: grid;
   align-items: center;
   justify-content: end;
-  padding-inline: var(--e-gap-base);
+  padding-inline: var(--e-gap-snug);
   background: color-mix(in oklab, var(--e-ink) 4%, transparent);
   color: var(--e-muted);
   font: var(--e-type-small);
@@ -101,7 +101,7 @@ followCurrent(box, () => props.node.id);
 .mv,
 .vm {
   justify-content: flex-start;
-  min-height: 2.25rem;
+  height: 2rem;
   padding-inline: var(--ws-pad, var(--e-pad-control));
   border-radius: 0;
   font-family: var(--e-font-mono);
@@ -138,7 +138,7 @@ followCurrent(box, () => props.node.id);
 }
 
 .vm {
-  min-height: 1.75rem;
+  height: 1.75rem;
   padding-inline: 0.3rem;
   color: var(--e-muted);
   font-size: 0.8125rem;
@@ -154,5 +154,12 @@ followCurrent(box, () => props.node.id);
   padding: var(--ws-pad, var(--e-pad-control));
   color: var(--e-muted);
   font: var(--e-type-small);
+}
+
+@media (pointer: coarse) {
+  .mv,
+  .vm {
+    height: 2.5rem;
+  }
 }
 </style>
