@@ -30,13 +30,19 @@ async fn a_healthy_machine_lists_every_item() {
         std::fs::write(builds.join(name).join(dameless_engine::exe("reckless")), vec![0u8; 1500]).unwrap();
     }
     std::fs::create_dir_all(builds.join("target")).unwrap();
+    fake.pgo.store(true, Ordering::SeqCst);
     let d = diagnostics(hub, fake, probes);
     let h = d.health().await.unwrap();
     let keys: Vec<&str> = h.items.iter().map(|i| i.key.as_str()).collect();
-    assert_eq!(keys, ["fastchess", "book", "engine", "clang", "cuda", "gpu", "disk", "database", "builds", "harness"]);
+    assert_eq!(
+        keys,
+        ["fastchess", "book", "engine", "clang", "pgo", "cuda", "gpu", "disk", "database", "builds", "harness"]
+    );
     assert!(h.ok, "{h:?}");
     assert!(find(&h, "engine").detail.contains("main at "));
     assert!(find(&h, "clang").detail.contains("Syzygy"));
+    assert_eq!(find(&h, "pgo").level, HealthLevel::Ok);
+    assert!(find(&h, "pgo").detail.starts_with("cargo-pgo 0.3.0 and llvm-profdata"));
     assert_eq!(find(&h, "cuda").level, HealthLevel::Ok);
     assert_eq!(find(&h, "gpu").detail, "NVIDIA GeForce RTX 3080, 10.7 GB of memory");
     assert_eq!(find(&h, "disk").detail, "500.0 GB free of 1.0 TB on the data directory's drive");
@@ -69,6 +75,11 @@ async fn missing_and_low_things_warn_or_fail() {
     }
     assert_eq!(find(&h, "clang").level, HealthLevel::Warn);
     assert!(find(&h, "clang").detail.contains("without Syzygy"));
+    // No cargo-pgo: playing builds are plain, and the item says what to install.
+    let pgo = find(&h, "pgo");
+    assert_eq!((pgo.level, pgo.ok), (HealthLevel::Info, true));
+    assert!(pgo.detail.contains("plain builds"), "{}", pgo.detail);
+    assert_eq!(pgo.action.as_ref().unwrap().command, "cargo install cargo-pgo");
     assert_eq!((find(&h, "cuda").level, find(&h, "gpu").level), (HealthLevel::Info, HealthLevel::Info));
     assert!(find(&h, "cuda").ok && find(&h, "cuda").detail.contains("only for training"));
     let disk = find(&h, "disk");

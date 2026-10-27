@@ -175,6 +175,11 @@ async function save() {
             :step="50"
           />
         </div>
+        <ESwitch
+          v-model="draft.ponder"
+          label="Think on the opponent's time"
+          description="Searches the reply it expects while the opponent thinks. Needs a version that can ponder."
+        />
       </EDisclosure>
     </EForm>
     <template #actions>

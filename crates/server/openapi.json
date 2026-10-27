@@ -4206,6 +4206,11 @@
             "default": 300,
             "minimum": 0
           },
+          "ponder": {
+            "type": "boolean",
+            "description": "Think on the opponent's time: after its move the engine searches the reply it expects (`go ponder`), and a\nright guess saves that time. Only with a version whose engine declares UCI's `Ponder` option. Default true.",
+            "default": true
+          },
           "seek_clocks": {
             "type": "array",
             "items": {
@@ -4427,7 +4432,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Cargo features it was built with, such as `spsa`."
+            "description": "Cargo features it was built with, such as `spsa`, and `pgo` for a profile-guided build (made for the bot and\nfor games against you, never for trials)."
           },
           "id": {
             "$ref": "#/components/schemas/BuildId"
@@ -7177,7 +7182,7 @@
           },
           "key": {
             "type": "string",
-            "description": "`fastchess`, `book`, `engine`, `clang`, `cuda`, `gpu`, `disk`, `database`, `builds`, `harness`."
+            "description": "`fastchess`, `book`, `engine`, `clang`, `pgo`, `cuda`, `gpu`, `disk`, `database`, `builds`, `harness`."
           },
           "level": {
             "$ref": "#/components/schemas/HealthLevel"

@@ -64,6 +64,41 @@ async fn branches_and_commits_become_versions_that_follow_their_branch() {
 }
 
 #[tokio::test]
+async fn playing_takes_the_pgo_build_once_it_is_made_in_the_background() {
+    let (_r, hub, _dir, _s, versions, fake) = setup(2).await;
+    let champion = versions.champion().await.unwrap();
+    // Without cargo-pgo: the plain build, and no PGO build is tried.
+    let (plain, _) = versions.playing_binary(&champion).await.unwrap();
+    assert_eq!(plain.features, Vec::<String>::new());
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(fake.pgo_builds.load(Ordering::SeqCst), 0);
+
+    // With it: the plain build still plays this game, and the PGO build is queued for the next.
+    fake.pgo.store(true, Ordering::SeqCst);
+    let (first, _) = versions.playing_binary(&champion).await.unwrap();
+    assert_eq!(first.id, plain.id);
+    let pgo = [PGO.to_owned()];
+    let mut made = None;
+    for _ in 0..200 {
+        made = hub.store.cached_build_with_net(&champion.commit, &pgo, None).await.unwrap();
+        if made.is_some() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let made = made.expect("the PGO build");
+    assert_eq!(made.bench, plain.bench, "it searches as the plain build");
+    assert!(made.path.contains("-pgo"), "{}", made.path);
+    let (next, path) = versions.playing_binary(&champion).await.unwrap();
+    assert_eq!((next.id, next.features.as_slice()), (made.id, &pgo[..]));
+    assert!(path.is_file());
+    assert_eq!(fake.pgo_builds.load(Ordering::SeqCst), 1);
+    // A trial's binary is never the PGO build.
+    let (trial, _) = versions.binary_of(&champion, &[]).await.unwrap();
+    assert_eq!(trial.id, plain.id);
+}
+
+#[tokio::test]
 async fn binaries_are_built_once_and_cached() {
     let (r, hub, _dir, _s, versions, fake) = setup(2).await;
     *fake.build_delay.lock().unwrap() = std::time::Duration::from_millis(50);

@@ -61,7 +61,8 @@ impl Line {
 pub struct Build {
     pub id: BuildId,
     pub version: VersionId,
-    /// Cargo features it was built with, such as `spsa`.
+    /// Cargo features it was built with, such as `spsa`, and `pgo` for a profile-guided build (made for the bot and
+    /// for games against you, never for trials).
     pub features: Vec<String>,
     /// The net it embeds, when not the commit's own.
     #[serde(default)]

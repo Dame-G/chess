@@ -999,6 +999,7 @@ const connections: Connections = {
         hash: 64,
         threads: 1,
         move_overhead: 300,
+        ponder: true,
         accept_rated: true,
         accept_casual: true,
         speeds: ["bullet", "blitz", "rapid"],

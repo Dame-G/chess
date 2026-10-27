@@ -225,3 +225,126 @@ async fn settings_are_checked_and_kept() {
     assert_eq!(sent.opponent, "carol");
     assert_eq!(l.mock.requests_to("/api/challenge/carol")[0].form["clock.limit"], "180");
 }
+
+/// The fake engine as the champion, writing every command it gets to `log`, with `args` besides.
+fn logging(log: &std::path::Path, args: &[&str]) -> std::sync::Arc<dyn Binaries> {
+    let mut all = args.to_vec();
+    all.extend(["--log", log.to_str().unwrap()]);
+    FixedBinaries::empty().with("champion", fake(), &all).shared()
+}
+
+/// The commands the engine got so far.
+fn commands(log: &std::path::Path) -> Vec<String> {
+    std::fs::read_to_string(log).unwrap_or_default().lines().map(str::to_owned).collect()
+}
+
+/// Where the `n`-th `go ponder` (from 1) is in the commands.
+fn ponder_at(commands: &[String], n: usize) -> Option<usize> {
+    commands.iter().enumerate().filter(|(_, c)| c.starts_with("go ponder")).nth(n - 1).map(|(i, _)| i)
+}
+
+/// The reply the `n`-th ponder searched: the last move of the position sent before it.
+fn pondered(log: &std::path::Path, n: usize) -> String {
+    let c = commands(log);
+    let at = ponder_at(&c, n).expect("a ponder");
+    c[at - 1].split_whitespace().last().unwrap().to_owned()
+}
+
+#[tokio::test]
+async fn the_bot_ponders_on_its_opponents_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("uci.log");
+    let l = lichess(logging(&log, &["--ponder"])).await;
+    let lid = l.mock.send_challenge(Seat::user("Alice", 1500), "damelessbot", &ChallengeRequest::clock(true, 180, 2));
+    let id = l.game_of(&lid).await;
+    l.mock.opponent_move(&lid, "e2e4");
+    until("the bot's reply", || l.mock.game(&lid).unwrap().moves.len() == 2).await;
+    until("a ponder", || ponder_at(&commands(&log), 1).is_some()).await;
+    let c = commands(&log);
+    assert!(c.iter().any(|c| c == "setoption name Ponder value true"));
+    let at = ponder_at(&c, 1).unwrap();
+    assert!(c[at].contains(" wtime ") && c[at].contains(" binc 2000"), "with the clocks: {}", c[at]);
+    // On the position after the bot's move and the reply it expects.
+    let moves = l.mock.game(&lid).unwrap().moves;
+    let reply = pondered(&log, 1);
+    assert_eq!(c[at - 1], format!("position startpos moves {} {reply}", moves.join(" ")));
+
+    // A right guess: ponderhit, and the move comes from the ponder, without another search.
+    l.mock.opponent_move(&lid, &reply);
+    until("the bot's reply", || l.mock.game(&lid).unwrap().moves.len() == 4).await;
+    let c = commands(&log);
+    assert_eq!(c.get(at + 1).map(String::as_str), Some("ponderhit"), "{c:?}");
+    assert!(!c[at..].iter().any(|c| c == "stop" || c.starts_with("go wtime")), "{c:?}");
+
+    // A wrong guess: the ponder is stopped, its move dropped, and the position searched afresh.
+    until("the next ponder", || ponder_at(&commands(&log), 2).is_some()).await;
+    let reply = pondered(&log, 2);
+    let moves = l.mock.game(&lid).unwrap().moves;
+    let pos = dameless_core::chess::Position::after(None, &moves).unwrap();
+    let other = pos.legal_moves().into_iter().find(|m| *m != reply).unwrap();
+    l.mock.opponent_move(&lid, &other);
+    until("the bot's reply", || l.mock.game(&lid).unwrap().moves.len() == 6).await;
+    let c = commands(&log);
+    let at = ponder_at(&c, 2).unwrap();
+    let mut expected = moves.clone();
+    expected.push(other.clone());
+    assert_eq!(c[at + 1], "stop", "{c:?}");
+    assert_eq!(c[at + 2], format!("position startpos moves {}", expected.join(" ")));
+    assert!(c[at + 3].starts_with("go wtime"), "{c:?}");
+    until_async!("the record to follow", l.game(id).await.moves.len() == 6);
+    let g = l.game(id).await;
+    assert!(g.moves[3].eval.is_some() && g.moves[5].eval.is_some(), "both moves carry the engine's report");
+
+    // The game ends while the bot ponders: the engine goes with it.
+    until("the next ponder", || ponder_at(&commands(&log), 3).is_some()).await;
+    l.mock.end_game(&lid, LichessStatus::Resign, Some(LichessSide::Black));
+    let g = l.s.games.wait_finished(id, Duration::from_secs(5)).await.unwrap();
+    assert_eq!(g.summary.outcome, Some(Outcome::BlackWins));
+    until("the cores back", || l.s.hub.ledger.snapshot().reserved == 0).await;
+}
+
+#[tokio::test]
+async fn the_bot_ponders_only_when_set_to_and_its_engine_can() {
+    // Its engine declares no Ponder option: the bot plays as before.
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("plain.log");
+    let l = lichess(logging(&log, &[])).await;
+    let lid = l.mock.send_challenge(Seat::user("Alice", 1500), "damelessbot", &ChallengeRequest::clock(true, 180, 2));
+    l.game_of(&lid).await;
+    l.mock.opponent_move(&lid, "e2e4");
+    until("the bot's reply", || l.mock.game(&lid).unwrap().moves.len() == 2).await;
+    l.mock.opponent_move(&lid, "d2d4");
+    until("the bot's reply", || l.mock.game(&lid).unwrap().moves.len() == 4).await;
+    let c = commands(&log);
+    assert!(!c.iter().any(|c| c.contains("ponder") || c.contains("Ponder")), "{c:?}");
+
+    // It could, but its settings say not to.
+    let log = dir.path().join("off.log");
+    let l = lichess(logging(&log, &["--ponder"])).await;
+    let settings = BotSettings { ponder: false, ..l.connections.bot().settings() };
+    l.connections.bot().set_settings(settings).await.unwrap();
+    let lid = l.mock.send_challenge(Seat::user("Alice", 1500), "damelessbot", &ChallengeRequest::clock(true, 180, 2));
+    l.game_of(&lid).await;
+    l.mock.opponent_move(&lid, "e2e4");
+    until("the bot's reply", || l.mock.game(&lid).unwrap().moves.len() == 2).await;
+    l.mock.opponent_move(&lid, "d2d4");
+    until("the bot's reply", || l.mock.game(&lid).unwrap().moves.len() == 4).await;
+    let c = commands(&log);
+    assert!(!c.iter().any(|c| c.contains("ponder") || c.contains("Ponder")), "{c:?}");
+}
+
+#[tokio::test]
+async fn the_bot_resigns_when_its_engine_dies_pondering() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("uci.log");
+    let l = lichess(logging(&log, &["--ponder", "--die-pondering"])).await;
+    let lid = l.mock.send_challenge(Seat::user("Alice", 1500), "damelessbot", &ChallengeRequest::clock(true, 180, 2));
+    let id = l.game_of(&lid).await;
+    l.mock.opponent_move(&lid, "e2e4");
+    until("the bot's reply", || l.mock.game(&lid).unwrap().moves.len() == 2).await;
+    until("a ponder", || ponder_at(&commands(&log), 1).is_some()).await;
+    l.mock.opponent_move(&lid, "d2d4");
+    let g = l.s.games.wait_finished(id, Duration::from_secs(10)).await.unwrap();
+    assert_eq!(g.summary.outcome, Some(Outcome::WhiteWins));
+    assert_eq!(l.mock.game(&lid).unwrap().status, LichessStatus::Resign);
+}

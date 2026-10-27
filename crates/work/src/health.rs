@@ -1,10 +1,11 @@
 //! Health: what Settings shows about the machine, one item per thing that has to be right for the app to work or for
-//! its results to be trusted. fastchess and the book, the engine checkout, clang (Syzygy builds), the CUDA Toolkit and
-//! the GPU (for training only), free disk, the database, builds on disk, and the harness check.
+//! its results to be trusted. fastchess and the book, the engine checkout, clang (Syzygy builds), cargo-pgo and
+//! llvm-profdata (PGO builds for playing), the CUDA Toolkit and the GPU (for training only), free disk, the database,
+//! builds on disk, and the harness check.
 //!
-//! It is cheap enough to ask on every Settings open: the probes that start processes (clang, nvcc, nvidia-smi) are
-//! kept for a minute. Probing goes through [`Probes`], so tests inject what they need and never depend on the machine
-//! they run on.
+//! It is cheap enough to ask on every Settings open: the probes that start processes (clang, cargo-pgo, nvcc,
+//! nvidia-smi) are kept for a minute. Probing goes through [`Probes`] and the toolchain, so tests inject what they
+//! need and never depend on the machine they run on.
 
 use std::{
     path::{Path, PathBuf},
@@ -14,7 +15,10 @@ use std::{
 
 use async_trait::async_trait;
 use dameless_core::{Error, harness::Machine};
-use dameless_engine::proc;
+use dameless_engine::{
+    build::{PgoMissing, PgoTools},
+    proc,
+};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -170,7 +174,7 @@ pub struct HealthAction {
 /// One thing Settings shows.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HealthItem {
-    /// `fastchess`, `book`, `engine`, `clang`, `cuda`, `gpu`, `disk`, `database`, `builds`, `harness`.
+    /// `fastchess`, `book`, `engine`, `clang`, `pgo`, `cuda`, `gpu`, `disk`, `database`, `builds`, `harness`.
     pub key: String,
     /// Not failing (a warning or a note is still ok).
     pub ok: bool,
@@ -218,6 +222,7 @@ struct Slow {
     clang: Option<String>,
     cuda: Cuda,
     gpu: Option<Gpu>,
+    pgo: Result<PgoTools, PgoMissing>,
 }
 
 /// Health of the machine and the app. Cheap to clone.
@@ -239,8 +244,10 @@ impl Diagnostics {
         if let Some(s) = self.slow.lock().unwrap().clone().filter(|s| s.at.elapsed() < SLOW_PROBES_TTL) {
             return s;
         }
-        let (clang, cuda, gpu) = tokio::join!(self.probes.clang(), self.probes.cuda(), self.probes.gpu());
-        let s = Slow { at: Instant::now(), clang, cuda, gpu };
+        let toolchain = self.harness.ideas().versions().toolchain().clone();
+        let (clang, cuda, gpu, pgo) =
+            tokio::join!(self.probes.clang(), self.probes.cuda(), self.probes.gpu(), toolchain.pgo());
+        let s = Slow { at: Instant::now(), clang, cuda, gpu, pgo };
         *self.slow.lock().unwrap() = Some(s.clone());
         s
     }
@@ -319,6 +326,22 @@ impl Diagnostics {
                 "clang",
                 "Not found: engines are built without Syzygy tablebases".into(),
                 None,
+            ),
+        });
+        items.push(match &slow.pgo {
+            Ok(t) => item(
+                "pgo",
+                HealthLevel::Ok,
+                "PGO builds",
+                format!("{} and llvm-profdata: the bot and games against you play profile-guided builds", t.cargo_pgo),
+                None,
+            ),
+            Err(missing) => item(
+                "pgo",
+                HealthLevel::Info,
+                "PGO builds",
+                format!("{missing}: the bot and games against you play plain builds, a few percent slower"),
+                missing.install().map(|command| ("Install", command)),
             ),
         });
         items.push(match (&slow.cuda.path, &slow.cuda.nvcc) {

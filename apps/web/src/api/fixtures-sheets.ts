@@ -1042,6 +1042,13 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
               action: { label: "Install it", command: "winget install LLVM.LLVM" },
             },
             {
+              key: "pgo",
+              level: "ok",
+              ok: true,
+              title: "PGO builds",
+              detail: "cargo-pgo 0.3.0 and llvm-profdata: the bot and games against you play profile-guided builds",
+            },
+            {
               key: "cuda",
               level: "ok",
               ok: true,
