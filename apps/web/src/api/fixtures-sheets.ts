@@ -5,6 +5,7 @@
  */
 import { error, reply } from "./fixtures-http";
 import { settingsRoute } from "./fixtures-settings";
+import { applyVariants, tuneVariant, variant } from "./fixtures-variants";
 import { leaders } from "./leaders";
 import type {
   BotSettings,
@@ -580,14 +581,14 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       champion: line.reduce((a, b) =>
         (b.line.type === "champion" ? b.line.number : 0) > (a.line.type === "champion" ? a.line.number : 0) ? b : a,
       ),
-      line,
+      line: variant("empty") ? line.slice(0, 1) : line,
       ideas: {
         running: sorted.filter((i) => i.status === "running"),
         queued: sorted.filter((i) => i.status === "queued"),
         recent: sorted.filter((i) => i.status !== "running" && i.status !== "queued").slice(0, 6),
       },
       connection: ctx.connections.bot.bot ?? null,
-      strength: strength(),
+      strength: variant("empty") ? [] : strength(),
     };
   }
 
@@ -753,6 +754,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
     }),
   );
   for (const i of ctx.ideas) i.trials = ctx.trials.filter((t) => t.idea === i.id).map(ctx.summaryOf);
+  applyVariants(ctx);
 
   // ---- Tunes
 
@@ -778,11 +780,12 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
 
   function tuneState(id: IdeaId): TuneDetail {
     const rnd = ctx.rng(900 + id);
+    const length = tuneVariant();
     const params = TUNABLES;
     const steps: TuneStep[] = [];
     const target = params.map((p) => p.start + (rnd() - 0.5) * (p.max - p.min) * 0.35);
     const values = params.map((p) => p.start);
-    for (let k = 1; k <= 140; k++) {
+    for (let k = 1; k <= (length?.steps ?? 140); k++) {
       params.forEach((p, i) => {
         const pull = (target[i]! - values[i]!) * 0.035;
         values[i] = Math.max(p.min, Math.min(p.max, values[i]! + pull + (rnd() - 0.5) * (p.max - p.min) * 0.012));
@@ -797,7 +800,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
     return {
       spec: {
         params: [],
-        iterations: 1000,
+        iterations: length?.iterations ?? 1000,
         pairs: 8,
         time: stc,
         hash: 16,
@@ -948,6 +951,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
   }, 3500);
 
   const status = ctx.status;
+  if (variant("nogpu")) status.ledger.gpus = 0;
   status.machine = {
     ...status.machine,
     engine: { dir: "C:\\dev\\reckless", found: true, branch: "main", commit: "9e3a5e41b0c2f87d", dirty: false },
@@ -1045,25 +1049,29 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
             },
             {
               key: "gpu",
-              level: "ok",
+              level: variant("nogpu") ? "warn" : "ok",
               ok: true,
               title: "GPU",
-              detail: "NVIDIA GeForce RTX 3080, 10 GB.",
+              detail: variant("nogpu")
+                ? "No GPU was found, so networks cannot be trained here."
+                : "NVIDIA GeForce RTX 3080, 10 GB.",
             },
             { key: "disk", level: "ok", ok: true, title: "Disk", detail: "212 GB free on the data drive." },
           ],
         });
       if (path === "/api/harness")
         return reply("/api/harness", "get", {
-          checked: true,
-          current: true,
-          trusted: true,
-          passed: true,
-          at: minutesAgo(60 * 24 * 3),
+          checked: !variant("untrusted"),
+          current: !variant("untrusted"),
+          trusted: !variant("untrusted"),
+          passed: variant("untrusted") ? null : true,
+          at: variant("untrusted") ? null : minutesAgo(60 * 24 * 3),
           idea: null,
           running: null,
           last: null,
-          summary: "Checked on this machine 3 days ago: an identical copy did not pass (+0.4 ± 2.1 Elo).",
+          summary: variant("untrusted")
+            ? "The harness has not been checked on this machine."
+            : "Checked on this machine 3 days ago: an identical copy did not pass (+0.4 ± 2.1 Elo).",
         });
     }
 

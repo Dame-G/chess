@@ -38,13 +38,17 @@ const route = useRoute();
 const router = useRouter();
 
 const failed = ref<string | null>(null);
-onMounted(async () => {
-  void progress.load().catch(() => {});
+async function read() {
+  failed.value = null;
   try {
     await dameless.load();
   } catch (e) {
     failed.value = e instanceof Error ? e.message : String(e);
   }
+}
+onMounted(() => {
+  void progress.load().catch(() => {});
+  void read();
 });
 
 const overview = computed(() => dameless.overview);
@@ -107,7 +111,10 @@ watch(creating, (open) => {
     description="The engine: its strength over its versions, the ideas being tried, and its games on Lichess."
   >
     <template #leading><SheetBack :show="sheet.canGoBack" @back="sheet.back" /></template>
-    <ENotice v-if="failed" tone="danger" title="Dameless did not load" class="gap">{{ failed }}</ENotice>
+    <ENotice v-if="failed" tone="danger" title="Dameless did not load" class="gap">
+      {{ failed }}
+      <template #actions><EButton variant="outline" @click="read">Try again</EButton></template>
+    </ENotice>
 
     <section class="sec" aria-labelledby="d-strength">
       <div class="sec-head">
@@ -116,7 +123,10 @@ watch(creating, (open) => {
           <Term k="champion" /> <strong class="mono">{{ champion.name }}</strong>
         </p>
       </div>
-      <div v-if="!overview" aria-busy="true"><ESkeleton :lines="3" label="Loading the strength line" /></div>
+      <div v-if="!overview && !failed" aria-busy="true">
+        <ESkeleton :lines="3" label="Loading the strength line" />
+      </div>
+      <p v-else-if="!overview" class="sec-note">The strength line is not available.</p>
       <LineChart
         v-else-if="strength.length > 1"
         label="Dameless's strength: cumulative Elo over each champion version"
@@ -147,7 +157,9 @@ watch(creating, (open) => {
         <h2 id="d-ideas" class="part-title">Ideas in progress</h2>
         <EButton @click="creating = true">New idea</EButton>
       </div>
-      <ul v-if="inProgress.length" class="plain progress">
+      <div v-if="!ideas.loaded && !failed" aria-busy="true"><ESkeleton :lines="2" label="Loading the ideas" /></div>
+      <p v-else-if="!ideas.loaded" class="sec-note">The ideas are not available.</p>
+      <ul v-else-if="inProgress.length" class="plain progress">
         <li v-for="i in inProgress" :key="i.id" class="item">
           <EStamp size="sm" :tone="STATUS_TONE[i.status]" :label="STATUS_WORD[i.status]" />
           <div class="item-text">

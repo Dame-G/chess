@@ -2,11 +2,12 @@
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import { ELink } from "@eos-ui/vue/components/ELink";
-import type { Trial, TrialId } from "../api/types";
+import type { Seat, Trial, TrialId } from "../api/types";
 import { plural, plusMinus, resultText, seatName, trialClock } from "../format";
 import { pairsOf, STAGE_WORD } from "../sheets/idea";
 import { useGames } from "../stores/games";
 import { useIdeas } from "../stores/ideas";
+import { useVersions } from "../stores/versions";
 import LineChart from "./LineChart.vue";
 import LlrGauge from "./LlrGauge.vue";
 import PentaBar from "./PentaBar.vue";
@@ -21,6 +22,7 @@ const props = defineProps<{ trial: Trial }>();
 
 const ideas = useIdeas();
 const games = useGames();
+const versions = useVersions();
 
 const pairs = computed(() => pairsOf(props.trial.penta));
 const hasGames = computed(() => pairs.value > 0 || props.trial.wdl.some((n) => n > 0));
@@ -39,7 +41,11 @@ const trialGames = computed(() =>
 const total = computed(
   () => games.list.filter((g) => g.source.type === "trial" && g.source.trial === props.trial.id).length,
 );
-const name = seatName;
+/** A trial pits two versions of Dameless: each is named by its version (`deeper-lmr`, `v14`), not just "Dameless". */
+function name(seat: Seat): string {
+  const version = seat.player === "dameless" ? versions.name(seat.version) : undefined;
+  return version ?? seatName(seat);
+}
 </script>
 
 <template>

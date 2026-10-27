@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { PhCaretDown, PhCaretUp } from "@phosphor-icons/vue";
+import { EButton } from "@eos-ui/vue/components/EButton";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
 import { ELink } from "@eos-ui/vue/components/ELink";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
+import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { EStamp } from "@eos-ui/vue/components/EStamp";
 import { ETag } from "@eos-ui/vue/components/ETag";
 import { ago } from "../format";
@@ -41,6 +43,12 @@ const empty: Record<Show, string> = {
   dropped: "No idea has been dropped yet.",
 };
 
+/** A long logbook shows its newest page first, so the sheet stays short and tabbing through it stays quick. */
+const PAGE = 25;
+const limit = ref(PAGE);
+watch(show, () => (limit.value = PAGE));
+const shown = computed(() => rows.value.slice(0, limit.value));
+
 function toggle(id: number) {
   const next = new Set(open.value);
   if (!next.delete(id)) next.add(id);
@@ -61,9 +69,10 @@ function toggle(id: number) {
         { value: 'dropped', label: 'Dropped' },
       ]"
     />
-    <p v-if="!rows.length" class="sec-note">{{ empty[show] }}</p>
+    <ESkeleton v-if="!ideas.loaded" :lines="3" label="Loading the logbook" />
+    <p v-else-if="!rows.length" class="sec-note">{{ empty[show] }}</p>
     <ul v-else class="plain">
-      <li v-for="i in rows" :key="i.id" class="entry">
+      <li v-for="i in shown" :key="i.id" class="entry">
         <div class="head">
           <EStamp size="sm" :tone="STATUS_TONE[i.status]" :label="STATUS_WORD[i.status]" class="stamp" />
           <div class="titles">
@@ -92,12 +101,24 @@ function toggle(id: number) {
         </div>
       </li>
     </ul>
+    <div v-if="rows.length > shown.length" class="more">
+      <EButton variant="outline" size="sm" @click="limit += PAGE">
+        Show {{ Math.min(PAGE, rows.length - shown.length) }} more
+      </EButton>
+      <span class="sec-note">{{ shown.length }} of {{ rows.length }}</span>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .log {
   display: grid;
+  gap: var(--e-gap-snug);
+}
+
+.more {
+  display: flex;
+  align-items: center;
   gap: var(--e-gap-snug);
 }
 

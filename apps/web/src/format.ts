@@ -165,11 +165,13 @@ export function bytes(n: number): string {
   return `${i === 0 || v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
 }
 
-/** `12 Oct`, with the year when it is not this one. */
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** `12 Oct`, with the year when it is not this one. The months are written here, so every browser spells them alike. */
 export function shortDate(iso: string, now = new Date()): string {
   const d = new Date(iso);
-  const sameYear = d.getFullYear() === now.getFullYear();
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }) });
+  const year = d.getFullYear() === now.getFullYear() ? "" : ` ${d.getFullYear()}`;
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}${year}`;
 }
 
 /** Seconds a review takes per game on this machine, as the design quotes it. */

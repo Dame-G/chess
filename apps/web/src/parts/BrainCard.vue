@@ -97,23 +97,23 @@ async function remove() {
 
       <div v-if="training.nets.length" class="group">
         <h3 class="part-title">Networks</h3>
-        <ETable caption="Networks, newest first" hide-caption dense>
+        <ETable caption="Networks, newest first" hide-caption dense class="brain-table">
           <thead>
             <tr>
               <th scope="col">Network</th>
               <th scope="col">Trained on</th>
               <th scope="col" class="e-num"><Term k="loss" /></th>
-              <th scope="col" class="e-num">Made</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="n in training.nets" :key="n.id">
               <th scope="row">
                 <span class="mono">{{ n.name }}</span>
-                <span v-if="n.parent != null || training.champion?.id === n.id" class="sec-note from">
+                <span class="sec-note from" :title="ago(n.created_at)">
                   {{
                     [
                       n.parent != null ? `from ${training.netName(n.parent) ?? `net ${n.parent}`}` : "",
+                      shortDate(n.created_at),
                       training.champion?.id === n.id ? "champion" : "",
                     ]
                       .filter(Boolean)
@@ -123,7 +123,6 @@ async function remove() {
               </th>
               <td>{{ trainedOn(n) }}</td>
               <td class="e-num mono">{{ n.run?.final_loss != null ? n.run.final_loss.toFixed(4) : "—" }}</td>
-              <td class="e-num" :title="ago(n.created_at)">{{ shortDate(n.created_at) }}</td>
             </tr>
           </tbody>
         </ETable>
@@ -136,13 +135,11 @@ async function remove() {
           <p v-if="free" class="sec-note">{{ free }}</p>
         </div>
         <EProgress :value="fraction" label="Data used" :value-text="dataLine(data).replace('Data: ', '')" />
-        <ETable v-if="training.datasets.length" caption="Datasets" hide-caption dense>
+        <ETable v-if="training.datasets.length" caption="Datasets" hide-caption dense class="brain-table">
           <thead>
             <tr>
               <th scope="col">Dataset</th>
-              <th scope="col">Format</th>
               <th scope="col" class="e-num">Positions</th>
-              <th scope="col" class="e-num">Size</th>
               <th scope="col"><EVisuallyHidden>Delete</EVisuallyHidden></th>
             </tr>
           </thead>
@@ -150,11 +147,9 @@ async function remove() {
             <tr v-for="d in training.datasets" :key="d.id">
               <th scope="row">
                 <span class="mono">{{ d.name }}</span>
-                <span class="sec-note from"> {{ sourceWord(d) }}</span>
+                <span class="sec-note from">{{ sourceWord(d) }} · {{ d.format }} · {{ bytes(d.size_bytes) }}</span>
               </th>
-              <td class="mono">{{ d.format }}</td>
               <td class="e-num mono">{{ positionsText(d.positions) }}</td>
-              <td class="e-num mono">{{ bytes(d.size_bytes) }}</td>
               <td>
                 <EIconButton :icon="PhTrash" :label="`Delete ${d.name}`" tooltip size="sm" @click="toDelete = d" />
               </td>
@@ -201,6 +196,15 @@ async function remove() {
 .group {
   display: grid;
   gap: var(--e-gap-tight);
+}
+
+/* Cells wrap on a phone instead of widening the table past its frame. */
+.brain-table :is(th, td) {
+  white-space: normal;
+}
+
+.brain-table .e-num {
+  white-space: nowrap;
 }
 
 .from {

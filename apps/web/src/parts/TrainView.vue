@@ -188,6 +188,10 @@ const readout = computed(() => {
   font-weight: 400;
 }
 
+.train .fig {
+  align-content: start;
+}
+
 .made {
   margin: 0;
 }

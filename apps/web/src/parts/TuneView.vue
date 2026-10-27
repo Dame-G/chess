@@ -69,7 +69,9 @@ const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
       Iteration {{ done.toLocaleString("en-GB") }} of {{ tune.spec.iterations.toLocaleString("en-GB") }}
       <template v-if="running && tune.spec.iterations > done"> · {{ tuneCostText(cost) }}</template>
     </p>
+    <p v-if="!steps.length" class="sec-note">No iteration has finished yet. The trajectory appears with the first.</p>
     <LineChart
+      v-else
       label="How far each constant has moved from its start, as a share of its range"
       :x="x"
       :series="ordered"
