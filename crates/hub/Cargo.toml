@@ -1,0 +1,24 @@
+[package]
+name = "dameless-hub"
+description = "The shared runtime: config, data directory, secrets, the event bus, the fair-play policy and the core ledger."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+dameless-core.workspace = true
+dameless-store.workspace = true
+dirs.workspace = true
+getrandom.workspace = true
+serde.workspace = true
+sysinfo.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+async-trait.workspace = true
+serde_json.workspace = true
+utoipa.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

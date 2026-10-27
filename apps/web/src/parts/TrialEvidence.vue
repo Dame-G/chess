@@ -1,0 +1,151 @@
+<script setup lang="ts">
+import { computed } from "vue";
+import { RouterLink } from "vue-router";
+import { ELink } from "@eos-ui/vue/components/ELink";
+import type { Trial, TrialId } from "../api/types";
+import { plural, plusMinus, resultText, seatName, trialClock } from "../format";
+import { pairsOf, STAGE_WORD } from "../sheets/idea";
+import { useGames } from "../stores/games";
+import { useIdeas } from "../stores/ideas";
+import LineChart from "./LineChart.vue";
+import LlrGauge from "./LlrGauge.vue";
+import PentaBar from "./PentaBar.vue";
+import Term from "./Term.vue";
+
+/**
+ * One trial's evidence: the sentence that says what happened, then (for a test with games) the evidence gauge between
+ * its lines, Elo and nElo with their margins, the pairs, wins, draws and losses, the clock it was played at, the
+ * evidence over the pairs played, and its games, each opening on the board.
+ */
+const props = defineProps<{ trial: Trial }>();
+
+const ideas = useIdeas();
+const games = useGames();
+
+const pairs = computed(() => pairsOf(props.trial.penta));
+const hasGames = computed(() => pairs.value > 0 || props.trial.wdl.some((n) => n > 0));
+const history = computed(() => ideas.llrHistory[props.trial.id as TrialId] ?? []);
+const scaleText = computed(() => {
+  const t = props.trial;
+  if (!t.played || !t.scaling) return t.time ? `Played at ${trialClock(t.time)}.` : "";
+  return `Played at ${trialClock(t.played)} (×${t.scaling.scale.toFixed(2)})`;
+});
+const bounds = computed(() => props.trial.bounds);
+
+const trialGames = computed(() =>
+  games.list.filter((g) => g.source.type === "trial" && g.source.trial === props.trial.id).slice(0, 12),
+);
+const total = computed(
+  () => games.list.filter((g) => g.source.type === "trial" && g.source.trial === props.trial.id).length,
+);
+const name = seatName;
+</script>
+
+<template>
+  <div class="evidence">
+    <p v-if="trial.detail" class="detail">{{ trial.detail }}</p>
+    <p v-else class="sec-note">{{ STAGE_WORD[trial.stage] }}: nothing to report yet.</p>
+
+    <template v-if="hasGames">
+      <LlrGauge v-if="trial.llr" :llr="trial.llr" />
+
+      <dl class="figs figs--small">
+        <div v-if="trial.elo" class="fig">
+          <dt><Term k="elo" /></dt>
+          <dd>{{ plusMinus(trial.elo) }}</dd>
+        </div>
+        <div v-if="trial.nelo" class="fig">
+          <dt><Term k="nelo" /></dt>
+          <dd>{{ plusMinus(trial.nelo) }}</dd>
+        </div>
+        <div class="fig">
+          <dt><Term k="pairs" /></dt>
+          <dd>{{ pairs.toLocaleString("en-GB") }}</dd>
+        </div>
+        <div class="fig">
+          <dt>Won · drawn · lost</dt>
+          <dd>{{ trial.wdl.map((n) => n.toLocaleString("en-GB")).join(" · ") }}</dd>
+        </div>
+        <div v-if="bounds" class="fig">
+          <dt>Goal <Term k="sprt" text="(SPRT)" /></dt>
+          <dd>
+            [{{ bounds[0] }}, {{ bounds[1] }}] <small><Term k="nelo" /></small>
+          </dd>
+        </div>
+      </dl>
+
+      <PentaBar :penta="trial.penta" />
+
+      <p v-if="scaleText" class="sec-note">
+        <Term k="scaling" :text="scaleText" />
+      </p>
+
+      <div v-if="history.length > 2 && trial.llr" class="history">
+        <h4 class="part-title">Evidence over the pairs played</h4>
+        <LineChart
+          label="The evidence for this change over the game pairs played"
+          :x="history.map((h) => h[0])"
+          :series="[{ label: 'Evidence', values: history.map((h) => h[1]), color: '--e-ink', width: 1.75 }]"
+          :lines="[
+            { value: trial.llr.upper, color: '--e-success' },
+            { value: trial.llr.lower, color: '--e-danger' },
+          ]"
+          :range="[trial.llr.lower - 0.4, trial.llr.upper + 0.4]"
+          :height="120"
+          :x-format="(v) => String(Math.round(v))"
+          :format="(v) => v.toFixed(1)"
+        />
+      </div>
+
+      <div v-if="trialGames.length" class="games">
+        <h4 class="part-title">Its games</h4>
+        <ul class="plain">
+          <li v-for="g in trialGames" :key="g.id" class="game">
+            <ELink :link-component="RouterLink" :to="{ path: '/', query: { game: String(g.id) } }">
+              {{ name(g.white) }} – {{ name(g.black) }}
+            </ELink>
+            <span class="mono res">{{ resultText(g.outcome) }}</span>
+            <span class="sec-note">{{
+              g.status === "live" ? "playing now" : plural(Math.ceil(g.plies / 2), "move")
+            }}</span>
+          </li>
+        </ul>
+        <p v-if="total > trialGames.length" class="sec-note">
+          The newest {{ trialGames.length }} of {{ total }}. All of them are in the Games list under Trials.
+        </p>
+      </div>
+    </template>
+  </div>
+</template>
+
+<style scoped>
+.evidence {
+  display: grid;
+  gap: var(--e-gap-base);
+  min-width: 0;
+}
+
+.detail {
+  margin: 0;
+  font-weight: 600;
+}
+
+.history,
+.games {
+  display: grid;
+  gap: var(--e-gap-tight);
+}
+
+.game {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 3.5rem 7rem;
+  align-items: baseline;
+  gap: var(--e-gap-snug);
+  padding-block: 0.1875rem;
+  border-block-end: var(--line);
+}
+
+.res {
+  text-align: center;
+}
+</style>

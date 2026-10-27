@@ -21,7 +21,8 @@ jobs:
   # The runner: formatting, lints (warnings fail) and tests, including the statistics checked against reference runs.
   runner:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The whole Rust suite is long on a two-core runner.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup

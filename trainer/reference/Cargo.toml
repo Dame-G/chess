@@ -1,0 +1,21 @@
+[package]
+name = "reference"
+description = "A CPU reference of Reckless's network in plain Rust, bit for bit with the engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "reference"
+
+[[bin]]
+name = "reference"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+shakmaty.workspace = true
+sha2.workspace = true

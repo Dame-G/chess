@@ -4,6 +4,8 @@
     ".": {
       "entry": ["scripts/*.mjs"]
     },
-    "web": {}
+    "apps/web": {
+      "entry": ["src/api/types.ts"]
+    }
   }
 }

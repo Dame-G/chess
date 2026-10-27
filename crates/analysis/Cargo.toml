@@ -1,0 +1,33 @@
+[package]
+name = "dameless-analysis"
+description = "The evaluation service, the position cache, reviews, profiles and comparisons."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+dameless-core.workspace = true
+dameless-engine.workspace = true
+dameless-hub.workspace = true
+dameless-store.workspace = true
+dameless-work.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+utoipa.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+# A tiny UCI engine that knows the rules (through `core`) but not chess strategy: it answers every search with the
+# legal moves in a fixed order and a score made from the material, so reviews of real games run without Reckless.
+# Integration tests find it through `CARGO_BIN_EXE_fake-eval`.
+[[bin]]
+name = "fake-eval"
+path = "tests/support/fake_eval.rs"
+test = false
+doc = false

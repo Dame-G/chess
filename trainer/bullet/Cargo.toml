@@ -1,0 +1,36 @@
+[package]
+name = "bullet"
+description = "Reckless's network in bullet: the model, loading and saving Reckless's net format, parity with the CPU reference, and the training runner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "bullet"
+
+[[bin]]
+name = "bullet-train"
+path = "src/main.rs"
+
+[features]
+# bullet's CPU backend is gone: without CUDA the model compiles against a mock device that cannot run.
+default = ["cuda"]
+cuda = ["bullet_lib/cuda", "bullet-trainer/cuda"]
+
+[dependencies]
+anyhow.workspace = true
+bullet_lib.workspace = true
+bullet-compiler.workspace = true
+bullet-gpu.workspace = true
+bullet-trainer.workspace = true
+clap.workspace = true
+reference = { path = "../reference" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+shakmaty.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,41 @@
+[workspace]
+resolver = "3"
+members = ["reference", "data", "bullet"]
+# `bullet` needs the CUDA Toolkit (`CUDA_PATH`), so a plain `cargo build` or `cargo test` here leaves it out; build it
+# with `-p bullet`.
+default-members = ["reference", "data"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/Dame-G/dameless"
+
+[workspace.dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+sha2 = "0.11.1"
+shakmaty = "0.30.2"
+# trainer/bullet: bullet from git, pinned (it has no crates.io releases); every bullet crate from the same commit.
+bullet_lib = { git = "https://github.com/jw1912/bullet", rev = "579b78b37a694cacd6e9ede4706386c15c34837c" }
+bullet-trainer = { git = "https://github.com/jw1912/bullet", rev = "579b78b37a694cacd6e9ede4706386c15c34837c" }
+bullet-compiler = { git = "https://github.com/jw1912/bullet", rev = "579b78b37a694cacd6e9ede4706386c15c34837c" }
+bullet-gpu = { git = "https://github.com/jw1912/bullet", rev = "579b78b37a694cacd6e9ede4706386c15c34837c" }
+# trainer/data
+bulletformat = "1.8.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sfbinpack = "0.6.5"
+tempfile = "3.27.0"
+viriformat = "3.0.0"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# The reference is plain integer and float arithmetic; tests run it thousands of times.
+[profile.test]
+opt-level = 3
+
+[profile.dev]
+opt-level = 1

@@ -10,3 +10,10 @@ test-results
 # The runner's data directory (database, builds, games, nets) when run from the repo.
 /data
 .claude/launch.json
+/.data
+/.data-web
+/run
+
+# Scratch builds and data of the screens agent.
+/run-feat
+/.data-feat

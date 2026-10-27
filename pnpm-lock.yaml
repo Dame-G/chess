@@ -215,7 +215,7 @@ importers:
         specifier: ^4.152.0
         version: 4.152.0(@types/node@26.6.5)
 
-  web:
+  apps/web:
     dependencies:
       '@eos-ui/tokens':
         specifier: ^0.18.0
@@ -238,9 +238,6 @@ importers:
       '@phosphor-icons/vue':
         specifier: ^2.2.1
         version: 2.2.1(vue@3.5.44(typescript@6.0.3))
-      '@pinia/colada':
-        specifier: ^1.4.8
-        version: 1.4.8(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@6.0.3)(vue@3.5.44(typescript@6.0.3)))(vue@3.5.44(typescript@6.0.3))
       chessops:
         specifier: ^0.15.1
         version: 0.15.1
@@ -3451,6 +3448,7 @@ snapshots:
       nostics: 1.3.0
       pinia: 4.1.0(@vue/devtools-api@8.2.1)(typescript@6.0.3)(vue@3.5.44(typescript@6.0.3))
       vue: 3.5.44(typescript@6.0.3)
+    optional: true
 
   '@polka/url@1.0.0-next.29':
     optional: true

@@ -1,0 +1,34 @@
+[package]
+name = "dameless-lichess"
+description = "Adapter: Lichess's HTTP API with its rate rules, OAuth PKCE, NDJSON streams, Bot and Board API, import, explorer."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+# A scriptable Lichess on 127.0.0.1 (`dameless_lichess::testing`), for this crate's tests and for the crates above it.
+mock = ["dep:axum", "dep:shakmaty"]
+
+[dependencies]
+futures.workspace = true
+getrandom.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+axum = { workspace = true, optional = true }
+shakmaty = { workspace = true, optional = true }
+
+[dev-dependencies]
+axum.workspace = true
+shakmaty.workspace = true
+
+# A mock Lichess on a fixed port for walking the app's Lichess flows by hand (see the file's header).
+[[example]]
+name = "mock_server"
+required-features = ["mock"]

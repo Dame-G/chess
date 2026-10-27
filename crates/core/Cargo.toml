@@ -1,0 +1,15 @@
+[package]
+name = "dameless-core"
+description = "Pure domain: types, chess, statistics, review rules, referee rules, SPSA and scaling maths, events. No I/O."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+regex-lite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+shakmaty = { workspace = true }
+thiserror = { workspace = true }
+utoipa = { workspace = true }
