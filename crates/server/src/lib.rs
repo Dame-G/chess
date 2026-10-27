@@ -8,5 +8,6 @@
 pub mod api;
 pub mod app;
 pub mod cli;
+pub mod mcp;
 
 pub use app::{App, Options};

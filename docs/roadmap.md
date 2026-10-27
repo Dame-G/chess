@@ -296,11 +296,22 @@ dameless train show <idea id>                            # GET /api/ideas/{id}/t
 
 **Promoting a net idea.** Reckless keeps its nets outside its repository (`networks/` is git-ignored; nets are releases of codedeliveryservice/RecklessNetworks, fetched by the build script), so nothing is committed or merged. Promotion records a new champion `v<n+1>` whose commit is the current champion's code and whose `net` is the trained net (`Versions::crown_net`); every build of the champion embeds it from then on (`EVALFILE`), a later code promotion keeps it, and ideas are tested with it (an idea's version inherits its base's net; a tune tunes with it). If the code moved since the net was tested, the net goes onto the current code and the promotion's log says so. Versions with a trained net have no `Bench:` line of their own (the commit's is measured with the shipped net), so the fingerprint compares measured benches only. **Publishing a net upstream** is manual and outside the app: the file is `nets/<sha256>.nnue`; name it `<name>-<first 8 hex of its sha256>.nnue`, attach it to a release of a networks repository, and change `NETWORK_NAME` in Reckless's `build/build.rs` in a commit with its new `Bench:` line. That commit is then an ordinary code idea.
 
-### R5: Claude in the loop
+### R5: Claude in the loop (done)
 
 - **`/mcp`.** The API's routes as MCP tools, from the same handlers (rmcp, the stateless spec), with the same token. A Claude Code skill (`skill/`) documents the loop: read the logbook, propose ideas with a hypothesis, write the branch, queue a batch, read verdicts, promote.
 - **Ideas carry their author and reasoning.** `author: claude`, notes in markdown. The logbook says who tried what and why.
 - **Not built:** the app never runs Claude by itself. You start a Claude session; it drives the app.
+
+What was built:
+
+- **`POST /mcp`** (`crates/server/src/mcp/`): a Streamable HTTP MCP server on rmcp 3.8, stateless (the 2026-07-28 protocol, and an older client's `initialize` too), answering JSON, behind the API's own `host` and `guard` layers (bearer token, loopback `Host`, known `Origin`).
+- **Tools are generated from the OpenAPI document** at startup, one per operation (85 today, plus the two below), named by operation id. The description is the route's summary and description plus its CLI command from `cli::COMMANDS`; the input schema is the path and query parameters plus `body`, with the component schemas it uses copied into `$defs`. A call is turned into a request and sent through the app's router, so a tool cannot drift from its route; a route's error is a tool error with its status and body. Left out: the event stream and `GET /api/token` (the OAuth callback is not in the document).
+- **Annotations and warnings** from three tables in `mcp/tools.rs`, checked against the document by tests: `REACH` (open-world: Lichess actions on the user's real accounts say "acts on the user's real Lichess account: only when the user asked"; `push`, `setup` and dataset imports act on the outside world; explorer, tablebase, leaderboard, player lookups and imports read from Lichess), `DESTRUCTIVE` (deleting, stopping, resigning, promoting, rewording, pushing, logging out) and `FAIR_PLAY` (tools the policy refuses, which say so). GETs are read-only, PUT and DELETE idempotent.
+- **Two convenience tools**, `wait_for_work` and `wait_for_idea`, poll the same routes every two seconds up to a timeout (default 600 s, at most an hour).
+- **Server instructions** carry the loop in brief, fair play (never analyse a position from a game the user is playing; the API refuses with 409 `fair_play`; do not work around it) and the real-account rule.
+- **The skill** (`skill/dameless/`): `SKILL.md` (connecting, the rules, the loop in short), `improving.md` (ideas step by step, a batch file, the funnels, reading verdicts, promoting, tuning, nets, versions) and `coaching.md` (imports, reviews, profiles, compare, drills without spoiling answers, repertoire, levels).
+- **`AGENTS.md`** rewritten for the new app (R7's first item), and the README.
+- Tests: unit tests for the generation (every operation but the excluded ones is a tool; schemas stand alone; the tables name real operations; real-account tools say so) and for turning calls into requests; integration tests (`crates/server/tests/mcp.rs`) for the guard, `tools/list` against the document, read and write calls through the routes, a route's error, `wait_for_work`, and an older client's `initialize`.
 
 ### R6: one library, one look
 

@@ -175,6 +175,7 @@ pub fn router(app: Arc<App>) -> Router {
         .merge(api)
         .merge(open)
         .merge(connections::callback_router())
+        .merge(crate::mcp::router(app.clone()))
         .fallback(web::web)
         .layer(middleware::from_fn_with_state(app.clone(), guard::host))
         .with_state(app);

@@ -1,41 +1,36 @@
 # Dameless
 
-A development harness for a fork of the [Reckless](https://github.com/codedeliveryservice/Reckless) chess engine. It builds engine variants, runs them through a testing funnel, analyses and plays games, and (later) tunes parameters and trains networks. People use it through the web UI; agents use the same capabilities through the `chess` CLI and the HTTP API.
+**Two players, one board.** You and your engine, Dameless (a fork of [Reckless](https://github.com/codedeliveryservice/Reckless)), both get stronger by playing games and learning from them.
 
-The UI is published at https://chess.dame.gg. All data stays with a **runner**, a local program (`chess serve`) on the machine that does the work. The hosted UI is a convenience: the runner serves the same UI itself.
+- **You** play Dameless at any strength, or on Lichess from the same board. Your games are reviewed move by move; your mistakes come back as drills; your openings, accuracy and rating add up into a profile.
+- **Dameless** gets stronger through ideas: a hypothesis and a change, tested in a funnel of trials copied from Reckless's OpenBench, then promoted to champion when kept. Tunes (SPSA) and trained networks are ideas too. It plays on Lichess as a BOT.
+- **Claude** drives the same app through its MCP endpoint or CLI: every action in the UI is a route and a command with the same name.
 
-| Path        | What                                                                                   |
-| ----------- | -------------------------------------------------------------------------------------- |
-| `runner/`   | The `chess` binary (Rust): API, live events, SQLite store, CLI, embedded UI            |
-| `web/`      | The UI (Vue, [eos](https://eos.dame.gg)), built into `web/dist`                        |
-| `scripts/`  | `api-types.mjs`: regenerates the web client's types from the runner's OpenAPI document |
-| `AGENTS.md` | How an agent drives the harness                                                        |
+Everything runs on your machine. The app serves its own UI; https://chess.dame.gg is the same UI, paired with your local app by its token.
 
-## Run it
+## Quick start
 
-The Reckless checkout sits beside this repo (`../reckless`). Set `RECKLESS_DIR` to use one elsewhere.
+The fork's checkout sits beside this repository (`../reckless`; set `RECKLESS_DIR` to use another).
 
 ```bash
-corepack pnpm install
-corepack pnpm build            # the UI, into web/dist
-cargo run -p chess -- serve    # http://127.0.0.1:7878
+corepack pnpm install && corepack pnpm build    # the web UI, into apps/web/dist
+cargo build --release -p dameless
+target/release/dameless setup                   # fastchess and the opening book (a few hundred MB)
+target/release/dameless serve                   # http://127.0.0.1:7979
 ```
 
-For UI work, run the runner and `corepack pnpm dev` (http://localhost:5173); the dev server proxies `/api` to the runner.
-
-### Using the hosted UI with a local runner
-
-chess.dame.gg can reach a runner on your machine. Run `chess token`, paste the token into the Runner page, and allow the browser's prompt for access to devices on your local network. The runner accepts the hosted origin only with that token, checks the `Host` of every request, and listens on `127.0.0.1` unless told otherwise. A runner on another machine (`--listen 0.0.0.0:7878`, behind Tailscale or a Cloudflare Tunnel) requires the token on every request.
-
-## Checks
+Then open http://127.0.0.1:7979. To let Claude Code drive it:
 
 ```bash
-cargo fmt --all --check && cargo clippy --all-targets -- -D warnings && cargo test
-corepack pnpm lint && corepack pnpm format:check && corepack pnpm typecheck && corepack pnpm knip && corepack pnpm test
-corepack pnpm api              # after changing the API: regenerate runner/openapi.json and web/src/api/schema.d.ts
+claude mcp add --transport http dameless http://127.0.0.1:7979/mcp --header "Authorization: Bearer $(dameless token)"
 ```
 
-CI runs all of these; `ci-ok` is the one required check. A green run on `main` deploys the UI to Cloudflare once the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets are set.
+## More
+
+- [`AGENTS.md`](AGENTS.md): running the app, the CLI and MCP, every area, and working on the code.
+- [`skill/dameless/`](skill/dameless/SKILL.md): the Claude Code skill for driving the app.
+- [`docs/design.md`](docs/design.md): the contract for every crate, route, event, table and screen.
+- [`docs/roadmap.md`](docs/roadmap.md): what is built and what comes next.
 
 ## License
 
