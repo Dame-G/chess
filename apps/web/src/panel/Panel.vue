@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { RouterLink } from "vue-router";
+import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ETabs } from "@eos-ui/vue/components/ETabs";
+import { ELink } from "@eos-ui/vue/components/ELink";
 import type { Classification } from "../api/types";
 import MoveList from "../board/MoveList.vue";
 import TreeMoves from "../board/TreeMoves.vue";
@@ -37,6 +40,10 @@ const hints = computed(() => (policy.allowed && games.review ? games.review.plie
 
 <template>
   <aside class="panel" :class="{ 'panel--drill': board.drilling }" aria-label="Panel">
+    <ENotice v-if="board.missing !== null" tone="warning" title="That game isn't here" class="missing">
+      It may have been deleted, or the link is wrong.
+      <ELink :link-component="RouterLink" to="/">Go to the board</ELink>
+    </ENotice>
     <ETabs v-model="mode" :items="tabs" label="Mode" class="tabs">
       <template #panel-play><PlayPanel /></template>
       <template #panel-watch><WatchPanel /></template>
@@ -74,6 +81,14 @@ const hints = computed(() => (policy.allowed && games.review ? games.review.plie
   height: 100%;
 }
 
+.panel:has(.missing) {
+  grid-template-rows: auto auto minmax(12rem, 1fr);
+}
+
+.missing {
+  margin: var(--ws-pad);
+}
+
 .panel--drill {
   grid-template-rows: auto;
   align-content: start;
@@ -108,8 +123,16 @@ const hints = computed(() => (policy.allowed && games.review ? games.review.plie
     max-height: none;
   }
 
+  /* Stacked, the page scrolls: the list grows with the game instead of scrolling inside the page. */
   .moves {
-    height: 18rem;
+    height: auto;
+    overflow: visible;
+  }
+
+  .moves :deep(.moves),
+  .moves :deep(.tree) {
+    height: auto;
+    overflow: visible;
   }
 }
 </style>

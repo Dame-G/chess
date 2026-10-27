@@ -86,13 +86,17 @@ export function playUci(pos: ChessPosition, uci: string): { uci: string; san: st
   return { uci: standard, san };
 }
 
-/** A UCI move from the board, promoting to a queen when a pawn reaches the last rank. */
-export function boardMove(position: Position, from: Key, to: Key): string {
-  const board = position.fen.split(" ")[0]!;
-  const rank = to[1];
-  const piece = pieceAt(board, from);
-  const promotes = (piece === "P" && rank === "8") || (piece === "p" && rank === "1");
-  return `${from}${to}${promotes ? "q" : ""}`;
+/** The colour of the pawn that `from` to `to` promotes, or `null` for any other move. */
+export function promotingColor(position: Position, from: Key, to: Key): Color | null {
+  const piece = pieceAt(position.fen.split(" ")[0]!, from);
+  if (piece === "P" && to[1] === "8") return "white";
+  if (piece === "p" && to[1] === "1") return "black";
+  return null;
+}
+
+/** A UCI move from the board; a pawn reaching the last rank carries the piece it becomes (a queen unless told). */
+export function boardMove(position: Position, from: Key, to: Key, promotion = "q"): string {
+  return `${from}${to}${promotingColor(position, from, to) ? promotion : ""}`;
 }
 
 function pieceAt(boardFen: string, square: Key): string | undefined {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { DrawShape } from "@lichess-org/chessground/draw";
@@ -7,7 +7,8 @@ import type { Color, Key } from "@lichess-org/chessground/types";
 import "@lichess-org/chessground/assets/chessground.base.css";
 import "@lichess-org/chessground/assets/chessground.cburnett.css";
 import "./board.css";
-import { boardMove, type Position } from "./position";
+import { boardMove, promotingColor, type Position } from "./position";
+import { promotionCells } from "./promotion";
 
 const props = defineProps<{
   position: Position;
@@ -88,6 +89,39 @@ function config(animation?: { enabled: boolean; duration?: number }) {
   } as const;
 }
 
+/** A pawn that has reached the last rank waits here for the piece it becomes: the move is sent once one is chosen. */
+const pending = ref<{ from: Key; to: Key; color: Color } | null>(null);
+const chooser = ref<HTMLElement>();
+const cells = computed(() => (pending.value ? promotionCells(pending.value.to, props.orientation ?? "white") : []));
+
+function moved(from: Key, to: Key) {
+  const color = promotingColor(props.position, from, to);
+  if (!color) return emit("move", boardMove(props.position, from, to));
+  pending.value = { from, to, color };
+  void nextTick(() => chooser.value?.querySelector<HTMLElement>("button")?.focus());
+}
+function choose(letter: string) {
+  const p = pending.value;
+  if (!p) return;
+  pending.value = null;
+  emit("move", boardMove(props.position, p.from, p.to, letter));
+}
+/** Escape or a click outside: the pawn goes back where it was. */
+function cancel() {
+  if (!pending.value) return;
+  pending.value = null;
+  cg?.cancelPremove();
+  cg?.set(config({ enabled: false }));
+}
+function onKey(e: KeyboardEvent) {
+  if (e.key !== "Escape" || !pending.value) return;
+  e.stopPropagation();
+  e.preventDefault();
+  cancel();
+}
+onMounted(() => window.addEventListener("keydown", onKey, true));
+onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
+
 onMounted(() => {
   const c = config();
   cg = Chessground(el.value!, {
@@ -112,7 +146,7 @@ onMounted(() => {
     },
     movable: {
       ...c.movable,
-      events: { after: (from: Key, to: Key) => emit("move", boardMove(props.position, from, to)) },
+      events: { after: moved },
     },
   });
   lastFen = props.position.fen;
@@ -122,6 +156,7 @@ onMounted(() => {
 watch(
   () => props.position,
   (p) => {
+    pending.value = null;
     cg?.set(config(motion(p)));
     // A premove waiting for this turn is played now, if it is still legal.
     if (props.premove && props.premove === p.turn) cg?.playPremove();
@@ -129,7 +164,10 @@ watch(
 );
 watch(
   () => [props.orientation, props.movable, props.still, props.premove],
-  () => cg?.set(config({ enabled: false })),
+  () => {
+    pending.value = null;
+    cg?.set(config({ enabled: false }));
+  },
 );
 watch(
   () => props.shapes,
@@ -150,5 +188,20 @@ defineExpose({
 <template>
   <div class="board" :class="{ 'board--still': still }">
     <div ref="el" class="board-cg"></div>
+    <div v-if="pending" ref="chooser" class="cg-wrap promo" role="dialog" aria-label="Promote to">
+      <button type="button" class="promo-dim" tabindex="-1" aria-label="Cancel" @click="cancel"></button>
+      <button
+        v-for="c in cells"
+        :key="c.choice.letter"
+        type="button"
+        class="promo-choice"
+        :style="{ left: `${c.col * 12.5}%`, top: `${c.row * 12.5}%` }"
+        :aria-label="c.choice.label"
+        :title="c.choice.label"
+        @click="choose(c.choice.letter)"
+      >
+        <piece :class="[c.choice.role, pending.color]"></piece>
+      </button>
+    </div>
   </div>
 </template>
