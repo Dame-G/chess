@@ -3,6 +3,7 @@ import { defineStore } from "pinia";
 import type { Color } from "@lichess-org/chessground/types";
 import type { GameId, Score, Side } from "../api/types";
 import { pawns, scoreText } from "../format";
+import { ApiError } from "../api/client";
 import { useDrills } from "../stores/drills";
 import { useEvaluation } from "../stores/evaluation";
 import { useGames } from "../stores/games";
@@ -38,6 +39,8 @@ export const useBoard = defineStore("board", () => {
   const node = shallowRef<TreeNode>(tree.value.root);
   const treeVersion = ref(0);
   const chosenMode = ref<Mode | null>(null);
+  /** The game the address named that does not exist, so the panel can say so instead of showing an empty board. */
+  const missing = ref<GameId | null>(null);
   const flipped = ref(false);
   /** Explore's engine, on or off (Space). */
   const engineOn = stored("engine", true);
@@ -112,8 +115,14 @@ export const useBoard = defineStore("board", () => {
     drills.leave();
     if (gameId.value !== id) chosenMode.value = null;
     gameId.value = id;
+    missing.value = null;
     following.value = at === undefined;
-    await games.openGame(id);
+    try {
+      await games.openGame(id);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) missing.value = id;
+      throw e;
+    }
     ply.value = at === undefined ? lastPly.value : Math.min(at, lastPly.value);
   }
 
@@ -121,6 +130,7 @@ export const useBoard = defineStore("board", () => {
   function openFree(fen = INITIAL_FEN, moves: string[] = []) {
     drills.leave();
     gameId.value = null;
+    missing.value = null;
     games.closeGame();
     chosenMode.value = null;
     tree.value = new GameTree({ fen, moves });
@@ -252,6 +262,7 @@ export const useBoard = defineStore("board", () => {
     shownScore,
     shownEval,
     address,
+    missing,
     openGame,
     openFree,
     go,

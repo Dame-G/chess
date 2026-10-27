@@ -12,6 +12,7 @@
   --board-coord-light: #2b1a0c;
   --board-coord-dark: #2b1a0c;
 
+  position: relative;
   width: 100%;
   aspect-ratio: 1;
   border-radius: var(--e-radius-sm, 2px);
@@ -171,3 +172,50 @@
 }
 
 /* stylelint-enable selector-type-no-unknown */
+
+/* The promotion chooser: the board dims, and the four pieces stand in a column from the promotion square toward the
+   middle on the board's own sprites. Escape or a click on the dim cancels. */
+.board .promo.cg-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: rgb(20 10 2 / 55%);
+}
+
+.board .promo-choice {
+  position: absolute;
+  width: 12.5%;
+  height: 12.5%;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--board-light);
+  cursor: pointer;
+}
+
+.board .promo-choice piece {
+  position: static;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  pointer-events: none;
+}
+
+.board .promo-choice:hover {
+  background: var(--board-selected);
+}
+
+.board .promo-choice:focus-visible {
+  outline: 2px solid var(--e-focus-ring, currentColor);
+  outline-offset: -2px;
+}
+
+.board .promo-dim {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
