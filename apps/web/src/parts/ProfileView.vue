@@ -421,6 +421,7 @@ const gameMoments = computed(() => {
 }
 
 .class-legend span {
+  justify-self: end;
   text-align: end;
   white-space: nowrap;
 }

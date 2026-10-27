@@ -123,7 +123,12 @@ const stale = computed(
 
     <section class="sec" aria-label="The players">
       <div v-if="!comparison && !failed" aria-busy="true"><ESkeleton :lines="8" label="Loading the comparison" /></div>
-      <div v-else-if="comparison" class="scroll" :class="{ stale: stale || loading }">
+      <div
+        v-else-if="comparison"
+        class="scroll"
+        :class="{ stale: stale || loading }"
+        :style="{ '--cols': profiles.length }"
+      >
         <ETable caption="Players compared" hide-caption dense class="table">
           <thead>
             <tr>
@@ -210,10 +215,18 @@ const stale = computed(
 }
 
 .scroll {
+  --label-w: 9.5rem;
+
   position: relative;
   min-width: 0;
   overflow: clip;
   transition: opacity var(--e-duration-fade, 0.15s);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll {
+    transition: none;
+  }
 }
 
 .scroll.stale {
@@ -222,7 +235,7 @@ const stale = computed(
 
 /* The table is wider than a phone: it scrolls sideways inside eos's region while the labels stay in view. */
 .table :deep(table) {
-  min-inline-size: 34rem;
+  min-inline-size: calc(var(--label-w) + var(--cols, 2) * 8.5rem);
   table-layout: fixed;
 }
 
@@ -243,8 +256,8 @@ const stale = computed(
   position: sticky;
   inset-inline-start: 0;
   z-index: var(--e-z-raised);
-  inline-size: 9.5rem;
-  min-inline-size: 9.5rem;
+  inline-size: var(--label-w);
+  min-inline-size: var(--label-w);
   background: var(--e-surface);
   font-family: var(--e-font-sans);
   font-weight: 500;
@@ -320,9 +333,8 @@ const stale = computed(
 }
 
 @media (width < 36rem) {
-  .label-col {
-    inline-size: 7rem;
-    min-inline-size: 7rem;
+  .scroll {
+    --label-w: 7rem;
   }
 }
 
