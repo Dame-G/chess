@@ -199,27 +199,6 @@ impl Repo {
         self.git(&["push", "-u", "origin", &format!("refs/heads/{branch}:refs/heads/{branch}")]).await.map(drop)
     }
 
-    /// Which of these commits have `needle` in the file at `path`: one `git grep` over all their trees. A commit without
-    /// the file, or a failed grep, counts as not having it.
-    pub async fn commits_containing(
-        &self,
-        shas: &[&str],
-        path: &str,
-        needle: &str,
-    ) -> std::collections::HashSet<String> {
-        let mut found = std::collections::HashSet::new();
-        // Chunked, so a long list of branches stays well inside a command line.
-        for chunk in shas.chunks(200) {
-            let mut args = vec!["grep", "-l", "-F", "-e", needle];
-            args.extend_from_slice(chunk);
-            args.extend(["--", path]);
-            if let Ok(out) = self.git(&args).await {
-                found.extend(out.lines().filter_map(|l| l.split_once(':').map(|(sha, _)| sha.to_owned())));
-            }
-        }
-        found
-    }
-
     /// A file's contents at a commit.
     pub async fn read_file(&self, commit: &str, path: &str) -> Result<String> {
         self.git(&["show", &format!("{commit}:{path}")]).await

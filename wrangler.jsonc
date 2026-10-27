@@ -1,5 +1,5 @@
 {
-  // The hosted UI is a Worker with static assets only: the same build the runner embeds. All data stays with the runner.
+  // The hosted UI is a Worker with static assets only: the same build the app embeds. All data stays with the local app.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "chess",
   "compatibility_date": "2026-10-01",

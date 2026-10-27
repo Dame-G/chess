@@ -139,7 +139,7 @@ watch(
 onBeforeUnmount(() => cg?.destroy());
 
 defineExpose({
-  /** Puts the pieces back where the position says, such as after a move the runner refused. */
+  /** Puts the pieces back where the position says, such as after a move the app refused. */
   reset: () => {
     cg?.cancelPremove();
     cg?.set(config({ enabled: false }));

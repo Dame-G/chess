@@ -45,6 +45,6 @@ The rebuilt app runs on Windows today, live from `C:\dev\dameless-live` (a relea
 
 See `AGENTS.md` › Working on Dameless itself for gates, regenerating API types, the shared-checkout rules and the mock Lichess.
 
-- **Run the live app from its own worktree**, so half-finished code can't break it.
-- **Give each agent its own `CARGO_TARGET_DIR`,** or share one `target-shared` (cargo locks it).
+- **`C:\dev\chess` is the dev checkout** of `main`. Builds go to `CARGO_TARGET_DIR=C:\dev\chess\target-shared`, one cache every agent shares (cargo locks it); a hand-run dev app is copied to `C:\dev\chess\run\dameless.exe` (ignored), port 7978, data in `C:\dev\dameless-dev-data`.
+- **Run the live app from its own worktree** (`C:\dev\dameless-live`), so half-finished code can't break it.
 - **Keep an eye on disk:** one debug target is 3–7 GB. On Windows, many parallel agents' targets once filled the drive.

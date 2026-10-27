@@ -54,22 +54,6 @@ impl<T: DeserializeOwned> Ndjson<T> {
             }
         }
     }
-
-    /// The stream as a `futures::Stream`, ending at the first error that is not one unreadable line.
-    pub fn into_stream(self) -> impl futures::Stream<Item = Result<T, Error>> + Send + 'static
-    where
-        T: Send + 'static,
-    {
-        futures::stream::unfold(Some(self), |state| async move {
-            let mut stream = state?;
-            match stream.next().await {
-                Ok(Some(item)) => Some((Ok(item), Some(stream))),
-                Ok(None) => None,
-                Err(e @ Error::Unexpected(_)) => Some((Err(e), Some(stream))),
-                Err(e) => Some((Err(e), None)),
-            }
-        })
-    }
 }
 
 /// Takes the first whole line off the buffer, without its line ending.

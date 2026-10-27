@@ -43,10 +43,6 @@ impl Seat {
     pub fn is_you(&self) -> bool {
         self.player == PlayerKey::You
     }
-
-    pub fn is_dameless(&self) -> bool {
-        self.player == PlayerKey::Dameless
-    }
 }
 
 /// Where a game comes from.

@@ -7,9 +7,8 @@ target*/
 .vitest
 test-results
 *.timestamp-*.mjs
-# The runner's data directory (database, builds, games, nets) when run from the repo.
-/data
 .claude/launch.json
+.claude/worktrees/
 /.data
 /.data-web
 /run
