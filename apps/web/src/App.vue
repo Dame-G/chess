@@ -162,13 +162,6 @@ watchEffect(() => {
     border-inline-start: 0;
   }
 
-  /* The moves take the room they need (the page scrolls), up to most of a screen, instead of a short pane inside the
-     page's own scroll. Both the panel's wrapper and the list inside it carry the class. */
-  .ws-panel :deep(.moves) {
-    height: auto;
-    max-height: 60dvh;
-  }
-
   /* The status line moves into the header (a compact indicator), so the page does not end on it. */
   .shell-foot {
     display: none;
