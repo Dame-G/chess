@@ -71,7 +71,9 @@ watchEffect(() => {
 <style scoped>
 /* The workspace fills the window between the header and the status line; panes scroll on their own. */
 .shell {
+  /* One gutter for the header, the panes and the status line, so their edges line up (eos's own is 36px). */
   --e-shell-width: 100%;
+  --e-gutter: 0.75rem;
 
   grid-template-columns: minmax(0, 1fr);
   height: 100dvh;

@@ -40,7 +40,13 @@ const sentence = computed(() => {
   return more ? `${progressText(first)} (and ${more} more)` : progressText(first);
 });
 const state = computed(() =>
-  work.running.some((w) => w.status === "running") ? "busy" : work.running.length ? "paused" : "idle",
+  games.error
+    ? "error"
+    : work.running.some((w) => w.status === "running")
+      ? "busy"
+      : work.running.length
+        ? "paused"
+        : "idle",
 );
 
 async function run(f: (id: WorkId) => Promise<unknown>, id: WorkId) {
@@ -63,7 +69,7 @@ const fraction = (w: Work) => (w.progress?.total ? w.progress.done / w.progress.
       <template #trigger>
         <EButton variant="quiet" size="sm" class="work-trigger">
           <span class="dot" :class="`dot--${state}`" aria-hidden="true"></span>
-          <span class="sentence">{{ sentence }}</span>
+          <span class="sentence" :title="sentence">{{ sentence }}</span>
         </EButton>
       </template>
       <div class="queue">
@@ -175,6 +181,10 @@ const fraction = (w: Work) => (w.progress?.total ? w.progress.done / w.progress.
 
 .dot--paused {
   background: var(--e-warning);
+}
+
+.dot--error {
+  background: var(--e-danger);
 }
 
 .fairplay {

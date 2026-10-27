@@ -13,6 +13,9 @@ const scheme = computed<"light" | "dark">(() =>
   choice.value === "system" ? (systemDark.value ? "dark" : "light") : choice.value,
 );
 
+/** The scheme on screen, whatever the choice: what a "Light theme" or "Dark theme" command should switch away from. */
+export const shown = scheme;
+
 /** The browser chrome takes the header's own colour. */
 const chrome = { light: saddleLight.tokens["surface"], dark: saddleDark.tokens["surface"] };
 

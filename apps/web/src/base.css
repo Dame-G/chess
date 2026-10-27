@@ -17,6 +17,9 @@ body {
   height: 100%;
 }
 
+/* Stacking is eos's own scale and the app adds no z-index of its own: header 4, dialogs and sheets 40, popovers 45,
+   toasts 50, tooltips 55. A pane that needs to sit over a neighbour uses `var(--e-z-raised)`, never a bare number. */
+
 /* Figures that change as they update (evals, counts) keep their width. */
 .num {
   font-variant-numeric: tabular-nums;

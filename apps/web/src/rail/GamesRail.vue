@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { PhCaretDown, PhCaretRight } from "@phosphor-icons/vue";
+import { EButton } from "@eos-ui/vue/components/EButton";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { EList } from "@eos-ui/vue/components/EList";
 import { EListRow } from "@eos-ui/vue/components/EListRow";
@@ -15,7 +16,7 @@ import { useIdeas } from "../stores/ideas";
 import { useVersions } from "../stores/versions";
 import { stored } from "../stored";
 import GameRow from "./GameRow.vue";
-import { FILTERS, railRows, stageLabel, type RailFilter, type RailRow } from "./rail";
+import { emptyNote, FILTERS, railRows, stageLabel, type RailFilter, type RailRow } from "./rail";
 
 /**
  * The Games rail: every game in one windowed list, live ones pinned, a trial's games folded into one row that opens
@@ -75,6 +76,11 @@ const current = computed({
   set: () => {},
 });
 
+function retry() {
+  games.loaded = false;
+  void games.load();
+}
+
 /** A trial's row opens or closes; a game opens on the board. */
 function pick(key: GameId | string) {
   if (typeof key === "string" && key.startsWith(TRIAL)) toggle(Number(key.slice(TRIAL.length)) as TrialId);
@@ -88,24 +94,38 @@ function pick(key: GameId | string) {
       <ESegmented v-model="filter" label="Show games" hide-label size="sm" :options="FILTERS" class="filter" />
     </div>
     <ESkeleton v-if="!games.loaded" :lines="10" label="Loading games" class="pad" />
+    <EEmptyState
+      v-else-if="games.error && !games.list.length"
+      class="pad"
+      title="Games did not load"
+      tone="danger"
+      size="sm"
+      bare
+    >
+      {{ games.error }}
+      <template #action><EButton variant="outline" size="sm" @click="retry">Try again</EButton></template>
+    </EEmptyState>
     <EEmptyState v-else-if="!rows.length" class="pad" title="No games here yet" size="sm" bare>
-      Games you play, Dameless's games on Lichess and trial games all land here.
+      {{ emptyNote[filter] }}
+      <template v-if="filter !== 'all'" #action>
+        <EButton variant="outline" size="sm" @click="filter = 'all'">Show all games</EButton>
+      </template>
     </EEmptyState>
     <EList v-else v-model="current" label="Games" class="rail-list" @select="pick">
       <EVirtualList v-slot="{ item }" :items="items" :row-height="56" measure item-key="key">
         <GameRow v-if="'game' in item" :game="item.game" :nested="item.nested" />
-        <EListRow
-          v-else
-          :value="`${TRIAL}${item.trial.trial}`"
-          :live="item.trial.live"
-          :subtitle="trialTitle(item.trial).detail"
-        >
+        <EListRow v-else :value="`${TRIAL}${item.trial.trial}`" :subtitle="trialTitle(item.trial).detail">
           <template #leading>
-            <component :is="opened.has(item.trial.trial) ? PhCaretDown : PhCaretRight" aria-hidden="true" />
+            <span class="gutter" aria-hidden="true">
+              <component :is="opened.has(item.trial.trial) ? PhCaretDown : PhCaretRight" />
+            </span>
           </template>
-          <template #trailing>{{ item.trial.games.length }}<span class="e-sr"> games here</span></template>
+          <template #trailing>
+            <span v-if="item.trial.live" class="live">live · </span>{{ item.trial.games.length
+            }}<span class="e-sr"> games here</span>
+          </template>
           <template #title>
-            {{ trialTitle(item.trial).title
+            <span v-if="item.trial.live" class="e-sr">Live, </span>{{ trialTitle(item.trial).title
             }}<span class="e-sr">, {{ opened.has(item.trial.trial) ? "open" : "closed" }}</span>
           </template>
         </EListRow>
@@ -131,14 +151,20 @@ function pick(key: GameId | string) {
   inline-size: 100%;
 }
 
-.filter :deep([role="radiogroup"]) {
+/* Five filters fill the rail's width, each sized to its word first, with no scrolling inside the control. */
+.filter :deep(.e-seg) {
   inline-size: 100%;
 }
 
-.filter :deep([role="radio"]) {
-  flex: 1 1 0;
-  min-width: 0;
-  padding-inline: 0.25rem;
+.filter :deep(.e-seg-opt) {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.filter :deep(.e-seg-text) {
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding-inline: 0.5rem;
 }
 
 .rail-list {
@@ -146,7 +172,28 @@ function pick(key: GameId | string) {
   min-height: 0;
 }
 
+/* A long player name ends in an ellipsis instead of wrapping into a second line. */
+.rail-list :deep(.e-listrow-title) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gutter {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: 1rem;
+  color: var(--e-muted);
+}
+
+.live {
+  color: var(--e-success);
+}
+
+/* The empty and error states sit at the top of the list's room, not spread over its height. */
 .pad {
+  align-self: start;
   padding: var(--ws-pad);
 }
 </style>

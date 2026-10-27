@@ -32,7 +32,14 @@ const keys = formatShortcut("mod+k");
   <EAppHeader class="top" brand-to="/" brand-label="Dameless, the board" :link-component="RouterLink">
     <template #brand><Logo /></template>
     <template #logo>
-      <EButton variant="outline" size="sm" :icon="PhMagnifyingGlass" class="bar" @click="ui.palette = true">
+      <EButton
+        variant="outline"
+        size="sm"
+        :icon="PhMagnifyingGlass"
+        class="bar"
+        aria-label="Search or run a command"
+        @click="ui.palette = true"
+      >
         <span class="bar-label">Search or run a command</span>
         <span class="bar-keys"
           ><EKbd v-for="k in keys" :key="k" size="sm">{{ k }}</EKbd></span
@@ -76,14 +83,16 @@ const keys = formatShortcut("mod+k");
   gap: var(--e-gap-base);
 }
 
+/* The wordmark stays at the left edge; the command bar centres in the room between it and the actions. */
 .top :deep(.e-appheader-logo) {
   flex: 1 1 0;
-  justify-content: center;
+  justify-content: flex-start;
   min-inline-size: 0;
 }
 
 .bar {
   justify-content: flex-start;
+  margin-inline: auto;
   inline-size: min(100%, 26rem);
   color: var(--e-muted);
   font-weight: 400;
@@ -110,10 +119,7 @@ const keys = formatShortcut("mod+k");
 
   .bar {
     inline-size: auto;
-  }
-
-  .top :deep(.e-appheader-logo) {
-    justify-content: flex-start;
+    margin-inline: 0;
   }
 
   .top :deep(.e-appheader-bar) {
