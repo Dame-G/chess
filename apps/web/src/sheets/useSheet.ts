@@ -1,4 +1,4 @@
-import { onMounted, reactive, ref } from "vue";
+import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useBoard } from "../board/board";
 
@@ -18,6 +18,15 @@ export function useSheet() {
   /** Whether the page before this one was another sheet, so Back can go there. */
   const canGoBack = ref(false);
   onMounted(() => {
+    // A truncated title keeps its full text for a pointer to read.
+    const title = document.querySelector<HTMLElement>(".e-sheet-title");
+    if (title) {
+      const sync = () => (title.title = title.textContent ?? "");
+      sync();
+      const watch = new MutationObserver(sync);
+      watch.observe(title, { childList: true, characterData: true, subtree: true });
+      onBeforeUnmount(() => watch.disconnect());
+    }
     const back = (window.history.state as { back?: string | null } | null)?.back ?? null;
     canGoBack.value = !!back && !back.startsWith("/?") && back !== "/";
   });

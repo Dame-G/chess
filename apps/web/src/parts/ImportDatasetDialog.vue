@@ -97,6 +97,7 @@ async function start() {
     title="Import a dataset"
     description="One shard from the web, downloaded and converted to the engine's format."
     size="md"
+    initial-focus="#import-form input"
   >
     <EForm id="import-form" @submit.prevent="start">
       <ETextField v-model="url" label="Address" placeholder="https://" autocomplete="off" :error="urlError" />

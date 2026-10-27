@@ -109,6 +109,7 @@ async function save() {
     title="The bot's rules"
     description="What Dameless plays on Lichess, and which challenges it takes."
     size="md"
+    initial-focus="#bot-rules button, #bot-rules input"
   >
     <EForm id="bot-rules" @submit.prevent="save">
       <ESelect v-model="version" label="Version that plays" :options="versionOptions" />
