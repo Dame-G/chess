@@ -195,8 +195,10 @@ pub enum Command {
     Tune(TuneArgs),
     /// The tunables a branch declares.
     Tunables { branch: String },
-    /// The harness check: `harness` (status) or `harness check [--pairs 2000] [--wait]`.
+    /// The harness check: `harness` (status) or `harness check [--determinism-pairs 1000 --symmetry-pairs 4000] [--wait]`.
     Harness(HarnessArgs),
+    /// Taking upstream Reckless: `upstream` (status), `upstream sync [--wait]`, `upstream auto on|off`.
+    Upstream(UpstreamArgs),
     /// Versions, newest first.
     Versions {
         /// One line: champion, idea, upstream or other.
@@ -734,13 +736,37 @@ pub struct HarnessArgs {
 
 #[derive(Subcommand)]
 pub enum HarnessAction {
-    /// Check the harness for false accepts: main against an identical branch at VSTC [0, 3].
+    /// Check the harness: main against an identical branch, for determinism at 25,000 nodes, then symmetry at VSTC.
     Check {
-        /// Also a symmetry run of this many pairs (the UI offers 2,000).
+        /// Pairs of the determinism part (default 1,000): each must be the same game twice.
         #[arg(long)]
-        pairs: Option<u32>,
+        determinism_pairs: Option<u32>,
+        /// Pairs of the symmetry part (default 4,000): Elo must hold 0 and the pairs be symmetric.
+        #[arg(long)]
+        symmetry_pairs: Option<u32>,
         #[arg(long)]
         wait: bool,
+    },
+}
+
+#[derive(Args)]
+#[command(args_conflicts_with_subcommands = true)]
+pub struct UpstreamArgs {
+    #[command(subcommand)]
+    pub action: Option<UpstreamAction>,
+}
+
+#[derive(Subcommand)]
+pub enum UpstreamAction {
+    /// Fetch upstream and take its new commits as the next champion now (local merge; never pushes).
+    Sync {
+        #[arg(long)]
+        wait: bool,
+    },
+    /// Turn the six-hourly automatic sync on or off.
+    Auto {
+        #[arg(value_parser = ["on", "off"])]
+        state: String,
     },
 }
 
@@ -975,6 +1001,9 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("work_train", "dameless train steps 7"),
     ("get_dameless", "dameless dameless"),
     ("push", "dameless push"),
+    ("upstream_status", "dameless upstream"),
+    ("set_upstream_settings", "dameless upstream auto off"),
+    ("sync_upstream", "dameless upstream sync"),
     ("list_versions", "dameless versions"),
     ("make_version", "dameless version make deeper-lmr"),
     ("list_builds", "dameless builds 3"),
@@ -992,7 +1021,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("promote_idea", "dameless idea promote 5"),
     ("check_branch", "dameless idea check-branch deeper-lmr"),
     ("fix_bench", "dameless idea fix-bench deeper-lmr"),
-    ("check_harness", "dameless harness check --pairs 2000"),
+    ("check_harness", "dameless harness check --symmetry-pairs 4000"),
     ("harness_status", "dameless harness"),
     ("list_work", "dameless work"),
     ("get_work", "dameless work show 7"),
@@ -1167,8 +1196,12 @@ fn version_line(x: &Value) -> String {
     } else {
         String::new()
     };
+    let upstream = match x["upstream"]["commits"].as_array() {
+        Some(c) => format!("  from upstream · {} commit{}", c.len(), if c.len() == 1 { "" } else { "s" }),
+        None => String::new(),
+    };
     format!(
-        "#{:<4} {:<24} {}  {:<8}{bench}{elo}",
+        "#{:<4} {:<24} {}  {:<8}{bench}{elo}{upstream}",
         x["id"].to_string(),
         str_of(&x["name"]),
         short(&x["commit"]),
@@ -1596,9 +1629,24 @@ pub async fn run(c: Client, command: Command, json: bool) -> Result<()> {
         }
         Command::Harness(a) => match a.action {
             None => print(&c.get("/api/harness").await?, json, |h| str_of(&h["summary"])),
-            Some(HarnessAction::Check { pairs, wait }) => {
-                let v = c.post("/api/harness/check", json!({ "pairs": pairs })).await?;
+            Some(HarnessAction::Check { determinism_pairs, symmetry_pairs, wait }) => {
+                let body = json!({ "determinism_pairs": determinism_pairs, "symmetry_pairs": symmetry_pairs });
+                let v = c.post("/api/harness/check", body).await?;
                 finish_idea(&c, v, wait, json).await?;
+            }
+        },
+        Command::Upstream(a) => match a.action {
+            None => print(&c.get("/api/upstream").await?, json, upstream_text),
+            Some(UpstreamAction::Sync { wait }) => {
+                let w = c.post("/api/upstream/sync", json!({})).await?;
+                finish_work(&c, w, wait, json).await?;
+                if wait && !json {
+                    println!("{}", upstream_text(&c.get("/api/upstream").await?));
+                }
+            }
+            Some(UpstreamAction::Auto { state }) => {
+                let v = c.put("/api/upstream", json!({ "auto": state == "on" })).await?;
+                print(&v, json, upstream_text);
             }
         },
         Command::Versions { line } => {
@@ -1696,6 +1744,25 @@ async fn follow_game(c: &Client, id: i64, json: bool) -> Result<()> {
     let done = c.get(&format!("/api/games/{id}")).await?;
     print(&done, json, |g| game_line(&g["summary"]));
     Ok(())
+}
+
+/// `Automatic sync on, next at 2026-10-27T18:00:00.000Z. Last: v3 from upstream · 4 commits: …`.
+fn upstream_text(v: &Value) -> String {
+    let auto = if v["settings"]["auto"].as_bool().unwrap_or(false) {
+        match v["next_at"].as_str() {
+            Some(at) => format!("Automatic sync on, next at {at}."),
+            None => "Automatic sync on.".to_owned(),
+        }
+    } else {
+        "Automatic sync off.".to_owned()
+    };
+    let remote =
+        if v["remote"].as_bool().unwrap_or(false) { "" } else { " The engine checkout has no upstream remote." };
+    let last = match v["last"]["detail"].as_str() {
+        Some(d) => format!(" Last ({}): {d}", str_of(&v["last"]["at"])),
+        None => " Never synced.".to_owned(),
+    };
+    format!("{auto}{remote}{last}")
 }
 
 /// Prints queued work, or waits for it to end with `--wait` (non-zero unless it is done).

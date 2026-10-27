@@ -22,6 +22,8 @@ pub enum WorkKind {
     Train,
     /// Downloading a shard of training data (with your go-ahead) and converting it.
     DatasetImport,
+    /// Taking upstream Reckless: fetch, merge into the fork's `main`, build and bench, crown the next champion.
+    Upstream,
 }
 
 impl WorkKind {

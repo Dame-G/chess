@@ -25,6 +25,7 @@ pub mod spsa;
 pub mod stats;
 pub mod time;
 pub mod training;
+pub mod upstream;
 pub mod version;
 pub mod work;
 

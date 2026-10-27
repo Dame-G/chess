@@ -3,7 +3,7 @@ use std::{sync::atomic::Ordering, time::Duration};
 use dameless_core::{
     ErrorCode,
     harness::Machine,
-    ideas::{Stage, TrialStatus},
+    ideas::{Preset, Stage, TrialStatus},
 };
 use dameless_engine::git;
 use dameless_hub::Hub;
@@ -38,6 +38,9 @@ async fn lab() -> Lab {
     scheduler.start().await.unwrap();
     let probes = FakeProbes::new();
     let harness = Harness::with_probes(ideas, probes.clone());
+    // Every pair at fixed nodes scores exactly 1 (the fake's games are the same game twice); timed pairs are even.
+    *fake.node_rounds.lock().unwrap() = Some(MIRRORED);
+    fake.rounds(EVEN);
     Lab { repo, hub, _dir: dir, harness, fake, probes }
 }
 
@@ -52,10 +55,17 @@ async fn ended(lab: &Lab, id: IdeaId) -> Idea {
     panic!("harness check {id} did not end");
 }
 
+/// A short check: few pairs of each part.
+fn short() -> HarnessCheckRequest {
+    HarnessCheckRequest { determinism_pairs: Some(30), symmetry_pairs: Some(200) }
+}
+
+/// Every pair scores 1.
+const MIRRORED: [u32; 5] = [0, 0, 1, 0, 0];
 /// Even pairs with some spread, at Elo 0.
 const EVEN: [u32; 5] = [1, 1, 2, 1, 1];
-/// The change scores a little better: an identical engine should never look like this.
-const BETTER: [u32; 5] = [1, 1, 2, 1, 2];
+/// The change scores better: an identical engine should never look like this.
+const BETTER: [u32; 5] = [1, 1, 2, 1, 3];
 
 #[tokio::test]
 async fn the_identical_branch_changes_only_a_comment_and_keeps_the_bench() {
@@ -94,20 +104,22 @@ async fn the_identical_branch_changes_only_a_comment_and_keeps_the_bench() {
 }
 
 #[tokio::test]
-async fn an_identical_engine_rejected_near_zero_passes_the_check() {
+async fn deterministic_and_symmetric_pairs_pass_the_check() {
     let lab = lab().await;
-    lab.fake.rounds(EVEN);
-    // Each round reports a thousand times its pairs, so the SPRT between equals decides in a few rounds.
-    lab.fake.pair_scale.store(1000, Ordering::SeqCst);
     let before = lab.harness.status().await.unwrap();
     assert!(!before.checked && !before.trusted && before.summary.contains("unchecked"), "{before:?}");
 
-    let idea = lab.harness.start_check(HarnessCheckRequest { pairs: Some(harness::SYMMETRY_PAIRS) }).await.unwrap();
+    // Each round reports a hundred times its pairs, so the parts play out in a few rounds.
+    lab.fake.pair_scale.store(100, Ordering::SeqCst);
+    // The defaults: 1,000 pairs at 25,000 nodes, then 4,000 at VSTC.
+    let idea = lab.harness.start_check(HarnessCheckRequest::default()).await.unwrap();
     assert_eq!(idea.branch, harness::BRANCH);
     assert_eq!(idea.tags, [harness::TAG]);
     assert_eq!(idea.trials.iter().map(|t| t.stage).collect::<Vec<_>>(), [Stage::Custom, Stage::Custom]);
-    assert_eq!(idea.trials[0].bounds, Some(harness::BOUNDS));
-    assert_eq!(idea.trials[0].preset, Some(harness::PRESET));
+    assert_eq!((idea.trials[0].preset, idea.trials[0].bounds), (Some(Preset::Nodes), None));
+    assert_eq!((idea.trials[1].preset, idea.trials[1].bounds), (Some(Preset::Vstc), None));
+    let trials = lab.hub.store.trials(idea.id).await.unwrap();
+    assert_eq!((trials[0].pairs, trials[1].pairs), (Some(1000), Some(4000)));
     if !lab.harness.ideas().get(idea.id).await.unwrap().status.is_final() {
         let e = lab.harness.start_check(HarnessCheckRequest::default()).await.unwrap_err();
         assert_eq!(e.code(), ErrorCode::Conflict);
@@ -116,15 +128,14 @@ async fn an_identical_engine_rejected_near_zero_passes_the_check() {
     let idea = ended(&lab, idea.id).await;
     assert_eq!(idea.status, IdeaStatus::Kept, "{:?}", idea.verdict);
     let verdict = idea.verdict.clone().unwrap();
-    assert!(verdict.starts_with("Harness checked: An identical engine was rejected"), "{verdict}");
-    assert!(verdict.contains("Symmetric over"), "{verdict}");
-    // The SPRT trial rejected (its own verdict), and the symmetry run played its pairs.
-    assert_eq!(idea.trials[0].status, TrialStatus::Failed);
-    assert!(idea.trials[0].detail.as_deref().unwrap().starts_with("rejected [0, 3]"));
-    assert_eq!(idea.trials[1].status, TrialStatus::Passed);
+    assert!(verdict.starts_with("Harness checked: Deterministic over"), "{verdict}");
+    assert!(verdict.contains("symmetric over"), "{verdict}");
+    assert!(idea.trials.iter().all(|t| t.status == TrialStatus::Passed), "{:?}", idea.trials);
 
     let check: HarnessCheck = lab.hub.store.meta(META_KEY).await.unwrap().unwrap();
     assert!(check.passed && check.idea == idea.id);
+    let det = check.determinism.as_ref().unwrap();
+    assert!(det.passed && det.uneven == 0 && det.nodes == 25_000, "{det:?}");
     assert_eq!(check.machine, lab.probes.machine.lock().unwrap().clone());
     assert_eq!(check.engine_commit, lab.repo.git(&["rev-parse", "main"]));
     assert_eq!((check.fastchess.as_deref(), check.book.as_deref()), (Some("fastchess"), Some("book.epd")));
@@ -141,9 +152,69 @@ async fn an_identical_engine_rejected_near_zero_passes_the_check() {
 }
 
 #[tokio::test]
+async fn a_pair_that_is_not_the_same_game_twice_fails_and_skips_the_timed_part() {
+    let lab = lab().await;
+    // In the first round, pair 3's second game goes another way (a draw instead of a mate), though it still scores 1.
+    *lab.fake.pgn.lock().unwrap() = Some(Box::new(|round, pairs| {
+        let mut out = crate::testing::sample_pgn(pairs, &round.dev.name, &round.base.name);
+        if round.pgn.ends_with("round-1.pgn") {
+            let games: Vec<&str> = out.split("[Event ").filter(|g| !g.is_empty()).collect();
+            let odd = games[5].replace("4. Qxf7# 1-0", "4. Qf3 1/2-1/2").replace("\"1-0\"", "\"1/2-1/2\"");
+            out = games
+                .iter()
+                .enumerate()
+                .map(|(i, g)| format!("[Event {}", if i == 5 { odd.as_str() } else { g }))
+                .collect();
+        }
+        out
+    }));
+    let idea = lab.harness.start_check(short()).await.unwrap();
+    let idea = ended(&lab, idea.id).await;
+    assert_eq!(idea.status, IdeaStatus::Dropped, "{:?}", idea.verdict);
+    let verdict = idea.verdict.unwrap();
+    assert!(verdict.starts_with("Harness check failed: Not deterministic: "), "{verdict}");
+    assert!(verdict.contains("openings: startpos") && verdict.contains("do not trust results"), "{verdict}");
+    assert_eq!(idea.trials[1].status, TrialStatus::Skipped, "the timed part is not played");
+    let check: HarnessCheck = lab.hub.store.meta(META_KEY).await.unwrap().unwrap();
+    let det = check.determinism.unwrap();
+    assert!(!check.passed && !det.passed && det.openings == ["startpos"], "{det:?}");
+    assert!(check.symmetry.is_none());
+    let status = lab.harness.status().await.unwrap();
+    assert!(status.checked && status.current && !status.trusted && status.passed == Some(false));
+    assert!(status.summary.starts_with("The harness check failed"), "{}", status.summary);
+}
+
+#[tokio::test]
+async fn pairs_that_do_not_score_one_fail_the_determinism_part() {
+    let lab = lab().await;
+    *lab.fake.node_rounds.lock().unwrap() = Some([0, 1, 8, 1, 0]);
+    let idea = lab.harness.start_check(short()).await.unwrap();
+    let idea = ended(&lab, idea.id).await;
+    assert_eq!(idea.status, IdeaStatus::Dropped);
+    assert!(idea.verdict.as_deref().unwrap().contains("Not deterministic"), "{:?}", idea.verdict);
+    assert_eq!(idea.trials[1].status, TrialStatus::Skipped);
+    let pairs: u32 = lab.fake.played().iter().map(|p| p.pairs).sum();
+    assert_eq!(pairs, 30, "only the determinism part played");
+}
+
+#[tokio::test]
+async fn a_lopsided_timed_run_fails_the_check() {
+    let lab = lab().await;
+    lab.fake.rounds(BETTER);
+    lab.fake.pair_scale.store(100, Ordering::SeqCst);
+    let idea = lab.harness.start_check(short()).await.unwrap();
+    let idea = ended(&lab, idea.id).await;
+    assert_eq!(idea.status, IdeaStatus::Dropped);
+    let verdict = idea.verdict.unwrap();
+    assert!(verdict.starts_with("Harness check failed: Deterministic over"), "{verdict}");
+    assert!(verdict.contains("an interval without 0") && verdict.contains("do not trust results"), "{verdict}");
+    let check: HarnessCheck = lab.hub.store.meta(META_KEY).await.unwrap().unwrap();
+    assert!(!check.passed && check.determinism.unwrap().passed && check.symmetry.is_some());
+}
+
+#[tokio::test]
 async fn a_second_check_waits_for_the_first() {
     let lab = lab().await;
-    lab.fake.rounds(EVEN);
     *lab.fake.round_delay.lock().unwrap() = Duration::from_secs(30);
     let idea = lab.harness.start_check(HarnessCheckRequest::default()).await.unwrap();
     assert_eq!(lab.harness.status().await.unwrap().running, Some(idea.id));
@@ -153,30 +224,10 @@ async fn a_second_check_waits_for_the_first() {
 }
 
 #[tokio::test]
-async fn an_identical_engine_accepted_fails_the_check() {
-    let lab = lab().await;
-    lab.fake.rounds(BETTER);
-    lab.fake.pair_scale.store(100, Ordering::SeqCst);
-    let idea = lab.harness.start_check(HarnessCheckRequest { pairs: None }).await.unwrap();
-    assert_eq!(idea.trials.len(), 1);
-    let idea = ended(&lab, idea.id).await;
-    assert_eq!(idea.status, IdeaStatus::Dropped);
-    let verdict = idea.verdict.unwrap();
-    assert!(verdict.starts_with("Harness check failed: An identical engine was accepted"), "{verdict}");
-    assert!(verdict.contains("do not trust results until this is investigated"));
-    let status = lab.harness.status().await.unwrap();
-    assert!(status.checked && status.current && !status.trusted && status.passed == Some(false));
-    assert!(status.summary.starts_with("The harness check failed"), "{}", status.summary);
-    let check: HarnessCheck = lab.hub.store.meta(META_KEY).await.unwrap().unwrap();
-    assert!(!check.passed && check.symmetry.is_none());
-}
-
-#[tokio::test]
 async fn the_status_goes_stale_on_another_machine_or_other_tools() {
     let lab = lab().await;
-    lab.fake.rounds(EVEN);
-    lab.fake.pair_scale.store(1000, Ordering::SeqCst);
-    let idea = lab.harness.start_check(HarnessCheckRequest::default()).await.unwrap();
+    lab.fake.pair_scale.store(100, Ordering::SeqCst);
+    let idea = lab.harness.start_check(short()).await.unwrap();
     ended(&lab, idea.id).await;
     assert!(lab.harness.status().await.unwrap().trusted);
 
@@ -202,7 +253,11 @@ async fn a_check_needs_the_tools() {
     let e = lab.harness.start_check(HarnessCheckRequest::default()).await.unwrap_err();
     assert_eq!(e.code(), ErrorCode::Conflict);
     assert!(e.message().contains("dameless setup"));
-    let zero = lab.harness.start_check(HarnessCheckRequest { pairs: Some(0) }).await.unwrap_err();
+    let zero = lab
+        .harness
+        .start_check(HarnessCheckRequest { determinism_pairs: Some(0), symmetry_pairs: None })
+        .await
+        .unwrap_err();
     assert_eq!(zero.code(), ErrorCode::BadRequest);
 }
 

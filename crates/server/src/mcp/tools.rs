@@ -48,6 +48,8 @@ const REACH: &[(&str, Reach)] = &[
     ("push", Reach::Outside),
     ("setup", Reach::Outside),
     ("import_dataset", Reach::Outside),
+    // Fetches upstream Reckless from GitHub (and merges it locally).
+    ("sync_upstream", Reach::ReadsOutside),
     // Reads from Lichess.
     ("import_player", Reach::ReadsOutside),
     ("online_bots", Reach::ReadsOutside),
@@ -69,6 +71,7 @@ const DESTRUCTIVE: &[&str] = &[
     "stop_game",
     "stop_eval",
     "promote_idea",
+    "sync_upstream",
     "fix_bench",
     "push",
     "logout",
@@ -94,6 +97,12 @@ const NOTES: &[(&str, &str)] = &[
         "promote_idea",
         "Merges a kept idea into the fork's main locally and makes it the champion. Only for an idea whose verdict \
          is kept, and only when the user wants it promoted.",
+    ),
+    (
+        "sync_upstream",
+        "Fetches upstream Reckless from GitHub and merges its new commits into the fork's main locally, making the \
+         next champion without trials (the app also does this every six hours while `set_upstream_settings` has it \
+         on). It never pushes.",
     ),
     (
         "import_dataset",

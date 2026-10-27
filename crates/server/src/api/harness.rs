@@ -11,8 +11,10 @@ use utoipa::IntoParams;
 use super::error::{ApiResult, Json, Query};
 use crate::App;
 
-/// Starts a harness check: `main` against a branch identical to it at VSTC [0, 3] (which must reject it), and with
-/// `pairs`, a symmetry run of that many pairs. Answers its idea. 409 while one runs or without fastchess and the book.
+/// Starts a harness check: `main` against a branch identical to it, first for determinism (pairs at 25,000 nodes, each
+/// of which must be the same game twice; 1,000 by default), then for symmetry (timed pairs at VSTC, 4,000 by default,
+/// whose Elo must hold 0 and whose pentanomial must be symmetric). Answers its idea. 409 while one runs or without
+/// fastchess and the book; 400 for a part of no pairs.
 #[utoipa::path(post, path = "/api/harness/check", operation_id = "check_harness", tag = "harness",
     request_body(content = Option<HarnessCheckRequest>),
     responses((status = 201, body = Idea), (status = 400, body = dameless_core::error::ErrorBody), (status = 409, body = dameless_core::error::ErrorBody)))]

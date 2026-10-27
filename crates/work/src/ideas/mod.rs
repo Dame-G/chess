@@ -38,6 +38,7 @@ pub mod promote;
 mod trial;
 mod tune;
 
+pub(crate) use bench::with_bench_line;
 pub use bench::{BenchLineStatus, BranchCheck, FixBenchRequest};
 pub use promote::PromoteWork;
 
@@ -497,8 +498,9 @@ impl Ideas {
     async fn advance(&self, id: IdeaId, index: usize) -> Result<(), Error> {
         let spec = self.spec(id).await?;
         if let Some(run) = &spec.harness {
-            // A harness check runs every trial, then judges them together.
-            if index + 1 < spec.funnel.len() {
+            // A harness check runs its trials whatever each showed (unless its determinism part failed), then judges
+            // them together.
+            if index + 1 < spec.funnel.len() && !crate::harness::over_after(self, id, index, run).await? {
                 self.queue_trial(id, index + 1).await?;
                 return Ok(());
             }

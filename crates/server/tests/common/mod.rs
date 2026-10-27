@@ -83,6 +83,7 @@ impl Toolchain for FakeToolchain {
         &self,
         _round: &Round,
         _cancel: &CancellationToken,
+        _wind_down: &CancellationToken,
         _on_progress: &mut (dyn FnMut(Progress) + Send),
         _log: &mut (dyn for<'s> FnMut(&'s str) + Send),
     ) -> Result<RoundResult> {

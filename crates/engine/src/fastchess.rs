@@ -3,10 +3,19 @@
 //! "Scheduler"), so each round is a self-contained run: its own PGN, its own resume file, its own seed, cheap to start
 //! and killed with its engines when cancelled.
 //!
+//! A round can also be **wound down** before its pairs are played (a live game wants the cores, work of higher
+//! priority waits for them, or the SPRT decided mid-round): fastchess is stopped at once and the round keeps the pairs
+//! whose two games both finished, read back from its PGN, where each game carries its pair's number (`[Round "n"]`).
+//! The games of a pair cut short are dropped from the PGN too, so what the round reports and what it stores agree.
+//!
 //! Every setting copies Reckless's OpenBench: the opening book played in random order, each opening twice with colours
-//! swapped, a 250 ms time margin, and its adjudication. Counts are reported from the first engine's side (`dev`).
+//! swapped, a 250 ms time margin, and its adjudication, with one deviation: resigning at 3 moves of 300 cp rather than
+//! 400 (see [`Adjudication::reckless`]). Counts are reported from the first engine's side (`dev`).
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
@@ -97,11 +106,13 @@ pub struct Adjudication {
 }
 
 impl Adjudication {
-    /// Reckless's OpenBench adjudication: three moves at -4 or worse resigns; six moves each within 0.10 from move 30
-    /// draws.
+    /// The trials' adjudication: three moves at -3 or worse resigns; six moves each within 0.10 from move 30 draws.
+    ///
+    /// Reckless's OpenBench resigns at -4. Resigning at -3 is a deliberate deviation: replaying 17,944 trial games, it
+    /// cut 6 % of the plies played and changed 0.25 % of the results. Draw adjudication is upstream's.
     pub fn reckless() -> Self {
         Self {
-            resign: Some(Resign { movecount: 3, score: 400, twosided: false }),
+            resign: Some(Resign { movecount: 3, score: 300, twosided: false }),
             draw: Some(Draw { movenumber: 30, movecount: 6, score: 10 }),
         }
     }
@@ -299,14 +310,19 @@ pub enum Progress {
 pub struct RoundResult {
     pub totals: Totals,
     pub pgn: PathBuf,
+    /// It was wound down before its pairs were all played: `totals` and the PGN hold the pairs that finished.
+    #[serde(default)]
+    pub ended_early: bool,
 }
 
 /// Plays a round to the end and returns its counts and its PGN. Each progress report goes to `on_progress`; every
 /// other line of fastchess's output (the per-game lines are in the PGN) goes to `log`. A cancel kills fastchess and its
-/// engines and returns [`Cancelled`].
+/// engines and returns [`Cancelled`]. A wind-down kills them too, but returns the pairs that had finished (see
+/// [`complete_pairs`]), with `ended_early` set.
 pub async fn run_round(
     round: &Round,
     cancel: &CancellationToken,
+    wind_down: &CancellationToken,
     on_progress: &mut (dyn FnMut(Progress) + Send),
     log: &mut (dyn FnMut(&str) + Send),
 ) -> Result<RoundResult> {
@@ -344,13 +360,79 @@ pub async fn run_round(
                 child.kill_tree().await?;
                 return Err(Cancelled.into());
             }
+            _ = wind_down.cancelled() => {
+                child.kill_tree().await?;
+                let text = std::fs::read_to_string(&round.pgn).unwrap_or_default();
+                let (totals, kept) = complete_pairs(&text, &round.dev.name);
+                std::fs::write(&round.pgn, kept)?;
+                log(&format!("Wound down early: kept {} finished pairs", totals.penta.iter().sum::<u32>()));
+                return Ok(RoundResult { totals, pgn: round.pgn.clone(), ended_early: true });
+            }
         }
     }
     let status = child.wait().await?;
     if !status.success() {
         bail!("fastchess exited with {status}: {}", tail.join(" | "));
     }
-    Ok(RoundResult { totals: parser.totals, pgn: round.pgn.clone() })
+    Ok(RoundResult { totals: parser.totals, pgn: round.pgn.clone(), ended_early: false })
+}
+
+/// The pairs of a round's PGN whose two games both finished, and the PGN of just those games. fastchess numbers each
+/// game with its pair (`[Round "n"]`, one opening played twice) and writes a game whole once it ends, so a game whose
+/// movetext does not end in its result was cut off as fastchess was stopped, and does not count. Counts are from
+/// `dev`'s side (a game's `White` name says which side dev had).
+pub fn complete_pairs(pgn: &str, dev: &str) -> (Totals, String) {
+    let mut pairs: BTreeMap<String, Vec<(&str, u32)>> = BTreeMap::new();
+    for text in split_games(pgn) {
+        let header = |name: &str| {
+            let prefix = format!("[{name} \"");
+            text.lines().find_map(|l| l.trim().strip_prefix(prefix.as_str())?.strip_suffix("\"]").map(str::to_owned))
+        };
+        let (Some(round), Some(white), Some(result)) = (header("Round"), header("White"), header("Result")) else {
+            continue;
+        };
+        // Half points for White: 2 a win, 1 a draw, 0 a loss.
+        let white_points = match result.as_str() {
+            "1-0" => 2,
+            "1/2-1/2" => 1,
+            "0-1" => 0,
+            _ => continue,
+        };
+        if !text.trim_end().ends_with(result.as_str()) {
+            continue;
+        }
+        let dev_points = if white == dev { white_points } else { 2 - white_points };
+        pairs.entry(round).or_default().push((text, dev_points));
+    }
+    let mut totals = Totals::default();
+    let mut kept = String::new();
+    for games in pairs.values().filter(|g| g.len() == 2) {
+        let points: u32 = games.iter().map(|(_, p)| p).sum();
+        totals.penta[points as usize] += 1;
+        for (text, p) in games {
+            match p {
+                2 => totals.wins += 1,
+                1 => totals.draws += 1,
+                _ => totals.losses += 1,
+            }
+            kept.push_str(text.trim_end());
+            kept.push_str("\n\n");
+        }
+    }
+    (totals, kept)
+}
+
+/// A PGN's games as text, each from its first header line (`[Event`) to the next game's.
+fn split_games(pgn: &str) -> Vec<&str> {
+    let mut starts: Vec<usize> = Vec::new();
+    let mut at = 0;
+    for line in pgn.split_inclusive('\n') {
+        if line.trim_start().starts_with("[Event ") {
+            starts.push(at);
+        }
+        at += line.len();
+    }
+    starts.iter().enumerate().map(|(i, s)| &pgn[*s..starts.get(i + 1).copied().unwrap_or(pgn.len())]).collect()
 }
 
 /// Reads fastchess's output a line at a time, keeping the running totals.
@@ -460,7 +542,7 @@ mod tests {
         assert!(joined.contains("-pgnout file="));
         assert!(joined.contains("nodes=true seldepth=true nps=true pv=true timeleft=true"));
         assert!(joined.contains("-srand 42"));
-        assert!(joined.contains("-resign movecount=3 score=400 -draw movenumber=30 movecount=6 score=10"), "{joined}");
+        assert!(joined.contains("-resign movecount=3 score=300 -draw movenumber=30 movecount=6 score=10"), "{joined}");
         assert!(joined.ends_with("-recover"));
         assert!(!joined.contains("-sprt") && !joined.contains("-strict"));
     }
@@ -521,6 +603,36 @@ mod tests {
         assert_eq!(totals.games(), 20);
     }
 
+    fn game(round: u32, white: &str, black: &str, result: &str, whole: bool) -> String {
+        let moves =
+            if whole { format!("1. e4 {{+0.20/10 0.100s}} e5 2. Nf3 {result}") } else { "1. e4 e5 2. N".into() };
+        format!(
+            "[Event \"Fastchess Tournament\"]\n[Round \"{round}\"]\n[White \"{white}\"]\n[Black \"{black}\"]\n\
+             [Result \"{result}\"]\n\n{moves}\n\n"
+        )
+    }
+
+    #[test]
+    fn a_wound_down_round_keeps_only_its_finished_pairs() {
+        let pgn = [
+            game(2, "base", "dev", "0-1", true),
+            game(1, "dev", "base", "1-0", true),
+            game(3, "dev", "base", "1/2-1/2", true),
+            game(1, "base", "dev", "1-0", true),
+            game(2, "dev", "base", "1-0", true),
+            // Pair 3's second game was cut off mid-write; pair 4 only started.
+            game(3, "base", "dev", "1/2-1/2", false),
+            game(4, "dev", "base", "0-1", true),
+        ]
+        .concat();
+        let (totals, kept) = complete_pairs(&pgn, "dev");
+        // Pair 1: dev won as White, lost as Black (1 point); pair 2: dev won both (2 points).
+        assert_eq!(totals, Totals { penta: [0, 0, 1, 0, 1], wins: 3, draws: 0, losses: 1 });
+        assert_eq!(kept.matches("[Event ").count(), 4);
+        assert!(!kept.contains("[Round \"3\"]") && !kept.contains("[Round \"4\"]"), "{kept}");
+        assert_eq!(complete_pairs("", "dev"), (Totals::default(), String::new()));
+    }
+
     #[test]
     fn ignores_lines_that_are_not_counts() {
         assert_eq!(parse_ptnml("LLR: 0.02 (0.6%) (-2.25, 2.89) [0.00, 3.00]"), None);
@@ -547,6 +659,7 @@ mod tests {
         let mut finished = 0;
         let result = run_round(
             &r,
+            &CancellationToken::new(),
             &CancellationToken::new(),
             &mut |p| {
                 if matches!(p, Progress::Finished(_)) {

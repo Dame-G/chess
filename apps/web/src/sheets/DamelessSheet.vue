@@ -83,6 +83,14 @@ const both = computed(() => {
   );
 });
 
+/** Champions taken from upstream Reckless, newest first, and the last sync (shown when it failed). */
+const fromUpstream = computed(() => (overview.value?.line ?? []).filter((v) => v.upstream));
+const lastSync = computed(() => overview.value?.upstream ?? null);
+function upstreamLabel(v: (typeof fromUpstream.value)[number]): string {
+  const n = v.upstream?.commits.length ?? 0;
+  return `${v.name} · from upstream · ${n} commit${n === 1 ? "" : "s"}`;
+}
+
 const inProgress = computed(() => [...ideas.running, ...ideas.queued]);
 /** "Gain · Short games · 412 pairs so far", leaving out a stage that only repeats the kind (a tune is at "Tune"). */
 function note(i: (typeof inProgress.value)[number]): string {
@@ -175,6 +183,13 @@ watch(creating, (open) => {
 
     <section class="sec" aria-labelledby="d-log">
       <h2 id="d-log" class="part-title">Logbook</h2>
+      <ul v-if="fromUpstream.length" class="plain upstream">
+        <li v-for="v in fromUpstream" :key="v.id" class="sec-note">
+          <strong class="mono">{{ upstreamLabel(v) }}</strong>
+          {{ v.upstream?.commits.map((c) => c.subject).join("; ") }}
+        </li>
+      </ul>
+      <p v-if="lastSync?.outcome === 'failed'" class="sec-note">Taking upstream: {{ lastSync.detail }}</p>
       <Logbook />
     </section>
 
@@ -195,6 +210,12 @@ watch(creating, (open) => {
 
 .progress {
   gap: 0;
+}
+
+.upstream {
+  display: grid;
+  gap: var(--e-gap-tight);
+  margin-block-end: var(--e-gap-snug);
 }
 
 .item {

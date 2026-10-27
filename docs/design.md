@@ -199,6 +199,7 @@ pub struct Version {
     pub bench: Option<u64>,           // the commit's Bench: line (none for a version with a trained net)
     pub net: Option<NetId>,           // the net its builds embed; none = the commit's own (R4: "v14 + net-3")
     pub elo: Option<Estimate>,        // against its parent, from the deciding trial: {elo, low, high}
+    pub upstream: Option<UpstreamMerge>, // a champion taken from upstream: {base, upstream, commits, fast_forward}
     pub created_at: Timestamp,
 }
 pub struct Build {                    // diagnostics only; a cache keyed by (commit, features, net)
@@ -270,6 +271,12 @@ A tune (`kind: tune`) carries `TuneSpec { params: Vec<TunableOverride>, iteratio
 
 **Promoting:** a kept idea can be promoted: its branch is merged into the fork's `main` locally (fast-forward or a merge commit with the `Bench:` line), which makes a new champion `v<n+1>`. The merge is made in a scratch worktree under the data directory; since `main` is usually checked out in the user's checkout, that checkout is fast-forwarded to the result when it has no uncommitted changes, and the promotion is refused (changing nothing) when it has (`engine::git::CheckedOut`). Pushing the fork is a separate, explicit action (`POST /api/dameless/push`), never automatic.
 
+**Taking upstream** (`work::upstream`, `WorkKind::Upstream`, the promotions' lane): every six hours while `upstream.settings.auto` is on (the default), and on `POST /api/upstream/sync`, the fork's `upstream` remote is fetched; commits of `upstream/main` the champion lacks are merged into `main` the way a promotion merges, without trials (upstream tests them on its fleet) but built and benched. A fast-forward must bench its commit's `Bench:` line; a merge commit is built on no branch first and then written with its measured `Bench:` line (sharing the build). The result is champion `v<n+1>` with `Version.upstream` (the commits it brought). A conflict, a failed build or bench, a `main` that moved, or a dirty checkout changes nothing; every sync's end is `meta` `upstream.last` (`UpstreamSync { at, outcome: merged|up_to_date|failed, detail, work, version?, champion?, merge? }`) and the `upstream.synced` event. Never pushes.
+
+**Rounds.** A trial's round is about 12 pairs per game slot and is wound down early (fastchess stopped, the pairs whose two games finished kept from the PGN by their `[Round]` number) when the SPRT decides on the running counts, a pause is asked, work of higher priority waits for cores (`Ledger::waiting_ahead_of`), or the trial is stopped. **Adjudication** resigns at 3 moves of 300 cp (OpenBench: 400); draws as OpenBench.
+
+**The harness check** is two custom trials of fixed pairs: determinism (1,000 pairs at 25,000 nodes, one thread; every pair must be the same game twice and score exactly 1, else the openings are named and the second part is skipped), then symmetry (4,000 VSTC pairs; the Elo interval holds 0 and LL ≈ WW, LD ≈ WD within 3 standard errors).
+
 ### Reviews
 
 The old `review/judge.rs` is ported as is: Lichess's win%, move accuracy, game accuracy (volatility-weighted and harmonic), ACPL, judgements, our classifications (brilliant, great, best, excellent, good, book, inaccuracy, mistake, blunder, miss), phases (lila's Divider), time-trouble blunders. `AGENTS.md` of the old harness has every formula and threshold; its tests come along.
@@ -311,12 +318,12 @@ Comparison is profiles side by side: `GET /api/compare?players=you,dameless,lich
 
 A **weak spot** is a position before one of your mistakes or blunders in a reviewed game (`{game, ply, fen, played, best, swing, opening, phase, recurring}`), recurring themes first (same opening family and phase). "Play this out" starts a local game from that FEN against Dameless.
 
-**Dameless's profile** adds the logbook: `GET /api/dameless` → `{ champion: Version, line: Vec<Version>, ideas: { running, queued, recent }, connection: Option<BotStatus>, strength: Vec<StrengthPoint> }`, where a strength point is a champion version and its cumulative Elo over `v1` (summing each promotion's deciding estimate).
+**Dameless's profile** adds the logbook: `GET /api/dameless` → `{ champion: Version, line: Vec<Version>, upstream: Option<UpstreamSync>, ideas: { running, queued, recent }, connection: Option<BotStatus>, strength: Vec<StrengthPoint> }`, where a strength point is a champion version and its cumulative Elo over `v1` (summing each promotion's deciding estimate).
 
 ### Work
 
 ```rust
-pub enum WorkKind { Build, Trial, Tune, Review, Import, Promote, Calibrate, Datagen, Train, DatasetImport }
+pub enum WorkKind { Build, Trial, Tune, Review, Import, Promote, Calibrate, Datagen, Train, DatasetImport, Upstream }
 pub enum WorkStatus { Queued, Running, Paused, Done, Failed, Stopped }
 pub enum Priority { Live = 0, Interactive = 1, Review = 2, Idea = 3 }   // lower runs first
 
@@ -386,7 +393,7 @@ pub enum Assist { Allowed, ExplorerOnly /* every live game is correspondence */,
 - **Cores:** `DAMELESS_CORES`, default physical cores − 1. A ledger in `hub` hands out cores.
 - **The GPU** (R4): `DAMELESS_GPUS`, default 1 when nvidia-smi finds one. The ledger grants it whole (`grant_gpu`, `cx.gpu()`) to one training run at a time, which also takes 2–4 cores for its data loader, so trials keep playing beside it. Datagen and training each have a lane; a dataset import is network work (no lane, no cores). Datasets share a disk cap (`DAMELESS_DATA_CAP_GB`), and nothing that writes much starts with less than 15 GB free. See the roadmap's R4 contract.
 - **Live first.** A local or Lichess game with a Dameless seat reserves its threads (1 per engine by default) for as long as it runs. Live evaluation on the board reserves 1 core (more if asked). These are reservations, not work items.
-- **Work** takes what is left, by priority (`Review` before `Idea`), oldest first within a priority. The ledger keeps that order for cores and the GPU too: a request it cannot grant waits in line (`Ledger::request_cores`, `request_gpu`; `cx.cores` and `cx.gpu` pass the item's priority), keyed by priority and then by when it began waiting, and nothing behind a waiter is granted, even when it would fit, so a trial that gives its cores back between rounds and asks again at once never starves a build or review waiting beside it. A waiter that is stopped leaves the line (the request is a guard); one asking for more cores than the machine has holds nobody up. Reservations never wait. A trial asks for `concurrency` cores (default: all that are free, at least 2) and plays in **rounds**: each round runs fastchess with the cores granted at the start of that round for about `4 × cores` game pairs, then the trial updates its statistics and checks SPRT. Between rounds the scheduler may grant more or fewer cores, or pause the trial. Scaling is measured once at the trial's start with the planned concurrency and is part of the trial's record.
+- **Work** takes what is left, by priority (`Review` before `Idea`), oldest first within a priority. The ledger keeps that order for cores and the GPU too: a request it cannot grant waits in line (`Ledger::request_cores`, `request_gpu`; `cx.cores` and `cx.gpu` pass the item's priority), keyed by priority and then by when it began waiting, and nothing behind a waiter is granted, even when it would fit, so a trial that gives its cores back between rounds and asks again at once never starves a build or review waiting beside it. A waiter that is stopped leaves the line (the request is a guard); one asking for more cores than the machine has holds nobody up. Reservations never wait. A trial asks for `concurrency` cores (default: all that are free, at least 2) and plays in **rounds**: each round runs fastchess with the cores granted at the start of that round for about `12 × cores` game pairs, then the trial updates its statistics and checks SPRT; a round is wound down early, keeping its finished pairs, when the SPRT decides mid-round, a pause is asked, work of higher priority waits in the ledger's line, or the trial is stopped. Between rounds the scheduler may grant more or fewer cores, or pause the trial. Scaling is measured once at the trial's start with the planned concurrency and is part of the trial's record.
 - **Lanes:** the scheduler runs one item at a time per lane — builds; trials and tunes together; reviews; promotions — and starts an item only while a core is free or lower-priority work holds some (it hands them back at its next unit, and the ledger serves the new item first); cores themselves come from the ledger when the item asks (`cx.cores`). So a trial waiting for its build never blocks the build (builds are queued at `Interactive`), and an idea's trials run one after another.
 - **Preemption:** when live play's reservations oversubscribe the ledger, the lowest-priority running CPU work is paused (`paused_for: "A live game"`) at its next safe point, and resumed by the scheduler once at least two cores (or what it held, if less) are free; work a person paused stays paused. After a restart, work paused for live play is queued again.
 - **Network work** (imports) needs no cores and runs at once. Lichess allows one request at a time per token: the `lichess` client holds the token's slot for each plain request and while a stream opens, not for a stream's life, so a long export never holds up the moves of a live game.
@@ -536,6 +543,9 @@ DELETE /api/builds/{id}                              Build (409 while in use)
 POST   /api/builds/prune                             { older_than_days?, keep_latest? (true), dry_run } → { builds, bytes, in_use, dry_run }
 GET    /api/tunables?branch=                         Tunable[] from the branch's spsa build; 409 (and the build queued) while there is none
 POST   /api/dameless/push                            push the fork's main to origin (explicit, confirmed in the UI) → { remote, head }
+GET    /api/upstream                                 UpstreamStatus { settings: { auto }, remote, last?, running?, next_at? }
+PUT    /api/upstream                                 UpstreamSettings { auto } → UpstreamStatus
+POST   /api/upstream/sync                            201 Work (take upstream now; 409 while one runs or with no upstream remote)
 
 GET    /api/ideas?status=&tag=&limit=                Idea[]
 POST   /api/ideas                                    NewIdeaRequest { title, hypothesis, kind, branch, base?, author?, tags?, notes?, long?,
@@ -548,7 +558,7 @@ GET    /api/ideas/{id}/trials/{trial}                Trial
 GET    /api/ideas/{id}/tune                          { spec, params: [{ name, start, min, max }], steps }
 POST   /api/ideas/{id}/stop | /resume                Idea
 POST   /api/ideas/{id}/promote                       the new champion Version, once the merge is done (409 when refused)
-POST   /api/harness/check                            { pairs? } → 201 Idea
+POST   /api/harness/check                            { determinism_pairs? (1000), symmetry_pairs? (4000) } → 201 Idea
 GET    /api/harness                                  HarnessStatus
 
 GET    /api/nets | /api/nets/{id}                    Net[] (newest first) | Net
@@ -605,7 +615,8 @@ dameless dameless | versions [--line] | version make <ref> [--wait] | builds <ve
 dameless ideas | idea new [--kind net …]|list|show|trial|tune|stop|resume|promote|batch|check-branch|fix-bench …
 dameless test --dev x --base main --preset vstc --bounds 0,3 [--pairs N] [--wait]       (a custom idea)
 dameless tune --branch spsa/tunables [--params a,b --iterations --pairs --tc 8+0.08 | --nodes] [--wait]
-dameless tunables <branch> | harness [check --pairs 2000 --wait]
+dameless tunables <branch> | harness [check --determinism-pairs 1000 --symmetry-pairs 4000 --wait]
+dameless upstream [sync [--wait] | auto on|off]
 dameless nets [--id N] | data [datagen --positions 20M | import <url> --bytes N --name d [--yes] | delete <id|name> --yes | from-trials <idea>]
 dameless train [--dataset 3 … --parent N --from-scratch --superbatches 20 …] [--wait] | train show <idea> | train steps <work>
 dameless work [show|stop|pause|resume|log|wait <id>]

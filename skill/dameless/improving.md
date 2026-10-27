@@ -4,7 +4,7 @@ How to make the engine stronger with the app: ideas, their funnels, reading verd
 
 ## Before the first idea
 
-1. `harness_status` (`dameless harness`): `trusted: true` means this machine's testing rejected an identical engine with the current CPU, fastchess and book. When it is false or out of date, run `check_harness` (`dameless harness check --pairs 2000 --wait`) and wait for its idea. It is kept when the SPRT rejected the identical branch, its Elo interval holds 0 and the 2,000-pair symmetry run is symmetric (LL ≈ WW, LD ≈ WD). A dropped check means no verdict on this machine can be trusted: stop and tell the user.
+1. `harness_status` (`dameless harness`): `trusted: true` means this machine's testing treated an identical engine as identical with the current CPU, fastchess and book. When it is false or out of date, run `check_harness` (`dameless harness check --wait`, a few hours) and wait for its idea. It is kept when all 1,000 pairs at 25,000 nodes were the same game twice (determinism) and the 4,000 timed VSTC pairs have an Elo interval holding 0 and a symmetric pentanomial (LL ≈ WW, LD ≈ WD). A dropped check means no verdict on this machine can be trusted: stop and tell the user.
 2. `get_dameless` and `list_ideas` (`dameless ideas --status dropped`): what has been tried, by whom and why it ended. A dropped idea is evidence; a variant of it needs a new reason.
 
 ## One idea, step by step
@@ -68,6 +68,8 @@ A **custom** idea is one trial at any preset with bounds or a fixed number of pa
 ## Promoting and pushing
 
 `promote_idea` merges a kept idea's branch into the fork's `main` locally (fast-forward, or a merge commit carrying the `Bench:` line) and makes it the next champion `v<n+1>`. It is refused (409, nothing changed) when the user's checkout of `main` has uncommitted changes. Promote when the user wants it; after a promotion, new ideas branch from the new `main`.
+
+Upstream Reckless's new commits are taken by the app itself: every six hours (`upstream_status`, `set_upstream_settings` to turn it off) or with `sync_upstream` (`dameless upstream sync --wait`), it fetches `upstream`, merges what the champion lacks into `main` without trials (upstream tested them), builds and benches the result and crowns it ("v3 · from upstream · 4 commits"). A failed sync changes nothing and says why. Ideas queued before keep their base; new ones are tested against the new champion, so branch them from the new `main`.
 
 `push` sends the fork's `main` to `origin` (GitHub). It runs only when the user asks for that push.
 

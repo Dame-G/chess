@@ -4,6 +4,7 @@
 use dameless_core::{
     BuildId, Error, VersionId,
     training::NetId,
+    upstream::UpstreamMerge,
     version::{Build, BuildStatus, Estimate, Line, Version},
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -59,7 +60,8 @@ fn features_key(features: &[String]) -> String {
     f.join(",")
 }
 
-const VERSION: &str = "SELECT id, name, commit_sha, branch, line, parent, bench, elo, created_at, net FROM versions";
+const VERSION: &str =
+    "SELECT id, name, commit_sha, branch, line, parent, bench, elo, created_at, net, upstream FROM versions";
 
 fn version_from_row(row: &Row<'_>) -> DbResult<Version> {
     Ok(Version {
@@ -72,6 +74,7 @@ fn version_from_row(row: &Row<'_>) -> DbResult<Version> {
         bench: row.get::<_, Option<i64>>(6)?.map(|b| b as u64),
         elo: from_opt_json(row.get(7)?)?,
         net: row.get::<_, Option<i64>>(9)?.map(NetId),
+        upstream: from_opt_json(row.get(10)?)?,
         created_at: dameless_core::Timestamp(row.get(8)?),
     })
 }
@@ -152,6 +155,15 @@ impl Store {
     pub async fn set_version_elo(&self, id: VersionId, elo: Option<Estimate>) -> Result<(), Error> {
         self.write(move |tx| {
             let n = tx.execute("UPDATE versions SET elo = ?2 WHERE id = ?1", params![id.0, opt_json(&elo)?])?;
+            if n == 0 { Err(Error::not_found(format!("No version {id}")).into()) } else { Ok(()) }
+        })
+        .await
+    }
+
+    /// Records what a champion taken from upstream brought.
+    pub async fn set_version_upstream(&self, id: VersionId, merge: Option<UpstreamMerge>) -> Result<(), Error> {
+        self.write(move |tx| {
+            let n = tx.execute("UPDATE versions SET upstream = ?2 WHERE id = ?1", params![id.0, opt_json(&merge)?])?;
             if n == 0 { Err(Error::not_found(format!("No version {id}")).into()) } else { Ok(()) }
         })
         .await
@@ -323,6 +335,15 @@ mod tests {
         assert_eq!((moved.id, moved.commit.as_str()), (idea.id, "ddd"));
         store.set_version_elo(v2.id, Some(Estimate::plus_minus(3.0, 2.0))).await.unwrap();
         assert_eq!(store.version(v2.id).await.unwrap().unwrap().elo.map(|e| e.elo), Some(3.0));
+        assert_eq!(v2.upstream, None);
+        let merge = dameless_core::upstream::UpstreamMerge {
+            base: "aaa".into(),
+            upstream: "bbb".into(),
+            commits: vec![dameless_core::upstream::UpstreamCommit { sha: "bbb".into(), subject: "Gain".into() }],
+            fast_forward: true,
+        };
+        store.set_version_upstream(v2.id, Some(merge.clone())).await.unwrap();
+        assert_eq!(store.version(v2.id).await.unwrap().unwrap().upstream, Some(merge));
 
         let champions: Vec<_> = store.versions(Some("champion")).await.unwrap().into_iter().map(|v| v.name).collect();
         assert_eq!(champions, ["v2", "v1"]);

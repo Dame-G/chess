@@ -322,28 +322,97 @@ impl Repo {
             }
             git_in(p.worktree, &["rev-parse", "HEAD"], &[]).await?
         };
+        self.advance(p.into, &commit, &previous, p.checked_out).await?;
+        Ok(Promoted { commit, previous, fast_forward })
+    }
 
-        let checked_out = self.worktrees().await?.into_iter().find(|w| w.branch.as_deref() == Some(p.into));
-        match (checked_out, p.checked_out) {
+    /// Moves branch `into` from `previous` to `commit` (which must descend from it), as a promotion does: the ref is
+    /// updated only if it is still at `previous`, and when the branch is checked out somewhere (the user's checkout),
+    /// that worktree is fast-forwarded if clean, or the move refused, as `checked_out` says. A refusal changes nothing.
+    pub async fn advance(&self, into: &str, commit: &str, previous: &str, checked_out: CheckedOut) -> Result<()> {
+        let target = format!("refs/heads/{into}");
+        let at = self.git(&["rev-parse", "--verify", &target]).await.with_context(|| format!("no branch {into}"))?;
+        if at != previous {
+            bail!("{into} moved meanwhile (now {}): nothing changed", &at[..8.min(at.len())]);
+        }
+        let worktree = self.worktrees().await?.into_iter().find(|w| w.branch.as_deref() == Some(into));
+        match (worktree, checked_out) {
             (None, _) => {
-                self.git(&["update-ref", "-m", "dameless: promote", &target, &commit, &previous]).await?;
+                self.git(&["update-ref", "-m", "dameless: promote", &target, commit, previous]).await?;
             }
             (Some(w), CheckedOut::Refuse) => {
-                bail!("{} is checked out in {}: switch it to another branch first", p.into, w.path.display())
+                bail!("{into} is checked out in {}: switch it to another branch first", w.path.display())
             }
             (Some(w), CheckedOut::FastForwardIfClean) => {
                 let dirty = git_in(&w.path, &["status", "--porcelain", "--untracked-files=no"], &[]).await?;
                 if !dirty.is_empty() {
-                    bail!("{} is checked out in {} with uncommitted changes", p.into, w.path.display());
+                    bail!("{into} is checked out in {} with uncommitted changes", w.path.display());
                 }
-                git_in(&w.path, &["merge", "--ff-only", &commit], &[]).await?;
+                git_in(&w.path, &["merge", "--ff-only", commit], &[]).await?;
             }
         }
-        Ok(Promoted { commit, previous, fast_forward })
+        Ok(())
     }
 
-    async fn is_ancestor(&self, ancestor: &str, of: &str) -> bool {
+    /// Whether `ancestor` is `of` or one of its ancestors.
+    pub async fn is_ancestor(&self, ancestor: &str, of: &str) -> bool {
         self.git(&["merge-base", "--is-ancestor", ancestor, of]).await.is_ok()
+    }
+
+    /// Whether the repository has a remote of this name.
+    pub async fn has_remote(&self, name: &str) -> bool {
+        self.git(&["remote"]).await.is_ok_and(|out| out.lines().any(|l| l.trim() == name))
+    }
+
+    /// Fetches a remote's branches (its remote-tracking refs, `upstream/main`, move; nothing else does).
+    pub async fn fetch(&self, remote: &str) -> Result<()> {
+        self.git(&["fetch", "--quiet", "--no-tags", remote]).await.map(drop)
+    }
+
+    /// The commits in `tip` that `base` lacks, newest first: `(sha, subject)`.
+    pub async fn commits_between(&self, base: &str, tip: &str) -> Result<Vec<(String, String)>> {
+        let out = self.git(&["log", "--format=%H%x00%s", &format!("{base}..{tip}")]).await?;
+        Ok(out
+            .lines()
+            .filter_map(|l| l.split_once('\0').map(|(sha, subject)| (sha.to_owned(), subject.to_owned())))
+            .collect())
+    }
+
+    /// Merges `other` into `base` in a scratch worktree, on no branch, and returns the merge commit: nothing else moves.
+    /// A conflict is aborted and fails, changing nothing.
+    pub async fn merge_detached(&self, base: &str, other: &str, message: &str, worktree: &Path) -> Result<String> {
+        self.checkout_worktree(worktree, base).await?;
+        let scratch = Scratch::new()?;
+        let msg = scratch.path("message");
+        std::fs::write(&msg, message)?;
+        let msg = msg.to_str().context("non-UTF-8 temp path")?;
+        if let Err(e) = git_in(worktree, &["merge", "--no-ff", "--no-edit", "-F", msg, other], &[]).await {
+            let conflicts =
+                git_in(worktree, &["diff", "--name-only", "--diff-filter=U"], &[]).await.unwrap_or_default();
+            let _ = git_in(worktree, &["merge", "--abort"], &[]).await;
+            if conflicts.is_empty() {
+                bail!("the merge failed: {e}");
+            }
+            bail!("the merge conflicts in {}", conflicts.lines().collect::<Vec<_>>().join(", "));
+        }
+        git_in(worktree, &["rev-parse", "HEAD"], &[]).await
+    }
+
+    /// The same commit (tree and parents) with another message, on no branch: a merge commit given its `Bench:` line
+    /// once it is built.
+    pub async fn recommit(&self, sha: &str, message: &str) -> Result<String> {
+        let tree = self.git(&["rev-parse", &format!("{sha}^{{tree}}")]).await?;
+        let parents = self.git(&["log", "-1", "--format=%P", sha]).await?;
+        let scratch = Scratch::new()?;
+        let msg = scratch.path("message");
+        std::fs::write(&msg, message)?;
+        let msg = msg.to_str().context("non-UTF-8 temp path")?;
+        let mut args = vec!["commit-tree", tree.as_str()];
+        for p in parents.split_whitespace() {
+            args.extend(["-p", p]);
+        }
+        args.extend(["-F", msg]);
+        self.git(&args).await
     }
 }
 

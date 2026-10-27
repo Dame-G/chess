@@ -276,6 +276,12 @@ impl Ledger {
         self.state().core_waiters.len()
     }
 
+    /// Whether work of higher priority than `priority` waits for cores now (work it could ever be granted). A long unit
+    /// of lower-priority work (a trial's round) ends early on this, so the waiter does not wait out the whole unit.
+    pub fn waiting_ahead_of(&self, priority: Priority) -> bool {
+        self.state().core_waiters.range(..(priority.rank(), 0)).any(|(_, w)| w.min <= self.total)
+    }
+
     /// A receiver woken whenever a reservation or grant is made or given back, or a waiter leaves the line.
     pub fn changed(&self) -> watch::Receiver<u64> {
         self.changed.subscribe()
@@ -517,9 +523,13 @@ mod tests {
         let ledger = Ledger::new(4);
         // A trial holds every core; a build asks for cores and waits.
         let trial = ledger.grant(WorkId(1), Priority::Idea, 1, 4).unwrap();
+        assert!(!ledger.waiting_ahead_of(Priority::Idea));
         let build = ledger.request_cores(WorkId(2), Priority::Interactive, 1, 4);
         assert!(build.grant().is_none());
         assert_eq!(ledger.waiting_for_cores(), 1);
+        // The trial can see the build waiting ahead of it, and end its round early; the build sees nobody ahead.
+        assert!(ledger.waiting_ahead_of(Priority::Idea) && ledger.waiting_ahead_of(Priority::Review));
+        assert!(!ledger.waiting_ahead_of(Priority::Interactive));
         // The trial hands its cores back between rounds and asks again at once: the build goes first.
         let rx = ledger.changed();
         drop(trial);
@@ -561,6 +571,7 @@ mod tests {
         // A request asking for more than the machine has can never be granted, so it holds nobody up.
         let _never = ledger.request_cores(WorkId(5), Priority::Interactive, 3, 3);
         assert!(ledger.grant(WorkId(6), Priority::Idea, 1, 1).is_some());
+        assert!(!ledger.waiting_ahead_of(Priority::Idea), "nor makes anyone end a unit early");
     }
 
     #[test]

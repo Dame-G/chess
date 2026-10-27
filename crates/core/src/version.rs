@@ -6,6 +6,7 @@ use utoipa::ToSchema;
 use crate::{
     ids::{BuildId, IdeaId, Timestamp, VersionId},
     training::NetId,
+    upstream::UpstreamMerge,
 };
 
 /// One commit of Dameless that matters: the champion line, an idea's change, an upstream tip.
@@ -28,6 +29,9 @@ pub struct Version {
     /// champion's code with a trained net is named `v14 + net-3`, and a champion can be code plus a net.
     #[serde(default)]
     pub net: Option<NetId>,
+    /// A champion taken from upstream Reckless: the upstream commits it brought.
+    #[serde(default)]
+    pub upstream: Option<UpstreamMerge>,
     pub created_at: Timestamp,
 }
 
