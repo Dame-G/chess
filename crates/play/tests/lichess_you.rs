@@ -47,11 +47,14 @@ impl Lichess {
             .await;
     }
 
-    /// The game here of Lichess game `lichess`, once it is played here.
+    /// The game here of Lichess game `lichess`, once it is played here: listed, and its first state read from Lichess
+    /// (the record is listed a moment before, with no actions yet).
     async fn game_of(&self, lichess: &str) -> GameId {
         let found = || self.s.games.live().into_iter().find(|g| g.source.lichess_id() == Some(lichess)).map(|g| g.id);
         until("the game to be played here", || found().is_some()).await;
-        found().unwrap()
+        let id = found().unwrap();
+        until_async!("your actions in it", !self.game(id).await.actions.is_empty());
+        id
     }
 
     async fn game(&self, id: GameId) -> Game {
