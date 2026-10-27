@@ -95,7 +95,7 @@ async function remove() {
         >{{ championTrained }}.
       </p>
 
-      <div v-if="training.nets.length">
+      <div v-if="training.nets.length" class="group">
         <h3 class="part-title">Networks</h3>
         <ETable caption="Networks, newest first" hide-caption dense>
           <thead>
@@ -110,10 +110,16 @@ async function remove() {
             <tr v-for="n in training.nets" :key="n.id">
               <th scope="row">
                 <span class="mono">{{ n.name }}</span>
-                <span v-if="n.parent != null" class="sec-note from">
-                  from {{ training.netName(n.parent) ?? `net ${n.parent}` }}</span
-                >
-                <span v-if="training.champion?.id === n.id" class="sec-note from"> · champion</span>
+                <span v-if="n.parent != null || training.champion?.id === n.id" class="sec-note from">
+                  {{
+                    [
+                      n.parent != null ? `from ${training.netName(n.parent) ?? `net ${n.parent}`}` : "",
+                      training.champion?.id === n.id ? "champion" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  }}
+                </span>
               </th>
               <td>{{ trainedOn(n) }}</td>
               <td class="e-num mono">{{ n.run?.final_loss != null ? n.run.final_loss.toFixed(4) : "—" }}</td>
@@ -127,12 +133,9 @@ async function remove() {
       <div v-if="data" class="data">
         <div class="sec-head">
           <h3 class="part-title">Datasets</h3>
-          <p class="sec-note">
-            <span class="mono">{{ dataLine(data) }}</span
-            ><template v-if="free"> · {{ free }}</template>
-          </p>
+          <p v-if="free" class="sec-note">{{ free }}</p>
         </div>
-        <EProgress :value="fraction" label="Data used of the cap" value-text="" />
+        <EProgress :value="fraction" label="Data used" :value-text="dataLine(data).replace('Data: ', '')" />
         <ETable v-if="training.datasets.length" caption="Datasets" hide-caption dense>
           <thead>
             <tr>
@@ -193,6 +196,11 @@ async function remove() {
 .data {
   display: grid;
   gap: var(--e-gap-snug);
+}
+
+.group {
+  display: grid;
+  gap: var(--e-gap-tight);
 }
 
 .from {

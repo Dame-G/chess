@@ -27,8 +27,9 @@ const hasGames = computed(() => pairs.value > 0 || props.trial.wdl.some((n) => n
 const history = computed(() => ideas.llrHistory[props.trial.id as TrialId] ?? []);
 const scaleText = computed(() => {
   const t = props.trial;
-  if (!t.played || !t.scaling) return t.time ? `Played at ${trialClock(t.time)}.` : "";
-  return `Played at ${trialClock(t.played)} (×${t.scaling.scale.toFixed(2)})`;
+  if (!t.played || !t.scaling) return t.time ? `Clock ${trialClock(t.time)}` : "";
+  const written = t.time ? `Clock ${trialClock(t.time)}, played` : "Played";
+  return `${written} at ${trialClock(t.played)} (×${t.scaling.scale.toFixed(2)})`;
 });
 const bounds = computed(() => props.trial.bounds);
 
@@ -43,7 +44,7 @@ const name = seatName;
 
 <template>
   <div class="evidence">
-    <p v-if="trial.detail" class="detail">{{ trial.detail }}</p>
+    <p v-if="trial.detail" class="detail" :class="{ 'detail--soft': hasGames }">{{ trial.detail }}</p>
     <p v-else class="sec-note">{{ STAGE_WORD[trial.stage] }}: nothing to report yet.</p>
 
     <template v-if="hasGames">
@@ -62,15 +63,13 @@ const name = seatName;
           <dt><Term k="pairs" /></dt>
           <dd>{{ pairs.toLocaleString("en-GB") }}</dd>
         </div>
-        <div class="fig">
+        <div class="fig fig--wide">
           <dt>Won · drawn · lost</dt>
           <dd>{{ trial.wdl.map((n) => n.toLocaleString("en-GB")).join(" · ") }}</dd>
         </div>
         <div v-if="bounds" class="fig">
-          <dt>Goal <Term k="sprt" text="(SPRT)" /></dt>
-          <dd>
-            [{{ bounds[0] }}, {{ bounds[1] }}] <small><Term k="nelo" /></small>
-          </dd>
+          <dt>Goal in <Term k="nelo" /> (<Term k="sprt" />)</dt>
+          <dd>[{{ bounds.map((b) => String(b).replace("-", "−")).join(", ") }}]</dd>
         </div>
       </dl>
 
@@ -128,6 +127,27 @@ const name = seatName;
 .detail {
   margin: 0;
   font-weight: 600;
+}
+
+/* With games under it, the sentence only restates the figures: quieter than they are. */
+.detail--soft {
+  color: var(--e-muted);
+  font: var(--e-type-small);
+}
+
+/* Three counts side by side stay on one line, so they take two columns, or the row when it is one column wide. */
+.fig--wide {
+  grid-column: span 2;
+}
+
+.fig--wide dd {
+  white-space: nowrap;
+}
+
+@media (width < 30rem) {
+  .fig--wide {
+    grid-column: 1 / -1;
+  }
 }
 
 .history,

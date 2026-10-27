@@ -7,6 +7,7 @@ import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { ELink } from "@eos-ui/vue/components/ELink";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { EStamp } from "@eos-ui/vue/components/EStamp";
+import { EVisuallyHidden } from "@eos-ui/vue/components/EVisuallyHidden";
 import { ETag } from "@eos-ui/vue/components/ETag";
 import { ago, plusMinus } from "../format";
 import IdeaActions from "../parts/IdeaActions.vue";
@@ -17,7 +18,7 @@ import TrialEvidence from "../parts/TrialEvidence.vue";
 import TuneView from "../parts/TuneView.vue";
 import { useIdeas } from "../stores/ideas";
 import { useVersions } from "../stores/versions";
-import { clockOf, KIND_WORD, STAGE_WORD, STATUS_TONE, STATUS_WORD, TRIAL_TONE } from "./idea";
+import { KIND_WORD, STAGE_WORD, STATUS_TONE, STATUS_WORD, TRIAL_TONE } from "./idea";
 import SheetBack from "./SheetBack.vue";
 import { useSheet } from "./useSheet";
 
@@ -76,7 +77,6 @@ watch(
 
 const decider = (t: (typeof trials.value)[number]) =>
   t.elo ? plusMinus(t.elo) : t.pairs ? `${t.pairs.toLocaleString("en-GB")} pairs` : "";
-const trialClockText = (t: NonNullable<typeof trial.value>) => clockOf(t, ideas.trials[t.id]);
 
 const base = computed(() => (idea.value ? versions.name(idea.value.base) : undefined));
 const change = computed(
@@ -137,12 +137,9 @@ const tune = computed(() => ideas.tuneStates[id.value]);
           </li>
         </ol>
         <div v-if="trial" class="panel" aria-live="polite">
-          <h3 class="panel-title">
-            {{ STAGE_WORD[trial.stage] }}
-            <span v-if="trialClockText(trial)" class="mono sec-note"> · {{ trialClockText(trial) }}</span>
-          </h3>
+          <EVisuallyHidden as="h3">{{ STAGE_WORD[trial.stage] }}</EVisuallyHidden>
           <TuneView v-if="trial.stage === 'tune' && tune" :tune="tune" :running="trial.status === 'running'" />
-          <TrainView v-if="trial.stage === 'train'" :idea="idea" :status="trial.status" />
+          <TrainView v-else-if="trial.stage === 'train'" :idea="idea" :status="trial.status" />
           <ESkeleton v-else-if="!full && trial.stage !== 'tune'" :lines="4" label="Loading the stage" />
           <TrialEvidence v-else-if="full" :trial="full" />
           <p v-else-if="trial.detail" class="verdict">{{ trial.detail }}</p>
@@ -190,12 +187,6 @@ const tune = computed(() => ideas.tuneStates[id.value]);
   align-items: center;
 }
 
-.funnel-item:not(:last-child)::after {
-  margin-inline: 0.125rem;
-  color: var(--e-muted);
-  content: "›";
-}
-
 .stage {
   display: grid;
   justify-items: start;
@@ -238,10 +229,5 @@ const tune = computed(() => ideas.tuneStates[id.value]);
   display: grid;
   gap: var(--e-gap-snug);
   padding-block-start: var(--e-gap-base);
-}
-
-.panel-title {
-  margin: 0;
-  font: var(--e-type-h5, 600 1rem/1.2 var(--e-font-sans));
 }
 </style>

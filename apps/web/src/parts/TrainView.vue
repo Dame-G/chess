@@ -146,7 +146,10 @@ const readout = computed(() => {
           <dt>{{ finished ? "Took" : "Running for" }}</dt>
           <dd>
             <small
-              >{{ duration(last!.elapsed_seconds) }}<template v-if="remaining"> · {{ remaining }} left</template></small
+              >{{ duration(last!.elapsed_seconds)
+              }}<template v-if="remaining && remaining !== duration(last!.elapsed_seconds)">
+                · {{ remaining }} left</template
+              ></small
             >
           </dd>
         </div>

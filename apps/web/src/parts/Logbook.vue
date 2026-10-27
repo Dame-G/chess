@@ -2,7 +2,6 @@
 import { computed, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { PhCaretDown, PhCaretUp } from "@phosphor-icons/vue";
-import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
 import { ELink } from "@eos-ui/vue/components/ELink";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
@@ -14,13 +13,13 @@ import { useIdeas } from "../stores/ideas";
 import Notes from "./Notes.vue";
 
 /**
- * The logbook: every idea, newest first, with who had it, its kind, how it ended and by how much. Each opens to its
+ * The logbook: every idea that has ended, newest first (the ones still going are above it, under Ideas in progress), with who had it, its kind, how it ended and by how much. Each opens to its
  * hypothesis and notes, and links to its own sheet.
  */
 const ideas = useIdeas();
 
-type Show = "all" | "kept" | "dropped" | "active";
-const show = ref<Show>("all");
+type Show = "ended" | "kept" | "dropped";
+const show = ref<Show>("ended");
 const open = ref<Set<number>>(new Set());
 
 const rows = computed(() =>
@@ -30,13 +29,17 @@ const rows = computed(() =>
         return i.status === "kept";
       case "dropped":
         return i.status === "dropped";
-      case "active":
-        return i.status === "running" || i.status === "queued";
       default:
-        return true;
+        return i.status !== "running" && i.status !== "queued";
     }
   }),
 );
+
+const empty: Record<Show, string> = {
+  ended: "No idea has ended yet. Each one is written down here with how it ended.",
+  kept: "No idea has been kept yet.",
+  dropped: "No idea has been dropped yet.",
+};
 
 function toggle(id: number) {
   const next = new Set(open.value);
@@ -53,15 +56,12 @@ function toggle(id: number) {
       hide-label
       size="sm"
       :options="[
-        { value: 'all', label: 'All' },
+        { value: 'ended', label: 'Ended' },
         { value: 'kept', label: 'Kept' },
         { value: 'dropped', label: 'Dropped' },
-        { value: 'active', label: 'Active' },
       ]"
     />
-    <EEmptyState v-if="!rows.length" title="Nothing here yet">
-      Ideas you or Claude try are written down here, with how they ended.
-    </EEmptyState>
+    <p v-if="!rows.length" class="sec-note">{{ empty[show] }}</p>
     <ul v-else class="plain">
       <li v-for="i in rows" :key="i.id" class="entry">
         <div class="head">

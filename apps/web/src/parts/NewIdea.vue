@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
@@ -69,7 +69,7 @@ const KINDS: { value: Kind; label: string; text: string }[] = [
   },
   {
     value: "net",
-    label: "Network",
+    label: "Net",
     text: "Trains a new network on your data, then tries the champion with it: the bench must change, then quick games, then short games.",
   },
   {
@@ -78,6 +78,14 @@ const KINDS: { value: Kind; label: string; text: string }[] = [
     text: "One trial with the settings you choose, for checks that are not an idea.",
   },
 ];
+
+/** Six kinds do not fit side by side on a phone: there they are a list to choose from. */
+const narrowQuery = typeof matchMedia === "function" ? matchMedia("(width < 32rem)") : undefined;
+const narrow = ref(narrowQuery?.matches ?? false);
+const onNarrow = (e: MediaQueryListEvent) => (narrow.value = e.matches);
+narrowQuery?.addEventListener("change", onNarrow);
+onBeforeUnmount(() => narrowQuery?.removeEventListener("change", onNarrow));
+const kindOptions = KINDS.map((k) => ({ value: k.value, label: k.label }));
 
 const kind = ref<Kind>("gain");
 const title = ref("");
@@ -281,8 +289,9 @@ async function create() {
 <template>
   <EDialog v-model:open="open" title="New idea" description="A change to try against the champion." size="lg">
     <EStack gap="base">
-      <ESegmented v-model="kind" label="Kind" :options="KINDS.map((k) => ({ value: k.value, label: k.label }))" />
-      <p class="sec-note">{{ kindText }}</p>
+      <ESelect v-if="narrow" v-model="kind" label="Kind" :options="kindOptions" />
+      <ESegmented v-else v-model="kind" label="Kind" :options="kindOptions" />
+      <p class="sec-note kind-text">{{ kindText }}</p>
 
       <ETextField v-model="title" label="Title" placeholder="Deeper LMR at high depth" autocomplete="off" />
       <ETextarea v-model="hypothesis" label="What it should do, and why" :optional="kind === 'custom'" :rows="3" />
@@ -390,5 +399,16 @@ async function create() {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--e-gap-snug) var(--e-gap-base);
+}
+
+/* The sentence under the kinds is two lines for the longest, so the form below does not jump as they are switched. */
+.kind-text {
+  min-block-size: 2lh;
+}
+
+@media (width < 30rem) {
+  .pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>
