@@ -130,7 +130,8 @@ pub enum Speed { UltraBullet, Bullet, Blitz, Rapid, Classical, Correspondence } 
 ```rust
 pub struct Seat {
     pub player: PlayerKey,
-    pub name: String,                  // "You" is shown as the Lichess username when linked
+    pub name: String,                  // as shown: the Lichess username for You, "Dameless v14", "Dameless 1650" at a level
+    pub level: Option<u32>,            // Dameless seats at a level of the ladder
     pub version: Option<VersionId>,    // Dameless seats
     pub build: Option<BuildId>,        // Dameless seats: the exact binary
     pub rating: Option<u32>,
@@ -321,7 +322,7 @@ pub enum Priority { Live = 0, Interactive = 1, Review = 2, Idea = 3 }   // lower
 
 pub struct Work {
     pub id: WorkId, pub kind: WorkKind, pub status: WorkStatus, pub priority: Priority,
-    pub title: String,                // "Testing deeper-lmr · short games"
+    pub title: String,                // "Trying deeper-lmr · short games"
     pub subject: Subject,             // Idea(id) | Trial(id) | Game(id) | Player(key) | Version(id)
     pub cores: u32,                   // granted now
     pub progress: Option<Progress>,   // {done, total, unit, eta_seconds, text}
@@ -620,30 +621,31 @@ dameless lichess bot [token | logout | settings --set key=value | online | offli
 ┌ header: Dameless · [command bar ⌘K] · You 1840 · Dameless v14 · ⚙ ──────────────────────────────────────┐
 ├ Games rail ─────────┬────────────── Board ──────────────────────┬ Panel ────────────────────────────────┤
 │ filter: All · You · │ opponent strip (name, rating, clock)       │ mode tabs: Play · Watch · Review ·     │
-│ Dameless · Lichess  │                                            │ Explore (only those that apply)        │
-│ · Tests             │        board (chessground) + eval bar      │                                        │
+│ Dameless · Lichess  │                                            │ Explore · Drill (those that apply)     │
+│ · Trials            │        board (chessground) + eval bar      │                                        │
 │ live first, then    │                                            │ the mode's content                     │
 │ newest; an idea's   │ your strip (name, rating, clock)           │                                        │
 │ games fold into one │ transport + eval graph scrubber            │ moves list (always, under the content) │
 │ row                 │                                            │                                        │
 ├─────────────────────┴────────────────────────────────────────────┴────────────────────────────────────────┤
-│ status line: ● Testing deeper-lmr · short games · 412 pairs · ~40 min        Analysis is off (when it is) │
+│ status line: ● Trying deeper-lmr · short games · 412 pairs · ~40 min         Analysis is off (when it is) │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Routes** (the address is the board's state): `/` (the board; `?game=<id>&ply=<n>` or `?fen=…`), `/you`, `/dameless`, `/dameless/ideas/<id>`, `/players/<key>`, `/compare?players=…`, `/settings`. Profiles and settings are **sheets** over the board's right side on wide screens (the board stays visible and live), full screens on narrow ones; closing returns to the board as it was.
+- **Routes** (the address is the board's state): `/` (the board; `?game=<id>&ply=<n>` or `?fen=…`), `/you`, `/dameless`, `/dameless/ideas/<id>`, `/players/<key>`, `/compare?players=…`, `/settings`. Profiles and settings are **sheets** that take the panel's place beside the board on wide screens (the board shrinks to fit and stays visible and live), full screens below 75rem; closing returns to the board as it was. `?drill=<id>` puts a drill on the board. A Lichess login comes back to the page it started from with `?lichess=connected` (or `?lichess=error&message=…`), which the app says in a toast and takes off the address.
 - **What opens first** at `/` with nothing chosen: a live game (yours first, then the bot's, then a trial's), else your last finished game, else the start position in Explore.
 - **Modes** (the panel's tabs, only those that apply to what is on the board):
-  - **Play:** you are a seat in a live game. Clocks, offers (draw, takeback, abort/resign), the opponent leaving and claims. On Lichess, nothing else is on screen (no eval bar, no engine, no graph).
+  - **Play:** you are a seat in a live game. Clocks, offers (draw, takeback, abort/resign), the opponent leaving and claims. Its first line is a polite live region ("Bob played Nf6. Your move."). On Lichess, nothing else is on screen (no eval bar, no engine, no graph); the status line says why.
   - **Watch:** a live game you are not in: the thinking engine's line and score, both clocks, the eval graph growing. For a trial game, a line linking its idea.
-  - **Review:** a finished game. Accuracy per side, class counts (each jumps to the next such move), the selected move's judgement, the better move as an arrow and "Show line", **Play this out** (a local game from here against Dameless), the eval graph with judged dots. Not reviewed yet: one button, "Review this game" (about 20 s).
-  - **Explore:** free analysis from any position: engine lines (MultiPV), the explorer (Lichess, Masters, your games), the tablebase at 7 pieces or fewer. Play moves freely; "Play from here" starts a game.
-- **New game** (the one filled button in the header area when no game is live, and `N`): opponent (Dameless at a version and strength, Lichess: find a game, challenge someone, Stockfish N), time control, colour, rated. One dialog, the choices that apply to the opponent.
-- **Games rail:** one list of `GameSummary`, filtered All · You · Dameless · Lichess · Tests, live games pinned on top with a pulse, then newest first. Trial games fold into one row per trial ("deeper-lmr vs v14 · short games · 412 pairs"), which opens into its games. Each row: players, result, accuracy if reviewed, time control, when.
-- **You** (`/you`): rating and accuracy trend, phases, openings, time, best moments and worst blunders (links onto the board), weak spots with Play this out, Compare with… (adds players), your Lichess connection's status (log in when not linked), your challenges.
-- **Dameless** (`/dameless`): the strength line (champion versions and cumulative Elo), the champion, ideas running and queued, the logbook (every idea newest first: title, author, verdict, Elo, notes), New idea (gain / neutral / speed / tune, or a custom test), and **Out in the world** (the bot: online switch, its rating, seeking, rules, recent challenges). An idea (`/dameless/ideas/<id>`) shows its hypothesis, notes, the funnel as a row of stages with the deciding numbers, the selected trial's evidence (LLR gauge, Elo ±, pentanomial, chart), its games (onto the board), a tune's trajectory, and Promote when kept.
-- **Settings** (`/settings`): Lichess connections (your login, the bot's token), the machine (cores, the engine checkout, builds and disk), defaults (review nodes, test concurrency), theme, the runner token for the hosted UI.
-- **Command bar** (`⌘K` / `Ctrl K`): places, games, players, ideas, versions, and verbs in the CLI's words (`play 5+3 dameless`, `review last 20`, `compare cutemouse83`, `new idea`).
+  - **Review:** a finished game. The result and how it ended in words ("Black resigned", "Draw by repetition"), accuracy per side, class counts (each jumps to the next such move), the selected move's judgement, the better move as an arrow and "Show line", **Play this out** (a local game from here against Dameless, at the level nearest your rating), the eval graph with judged dots, and **Rematch** for a local game (same opponent and clock, colours swapped, a new book line for a book start). Not reviewed yet: one button, "Review this game" (about 20 s).
+  - **Explore:** free analysis from any position: engine lines (MultiPV), the explorer (Lichess, Masters, your games), the tablebase at 7 pieces or fewer, and where the position stands in your repertoire. Play moves freely into a tree of variations, or paste a FEN or PGN; "Play from here" starts a game.
+  - **Drill:** one of your drills takes the board and the panel (the game under it waits): your side to move, the opening and phase it came from, no engine, one try. Then the answer, the line and when it comes back; Next goes on through today's set. `D` (or Start on the You sheet's Drills) begins today's set. Hidden while you play on Lichess.
+- **New game** (the one filled button in the header area when no game is live, and `N`): opponent (Dameless at a version and a strength, full or a level such as "Dameless 1600"; Lichess: find a game, challenge someone; Stockfish N), a book start (off, saying why, until the book is installed), time control, colour, rated. One dialog, the choices that apply to the opponent.
+- **Games rail:** one list of `GameSummary`, filtered All · You · Dameless · Lichess · Trials, live games pinned on top with a pulse, then newest first. Trial games fold into one row per trial ("deeper-lmr vs v14 · short games · 412 pairs"), which opens into its games. Each row: players, result, accuracy if reviewed, time control, when; a screen reader hears it as one sentence. Calibration games are left out.
+- **You** (`/you`): Log in with Lichess first when not linked; your challenges; your profile (rating and accuracy trend, accuracy by phase and speed, results, moves per game by class, openings, time per move, best moments and worst blunders as links onto the board, weak spots with Play this out, and Review them for games not reviewed yet); **Progress** (your rating, accuracy and drill hit rate over time, beside Dameless's line; a line needs two points); **Drills** (today's set and Start, the hit rate over time, Make drills from your mistakes); **Your openings** (the lines you play as White and as Black, where you leave theory, how you score); Compare with… (adds players).
+- **Dameless** (`/dameless`): the strength line (champion versions and cumulative Elo, once there is a second champion), **You and Dameless** (the two progress lines), **Levels** (the ladder with each level's calibrated rating ± or "about" its nominal one, the games behind it, the level near your rating, and Calibrate levels with what it costs), ideas running and queued, the logbook (every idea newest first: title, author, verdict, Elo, notes), New idea (gain / neutral / speed / tune / network, or a custom trial), **Brain** (the champion's net, the lineage of nets, the datasets and the room they may take, Generate data and Import data), and **Out in the world** (the bot: online switch, its rating, seeking and its note, rules, recent challenges). An idea (`/dameless/ideas/<id>`) shows its hypothesis, notes, the funnel as a row of stages with the deciding numbers, the selected trial's evidence (LLR gauge, Elo ±, pentanomial, chart), its games (onto the board), a tune's trajectory, and Promote when kept.
+- **Settings** (`/settings`): Lichess connections (your login, the bot's token), this machine (cores, the engine checkout, the data directory, the engine binaries kept and Free disk space), **Health** (fastchess, the book, the engine checkout, clang, CUDA, the GPU, disk, the database, each with what fixes it), **The harness** (whether this machine is checked, and Check the harness), theme, and the token for the hosted app. Each fact once: the builds and the harness have their own sections and are not repeated under Health.
+- **Command bar** (`⌘K` / `Ctrl K`): places, games, players, ideas, versions, and verbs in the CLI's words (`play 5+3 dameless`, `review last 20`, `compare cutemouse83`, `new idea`, `drills`), and the common ones as entries (New game, Drills, Review your last 20 games, New idea, Flip the board, the theme). What fair play forbids is not offered.
 - **Status line:** what background work is doing in one sentence, the queue on click (a popover: running, queued, recent, with stop/pause), and "Analysis is off while you're playing on Lichess" when the policy says so. It is the only place background work appears.
 - **Toasts:** a game of yours starting elsewhere ("Your game against X started" — Open), an incoming challenge (Accept · Decline), an idea finishing.
 
@@ -651,7 +653,7 @@ dameless lichess bot [token | logout | settings --set key=value | online | offli
 
 Carried over from the old `web/DESIGN.md`: VLC + Lichess; dense and sharp (radius 3, depth 1, compact density, snappy motion); hairline dividers, flat panes; Hanken Grotesk for reading, JetBrains Mono for numbers, Fraunces only for the wordmark; colour carries meaning (cognac for the current item and the primary action; success/warning/danger for verdicts; Lichess's glyph colours for move classes); one fact once per screen; plain words first, `Term` toggletips for jargon; every control an eos component imported by path, never a native control; parent owns space; one filled button per screen; sentence case; logical properties; `prefers-reduced-motion`; keyboard first. The stack breakpoint is 75rem. The board's side is rounded to chessground's 8-device-pixel step and must meet its frame exactly.
 
-Keyboard: `←/→` moves, `Home/End`, `F` flip, `Space` engine on/off (Explore), `X`/`Shift X` next/previous mistake (Review), `N` new game, `⌘K` command bar, `G Y` / `G D` / `G S` go to You / Dameless / Settings, `?` the shortcuts.
+Keyboard: `←/→` moves, `Home/End`, `F` flip, `Space` engine on/off (Explore), `X`/`Shift X` next/previous mistake (Review), `N` new game, `D` today's drills, `⌘K` command bar, `G Y` / `G D` / `G S` go to You / Dameless / Settings, `Esc` closes what is open, `?` the shortcuts. Keys work whenever you are not typing. A sheet takes focus at its heading when it opens and gives it back to what opened it when it closes.
 
 ### Client architecture
 
@@ -659,7 +661,7 @@ Keyboard: `←/→` moves, `Home/End`, `F` flip, `Space` engine on/off (Explore)
 - `api/stream.ts`: one SSE connection, typed events, resumes with the last id, dispatches into stores.
 - `stores/` (Pinia): `games` (summaries by id, the open game in detail), `ideas`, `work`, `connections`, `policy`, `versions`, `players`. Each loads with one GET and stays current from events. No component fetches on its own.
 - `board/`: `Board.vue` (chessground wrapper), `EvalBar`, `EvalGraph` (uPlot), `MoveList`, `Strip` (a seat: name, rating, clock), `Transport`. `position.ts` (chessops) holds the game tree and the cursor.
-- `panel/`: `PlayPanel`, `WatchPanel`, `ReviewPanel`, `ExplorePanel`.
+- `panel/`: `PlayPanel`, `WatchPanel`, `ReviewPanel`, `ExplorePanel`, `DrillPanel`.
 - `rail/`, `sheets/` (`You`, `Dameless`, `Idea`, `Player`, `Compare`, `Settings`), `shell/` (header, command bar, status line, toasts, new-game dialog).
 
 ## Working on the rebuild
