@@ -3,7 +3,10 @@
 //! `eval.info`, `work.log`) are sent live but never kept: the next one replaces them, and several a second would push
 //! everything else out of the replay.
 
-use std::{collections::VecDeque, sync::Mutex};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::{Arc, Mutex},
+};
 
 use dameless_core::events::{Event, Payload, Topic};
 use tokio::sync::broadcast;
@@ -46,6 +49,26 @@ impl TopicFilter {
 pub struct Bus {
     inner: Mutex<Inner>,
     tx: broadcast::Sender<Sent>,
+    watchers: Arc<Mutex<Watchers>>,
+}
+
+/// The filters of the subscriptions open now, so the bus can say whether anyone listens to a topic.
+#[derive(Default)]
+struct Watchers {
+    next: u64,
+    filters: HashMap<u64, TopicFilter>,
+}
+
+/// A subscription's entry in [`Watchers`], removed when the subscription is dropped.
+struct Watch {
+    id: u64,
+    watchers: Arc<Mutex<Watchers>>,
+}
+
+impl Drop for Watch {
+    fn drop(&mut self) {
+        self.watchers.lock().unwrap_or_else(|p| p.into_inner()).filters.remove(&self.id);
+    }
 }
 
 struct Inner {
@@ -62,7 +85,7 @@ impl Default for Bus {
 impl Bus {
     pub fn new() -> Self {
         let (tx, _) = broadcast::channel(KEEP);
-        Self { inner: Mutex::new(Inner { next: 1, kept: VecDeque::with_capacity(KEEP) }), tx }
+        Self { inner: Mutex::new(Inner { next: 1, kept: VecDeque::with_capacity(KEEP) }), tx, watchers: Arc::default() }
     }
 
     /// Publishes an event; returns its id.
@@ -99,7 +122,14 @@ impl Bus {
             .filter(|s| s.event.id > since && filter.matches(&s.topic))
             .map(|s| s.event.clone())
             .collect();
-        Subscription { backlog, gap, filter, rx: self.tx.subscribe() }
+        let watch = {
+            let mut w = self.watchers.lock().unwrap_or_else(|p| p.into_inner());
+            w.next += 1;
+            let id = w.next;
+            w.filters.insert(id, filter.clone());
+            Watch { id, watchers: self.watchers.clone() }
+        };
+        Subscription { backlog, gap, filter, rx: self.tx.subscribe(), _watch: watch }
     }
 
     /// The id the next event will get.
@@ -110,6 +140,12 @@ impl Bus {
     /// How many subscriptions are open now.
     pub fn listeners(&self) -> usize {
         self.tx.receiver_count()
+    }
+
+    /// Whether an open subscription would receive events on `topic`: an evaluation session is watched only by a
+    /// stream that asked for it (or `eval:*`), not by any stream at all.
+    pub fn watched(&self, topic: &Topic) -> bool {
+        self.watchers.lock().unwrap_or_else(|p| p.into_inner()).filters.values().any(|f| f.matches(topic))
     }
 }
 
@@ -129,6 +165,7 @@ pub struct Subscription {
     pub gap: bool,
     filter: TopicFilter,
     rx: broadcast::Receiver<Sent>,
+    _watch: Watch,
 }
 
 impl Subscription {
@@ -252,6 +289,22 @@ mod tests {
         // An id from a previous run replays everything kept.
         let stale = bus.subscribe(1_000_000, TopicFilter::default());
         assert_eq!(stale.backlog.len(), KEEP);
+    }
+
+    #[test]
+    fn a_topic_is_watched_only_while_a_subscription_asks_for_it() {
+        let bus = Bus::new();
+        let session = Topic::Eval("a".into());
+        let other = bus.subscribe(0, TopicFilter::parse(Some("games,eval:b")));
+        assert!(!bus.watched(&session), "a stream for another session does not keep this one");
+        let mine = bus.subscribe(0, TopicFilter::parse(Some("games,eval:a")));
+        assert!(bus.watched(&session));
+        drop(mine);
+        assert!(!bus.watched(&session));
+        let all = bus.subscribe(0, TopicFilter::of(["eval:*"]));
+        assert!(bus.watched(&session));
+        drop((all, other));
+        assert!(!bus.watched(&Topic::Games));
     }
 
     #[tokio::test]
