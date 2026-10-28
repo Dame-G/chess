@@ -153,7 +153,12 @@ async fn your_games_against_a_level_refit_the_ladder() {
     assert_eq!(you.games, 1);
     let two = ratings.iter().find(|r| r.entrant == Entrant::Level(2)).unwrap();
     assert!(two.estimate.elo > 1200.0, "level 2 won");
-    let updated = levels_updated(&mut events);
+    // The refit is stored before its event is published: wait for the event too.
+    let mut updated = Vec::new();
+    until_async!("the levels event", {
+        updated.extend(levels_updated(&mut events));
+        !updated.is_empty()
+    });
     assert_eq!(updated.len(), 1);
     assert_eq!(updated[0].ratings, ratings);
 
