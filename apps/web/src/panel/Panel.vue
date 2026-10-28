@@ -101,10 +101,22 @@ const hints = computed(() => (policy.allowed && games.review ? games.review.plie
   border-block-end: var(--line);
 }
 
+/* The tabs sit on the panel's rule, flush: square corners, the row as wide as the panel, and the selected tab covers
+   the rule under it. (eos rounds a tab's outer corners; flush tabs want none.) */
 .tabs :deep([role="tablist"]) {
   box-sizing: border-box;
   max-width: 100%;
-  padding-inline: var(--ws-pad);
+  margin: 0;
+  padding: 0;
+  border-block-end: var(--line);
+}
+
+.tabs :deep([role="tab"]) {
+  border-radius: 0;
+}
+
+.tabs :deep([role="tab"][aria-selected="true"]) {
+  margin-block-end: calc(-1 * var(--e-stroke-hair));
 }
 
 .tabs :deep([role="tabpanel"]) {

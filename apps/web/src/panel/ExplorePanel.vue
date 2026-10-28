@@ -2,7 +2,6 @@
 import { computed, onMounted, ref } from "vue";
 import { EActions } from "@eos-ui/vue/components/EActions";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { ECopyButton } from "@eos-ui/vue/components/ECopyButton";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextarea } from "@eos-ui/vue/components/ETextarea";
 import { buildingText, scoreText } from "../format";
@@ -12,6 +11,7 @@ import { useEvaluation } from "../stores/evaluation";
 import { usePolicy } from "../stores/policy";
 import { useRepertoire } from "../stores/repertoire";
 import { useWork } from "../stores/work";
+import CopyRow from "./CopyRow.vue";
 import { repertoireNote } from "../sheets/repertoire";
 import { useUi } from "../shell/ui";
 
@@ -99,9 +99,8 @@ function openPasted() {
     <p v-if="yours" class="muted">{{ yours }}</p>
 
     <section class="position" aria-label="Position">
-      <p class="fen num" :title="fen">{{ fen }}</p>
-      <ECopyButton :text="fen" label="Copy the FEN" size="sm" />
-      <ECopyButton :text="pgn" label="Copy the PGN" size="sm" />
+      <CopyRow what="FEN" :text="fen" />
+      <CopyRow what="PGN" :text="pgn" />
     </section>
 
     <ETextarea
@@ -187,20 +186,8 @@ function openPasted() {
 }
 
 .position {
-  display: flex;
-  align-items: center;
-  gap: var(--e-gap-tight);
+  display: grid;
+  gap: var(--e-gap-snug);
   min-width: 0;
-}
-
-.fen {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--e-muted);
-  font: 0.75rem/1.3 var(--e-font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 </style>
