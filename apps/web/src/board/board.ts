@@ -10,6 +10,7 @@ import { useGames } from "../stores/games";
 import { usePolicy } from "../stores/policy";
 import { stored } from "../stored";
 import { isLive, modesFor, type Mode } from "./modes";
+import type { Step } from "./follow";
 import { INITIAL_FEN, playUci, setup, view, type Position } from "./position";
 import { GameTree, type TreeNode } from "./tree";
 
@@ -153,6 +154,11 @@ export const useBoard = defineStore("board", () => {
     following.value = ply.value === lastPly.value;
   }
 
+  /** The arrow keys' steps: one move back or forward, the start, the end. */
+  function step(to: Step) {
+    go(to === "back" ? cursor.value - 1 : to === "forward" ? cursor.value + 1 : to === "start" ? 0 : Infinity);
+  }
+
   const cursor = computed(() => (exploring.value ? node.value.ply : ply.value));
   const atEnd = computed(() => (exploring.value ? !node.value.children.length : ply.value >= lastPly.value));
 
@@ -266,6 +272,7 @@ export const useBoard = defineStore("board", () => {
     openGame,
     openFree,
     go,
+    step,
     exploreMove,
     selectNode,
     setMode,

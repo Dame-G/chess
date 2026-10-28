@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { RouterLink } from "vue-router";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { ELink } from "@eos-ui/vue/components/ELink";
+import { EList } from "@eos-ui/vue/components/EList";
+import { EListRow } from "@eos-ui/vue/components/EListRow";
 import type { Challenge, ConnectionKey } from "../api/types";
 import { speedName, timeControl } from "../format";
 import { useConnections } from "../stores/connections";
@@ -37,75 +39,48 @@ const describe = (c: Challenge) =>
 </script>
 
 <template>
-  <ul class="plain list">
-    <li v-for="c in challenges" :key="c.id" class="item">
-      <div class="who">
-        <span class="name">
-          <span v-if="c.opponent.title" class="title">{{ c.opponent.title }}</span>
-          {{ c.opponent.name }}
-          <span v-if="c.opponent.rating" class="mono rating">{{ c.opponent.rating }}</span>
-        </span>
-        <span class="sec-note">
-          {{ c.direction === "incoming" ? "challenges you" : "you challenged them" }} · {{ describe(c) }}
-          <template v-if="!c.playable"> · <ELink :href="c.url" external>play it on lichess.org</ELink> </template>
-        </span>
-      </div>
-      <div class="sheet-actions">
+  <EList :model-value="null" label="Challenges">
+    <EListRow
+      v-for="c in challenges"
+      :key="c.id"
+      :value="c.id"
+      :link-component="RouterLink"
+      :to="`/players/lichess:${c.opponent.name.toLowerCase()}`"
+    >
+      <template #title>
+        <span v-if="c.opponent.title" class="title">{{ c.opponent.title }}</span>
+        {{ c.opponent.name }}
+        <span v-if="c.opponent.rating" class="mono rating">{{ c.opponent.rating }}</span>
+      </template>
+      <template #subtitle>
+        {{ c.direction === "incoming" ? "Incoming" : "Sent" }} · {{ describe(c) }}
+        <template v-if="!c.playable"> · not playable here</template>
+      </template>
+      <template #actions>
         <template v-if="c.direction === 'incoming'">
           <EButton
+            v-if="c.playable"
             variant="outline"
-            size="sm"
-            :disabled="!c.playable"
+            size="xs"
             :loading="busy === c.id"
             @click="run(c.id, () => connections.accept(connection, c.id))"
           >
             Accept
           </EButton>
-          <EButton variant="quiet" size="sm" @click="run(c.id, () => connections.decline(connection, c.id))">
+          <EButton v-else variant="outline" size="xs" :href="c.url" external>Play on lichess.org</EButton>
+          <EButton variant="quiet" size="xs" @click="run(c.id, () => connections.decline(connection, c.id))">
             Decline
           </EButton>
         </template>
-        <EButton v-else variant="outline" size="sm" @click="run(c.id, () => connections.cancel(connection, c.id))">
+        <EButton v-else variant="outline" size="xs" @click="run(c.id, () => connections.cancel(connection, c.id))">
           Cancel
         </EButton>
-      </div>
-    </li>
-  </ul>
+      </template>
+    </EListRow>
+  </EList>
 </template>
 
 <style scoped>
-.list {
-  gap: 0;
-}
-
-.item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--e-gap-snug);
-  padding-block: var(--e-gap-snug);
-  border-block-end: var(--line);
-}
-
-/* The section below draws its own rule. */
-.item:last-child {
-  border-block-end: 0;
-}
-
-.who {
-  display: grid;
-  flex: 1 1 10rem;
-  min-width: 0;
-}
-
-.name {
-  overflow: hidden;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .title {
   margin-inline-end: 0.25rem;
   color: var(--e-primary);

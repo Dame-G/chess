@@ -13,7 +13,7 @@ import type { Dataset, Net } from "../api/types";
 import { ago, bytes, shortDate } from "../format";
 import { dataLine, datasetLine, positionsText, room, sourceWord } from "../sheets/training";
 import { useTraining } from "../stores/training";
-import ConfirmDialog from "./ConfirmDialog.vue";
+import { EConfirmDialog } from "@eos-ui/vue/components/EConfirmDialog";
 import DatagenDialog from "./DatagenDialog.vue";
 import ImportDatasetDialog from "./ImportDatasetDialog.vue";
 import Term from "./Term.vue";
@@ -169,15 +169,16 @@ async function remove() {
 
     <DatagenDialog v-model:open="generating" />
     <ImportDatasetDialog v-model:open="importing" />
-    <ConfirmDialog
+    <EConfirmDialog
       v-model:open="confirmDelete"
       :title="`Delete ${toDelete?.name ?? 'the dataset'}?`"
       :description="
         toDelete ? `${datasetLine(toDelete)}. It cannot be brought back, only made or imported again.` : undefined
       "
-      confirm="Delete dataset"
-      danger
-      :busy="deleting"
+      confirm-label="Delete dataset"
+      tone="danger"
+      :loading="deleting"
+      :close-on-confirm="false"
       @confirm="remove"
     />
   </section>

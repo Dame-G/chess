@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { RouterLink } from "vue-router";
 import { EButton } from "@eos-ui/vue/components/EButton";
+import { EList } from "@eos-ui/vue/components/EList";
+import { EListRow } from "@eos-ui/vue/components/EListRow";
+import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import type { Speed } from "../api/types";
@@ -44,25 +48,36 @@ const has = (username: string) => props.taken.includes(key(username));
         { value: 'rapid', label: 'Rapid' },
       ]"
     />
-    <div v-if="failed" class="fail">
-      <p class="sec-note">Lichess did not answer.</p>
-      <EButton variant="outline" size="sm" @click="load(speed)">Try again</EButton>
-    </div>
+    <ENotice v-if="failed" tone="warning" title="Lichess did not answer" retry @retry="load(speed)" />
     <ESkeleton v-else-if="!rows" :lines="5" label="Loading the leaderboard" />
-    <ol v-else class="plain list">
-      <li v-for="(p, i) in rows" :key="p.key" class="item">
-        <span class="rank mono">{{ i + 1 }}</span>
-        <span class="name">
+    <EList v-else :model-value="null" label="Leaderboard">
+      <EListRow
+        v-for="(p, i) in rows"
+        :key="p.key"
+        :value="p.key"
+        :link-component="RouterLink"
+        :to="`/players/${key(p.username)}`"
+      >
+        <template #leading>
+          <span class="rank mono">{{ i + 1 }}</span>
+        </template>
+        <template #title>
           <span v-if="p.title" class="title">{{ p.title }}</span>
           {{ p.username }}
-        </span>
-        <span class="rating mono">{{ p.rating }}</span>
-        <span class="progress mono" :aria-label="`${p.progress ?? 0} this week`">{{ signed(p.progress ?? 0, 0) }}</span>
-        <EButton variant="quiet" size="sm" :disabled="full || has(p.username)" @click="emit('add', key(p.username))">
-          {{ has(p.username) ? "Added" : "Add" }}
-        </EButton>
-      </li>
-    </ol>
+        </template>
+        <template #trailing>
+          <span class="rating mono">{{ p.rating }}</span>
+          <span class="progress mono" :aria-label="`${p.progress ?? 0} this week`">{{
+            signed(p.progress ?? 0, 0)
+          }}</span>
+        </template>
+        <template #actions>
+          <EButton variant="quiet" size="xs" :disabled="full || has(p.username)" @click="emit('add', key(p.username))">
+            {{ has(p.username) ? "Added" : "Add" }}
+          </EButton>
+        </template>
+      </EListRow>
+    </EList>
   </div>
 </template>
 
@@ -72,40 +87,21 @@ const has = (username: string) => props.taken.includes(key(username));
   gap: var(--e-gap-snug);
 }
 
-.fail {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--e-gap-snug);
-}
-
-.list {
-  gap: 0;
-}
-
-.item {
-  display: grid;
-  grid-template-columns: 1.5rem minmax(0, 1fr) 3.25rem 2.5rem auto;
-  align-items: center;
-  gap: var(--e-gap-snug);
-  padding-block: 0.125rem;
-  border-block-end: var(--line);
-}
-
-.rank,
-.progress {
+.rank {
+  inline-size: 1.5rem;
   color: var(--e-muted);
   font-size: 0.8125rem;
 }
 
+/* The rating and the week's change sit side by side, each in its own column. */
+.rating,
 .progress {
+  inline-size: 3rem;
   text-align: end;
 }
 
-.name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.progress {
+  font-size: 0.8125rem;
 }
 
 .title {

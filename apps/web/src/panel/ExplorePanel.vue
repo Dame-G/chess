@@ -80,7 +80,7 @@ function openPasted() {
       <ol v-if="board.engineOn" class="lines">
         <li v-for="(l, i) in lines" :key="i" class="line">
           <EButton
-            size="sm"
+            size="xs"
             variant="quiet"
             class="line-btn"
             :aria-label="`Play ${l.san.split(' ')[1] ?? ''}`"
@@ -164,7 +164,6 @@ function openPasted() {
   justify-content: flex-start;
   gap: var(--e-gap-snug);
   width: 100%;
-  height: 1.875rem;
   padding-inline: 0.25rem;
   text-align: start;
   text-decoration: none;

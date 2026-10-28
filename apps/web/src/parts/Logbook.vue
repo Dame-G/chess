@@ -4,7 +4,8 @@ import { RouterLink } from "vue-router";
 import { PhCaretDown, PhCaretUp } from "@phosphor-icons/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
-import { ELink } from "@eos-ui/vue/components/ELink";
+import { EList } from "@eos-ui/vue/components/EList";
+import { EListRow } from "@eos-ui/vue/components/EListRow";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { EStamp } from "@eos-ui/vue/components/EStamp";
@@ -71,26 +72,32 @@ function toggle(id: number) {
     />
     <ESkeleton v-if="!ideas.loaded" :lines="3" label="Loading the logbook" />
     <p v-else-if="!rows.length" class="sec-note">{{ empty[show] }}</p>
-    <ul v-else class="plain">
-      <li v-for="i in shown" :key="i.id" class="entry">
-        <div class="head">
-          <EStamp size="sm" :tone="STATUS_TONE[i.status]" :label="STATUS_WORD[i.status]" class="stamp" />
-          <div class="titles">
-            <ELink :link-component="RouterLink" :to="`/dameless/ideas/${i.id}`" class="title">{{ i.title }}</ELink>
-            <span class="sub">
-              {{ i.author === "you" ? "You" : "Claude" }} · {{ KIND_WORD[i.kind] }} · {{ ago(i.created_at) }}
-            </span>
-          </div>
-          <span class="elo mono">{{ ideaElo(i) }}</span>
-          <EIconButton
-            :icon="open.has(i.id) ? PhCaretUp : PhCaretDown"
-            :label="open.has(i.id) ? `Hide notes on ${i.title}` : `Show notes on ${i.title}`"
-            tooltip
-            size="sm"
-            :aria-expanded="open.has(i.id)"
-            @click="toggle(i.id)"
-          />
-        </div>
+    <EList v-else :model-value="null" label="Ended ideas">
+      <div v-for="i in shown" :key="i.id" class="entry">
+        <EListRow
+          :value="i.id"
+          :title="i.title"
+          :subtitle="`${i.author === 'you' ? 'You' : 'Claude'} · ${KIND_WORD[i.kind]} · ${ago(i.created_at)}`"
+          :link-component="RouterLink"
+          :to="`/dameless/ideas/${i.id}`"
+        >
+          <template #leading>
+            <EStamp size="sm" :tone="STATUS_TONE[i.status]" :label="STATUS_WORD[i.status]" class="stamp" />
+          </template>
+          <template #trailing>
+            <span class="elo mono">{{ ideaElo(i) }}</span>
+          </template>
+          <template #actions>
+            <EIconButton
+              :icon="open.has(i.id) ? PhCaretUp : PhCaretDown"
+              :label="open.has(i.id) ? `Hide notes on ${i.title}` : `Show notes on ${i.title}`"
+              tooltip
+              size="xs"
+              :aria-expanded="open.has(i.id)"
+              @click="toggle(i.id)"
+            />
+          </template>
+        </EListRow>
         <div v-if="open.has(i.id)" class="body">
           <p v-if="i.verdict" class="verdict">{{ i.verdict }}</p>
           <p class="hyp">{{ i.hypothesis }}</p>
@@ -99,8 +106,8 @@ function toggle(id: number) {
             <ETag v-for="t in i.tags" :key="t" :label="t" size="sm" />
           </p>
         </div>
-      </li>
-    </ul>
+      </div>
+    </EList>
     <div v-if="rows.length > shown.length" class="more">
       <EButton variant="outline" size="sm" @click="limit += PAGE">
         Show {{ Math.min(PAGE, rows.length - shown.length) }} more
@@ -122,50 +129,19 @@ function toggle(id: number) {
   gap: var(--e-gap-snug);
 }
 
-.entry {
-  padding-block: var(--e-gap-snug);
-  border-block-end: var(--line);
-}
-
-.head {
-  display: grid;
-  grid-template-columns: 5.5rem minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: var(--e-gap-snug);
-}
-
+/* A stamp is as wide as its word; the column keeps every title at one edge. */
 .stamp {
-  justify-self: start;
-}
-
-.titles {
-  display: grid;
-  min-width: 0;
-}
-
-.title {
-  overflow: hidden;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sub {
-  color: var(--e-muted);
-  font: var(--e-type-small);
+  inline-size: 5rem;
 }
 
 .elo {
-  color: var(--e-muted);
   font-size: 0.8125rem;
-  text-align: end;
 }
 
 .body {
   display: grid;
   gap: var(--e-gap-snug);
-  margin-block-start: var(--e-gap-snug);
-  padding-inline-start: calc(5.5rem + var(--e-gap-snug));
+  padding: var(--e-gap-snug) var(--e-gap-snug) var(--e-gap-snug) calc(5rem + 2 * var(--e-gap-snug));
 }
 
 .verdict {
@@ -186,20 +162,13 @@ function toggle(id: number) {
 }
 
 @media (width < 36rem) {
-  .head {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .stamp {
-    grid-column: 1 / -1;
-  }
-
+  /* The title takes the room on a phone; the idea's own sheet has the figure. */
   .elo {
     display: none;
   }
 
   .body {
-    padding-inline-start: 0;
+    padding-inline-start: var(--e-gap-snug);
   }
 }
 </style>

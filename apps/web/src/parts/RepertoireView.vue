@@ -71,8 +71,8 @@ function figures(id: string): string {
 }
 
 /**
- * A move picked in the tree puts its line on the board and leaves the sheet open: picking also opens or closes the
- * move, so the way on through the tree stays in reach (the board is beside the sheet on a wide screen).
+ * A move picked in the tree puts its line on the board and leaves the sheet open; only its chevron opens or closes it,
+ * so the way on through the tree stays in reach (the board is beside the sheet on a wide screen).
  */
 function pick(id: string) {
   const row = tree.value.rows.get(id);
@@ -110,7 +110,16 @@ const departureLine = (d: Departure) => `${Math.ceil(d.ply / 2)}${d.ply % 2 === 
       </p>
       <div class="tree">
         <p class="legend" aria-hidden="true"><span>Move</span><span>Games · share · score</span></p>
-        <ETree v-model:expanded="expanded" label="Your lines" :items="tree.items" :model-value="null" @select="pick">
+        <ETree
+          v-model:expanded="expanded"
+          label="Your lines"
+          :items="tree.items"
+          :model-value="null"
+          toggle-on="chevron"
+          dense
+          indent="sm"
+          @select="pick"
+        >
           <template #leading="{ item }">
             <span class="dot" :class="{ 'dot--you': tree.rows.get(item.id)?.yours }" aria-hidden="true"></span>
           </template>
@@ -120,7 +129,7 @@ const departureLine = (d: Departure) => `${Math.ceil(d.ply / 2)}${d.ply % 2 === 
             >
           </template>
           <template #trailing="{ item }">
-            <span class="mono">{{ figures(item.id) }}</span>
+            <span class="mono figures">{{ figures(item.id) }}</span>
           </template>
         </ETree>
       </div>
@@ -189,24 +198,14 @@ const departureLine = (d: Departure) => `${Math.ceil(d.ply / 2)}${d.ply % 2 === 
   font: var(--e-type-small);
 }
 
-/* A denser tree than eos's default row: a line of play is a few characters, and there can be many. */
-.tree :deep(.e-tree-row) {
-  min-block-size: 2rem;
-  padding-block: 0.125rem;
-}
-
 .move,
-.tree :deep(.e-listrow-trail) {
+.figures {
   white-space: nowrap;
 }
 
-/* A phone has no width for eos's indent per move: a line of play goes ten moves deep. */
+/* A phone has little width for the figures of a line of play ten moves deep. */
 @media (width < 36rem) {
-  .tree :deep(.e-tree-row) {
-    padding-inline-start: calc(0.5rem + (var(--_level) - 1) * 0.875rem);
-  }
-
-  .tree :deep(.e-listrow-trail) {
+  .figures {
     font-size: 0.8125rem;
   }
 }

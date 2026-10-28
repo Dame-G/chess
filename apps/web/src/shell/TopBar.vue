@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onScopeDispose, ref } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
+import { computed } from "vue";
+import { RouterLink, useRoute } from "vue-router";
 import { PhGearSix, PhMagnifyingGlass, PhPlus } from "@phosphor-icons/vue";
 import { EAppHeader } from "@eos-ui/vue/components/EAppHeader";
 import { EButton } from "@eos-ui/vue/components/EButton";
@@ -9,6 +9,7 @@ import { EKbd } from "@eos-ui/vue/components/EKbd";
 import { EStatLink } from "@eos-ui/vue/components/EStatLink";
 import { formatShortcut } from "@eos-ui/vue";
 import { isLive } from "../board/modes";
+import { useMedia } from "../media";
 import { useConnections } from "../stores/connections";
 import { useGames } from "../stores/games";
 import { useVersions } from "../stores/versions";
@@ -18,7 +19,6 @@ import { useUi } from "./ui";
 
 /** The header: the wordmark, the command bar, You and Dameless as links to their sheets, New game, settings. */
 const ui = useUi();
-const router = useRouter();
 const route = useRoute();
 const connections = useConnections();
 const versions = useVersions();
@@ -29,11 +29,7 @@ const playing = computed(() => games.list.some((g) => g.you && isLive(g)));
 const keys = formatShortcut("mod+k");
 
 /** On a phone the links keep their names and drop their figures (rating, version); the sheets show them. */
-const phone = matchMedia("(width < 30rem)");
-const tight = ref(phone.matches);
-const onPhone = (e: MediaQueryListEvent) => (tight.value = e.matches);
-phone.addEventListener("change", onPhone);
-onScopeDispose(() => phone.removeEventListener("change", onPhone));
+const tight = useMedia("(width < 30rem)");
 </script>
 
 <template>
@@ -73,21 +69,14 @@ onScopeDispose(() => phone.removeEventListener("change", onPhone));
         :link-component="RouterLink"
         :current="route.path.startsWith('/dameless')"
       />
-      <EStatLink
-        label="Settings"
-        to="/settings"
-        :link-component="RouterLink"
-        :current="route.path === '/settings'"
-        class="settings-link"
-      />
       <EIconButton
         :icon="PhGearSix"
         label="Settings"
         tooltip
         size="sm"
-        class="settings-icon"
-        :aria-current="route.path === '/settings' ? 'page' : undefined"
-        @click="router.push('/settings')"
+        to="/settings"
+        :link-component="RouterLink"
+        :current="route.path === '/settings'"
       />
     </template>
   </EAppHeader>
@@ -137,12 +126,7 @@ onScopeDispose(() => phone.removeEventListener("change", onPhone));
   gap: 0.125rem;
 }
 
-/* Wide: Settings is a link beside You and Dameless, and the status line at the foot shows the work. Narrow, the icon
-   replaces the word, and (stacked, below 75rem) the work indicator moves up here. */
-.top :deep(.settings-icon) {
-  display: none;
-}
-
+/* Stacked (below 75rem) the work indicator moves up here from the status line at the foot. */
 @media (width >= 75rem) {
   .top .work-compact {
     display: none;
@@ -150,14 +134,6 @@ onScopeDispose(() => phone.removeEventListener("change", onPhone));
 }
 
 @media (width < 56rem) {
-  .top .settings-link {
-    display: none;
-  }
-
-  .top :deep(.settings-icon) {
-    display: grid;
-  }
-
   .bar-label,
   .bar-keys {
     display: none;

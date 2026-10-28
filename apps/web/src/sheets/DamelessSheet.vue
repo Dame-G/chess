@@ -22,7 +22,6 @@ import { useIdeas } from "../stores/ideas";
 import { useProgress } from "../stores/progress";
 import { useVersions } from "../stores/versions";
 import { KIND_WORD, progressWord, STATUS_TONE, STATUS_WORD } from "./idea";
-import SheetBack from "./SheetBack.vue";
 import { useSheet } from "./useSheet";
 
 /**
@@ -118,10 +117,8 @@ watch(creating, (open) => {
     title="Dameless"
     description="The engine: its strength over its versions, the ideas being tried, and its games on Lichess."
   >
-    <template #leading><SheetBack :show="sheet.canGoBack" @back="sheet.back" /></template>
-    <ENotice v-if="failed" tone="danger" title="Dameless did not load" class="gap">
+    <ENotice v-if="failed" tone="danger" title="Dameless did not load" class="gap" retry @retry="read">
       {{ failed }}
-      <template #actions><EButton variant="outline" @click="read">Try again</EButton></template>
     </ENotice>
 
     <section class="sec" aria-labelledby="d-strength">

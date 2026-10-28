@@ -21,7 +21,6 @@ import { useConnections } from "../stores/connections";
 import { usePolicy } from "../stores/policy";
 import { ALL_GAMES, usePlayers } from "../stores/players";
 import { useProgress } from "../stores/progress";
-import SheetBack from "./SheetBack.vue";
 import { useSheet } from "./useSheet";
 
 /**
@@ -99,7 +98,6 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
     title="You"
     description="Your games added up: how you play, what to work on, and how you compare."
   >
-    <template #leading><SheetBack :show="sheet.canGoBack" @back="sheet.back" /></template>
     <ENotice v-if="!linked" tone="info" title="Your Lichess account is not linked" class="gap">
       Log in to see your ratings, play on Lichess from here and bring your games in.
       <template #actions>
@@ -115,9 +113,8 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
       <p v-else class="sec-note">None waiting. Challenges to you on Lichess show here.</p>
     </section>
 
-    <ENotice v-if="failed" tone="danger" title="Your profile did not load" class="gap">
+    <ENotice v-if="failed" tone="danger" title="Your profile did not load" class="gap" retry @retry="load">
       {{ failed }}
-      <template #actions><EButton variant="outline" size="sm" @click="load">Try again</EButton></template>
     </ENotice>
     <ProfileSkeleton v-else-if="!profile" label="Loading your profile" />
     <EEmptyState v-else-if="firstRun" title="No games yet">

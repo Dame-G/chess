@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useMedia } from "../media";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import type { ProfileFilter, Speed } from "../api/types";
 import { speedName } from "../format";
@@ -16,6 +17,8 @@ const rated = computed({
   set: (v: string | undefined) =>
     (filter.value = { ...filter.value, rated: v === "rated" ? true : v === "casual" ? false : null }),
 });
+/** On a phone each switch takes the sheet's width, its options sharing it, instead of two ragged rows. */
+const phone = useMedia("(width < 36rem)");
 const speeds = [
   { value: "all", label: "All speeds" },
   ...(["bullet", "blitz", "rapid", "classical"] as const).map((s) => ({ value: s, label: speedName[s] })),
@@ -24,12 +27,14 @@ const speeds = [
 
 <template>
   <div class="filters">
-    <ESegmented v-model="speed" label="Speed" hide-label size="sm" :options="speeds" />
+    <ESegmented v-model="speed" label="Speed" hide-label size="sm" :stretch="phone" class="seg" :options="speeds" />
     <ESegmented
       v-model="rated"
       label="Rated"
       hide-label
       size="sm"
+      :stretch="phone"
+      class="seg"
       :options="[
         { value: 'both', label: 'Rated and casual' },
         { value: 'rated', label: 'Rated' },
@@ -46,25 +51,9 @@ const speeds = [
   gap: var(--e-gap-snug);
 }
 
-/* On a phone each switch takes the sheet's width, its options sharing it, instead of two ragged rows. */
 @media (width < 36rem) {
-  .filters > :deep(*) {
+  .seg {
     flex: 1 1 100%;
-  }
-
-  .filters :deep(.e-seg) {
-    display: flex;
-    inline-size: 100%;
-  }
-
-  .filters :deep(.e-seg-opt) {
-    display: flex;
-    flex: 1 1 auto;
-  }
-
-  .filters :deep(.e-seg-text) {
-    flex: 1;
-    justify-content: center;
   }
 }
 </style>

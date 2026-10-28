@@ -72,7 +72,7 @@ async function add() {
 
 .err {
   margin: 0;
-  color: var(--e-danger);
+  color: var(--e-danger-ink);
   font: var(--e-type-small);
 }
 </style>

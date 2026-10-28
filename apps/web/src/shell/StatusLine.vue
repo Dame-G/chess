@@ -98,7 +98,13 @@ const fraction = (w: Work) => (w.progress?.total ? w.progress.done / w.progress.
           <ul class="rows">
             <li v-for="w in work.running" :key="w.id" class="row">
               <span class="row-text">{{ progressText(w) }}</span>
-              <EProgress v-if="fraction(w) !== undefined" :value="fraction(w)! * 100" :label="w.title" class="bar" />
+              <EProgress
+                v-if="fraction(w) !== undefined"
+                :value="fraction(w)! * 100"
+                :label="w.title"
+                hide-label
+                class="bar"
+              />
               <span class="row-actions">
                 <EIconButton
                   v-if="w.status === 'running'"
@@ -300,7 +306,7 @@ const fraction = (w: Work) => (w.progress?.total ? w.progress.done / w.progress.
 }
 
 .row-when.failed {
-  color: var(--e-danger);
+  color: var(--e-danger-ink);
 }
 
 .none {

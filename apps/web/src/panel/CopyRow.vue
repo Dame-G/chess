@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { PhCheck, PhCopy, PhWarning } from "@phosphor-icons/vue";
-import { useCopy } from "@eos-ui/vue";
-import { EButton } from "@eos-ui/vue/components/EButton";
+import { ECopyButton } from "@eos-ui/vue/components/ECopyButton";
 
 /**
  * One thing the page can copy, said in words: its name (FEN, PGN), a preview of the text, and a button that reads
@@ -15,36 +13,24 @@ const props = defineProps<{
   text: string | (() => string);
 }>();
 
-const { copied, failed, copy } = useCopy({ timeout: 2000 });
-const value = computed(() => (typeof props.text === "function" ? props.text() : props.text));
 /** The preview is the text on one line, as far as it fits. */
-const preview = computed(() => value.value.replace(/\s+/g, " "));
-const label = computed(() =>
-  failed.value ? `Could not copy ${props.what}` : copied.value ? `${props.what} copied` : `Copy ${props.what}`,
-);
-const tip = computed(() => `Copy the ${props.what} of this position to the clipboard`);
-
-async function press() {
-  await copy(value.value);
-}
+const preview = computed(() => (typeof props.text === "function" ? props.text() : props.text).replace(/\s+/g, " "));
 </script>
 
 <template>
   <div class="row">
     <span class="what">{{ what }}</span>
     <span class="text num" :title="preview">{{ preview }}</span>
-    <EButton
-      size="sm"
+    <ECopyButton
+      :text="text"
+      :label="`Copy ${what}`"
+      :copied-label="`${what} copied`"
+      show-label
       variant="outline"
+      size="sm"
       class="btn"
-      :class="{ 'btn--done': copied }"
-      :icon="failed ? PhWarning : copied ? PhCheck : PhCopy"
-      :title="tip"
-      :aria-label="label"
-      @click="press"
-    >
-      <span aria-live="polite">{{ label }}</span>
-    </EButton>
+      :title="`Copy the ${what} of this position to the clipboard`"
+    />
   </div>
 </template>
 
@@ -78,10 +64,5 @@ async function press() {
 .btn {
   flex: none;
   min-inline-size: 7.5rem;
-  justify-content: center;
-}
-
-.btn--done {
-  color: var(--e-success, var(--e-primary));
 }
 </style>
