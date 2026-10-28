@@ -44,7 +44,7 @@ const hints = computed(() => (policy.allowed && games.review ? games.review.plie
       It may have been deleted, or the link is wrong.
       <ELink :link-component="RouterLink" to="/">Go to the board</ELink>
     </ENotice>
-    <ETabs v-model="mode" :items="tabs" label="Mode" class="tabs">
+    <ETabs v-model="mode" :items="tabs" label="Mode" class="tabs tabs-flush">
       <template #panel-play><PlayPanel /></template>
       <template #panel-watch><WatchPanel /></template>
       <template #panel-review><ReviewPanel /></template>
@@ -101,18 +101,14 @@ const hints = computed(() => (policy.allowed && games.review ? games.review.plie
   border-block-end: var(--line);
 }
 
-/* The tabs sit on the panel's rule, flush: square corners, the row as wide as the panel, and the selected tab covers
-   the rule under it. (eos rounds a tab's outer corners; flush tabs want none.) */
+/* The tabs sit on the panel's rule, flush: square corners (`tabs-flush`), the row as wide as the panel, and the selected tab covers
+   the rule under it. */
 .tabs :deep([role="tablist"]) {
   box-sizing: border-box;
   max-width: 100%;
   margin: 0;
   padding: 0;
   border-block-end: var(--line);
-}
-
-.tabs :deep([role="tab"]) {
-  border-radius: 0;
 }
 
 .tabs :deep([role="tab"][aria-selected="true"]) {
