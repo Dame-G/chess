@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
@@ -79,12 +79,6 @@ const KINDS: { value: Kind; label: string; text: string }[] = [
   },
 ];
 
-/** Six kinds do not fit side by side on a phone: there they are a list to choose from. */
-const narrowQuery = typeof matchMedia === "function" ? matchMedia("(width < 32rem)") : undefined;
-const narrow = ref(narrowQuery?.matches ?? false);
-const onNarrow = (e: MediaQueryListEvent) => (narrow.value = e.matches);
-narrowQuery?.addEventListener("change", onNarrow);
-onBeforeUnmount(() => narrowQuery?.removeEventListener("change", onNarrow));
 const kindOptions = KINDS.map((k) => ({ value: k.value, label: k.label }));
 
 const kind = ref<Kind>("gain");
@@ -289,8 +283,7 @@ async function create() {
 <template>
   <EDialog v-model:open="open" title="New idea" description="A change to try against the champion." size="lg">
     <EStack gap="base">
-      <ESelect v-if="narrow" v-model="kind" label="Kind" :options="kindOptions" />
-      <ESegmented v-else v-model="kind" label="Kind" :options="kindOptions" />
+      <ESegmented v-model="kind" label="Kind" collapse :options="kindOptions" />
       <p class="sec-note kind-text">{{ kindText }}</p>
 
       <ETextField v-model="title" label="Title" placeholder="Deeper LMR at high depth" autocomplete="off" />
@@ -340,7 +333,7 @@ async function create() {
           :options="[...schedulePresets, ...(preset === 'custom' ? [{ value: 'custom', label: 'Custom' }] : [])]"
         />
         <p class="sec-note">{{ trainCostSentence }}</p>
-        <EDisclosure title="Advanced">
+        <EDisclosure title="Advanced" title-style="text">
           <EStack gap="base">
             <div class="pair">
               <ENumberField v-model="superbatches" label="Superbatches" :min="1" :step="5" />

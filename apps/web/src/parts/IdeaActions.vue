@@ -4,7 +4,7 @@ import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import type { Idea } from "../api/types";
-import ConfirmDialog from "./ConfirmDialog.vue";
+import { EConfirmDialog } from "@eos-ui/vue/components/EConfirmDialog";
 import { useDameless } from "../stores/dameless";
 import { useIdeas } from "../stores/ideas";
 import { useVersions } from "../stores/versions";
@@ -96,12 +96,13 @@ async function push() {
     <p v-if="pushed" class="sec-note">Pushed at {{ pushed }}.</p>
     <ENotice v-if="problem && !promoting && !pushing" tone="danger" title="That did not work">{{ problem }}</ENotice>
 
-    <ConfirmDialog
+    <EConfirmDialog
       v-model:open="promoting"
       :title="`Make ${change} the new champion ${next}`"
       description="Its change is merged into the fork's main on this machine."
-      :confirm="`Promote to ${next}`"
-      :busy="busy === 'promote'"
+      :confirm-label="`Promote to ${next}`"
+      :loading="busy === 'promote'"
+      :close-on-confirm="false"
       @confirm="promote"
     >
       <p class="text">
@@ -109,19 +110,20 @@ async function push() {
         you are told why. Nothing is pushed.
       </p>
       <ENotice v-if="problem" tone="danger" title="It was not promoted">{{ problem }}</ENotice>
-    </ConfirmDialog>
+    </EConfirmDialog>
 
-    <ConfirmDialog
+    <EConfirmDialog
       v-model:open="pushing"
       title="Push the fork to its remote?"
       description="This publishes the fork's main, with every promotion in it."
-      confirm="Push main"
-      :busy="busy === 'push'"
+      confirm-label="Push main"
+      :loading="busy === 'push'"
+      :close-on-confirm="false"
       @confirm="push"
     >
       <p class="text">Pushing is never automatic. Once pushed, other people can fetch these commits.</p>
       <ENotice v-if="problem" tone="danger" title="It was not pushed">{{ problem }}</ENotice>
-    </ConfirmDialog>
+    </EConfirmDialog>
   </div>
 </template>
 

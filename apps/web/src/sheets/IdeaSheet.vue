@@ -22,7 +22,6 @@ import { useDameless } from "../stores/dameless";
 import { useIdeas } from "../stores/ideas";
 import { useVersions } from "../stores/versions";
 import { KIND_WORD, STAGE_WORD, STATUS_TONE, STATUS_WORD, TRIAL_TONE, TRIAL_WORD } from "./idea";
-import SheetBack from "./SheetBack.vue";
 import { useSheet } from "./useSheet";
 
 /**
@@ -96,11 +95,9 @@ const tune = computed(() => ideas.tuneStates[id.value]);
 
 <template>
   <ESheet v-bind="sheet.bind" :title="idea?.title ?? 'Idea'" :description="idea?.hypothesis">
-    <template #leading><SheetBack :show="sheet.canGoBack" @back="sheet.back" /></template>
     <EEmptyState v-if="missing" title="No such idea">It may have been removed, or the link is wrong.</EEmptyState>
-    <ENotice v-else-if="failed" tone="danger" title="The idea did not load">
+    <ENotice v-else-if="failed" tone="danger" title="The idea did not load" retry @retry="open">
       {{ failed }}
-      <template #actions><EButton variant="outline" @click="open">Try again</EButton></template>
     </ENotice>
     <div v-else-if="!idea" aria-busy="true"><ESkeleton :lines="5" label="Loading the idea" /></div>
     <template v-else>

@@ -194,7 +194,7 @@ async function start() {
             ? 'Lichess and Stockfish need your Lichess account: link it on the You page.'
             : undefined
         "
-        class="wide"
+        stretch
       />
       <template v-if="opponent === 'dameless'">
         <EStack gap="base" wrap-below="26rem">
@@ -224,7 +224,7 @@ async function start() {
             { value: 'seek', label: 'Find a game' },
             { value: 'challenge', label: 'Challenge someone' },
           ]"
-          class="wide"
+          stretch
         />
         <ETextField v-if="lichessHow === 'challenge'" v-model="username" label="Lichess username" autocomplete="off" />
       </template>
@@ -233,7 +233,7 @@ async function start() {
         label="Time control"
         :options="clocks"
         hint="Minutes + seconds added each move."
-        class="wide"
+        stretch
       />
       <ESegmented
         v-model="color"
@@ -243,7 +243,7 @@ async function start() {
           { value: 'random', label: 'Either' },
           { value: 'black', label: 'Black' },
         ]"
-        class="wide"
+        stretch
       />
       <ESwitch v-if="opponent === 'lichess'" v-model="rated" label="Rated" />
     </EStack>
@@ -259,21 +259,3 @@ async function start() {
     </template>
   </EDialog>
 </template>
-
-<style scoped>
-/* The choices fill the dialog's width, each option an equal share. */
-.wide,
-.wide :deep(.e-seg) {
-  inline-size: 100%;
-}
-
-.wide :deep(.e-seg-opt) {
-  flex: 1 1 auto;
-  min-inline-size: 0;
-}
-
-.wide :deep(.e-seg-text) {
-  inline-size: 100%;
-  min-inline-size: 0;
-}
-</style>

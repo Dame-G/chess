@@ -7,7 +7,7 @@ import { ENotice } from "@eos-ui/vue/components/ENotice";
 import type { SeatAction, Side } from "../api/types";
 import { other, seatName, speedName, timeControl } from "../format";
 import { useBoard } from "../board/board";
-import ConfirmDialog from "../parts/ConfirmDialog.vue";
+import { EConfirmDialog } from "@eos-ui/vue/components/EConfirmDialog";
 import { useGames } from "../stores/games";
 
 /**
@@ -148,9 +148,16 @@ const where = computed(() => {
       <EButton v-if="can('resign')" size="sm" variant="outline" @click="confirmResign = true">Resign</EButton>
     </EActions>
 
-    <ConfirmDialog v-model:open="confirmResign" title="Resign this game?" confirm="Resign" danger @confirm="resign">
+    <EConfirmDialog
+      v-model:open="confirmResign"
+      title="Resign this game?"
+      confirm-label="Resign"
+      tone="danger"
+      :close-on-confirm="false"
+      @confirm="resign"
+    >
       {{ opponent }} wins the game.
-    </ConfirmDialog>
+    </EConfirmDialog>
   </div>
 </template>
 

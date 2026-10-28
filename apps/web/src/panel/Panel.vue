@@ -44,7 +44,7 @@ const hints = computed(() => (policy.allowed && games.review ? games.review.plie
       It may have been deleted, or the link is wrong.
       <ELink :link-component="RouterLink" to="/">Go to the board</ELink>
     </ENotice>
-    <ETabs v-model="mode" :items="tabs" label="Mode" class="tabs tabs-flush">
+    <ETabs v-model="mode" :items="tabs" label="Mode" flush class="tabs">
       <template #panel-play><PlayPanel /></template>
       <template #panel-watch><WatchPanel /></template>
       <template #panel-review><ReviewPanel /></template>
@@ -58,6 +58,7 @@ const hints = computed(() => (policy.allowed && games.review ? games.review.plie
         :node="board.node"
         :version="board.treeVersion"
         @select="board.selectNode"
+        @step="board.step"
       />
       <MoveList
         v-else
@@ -68,6 +69,7 @@ const hints = computed(() => (policy.allowed && games.review ? games.review.plie
         :marks="marks"
         :hints="hints"
         @go="board.go"
+        @step="board.step"
       />
     </div>
   </aside>
@@ -101,20 +103,7 @@ const hints = computed(() => (policy.allowed && games.review ? games.review.plie
   border-block-end: var(--line);
 }
 
-/* The tabs sit on the panel's rule, flush: square corners (`tabs-flush`), the row as wide as the panel, and the selected tab covers
-   the rule under it. */
-.tabs :deep([role="tablist"]) {
-  box-sizing: border-box;
-  max-width: 100%;
-  margin: 0;
-  padding: 0;
-  border-block-end: var(--line);
-}
-
-.tabs :deep([role="tab"][aria-selected="true"]) {
-  margin-block-end: calc(-1 * var(--e-stroke-hair));
-}
-
+/* A panel's content is inset like the rest of the workspace. */
 .tabs :deep([role="tabpanel"]) {
   min-width: 0;
   padding: var(--ws-pad);

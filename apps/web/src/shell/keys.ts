@@ -49,10 +49,10 @@ export function useKeys() {
   };
 
   useShortcuts({
-    left: arrows(() => board.go(board.cursor - 1)),
-    right: arrows(() => board.go(board.cursor + 1)),
-    home: arrows(() => board.go(0)),
-    end: arrows(() => board.go(Infinity)),
+    left: arrows(() => board.step("back")),
+    right: arrows(() => board.step("forward")),
+    home: arrows(() => board.step("start")),
+    end: arrows(() => board.step("end")),
     f: () => board.flip(),
     x: () => mistake(false),
     "shift+x": () => mistake(true),

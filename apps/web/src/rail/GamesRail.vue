@@ -5,6 +5,7 @@ import { EButton } from "@eos-ui/vue/components/EButton";
 import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
 import { EList } from "@eos-ui/vue/components/EList";
 import { EListRow } from "@eos-ui/vue/components/EListRow";
+import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { EVirtualList } from "@eos-ui/vue/components/EVirtualList";
@@ -92,30 +93,35 @@ function pick(key: GameId | string) {
 <template>
   <nav class="rail" aria-label="Games">
     <div class="rail-head">
-      <ESegmented v-model="filter" label="Show games" hide-label size="sm" :options="FILTERS" class="filter" />
+      <ESegmented v-model="filter" label="Show games" hide-label size="sm" stretch :options="FILTERS" />
     </div>
     <ESkeleton v-if="!games.loaded" :lines="10" label="Loading games" class="pad" />
-    <EEmptyState
+    <ENotice
       v-else-if="games.error && !games.list.length"
       class="pad"
-      title="Games did not load"
       tone="danger"
-      size="sm"
-      bare
+      title="Games did not load"
+      retry
+      @retry="retry"
     >
       {{ games.error }}
-      <template #action><EButton variant="outline" size="sm" @click="retry">Try again</EButton></template>
-    </EEmptyState>
-    <EEmptyState v-else-if="!rows.length" class="pad" title="No games here yet" size="sm" bare>
+    </ENotice>
+    <EEmptyState v-else-if="!rows.length" class="pad" title="No games here yet" size="sm" align="start" bare>
       {{ emptyNote[filter] }}
       <template v-if="filter !== 'all'" #action>
         <EButton variant="outline" size="sm" @click="filter = 'all'">Show all games</EButton>
       </template>
     </EEmptyState>
-    <EList v-else v-model="current" label="Games" class="rail-list" @select="pick">
+    <EList v-else v-model="current" label="Games" class="rail-list" flush @select="pick">
       <EVirtualList v-slot="{ item }" :items="items" :row-height="56" measure item-key="key">
         <GameRow v-if="'game' in item" :game="item.game" :nested="item.nested" />
-        <EListRow v-else :value="`${TRIAL}${item.trial.trial}`" :subtitle="trialTitle(item.trial).detail">
+        <EListRow
+          v-else
+          :value="`${TRIAL}${item.trial.trial}`"
+          :title="trialTitle(item.trial).title"
+          :subtitle="trialTitle(item.trial).detail"
+          :expanded="opened.has(item.trial.trial)"
+        >
           <template #leading>
             <span class="gutter" aria-hidden="true">
               <component :is="opened.has(item.trial.trial) ? PhCaretDown : PhCaretRight" />
@@ -124,10 +130,6 @@ function pick(key: GameId | string) {
           <template #trailing>
             <span v-if="item.trial.live" class="live">live · </span>{{ item.trial.games.length
             }}<span class="e-sr"> games here</span>
-          </template>
-          <template #title>
-            <span v-if="item.trial.live" class="e-sr">Live, </span>{{ trialTitle(item.trial).title
-            }}<span class="e-sr">, {{ opened.has(item.trial.trial) ? "open" : "closed" }}</span>
           </template>
         </EListRow>
       </EVirtualList>
@@ -148,53 +150,26 @@ function pick(key: GameId | string) {
   border-block-end: var(--line);
 }
 
-.filter {
-  inline-size: 100%;
-}
-
-/* Five filters fill the rail's width, each sized to its word first, with no scrolling inside the control. */
-.filter :deep(.e-seg) {
-  inline-size: 100%;
-}
-
-.filter :deep(.e-seg-opt) {
-  flex: 1 1 auto;
-  min-inline-size: 0;
-}
-
-.filter :deep(.e-seg-text) {
-  inline-size: 100%;
-  min-inline-size: 0;
-  padding-inline: 0.5rem;
-}
-
 .rail-list {
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
 }
 
-/* A long player name ends in an ellipsis instead of wrapping into a second line. */
-.rail-list :deep(.e-listrow-title) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* The caret sits in the width of a live dot, so every title in the rail starts at one edge. */
 .gutter {
   display: grid;
   place-items: center;
   flex: none;
-  inline-size: 1rem;
+  inline-size: 0.5em;
   color: var(--e-muted);
 }
 
 .live {
-  color: var(--e-success);
+  color: var(--e-danger-ink);
 }
 
-/* The empty and error states sit at the top of the list's room, not spread over its height. */
+/* The empty and error states are inset like the rail's other parts. */
 .pad {
-  align-self: start;
-  padding: var(--ws-pad);
+  margin: var(--ws-pad);
 }
 </style>

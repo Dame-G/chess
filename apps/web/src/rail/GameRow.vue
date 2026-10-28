@@ -7,8 +7,8 @@ import { isLive } from "../board/modes";
 import { agoShort } from "./rail";
 
 /**
- * One game in the rail: the players, the result, accuracy once reviewed, the time control and when. The first column
- * is a fixed gutter (the live dot, or the caret of a trial's row), so every title starts at the same edge.
+ * One game in the rail: the players, the result, accuracy once reviewed, the time control and when. A live game has a red
+ * dot before its title; every row passes `live`, so finished rows keep the dot's place and all titles line up.
  */
 const props = defineProps<{ game: GameSummary; nested?: boolean }>();
 
@@ -28,15 +28,8 @@ const accuracy = computed(() => {
 </script>
 
 <template>
-  <EListRow :value="game.id">
-    <template #leading>
-      <span class="gutter" :class="{ 'gutter--nested': nested }" aria-hidden="true">
-        <span v-if="live" class="e-listrow-pulse"></span>
-      </span>
-    </template>
-    <template #title>
-      <span v-if="live" class="e-sr">Live, </span>{{ name("white") }} <span class="vs">–</span> {{ name("black") }}
-    </template>
+  <EListRow :value="game.id" :live="live" live-tone="danger" trailing-stack :class="{ nested }">
+    <template #title>{{ name("white") }} <span class="vs">–</span> {{ name("black") }}</template>
     <template #subtitle>
       <span v-if="accuracy" class="acc num" :title="`Accuracy: White ${accuracy.white}, Black ${accuracy.black}`"
         >{{ accuracy.white }} · {{ accuracy.black }}</span
@@ -46,30 +39,20 @@ const accuracy = computed(() => {
       <span v-if="where?.rated">rated</span>
     </template>
     <template #trailing>
-      <span class="end">
-        <span class="res" :class="live ? 'res--live' : mine ? `res--${mine}` : undefined">{{
-          live ? "live" : resultText(game.outcome)
-        }}</span>
-        <time class="when" :datetime="game.started_at" :title="ago(game.started_at)">{{
-          agoShort(game.started_at)
-        }}</time>
-      </span>
+      <span class="res" :class="live ? 'res--live' : mine ? `res--${mine}` : undefined">{{
+        live ? "live" : resultText(game.outcome)
+      }}</span>
+      <time class="when" :datetime="game.started_at" :title="ago(game.started_at)">{{
+        agoShort(game.started_at)
+      }}</time>
     </template>
   </EListRow>
 </template>
 
 <style scoped>
-.gutter {
-  display: grid;
-  place-items: center;
-  flex: none;
-  inline-size: 1rem;
-}
-
 /* A trial's games sit one step in under its row. */
-.gutter--nested {
-  inline-size: 1.75rem;
-  justify-items: end;
+.nested {
+  padding-inline-start: 0.75rem;
 }
 
 /* The parts of the second line (accuracy, clock, speed, rated) are told apart by a dot. */
@@ -83,29 +66,20 @@ const accuracy = computed(() => {
   font-weight: 400;
 }
 
-.res--won,
-.res--live {
+.res--won {
   color: var(--e-success);
 }
 
+.res--live {
+  color: var(--e-danger-ink);
+}
+
 .res--lost {
-  color: var(--e-danger);
+  color: var(--e-danger-ink);
 }
 
 .acc {
   color: var(--e-ink);
   font-family: var(--e-font-mono);
-}
-
-.end {
-  display: grid;
-  justify-items: end;
-}
-
-.when {
-  color: var(--e-muted);
-  font: var(--e-type-small);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
 }
 </style>

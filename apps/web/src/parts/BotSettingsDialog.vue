@@ -116,7 +116,7 @@ async function save() {
       <ECheckboxGroup
         v-model="draft.speeds"
         label="Speeds"
-        orientation="horizontal"
+        :columns="speedOptions.length"
         :options="speedOptions"
         :error="speedsError"
         hint="Correspondence and UltraBullet are never played."
@@ -162,7 +162,7 @@ async function save() {
         hint="Minutes plus seconds, separated by commas: 3+0, 3+2, 5+3."
         autocomplete="off"
       />
-      <EDisclosure title="Engine">
+      <EDisclosure title="Engine" title-style="text">
         <div class="pair">
           <ENumberField v-model="draft.hash" label="Hash" suffix="MiB" :min="1" :max="4096" />
           <ENumberField v-model="draft.threads" label="Threads" :min="1" :max="64" />

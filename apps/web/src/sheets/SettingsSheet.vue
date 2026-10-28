@@ -15,12 +15,11 @@ import { ETextField } from "@eos-ui/vue/components/ETextField";
 import { connect, connection } from "../api/client";
 import type { ConnectionKey, ConnectionStatus, HealthLevel, Pruned } from "../api/types";
 import { bytes, plural, shortDate } from "../format";
-import ConfirmDialog from "../parts/ConfirmDialog.vue";
+import { EConfirmDialog } from "@eos-ui/vue/components/EConfirmDialog";
 import { choice, type Choice } from "../scheme";
 import { useConnections } from "../stores/connections";
 import { useDameless } from "../stores/dameless";
 import { usePolicy } from "../stores/policy";
-import SheetBack from "./SheetBack.vue";
 import { useSheet } from "./useSheet";
 
 /**
@@ -278,7 +277,6 @@ function pair() {
 
 <template>
   <ESheet v-bind="sheet.bind" title="Settings" description="Lichess, the machine, the theme and the hosted app.">
-    <template #leading><SheetBack :show="sheet.canGoBack" @back="sheet.back" /></template>
     <section class="sec" aria-labelledby="s-you">
       <h2 id="s-you" class="part-title">Your Lichess account</h2>
       <ESkeleton v-if="!connections.loaded" :lines="2" label="Reading your Lichess account" />
@@ -322,9 +320,14 @@ function pair() {
 
     <section class="sec" aria-labelledby="s-machine">
       <h2 id="s-machine" class="part-title">This machine</h2>
-      <ENotice v-if="failed.machine" tone="warning" title="The machine could not be read">
+      <ENotice
+        v-if="failed.machine"
+        tone="warning"
+        title="The machine could not be read"
+        retry
+        @retry="load('machine')"
+      >
         Dameless did not answer.
-        <template #actions><EButton variant="outline" size="sm" @click="load('machine')">Try again</EButton></template>
       </ENotice>
       <ESkeleton v-else-if="!machine" :lines="4" label="Reading the machine" />
       <template v-else>
@@ -345,9 +348,8 @@ function pair() {
 
     <section class="sec" aria-labelledby="s-health">
       <h2 id="s-health" class="part-title">Health</h2>
-      <ENotice v-if="failed.health" tone="warning" title="The health check did not run">
+      <ENotice v-if="failed.health" tone="warning" title="The health check did not run" retry @retry="load('health')">
         Dameless did not answer.
-        <template #actions><EButton variant="outline" size="sm" @click="load('health')">Try again</EButton></template>
       </ENotice>
       <ESkeleton v-else-if="!dameless.health" :lines="3" label="Checking the machine" />
       <ul v-else class="plain rows">
@@ -371,9 +373,14 @@ function pair() {
 
     <section class="sec" aria-labelledby="s-harness">
       <h2 id="s-harness" class="part-title">The harness</h2>
-      <ENotice v-if="failed.harness" tone="warning" title="The last check could not be read">
+      <ENotice
+        v-if="failed.harness"
+        tone="warning"
+        title="The last check could not be read"
+        retry
+        @retry="load('harness')"
+      >
         Dameless did not answer.
-        <template #actions><EButton variant="outline" size="sm" @click="load('harness')">Try again</EButton></template>
       </ENotice>
       <ESkeleton v-else-if="!harness || !harnessStamp" :lines="2" label="Reading the last check" />
       <template v-else>
@@ -409,9 +416,8 @@ function pair() {
     <section class="sec" aria-labelledby="s-token">
       <h2 id="s-token" class="part-title">The hosted app</h2>
       <EDescriptionList :items="facts" />
-      <ENotice v-if="failed.token" tone="warning" title="The token could not be read">
+      <ENotice v-if="failed.token" tone="warning" title="The token could not be read" retry @retry="load('token')">
         Dameless did not answer.
-        <template #actions><EButton variant="outline" size="sm" @click="load('token')">Try again</EButton></template>
       </ENotice>
       <div v-else-if="dameless.token" class="copy">
         <EPasswordField :model-value="dameless.token" label="Token" readonly autocomplete="off" class="grow" />
@@ -445,7 +451,7 @@ function pair() {
       </EForm>
     </section>
 
-    <ConfirmDialog
+    <EConfirmDialog
       v-model:open="leaveOpen"
       :title="leaving === 'you' ? 'Log out of Lichess?' : 'Disconnect the bot?'"
       :description="
@@ -453,9 +459,10 @@ function pair() {
           ? 'Your login is revoked at Lichess and forgotten here.'
           : 'Dameless goes offline and its token is forgotten.'
       "
-      :confirm="leaving === 'you' ? 'Log out' : 'Disconnect'"
-      danger
-      :busy="leaveBusy"
+      :confirm-label="leaving === 'you' ? 'Log out' : 'Disconnect'"
+      tone="danger"
+      :loading="leaveBusy"
+      :close-on-confirm="false"
       @confirm="leave"
     >
       <p class="text">
@@ -465,14 +472,15 @@ function pair() {
             : "Games it is playing finish first. You will need a token to connect it again."
         }}
       </p>
-    </ConfirmDialog>
+    </EConfirmDialog>
 
-    <ConfirmDialog
+    <EConfirmDialog
       v-model:open="installing"
       title="Install the tools?"
       description="Downloads fastchess and the opening book, which trials need."
-      confirm="Install"
-      :busy="installBusy"
+      confirm-label="Install"
+      :loading="installBusy"
+      :close-on-confirm="false"
       @confirm="installTools"
     >
       <p class="text">
@@ -480,33 +488,35 @@ function pair() {
         the Stockfish books repository (github.com/official-stockfish/books). Together a few tens of megabytes; they go
         into the tools folder in the data directory. This can take a minute.
       </p>
-    </ConfirmDialog>
+    </EConfirmDialog>
 
-    <ConfirmDialog
+    <EConfirmDialog
       v-model:open="checking"
       title="Check the harness?"
       description="The champion plays an identical copy of itself: 1,000 pairs at fixed nodes, where every pair must be the same game twice, then 4,000 pairs of quick timed games, which must come out even and symmetric."
-      confirm="Start the check"
-      :busy="checkBusy"
+      confirm-label="Start the check"
+      :loading="checkBusy"
+      :close-on-confirm="false"
       @confirm="checkHarness"
     >
       <p class="text">
         It takes the machine's cores for a few hours. Other work waits its turn, and live games still come first.
       </p>
-    </ConfirmDialog>
+    </EConfirmDialog>
 
-    <ConfirmDialog
+    <EConfirmDialog
       v-model:open="pruning"
       title="Free disk space?"
       :description="
         plan ? `${plural(plan.builds.length, 'old binary', 'old binaries')}, about ${bytes(plan.bytes)}.` : undefined
       "
-      :confirm="plan ? `Free ${bytes(plan.bytes)}` : 'Free'"
-      :busy="pruneBusy"
+      :confirm-label="plan ? `Free ${bytes(plan.bytes)}` : 'Free'"
+      :loading="pruneBusy"
+      :close-on-confirm="false"
       @confirm="prune"
     >
       <p class="text">Only binaries that no trial, tune, game or the bot uses are removed. Nothing else is touched.</p>
-    </ConfirmDialog>
+    </EConfirmDialog>
   </ESheet>
 </template>
 

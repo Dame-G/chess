@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { PhX } from "@phosphor-icons/vue";
 import { ESheet } from "@eos-ui/vue/components/ESheet";
-import { ECheckboxGroup } from "@eos-ui/vue/components/ECheckboxGroup";
 import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
 import { ELink } from "@eos-ui/vue/components/ELink";
@@ -20,7 +19,6 @@ import Term from "../parts/Term.vue";
 import TopPlayers from "../parts/TopPlayers.vue";
 import { usePlayers } from "../stores/players";
 import { addressQuery, compareGroups, type CompareAddress, LIMITS, leads, parseAddress, SPEEDS } from "./compare";
-import SheetBack from "./SheetBack.vue";
 import { useSheet } from "./useSheet";
 
 /**
@@ -64,7 +62,8 @@ const remove = (key: string) => set({ players: address.value.players.filter((k) 
 
 const speeds = computed({
   get: () => address.value.speeds,
-  set: (v: Speed[]) => set({ speeds: v }),
+  // The address keeps the speeds in the order the app lists them, whatever order they were switched on in.
+  set: (v: Speed[]) => set({ speeds: SPEEDS.filter((s) => v.includes(s)) }),
 });
 const rated = computed({
   get: () => (address.value.rated == null ? "both" : address.value.rated ? "rated" : "casual"),
@@ -101,12 +100,11 @@ const stale = computed(
     title="Compare"
     description="Players side by side over the games they have here, reviewed by the same engine."
   >
-    <template #leading><SheetBack :show="sheet.canGoBack" @back="sheet.back" /></template>
     <ENotice v-if="failed" tone="danger" title="The comparison did not load" class="gap">{{ failed }}</ENotice>
 
     <section class="sec" aria-label="Filters">
       <div class="filters">
-        <ECheckboxGroup v-model="speeds" label="Speeds" orientation="horizontal" :options="speedOptions" />
+        <ESegmented v-model:values="speeds" label="Speeds" size="sm" multiple :options="speedOptions" />
         <ESegmented
           v-model="rated"
           label="Games"
@@ -317,19 +315,6 @@ const stale = computed(
 .opens {
   vertical-align: top;
   text-align: start;
-}
-
-/* The checkboxes share the switches' height, so the three labels and controls sit on one line. */
-.filters :deep(.e-checkgroup-items) {
-  align-items: center;
-  gap: 0 var(--e-gap-base);
-  min-block-size: 2.125rem;
-}
-
-.filters :deep(.e-choice) {
-  align-items: center;
-  min-block-size: 2.125rem;
-  padding-block: 0;
 }
 
 @media (width < 36rem) {

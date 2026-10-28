@@ -14,7 +14,6 @@ import ProfileView from "../parts/ProfileView.vue";
 import ReviewBar from "../parts/ReviewBar.vue";
 import { ALL_GAMES, usePlayers } from "../stores/players";
 import { isPlayerKey, nameOfKey } from "./compare";
-import SheetBack from "./SheetBack.vue";
 import { useSheet } from "./useSheet";
 
 /**
@@ -64,14 +63,12 @@ const compare = () => router.push({ path: "/compare", query: { players: `you,${k
 
 <template>
   <ESheet v-bind="sheet.bind" :title="name" description="A player on Lichess, from the games brought in here.">
-    <template #leading><SheetBack :show="sheet.canGoBack" @back="sheet.back" /></template>
     <EEmptyState v-if="missing" title="No such player">
       Lichess has no player called {{ nameOfKey(key) }}. Check the spelling, or paste a link to their profile in
       Compare.
     </EEmptyState>
-    <ENotice v-else-if="failed" tone="danger" title="This profile did not load">
+    <ENotice v-else-if="failed" tone="danger" title="This profile did not load" retry @retry="load">
       {{ failed }}
-      <template #actions><EButton variant="outline" size="sm" @click="load">Try again</EButton></template>
     </ENotice>
     <ProfileSkeleton v-else-if="!profile" :label="`Loading ${name}`" />
     <template v-else>
