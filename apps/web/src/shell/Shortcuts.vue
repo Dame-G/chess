@@ -102,7 +102,7 @@ const groups = [
   grid-template-columns: 11rem 1fr;
   align-items: center;
   gap: var(--e-gap-base);
-  padding-block: var(--e-gap-tight);
+  padding-block: var(--e-gap-snug);
   border-block-end: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 50%, transparent);
 }
 
