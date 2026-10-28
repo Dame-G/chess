@@ -148,3 +148,42 @@ body {
 .figs--small .fig dd {
   font-size: 1rem;
 }
+
+/* ---- Rounded elements against rules and edges.
+   One rule for the app: a rounded element either sits flush (square on the sides that touch a rule or an edge) or
+   floats on padding. These are the eos pieces that sit on a rule by construction; each is an eos gap, kept here until
+   the library does it. */
+
+/* ETabs: the tablist sits on the tab rule, so its tabs are square at the bottom. A strip that also meets a rule above
+   it or the pane's edge (the panel's tabs under the header) adds `tabs-flush`: square all round. */
+.e-tabs > .e-tablist > .e-tab:first-child,
+.e-tabs > .e-tablist > .e-tab:last-child {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.tabs-flush > .e-tablist > .e-tab:first-child,
+.tabs-flush > .e-tablist > .e-tab:last-child {
+  border-radius: 0;
+}
+
+/* EList / EListRow: a list's rows run edge to edge between the pane's rules, so the selected row is square and meets
+   them. `--e-radius-row` is the row's own token. */
+.e-list {
+  --e-radius-row: 0px;
+}
+
+/* EDialog and ESheet bodies: the last control clears the footer's rule (or the dialog's edge) by a gap, instead of
+   resting on it. */
+.e-dialog-body,
+.e-sheet-body {
+  padding-block-end: var(--e-gap-base);
+}
+
+/* EDialog footers: eos stacks the buttons full width at 32rem and under, which is a medium dialog's whole width.
+   Buttons stack only in a footer 20rem wide or less, so every dialog on a desktop has the same footer. */
+@container (width > 20rem) {
+  .e-dialog-foot.e-actions--bar > .e-btn {
+    flex: 0 1 auto;
+  }
+}
