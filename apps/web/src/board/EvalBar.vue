@@ -11,6 +11,7 @@ const props = defineProps<{
   /** Which side is at the bottom of the board. */
   orientation?: Color;
 }>();
+const emit = defineEmits<{ figure: [figure: { text: string; leader: Color } | null] }>();
 
 /**
  * White's share of the bar, from its chance to win. Rounded to a quarter of a percent so depths that agree to within a
@@ -41,6 +42,11 @@ const short = computed(() => {
   const n = Number(t.replace("−", "-"));
   return Number.isFinite(n) ? signed(n, 1) : t;
 });
+// Stacked, the bar is a thin line with no room for the figure: the leading side's strip shows it instead.
+watch([short, leader], () => emit("figure", short.value ? { text: short.value, leader: leader.value } : null), {
+  immediate: true,
+});
+
 /** The figure sits at the end of the bar on the leading side: under it when that side is at the bottom. */
 const atBottom = computed(() => (leader.value === "white") !== flipped.value);
 </script>
@@ -56,7 +62,7 @@ const atBottom = computed(() => (leader.value === "white") !== flipped.value);
     :aria-valuenow="Math.round(white * 100)"
     :aria-valuetext="held ? `${held}, White ${Math.round(white * 100)}%` : 'No evaluation yet'"
   >
-    <div class="evalbar-white" :style="{ transform: `scaleY(${white})` }"></div>
+    <div class="evalbar-white" :style="{ '--share': white }"></div>
     <div class="evalbar-mid"></div>
     <span
       v-if="short"
@@ -86,6 +92,7 @@ const atBottom = computed(() => (leader.value === "white") !== flipped.value);
   position: absolute;
   inset: 0;
   background: #fffaf3;
+  transform: scaleY(var(--share, 0.5));
   transform-origin: 50% 100%;
   transition: transform 0.6s cubic-bezier(0.22, 0.8, 0.2, 1);
   will-change: transform;
@@ -129,6 +136,42 @@ const atBottom = computed(() => (leader.value === "white") !== flipped.value);
 
 .evalbar-label--black {
   color: #fffaf3;
+}
+
+/* Stacked, the bar lies along the board's foot: a thin line as wide as the board, taking nothing from it. White's share
+   grows from the left (from the right when the board is flipped, so the side at the bottom always starts the bar). The
+   figure moves to the leading side's strip. */
+@media (width < 75rem) {
+  .evalbar {
+    width: auto;
+    height: var(--bar, 0.4375rem);
+    border-radius: 0;
+    box-sizing: border-box;
+    border-block-end: 1px solid var(--e-border-strong, var(--e-border));
+    box-shadow: none;
+  }
+
+  .evalbar-white {
+    transform: scaleX(var(--share, 0.5));
+    transform-origin: 0 50%;
+  }
+
+  .evalbar--flipped .evalbar-white {
+    transform-origin: 100% 50%;
+  }
+
+  .evalbar-mid {
+    inset-block: 0;
+    inset-inline-start: 50%;
+    top: auto;
+    width: 1px;
+    height: auto;
+    margin-inline-start: -0.5px;
+  }
+
+  .evalbar-label {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

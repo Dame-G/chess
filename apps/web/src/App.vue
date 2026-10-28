@@ -101,11 +101,14 @@ watchEffect(() => {
 .ws {
   --ws-pad: 0.75rem;
   --ws-rail: clamp(18rem, 20vw - 4rem, 22rem);
+
+  /* The panel yields to the board: it is as narrow as it can read at the narrowest desktop and grows with the window. */
+  --ws-panel: clamp(21rem, 26vw, 30rem);
   --line: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 55%, transparent);
 
   position: relative;
   display: grid;
-  grid-template-columns: var(--ws-rail) minmax(0, 1fr) minmax(21rem, 30rem);
+  grid-template-columns: var(--ws-rail) minmax(0, 1fr) var(--ws-panel);
   height: 100%;
   min-height: 0;
 }

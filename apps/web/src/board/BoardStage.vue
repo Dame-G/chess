@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { useToast } from "@eos-ui/vue";
@@ -66,6 +66,9 @@ function clockOf(side: Side): { ms: number | null; running: boolean } {
   return { ms: tc.initial_ms, running: false };
 }
 
+/** The eval bar's figure and the side it favours, for the strips to carry where the bar is a thin line. */
+const figure = ref<{ text: string; leader: Side } | null>(null);
+
 function strip(side: Side) {
   const seat = s.value![side];
   const you = s.value!.you === side;
@@ -75,6 +78,8 @@ function strip(side: Side) {
     name: you ? "You" : seatName(seat),
     ...clockOf(side),
     since: games.clocksAt,
+    score: evalShown.value && figure.value?.leader === side ? figure.value.text : null,
+    scoreSide: side,
     active: live.value && board.atEnd && board.position.turn === side,
     result: s.value!.status === "finished" ? sideResult(s.value!.outcome, side) : null,
   };
@@ -197,19 +202,6 @@ watch(
     playMoveSound(soundOf(g.value?.moves[n - 1]?.san));
   },
 );
-
-// The board's size step: eight device pixels, in CSS pixels. It follows the pixel ratio as the window moves between
-// screens or the page is zoomed.
-let stepQuery: MediaQueryList | undefined;
-function setStep() {
-  const ratio = window.devicePixelRatio || 1;
-  document.documentElement.style.setProperty("--cg-step", `${8 / ratio}px`);
-  stepQuery?.removeEventListener("change", setStep);
-  stepQuery = matchMedia(`(resolution: ${ratio}dppx)`);
-  stepQuery.addEventListener("change", setStep);
-}
-onMounted(setStep);
-onBeforeUnmount(() => stepQuery?.removeEventListener("change", setStep));
 </script>
 
 <template>
@@ -221,13 +213,6 @@ onBeforeUnmount(() => stepQuery?.removeEventListener("change", setStep));
     <div class="col">
       <div class="rig">
         <Strip v-if="s" v-bind="strip(top)" class="strip-top" />
-        <EvalBar
-          v-if="evalShown"
-          :pawns="board.shownEval?.pawns"
-          :text="board.shownEval?.text"
-          :orientation="board.orientation"
-          class="rig-eval"
-        />
         <Board
           ref="boardRef"
           :position="board.position"
@@ -237,6 +222,14 @@ onBeforeUnmount(() => stepQuery?.removeEventListener("change", setStep));
           :shapes="shapes"
           class="rig-board"
           @move="onMove"
+        />
+        <EvalBar
+          v-if="evalShown"
+          :pawns="board.shownEval?.pawns"
+          :text="board.shownEval?.text"
+          :orientation="board.orientation"
+          class="rig-eval"
+          @figure="figure = $event"
         />
         <Strip v-if="s" v-bind="strip(bottom)" class="strip-bottom" />
       </div>
@@ -258,8 +251,10 @@ onBeforeUnmount(() => stepQuery?.removeEventListener("change", setStep));
 </template>
 
 <style scoped>
-/* The board drives the layout. Its side is the largest square the stage allows, less the strips, the foot and the
-   padding; the stage is the size container, so only the panel and the rail absorb slack. */
+/* The board drives the layout and fills what it is given, always square, with no fixed size anywhere.
+   Side by side (75rem and up) its side is the largest square the stage allows, less the strips, the foot and the
+   padding, so it is limited by the width and by the height and never overflows the window; the stage is the size
+   container, so only the panel and the rail absorb slack. Stacked (below 75rem) it is the width of the column. */
 .stage {
   --col: 1.75rem;
   --egap: var(--e-gap-snug);
@@ -268,11 +263,10 @@ onBeforeUnmount(() => stepQuery?.removeEventListener("change", setStep));
   --strips: 0px;
   --graph: 3.5rem;
   --foot: calc(var(--graph) + 2.75rem + var(--e-gap-tight) + var(--e-gap-snug));
-  --side-raw: min(
-    100cqh - var(--foot) - var(--strips) - 2 * var(--pad),
-    100cqw - var(--col) - var(--egap) - 2 * var(--pad)
+  --side: max(
+    10rem,
+    min(100cqh - var(--foot) - var(--strips) - 2 * var(--pad), 100cqw - var(--col) - var(--egap) - 2 * var(--pad))
   );
-  --side: var(--side-raw);
 
   display: grid;
   place-content: center;
@@ -281,16 +275,6 @@ onBeforeUnmount(() => stepQuery?.removeEventListener("change", setStep));
   padding: var(--pad);
   box-sizing: border-box;
   container-type: size;
-}
-
-/* chessground draws its squares on a whole number of device pixels, eight squares wide, and floors the rest: a board
-   that is not a multiple of eight device pixels gets a sliver of empty frame on its right and bottom. The side is
-   rounded down to that step (`--cg-step`, eight device pixels in CSS pixels, set from the screen's pixel ratio), so
-   the squares meet the frame exactly. */
-@supports (width: round(down, 10px, 1px)) {
-  .stage {
-    --side: round(down, var(--side-raw), var(--cg-step, 8px));
-  }
 }
 
 .stage--strips {
@@ -314,27 +298,31 @@ onBeforeUnmount(() => stepQuery?.removeEventListener("change", setStep));
 
 .rig {
   display: grid;
-  grid-template-columns: var(--col) var(--side);
-  grid-template-rows: auto var(--side) auto;
+  grid-template:
+    "top top" auto
+    "eval board" var(--side)
+    "bottom bottom" auto / var(--col) var(--side);
   gap: var(--e-gap-tight) var(--egap);
 }
 
 .strip-top {
-  grid-area: 1 / 2;
+  grid-area: top;
   height: var(--strip);
+  margin-inline-start: calc(var(--col) + var(--egap));
 }
 
 .rig-eval {
-  grid-area: 2 / 1;
+  grid-area: eval;
 }
 
 .rig-board {
-  grid-area: 2 / 2;
+  grid-area: board;
 }
 
 .strip-bottom {
-  grid-area: 3 / 2;
+  grid-area: bottom;
   height: var(--strip);
+  margin-inline-start: calc(var(--col) + var(--egap));
 }
 
 .foot {
@@ -347,28 +335,84 @@ onBeforeUnmount(() => stepQuery?.removeEventListener("change", setStep));
   height: var(--graph);
 }
 
-/* Stacked: the stage is as wide as the window and as tall as the board needs; the board leaves room for the header,
-   the foot and a glimpse of the panel. */
+/* Stacked: the stage is as wide as the window and as tall as the board needs. The board is the column's width; from
+   40rem up the column is held to what the window's height leaves after the header, the strips and the foot (so the
+   board is whole on a short screen) and sits inside the gutter. */
 @media (width < 75rem) {
   .stage {
-    --chrome: 9rem;
-    --side-raw: min(
-      100cqw - var(--col) - var(--egap) - 2 * var(--pad),
-      max(100dvh - var(--chrome) - var(--foot) - var(--strips), 16rem)
-    );
+    --chrome: 5.5rem;
+    --bar: 0.4375rem;
+    --cap: max(100dvh - var(--chrome) - var(--foot) - var(--strips) - var(--bar), 20rem);
+    --col: 0px;
+    --egap: 0px;
 
+    display: block;
+    padding: var(--e-gutter);
     container-type: inline-size;
+  }
+
+  .col {
+    width: min(100%, var(--cap));
+    margin-inline: auto;
+  }
+
+  .rig {
+    grid-template:
+      "top" auto
+      "board" auto
+      "eval" auto
+      "bottom" auto / minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .rig-board {
+    width: 100%;
+  }
+
+  /* The eval bar lies flush under the board: its corners are square where they meet. */
+  .stage:not(.stage--noeval) .rig-board {
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+  }
+
+  .strip-top,
+  .strip-bottom {
+    margin-inline-start: 0;
+  }
+
+  .foot {
+    margin-inline-start: 0;
   }
 }
 
+/* A tall window has height to spare for the board: it takes the whole column. */
+@media (width < 75rem) and (orientation: portrait) {
+  .stage {
+    --cap: 100%;
+  }
+}
+
+/* Phones: the board runs edge to edge, with no padding or gutter at either side. The strips, the graph and the
+   controls keep their own gutter. */
 @media (width < 40rem) {
   .stage {
-    --pad: 0.5rem;
-    --col: 1.5rem;
+    padding-inline: 0;
+    padding-block-start: 0;
   }
 
-  .stage--noeval {
-    --col: 0px;
+  .col {
+    width: 100%;
+  }
+
+  .rig-board {
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .strip-top,
+  .strip-bottom,
+  .foot {
+    padding-inline: var(--e-gutter);
   }
 }
 </style>

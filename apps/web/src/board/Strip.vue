@@ -17,6 +17,10 @@ const props = defineProps<{
   active?: boolean;
   /** 1, ½ or 0 once the game is over. */
   result?: string | null;
+  /** The engine's score, on the strip of the side it favours: shown only where the eval bar is too thin to carry it. */
+  score?: string | null;
+  /** Which side's colours the score wears. */
+  scoreSide?: "white" | "black";
 }>();
 
 const now = ref(Date.now());
@@ -45,6 +49,14 @@ const low = computed(() => left.value !== null && left.value < 20_000);
       <span class="name">{{ name }}</span>
       <span v-if="seat.rating" class="rating num">{{ seat.rating }}</span>
     </span>
+    <span
+      v-if="score"
+      class="score num"
+      :class="`score--${scoreSide ?? 'white'}`"
+      :title="`Engine score: ${score}`"
+      :aria-label="`Engine score ${score}`"
+      >{{ score }}</span
+    >
     <span v-if="result" class="result num" :title="`Scored ${result}`" :aria-label="`Scored ${result}`">{{
       result
     }}</span>
@@ -96,6 +108,33 @@ const low = computed(() => left.value !== null && left.value < 20_000);
 
 .result {
   font: 700 0.9375rem/1 var(--e-font-mono);
+}
+
+/* The eval bar's figure, where the bar is a thin line (stacked): a small chip in the favoured side's colours. */
+.score {
+  display: none;
+  flex: none;
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--e-radius-sm);
+  font: 700 0.75rem/1.1 var(--e-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.score--white {
+  background: #fffaf3;
+  color: #2a2420;
+  box-shadow: 0 0 0 1px var(--e-border-strong, var(--e-border));
+}
+
+.score--black {
+  background: #2a2420;
+  color: #fffaf3;
+}
+
+@media (width < 75rem) {
+  .score {
+    display: inline-block;
+  }
 }
 
 /* The clock: a flat plate, lit in the place colour while it runs, red when time is short. */

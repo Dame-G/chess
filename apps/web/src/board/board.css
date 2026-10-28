@@ -25,6 +25,18 @@
   height: 100%;
 }
 
+/* chessground floors its container to eight device pixels and leaves the rest of the board bare. The board here is
+   whatever width the layout gives it (edge to edge on a phone), so the container takes all of it: the squares, which
+   chessground places by fractions of its size, then meet the frame exactly at any width. It still follows the board's
+   size on resize through its own observer. */
+/* stylelint-disable declaration-no-important -- chessground sets these inline */
+.board cg-container {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* stylelint-enable declaration-no-important */
+
 /* A preview board takes no input. */
 .board--still cg-board {
   cursor: default;
