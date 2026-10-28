@@ -23,7 +23,7 @@ use std::{
 use dameless_core::{
     Error, Side, VersionId,
     chess::{Position, position_key},
-    events::{AssistKind, EvalInfo, Payload},
+    events::{AssistKind, EvalInfo, Payload, Topic},
     review::{PositionEval, ToSearch},
     version::Version,
 };
@@ -46,7 +46,8 @@ use crate::{
 /// `eval.info` is sent at most this often (five a second); the newest report always goes out in the end.
 pub const INFO_EVERY: Duration = Duration::from_millis(200);
 
-/// How long a session runs with no event stream open before it stops: longer than a page takes to reconnect.
+/// How long a session runs with no event stream watching its topic before it stops: longer than a page takes to
+/// reconnect. A stream open for anything else (another tab, the CLI) does not keep it.
 pub const UNWATCHED: Duration = Duration::from_secs(15);
 
 /// How long a stopped search has to send its `bestmove` before its engine is killed.
@@ -523,7 +524,7 @@ async fn run_session(inner: Arc<Inner>, live: Live, reservation: Reservation) {
                 }
             }
             _ = watch.tick(), if deadline.is_none() => {
-                if hub.bus.listeners() > 0 {
+                if hub.bus.watched(&Topic::Eval(session.clone())) {
                     unwatched_since = None;
                 } else if unwatched_since.get_or_insert_with(Instant::now).elapsed() >= UNWATCHED {
                     cancel.cancel();
