@@ -23,6 +23,9 @@ pub struct BotSettings {
     /// Milliseconds the engine keeps in hand on every move for the network, as Reckless's `MoveOverhead` (0 to 2000).
     /// Default 300.
     pub move_overhead: u32,
+    /// Think on the opponent's time: after its move the engine searches the reply it expects (`go ponder`), and a
+    /// right guess saves that time. Only with a version whose engine declares UCI's `Ponder` option. Default true.
+    pub ponder: bool,
     /// Accept rated challenges.
     pub accept_rated: bool,
     /// Accept casual challenges.
@@ -63,6 +66,7 @@ impl Default for BotSettings {
             hash: 64,
             threads: 1,
             move_overhead: 300,
+            ponder: true,
             accept_rated: true,
             accept_casual: true,
             speeds: vec![Speed::Bullet, Speed::Blitz, Speed::Rapid],
@@ -364,6 +368,7 @@ mod tests {
         assert_eq!(partial.version.as_deref(), Some("champion"));
         assert_eq!(partial.seek_clocks, ["3+0", "3+2", "5+3"]);
         assert!(partial.seek_rated);
+        assert!(partial.ponder, "settings stored before pondering existed ponder");
     }
 
     #[test]

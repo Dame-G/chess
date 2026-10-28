@@ -316,6 +316,23 @@ impl LichessBot {
     pub(crate) fn new(engine: EngineSeat, client: Lichess, id: &str, mirror: watch::Receiver<Mirror>) -> Self {
         Self { engine, client, id: id.to_owned(), mirror, posted: None }
     }
+
+    /// Our move `mv` (answering `turn`) is on the board: the engine thinks on the opponent's time, when it ponders
+    /// (`EngineSeat::allow_ponder`), the game goes on and the opponent has not answered already. Our next search
+    /// picks the ponder up or stops it. A failure here only means no ponder: a dead engine fails that search.
+    async fn ponder(&mut self, turn: &Turn<'_>, mv: &SeatMove) {
+        let (answered, over, clocks) = {
+            let m = self.mirror.borrow();
+            (m.moves.len() > turn.ply as usize, m.status.is_over() || m.lost, m.clocks)
+        };
+        if answered || over {
+            return;
+        }
+        let clocks = clocks.map(|(w, b)| SidePair::new(w, b));
+        if let Err(e) = self.engine.ponder(turn, &mv.uci, clocks).await {
+            tracing::warn!("lichess game {}: could not ponder: {e}", self.id);
+        }
+    }
 }
 
 #[async_trait]
@@ -325,12 +342,16 @@ impl SeatController for LichessBot {
         let posted = self.posted.as_ref().filter(|(ply, _)| *ply == turn.ply).map(|(_, m)| m.clone());
         match (known, posted) {
             // Our move, on the board: with the engine's report.
-            (Some(uci), Some(mv)) if mv.uci == uci => return Ok(mv),
+            (Some(uci), Some(mv)) if mv.uci == uci => {
+                self.ponder(&turn, &mv).await;
+                return Ok(mv);
+            }
             // A move Lichess already has (a game come back to) is not searched again.
             (Some(uci), _) => return Ok(SeatMove::bare(uci)),
             // Sent, and not on the board yet.
             (None, Some(mv)) => {
                 wait_ply(&mut self.mirror, turn.ply).await?;
+                self.ponder(&turn, &mv).await;
                 return Ok(mv);
             }
             (None, None) => {}
@@ -356,6 +377,7 @@ impl SeatController for LichessBot {
         }
         self.posted = Some((turn.ply, mv.clone()));
         wait_ply(&mut self.mirror, turn.ply).await?;
+        self.ponder(&turn, &mv).await;
         Ok(mv)
     }
 

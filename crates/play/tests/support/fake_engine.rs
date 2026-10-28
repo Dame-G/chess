@@ -6,6 +6,10 @@
 //! - `--delay <ms>`: how long it takes over each move (default none); `stop` cuts it short.
 //! - `--illegal`: answers every search with a move that is not legal.
 //! - `--die`: exits on its first `go`, as a crashing engine would.
+//! - `--ponder`: declares UCI's `Ponder` option, answers `bestmove <move> ponder <reply>` (the reply it would play),
+//!   and on `go ponder` waits for `ponderhit` (then searches as usual) or `stop` (then answers at once).
+//! - `--die-pondering`: with `--ponder`, exits on its first `go ponder`.
+//! - `--log <file>`: appends every command it receives to the file, for tests to read.
 //!
 //! With `MultiPV` set above 1 it reports that many lines (its choice first, then the other legal moves in order), each
 //! 25 cp worse than the one before, as levels need.
@@ -25,11 +29,19 @@ fn main() {
     let delay = value("--delay").map(|ms| Duration::from_millis(ms as u64));
     let illegal = args.iter().any(|a| a == "--illegal");
     let die = args.iter().any(|a| a == "--die");
+    let ponders = args.iter().any(|a| a == "--ponder");
+    let die_pondering = args.iter().any(|a| a == "--die-pondering");
+    let log = args.iter().position(|a| a == "--log").and_then(|i| args.get(i + 1)).cloned();
 
     let (tx, rx) = mpsc::channel::<String>();
     std::thread::spawn(move || {
         for line in std::io::stdin().lock().lines() {
             let Ok(line) = line else { break };
+            if let Some(path) = &log
+                && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path)
+            {
+                let _ = writeln!(f, "{line}");
+            }
             if tx.send(line).is_err() {
                 break;
             }
@@ -50,6 +62,9 @@ fn main() {
                 writeln!(out, "option name MoveOverhead type spin default 0 min 0 max 5000").unwrap();
                 writeln!(out, "option name Minimal type check default false").unwrap();
                 writeln!(out, "option name MultiPV type spin default 1 min 1 max 256").unwrap();
+                if ponders {
+                    writeln!(out, "option name Ponder type check default false").unwrap();
+                }
                 writeln!(out, "uciok").unwrap();
             }
             ["isready"] => writeln!(out, "readyok").unwrap(),
@@ -65,11 +80,33 @@ fn main() {
                 };
                 position = Position::after(start.as_deref(), &moves).unwrap_or_default();
             }
-            ["go", ..] => {
+            ["go", rest @ ..] => {
                 if die {
                     std::process::exit(3);
                 }
-                if let Some(delay) = delay {
+                // Pondering: nothing is answered before `ponderhit` (then the search goes on) or `stop`.
+                let mut stopped = false;
+                if rest.contains(&"ponder") {
+                    if die_pondering {
+                        std::process::exit(3);
+                    }
+                    loop {
+                        match rx.recv().map(|l| l.trim().to_owned()).as_deref() {
+                            Ok("ponderhit") => break,
+                            Ok("stop") => {
+                                stopped = true;
+                                break;
+                            }
+                            Ok("isready") => {
+                                writeln!(out, "readyok").unwrap();
+                                out.flush().unwrap();
+                            }
+                            Ok("quit") | Err(_) => return,
+                            Ok(_) => {}
+                        }
+                    }
+                }
+                if let Some(delay) = delay.filter(|_| !stopped) {
                     let until = Instant::now() + delay;
                     loop {
                         match rx.recv_timeout(until.saturating_duration_since(Instant::now())) {
@@ -103,7 +140,12 @@ fn main() {
                             "info depth 1 seldepth 1 multipv 1 score cp {score} nodes 100 nps 100000 time 1 pv {m}"
                         )
                         .unwrap();
-                        writeln!(out, "bestmove {m}").unwrap();
+                        let mut after = position.clone();
+                        let reply = (ponders && after.play(&m).is_ok()).then(|| choose(&after)).flatten();
+                        match reply {
+                            Some(r) => writeln!(out, "bestmove {m} ponder {r}").unwrap(),
+                            None => writeln!(out, "bestmove {m}").unwrap(),
+                        }
                     }
                     None => writeln!(out, "bestmove (none)").unwrap(),
                 }

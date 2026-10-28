@@ -31,7 +31,7 @@ use dameless_core::{
     work::{Priority, Subject, WorkKind, WorkStatus},
 };
 use dameless_engine::{
-    build::BuildSpec,
+    build::{BuildSpec, PGO},
     git::{self, Repo},
 };
 use dameless_hub::{Executor, Hub, WorkContext};
@@ -569,6 +569,37 @@ impl Versions {
         }
     }
 
+    /// The binary a version plays with when it plays for real (the bot on Lichess, a game against you at full
+    /// strength): its PGO build when one is ready, else its plain build, while the PGO build is made in the background
+    /// for the next game, when this machine has cargo-pgo and llvm-profdata. A game never waits for a PGO build, and
+    /// a PGO build that failed (or did not bench as the plain one) is not tried again. Trials, tunes and the harness
+    /// never come here: they compare builds, and two PGO builds' layouts would bias that.
+    pub async fn playing_binary(&self, version: &Version) -> Result<(Build, PathBuf), Error> {
+        let store = &self.inner.hub.store;
+        let pgo = [PGO.to_owned()];
+        if let Some(b) = store.cached_build_with_net(&version.commit, &pgo, version.net).await?
+            && Path::new(&b.path).is_file()
+        {
+            let path = PathBuf::from(&b.path);
+            return Ok((b, path));
+        }
+        let plain = self.binary_of(version, &[]).await?;
+        // A build's folder is named by its commit: a failure of this commit's PGO build, not of an older tip's.
+        let failed = store.builds(version.id).await?.into_iter().any(|b| {
+            b.features == pgo
+                && b.net == version.net
+                && b.status == BuildStatus::Failed
+                && b.path.contains(&format!("{}-{PGO}", short(&version.commit)))
+        });
+        if !failed && self.inner.toolchain.pgo().await.is_ok() {
+            let (me, version) = (self.clone(), version.clone());
+            tokio::spawn(async move {
+                let _ = me.binary_of(&version, &[PGO]).await;
+            });
+        }
+        Ok(plain)
+    }
+
     /// Records `build`'s binary as also being the build of `commit` (a reworded commit: same tree, new message), so it
     /// is not built again.
     pub async fn alias_build(&self, build: &Build, version: VersionId, commit: &str) -> Result<Build, Error> {
@@ -612,7 +643,10 @@ impl Versions {
         let path = Path::new(&build.path);
         let builds = self.inner.hub.config.builds_dir();
         match path.parent() {
-            Some(dir) if dir.parent() == Some(builds.as_path()) && dir.file_name().is_some_and(|n| n != "target") => {
+            Some(dir)
+                if dir.parent() == Some(builds.as_path())
+                    && dir.file_name().is_some_and(|n| n != "target" && n != "target-pgo") =>
+            {
                 let _ = std::fs::remove_dir_all(dir);
             }
             _ => {
@@ -713,17 +747,21 @@ impl Executor for BuildExecutor {
                 log_path: Some(hub.config.work_log_path(cx.id).display().to_string()),
             })
             .await?;
+        // `pgo` is a flavour of the build, not a cargo feature. PGO builds keep their own target directory, so the
+        // instrumented and optimized artifacts never replace the plain builds' cached ones.
+        let pgo = spec.features.iter().any(|f| f == PGO);
         let build_spec = BuildSpec {
             repo: hub.config.reckless_dir.clone(),
             commit: spec.commit.clone(),
-            features: spec.features.clone(),
+            features: spec.features.iter().filter(|f| *f != PGO).cloned().collect(),
             syzygy: None,
             native: true,
             worktree: hub.config.build_worktree(),
-            target_dir: builds.join("target"),
+            target_dir: builds.join(if pgo { "target-pgo" } else { "target" }),
             out_dir,
             networks_dir: Some(builds.join("networks")),
             evalfile,
+            pgo,
         };
         cx.log(format!("Building {} ({}) {label}", version.name, short(&spec.commit)));
         let mut log = |line: &str| cx.log(line);
@@ -751,6 +789,31 @@ impl Executor for BuildExecutor {
             None => v.inner.repo.resolve(&spec.commit).await.ok().and_then(|c| c.bench),
         };
         let suspect = expected.is_some_and(|e| e != bench.nodes);
+        if pgo {
+            // A PGO build must search exactly as the plain one: it only plays, and only when it is the same engine.
+            let plain: Vec<String> = spec.features.iter().filter(|f| *f != PGO).cloned().collect();
+            let plain = store.cached_build_with_net(&spec.commit, &plain, spec.net).await?;
+            let reference = plain.as_ref().and_then(|b| b.bench).or(expected);
+            if suspect || reference.is_some_and(|r| r != bench.nodes) {
+                store.update_build(record.id, BuildStatus::Failed, Some(bench.nodes), Some(bench.nps)).await?;
+                return Err(Error::internal(format!(
+                    "the PGO build's bench is {}, not {}: it is not used",
+                    bench.nodes,
+                    reference.unwrap_or_default()
+                )));
+            }
+            match plain.and_then(|b| b.nps) {
+                Some(plain_nps) if plain_nps > 0 => cx.log(format!(
+                    "PGO: bench {} as the plain build; {} nps, the plain build {} when it was built ({:+.1} %, one bench \
+                     each: noise on a busy machine)",
+                    bench.nodes,
+                    bench.nps,
+                    plain_nps,
+                    (bench.nps as f64 / plain_nps as f64 - 1.0) * 100.0
+                )),
+                _ => cx.log(format!("PGO: bench {}, {} nps", bench.nodes, bench.nps)),
+            }
+        }
         match expected {
             Some(e) if suspect => cx.log(format!(
                 "Suspect: bench {} but the commit says Bench: {e} (a stale Bench: line, or non-determinism)",

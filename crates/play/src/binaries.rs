@@ -30,10 +30,17 @@ pub trait Binaries: Send + Sync + 'static {
 
     /// A ready binary of the version, built first when there is none (which can take minutes).
     async fn binary(&self, version: &str) -> Result<EngineBinary, Error>;
+
+    /// The binary for playing for real (the bot, a game against you at full strength): the fastest build ready, a
+    /// profile-guided one when there is one. The same engine as [`Binaries::binary`]'s, only faster.
+    async fn playing_binary(&self, version: &str) -> Result<EngineBinary, Error> {
+        self.binary(version).await
+    }
 }
 
 /// The app's versions: `champion` (or `main`), `#12` for an id, else a version's name or a branch, tag or commit
-/// (`work::VersionRef::parse`). Games play builds without cargo features.
+/// (`work::VersionRef::parse`). Games play builds without cargo features; playing for real takes the PGO build when
+/// one is ready (`Versions::playing_binary`).
 #[async_trait]
 impl Binaries for Versions {
     async fn resolve(&self, version: &str) -> Result<Version, Error> {
@@ -43,6 +50,12 @@ impl Binaries for Versions {
     async fn binary(&self, version: &str) -> Result<EngineBinary, Error> {
         let version = Versions::resolve(self, &VersionRef::parse(version)).await?;
         let (build, path) = self.binary_of(&version, &[]).await?;
+        Ok(EngineBinary { version, build: build.id, path, args: Vec::new() })
+    }
+
+    async fn playing_binary(&self, version: &str) -> Result<EngineBinary, Error> {
+        let version = Versions::resolve(self, &VersionRef::parse(version)).await?;
+        let (build, path) = Versions::playing_binary(self, &version).await?;
         Ok(EngineBinary { version, build: build.id, path, args: Vec::new() })
     }
 }

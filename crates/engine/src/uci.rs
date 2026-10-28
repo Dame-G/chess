@@ -323,6 +323,9 @@ pub fn record_line(lines: &mut Vec<Info>, info: Info) {
 /// A running engine process.
 pub struct Engine {
     child: proc::Child,
+    /// Commands for the engine's stdin, written in order by a task of their own: sending never waits, so a caller
+    /// dropped between two commands (a cancelled future) cannot leave the second unsent or a line half written.
+    input: mpsc::UnboundedSender<String>,
     lines: mpsc::UnboundedReceiver<String>,
     /// `id name`.
     pub name: String,
@@ -345,8 +348,24 @@ impl Engine {
         let command = command.clone().stdin(true);
         let mut child = proc::spawn(&command)?;
         let lines = proc::lines(&mut child);
-        let mut engine =
-            Self { child, lines, name: String::new(), author: String::new(), options: Vec::new(), searching: false };
+        let mut stdin = child.stdin().take().context("the engine has no stdin")?;
+        let (input, mut commands) = mpsc::unbounded_channel::<String>();
+        tokio::spawn(async move {
+            while let Some(line) = commands.recv().await {
+                if stdin.write_all(line.as_bytes()).await.is_err() || stdin.flush().await.is_err() {
+                    break;
+                }
+            }
+        });
+        let mut engine = Self {
+            child,
+            input,
+            lines,
+            name: String::new(),
+            author: String::new(),
+            options: Vec::new(),
+            searching: false,
+        };
         engine.send("uci").await?;
         let handshake = async {
             while let Some(line) = engine.lines.recv().await {
@@ -370,15 +389,13 @@ impl Engine {
     }
 
     /// Sends one command. A line break inside it (from a FEN or a move in a request) would smuggle in another, so it is
-    /// refused.
+    /// refused. It is queued for the engine's stdin at once, without waiting for the write: commands sent one after
+    /// another arrive together even if the caller is dropped in between. An engine that has exited fails it.
     pub async fn send(&mut self, command: &str) -> Result<()> {
         if command.contains(['\n', '\r']) {
             bail!("a UCI command cannot contain a line break");
         }
-        let stdin = self.child.stdin().as_mut().context("engine stdin closed")?;
-        stdin.write_all(format!("{command}\n").as_bytes()).await.context("write to the engine")?;
-        stdin.flush().await.context("write to the engine")?;
-        Ok(())
+        self.input.send(format!("{command}\n")).map_err(|_| anyhow::anyhow!("write to the engine: its input is closed"))
     }
 
     pub async fn set_option(&mut self, name: &str, value: impl std::fmt::Display) -> Result<()> {

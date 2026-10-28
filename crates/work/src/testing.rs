@@ -17,7 +17,7 @@ use anyhow::{Result, bail};
 use async_trait::async_trait;
 use dameless_engine::{
     bench::Measurement,
-    build::{Bench, BuildSpec, Built},
+    build::{Bench, BuildSpec, Built, PGO, PgoMissing, PgoTools},
     fastchess::{Progress, Round, RoundResult, Totals},
     tools::Installed,
 };
@@ -193,6 +193,10 @@ pub struct Fake {
     /// Writes a round's PGN (the round, the pairs that finished) instead of [`sample_pgn`].
     #[allow(clippy::type_complexity)]
     pub pgn: Mutex<Option<Box<dyn Fn(&Round, u32) -> String + Send + Sync>>>,
+    /// cargo-pgo and llvm-profdata are "installed": PGO builds are made (and bench as the plain ones).
+    pub pgo: std::sync::atomic::AtomicBool,
+    /// PGO builds made.
+    pub pgo_builds: AtomicUsize,
 }
 
 impl Fake {
@@ -273,14 +277,12 @@ impl Toolchain for Fake {
         let spsa = spec.features.iter().any(|f| f == "spsa");
         std::fs::write(&binary, format!("{}\n{}", fake_nodes(&text), if spsa { SPSA } else { "" }))?;
         log("fake build");
-        Ok(Built {
-            binary,
-            commit: sha.clone(),
-            tree: sha,
-            features: spec.features.clone(),
-            network: None,
-            log: String::new(),
-        })
+        let mut features = spec.features.clone();
+        if spec.pgo {
+            self.pgo_builds.fetch_add(1, Ordering::SeqCst);
+            features.push(PGO.to_owned());
+        }
+        Ok(Built { binary, commit: sha.clone(), tree: sha, features, network: None, log: String::new() })
     }
 
     async fn bench(&self, binary: &Path) -> Result<Bench> {
@@ -345,6 +347,14 @@ impl Toolchain for Fake {
         std::fs::write(&round.pgn, pgn)?;
         on_progress(Progress::Totals(totals));
         Ok(RoundResult { totals, pgn: round.pgn.clone(), ended_early })
+    }
+
+    async fn pgo(&self) -> Result<PgoTools, PgoMissing> {
+        if self.pgo.load(Ordering::SeqCst) {
+            Ok(PgoTools { cargo_pgo: "cargo-pgo 0.3.0".into(), llvm_profdata: "llvm-profdata".into() })
+        } else {
+            Err(PgoMissing::CargoPgo)
+        }
     }
 
     fn tools(&self, dir: &Path) -> Installed {

@@ -477,6 +477,7 @@ impl Games {
 
         let mut players: Vec<(Seat, Box<dyn SeatController>, Sitter)> = Vec::new();
         let mut moves: Option<MoveSender> = None;
+        let against_you = seats.iter().any(|s| **s == SeatRequest::You);
         for (index, request) in seats.into_iter().enumerate() {
             match request.version() {
                 None => {
@@ -485,7 +486,14 @@ impl Games {
                     players.push((self.your_seat(), Box::new(seat), Sitter::Person));
                 }
                 Some(version) => {
-                    let binary = self.inner.binaries.binary(version).await?;
+                    // Against you at full strength Dameless plays its fastest build. A level plays a node budget, and
+                    // two engines compared with each other play the same kind of build.
+                    let full_strength = levels[index].as_ref().is_none_or(|l| l.nodes.is_none());
+                    let binary = if against_you && full_strength {
+                        self.inner.binaries.playing_binary(version).await?
+                    } else {
+                        self.inner.binaries.binary(version).await?
+                    };
                     let engine = EngineSeat::start(
                         &binary,
                         options,

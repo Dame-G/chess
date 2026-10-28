@@ -56,6 +56,15 @@ struct Flight {
     unsent: bool,
     /// Each MultiPV line's latest report: (depth, first move, score from the side to move).
     lines: BTreeMap<u32, (u32, String, uci::Score)>,
+    /// A `go ponder` on the opponent's time, in the position after the reply the engine expected; `ponderhit` makes
+    /// it the search of that position.
+    pondering: bool,
+}
+
+impl Flight {
+    fn new(ply: u32, fen: &str, pondering: bool) -> Self {
+        Self { ply, fen: fen.to_owned(), last: None, sent: None, unsent: false, lines: BTreeMap::new(), pondering }
+    }
 }
 
 /// How a seat at a level plays: its level, the nodes per move, and the RNG its choices draw from.
@@ -72,6 +81,11 @@ pub struct EngineSeat {
     every: std::time::Duration,
     unclocked_ms: u64,
     level: Option<AtLevel>,
+    /// Whether it thinks on the opponent's time ([`EngineSeat::allow_ponder`]).
+    ponder: bool,
+    /// The reply the last search expected (its `bestmove … ponder`, else its PV's second move), with the ply it was
+    /// searched at.
+    expected: Option<(u32, String)>,
     _cores: Option<Reservation>,
 }
 
@@ -110,8 +124,53 @@ impl EngineSeat {
             every: std::time::Duration::from_millis(200),
             unclocked_ms: UNCLOCKED_MS,
             level: None,
+            ponder: false,
+            expected: None,
             _cores: None,
         })
+    }
+
+    /// Lets the seat think on the opponent's time, when its engine declares UCI's `Ponder` option (an engine that
+    /// does not simply never ponders). Only the bot's games on Lichess ask: never trials, reviews or local games. A
+    /// seat at a level does not ponder (its move is not always the engine's best). Answers whether it will.
+    pub(crate) async fn allow_ponder(&mut self) -> Result<bool, Error> {
+        let declared = self.engine.options.iter().any(|o| o.name.eq_ignore_ascii_case("Ponder"));
+        if !declared || self.level.is_some() {
+            return Ok(false);
+        }
+        let settings = [("Ponder".to_owned(), "true".to_owned())];
+        self.engine.configure(&settings).await.map_err(error::internal)?;
+        self.ponder = true;
+        Ok(true)
+    }
+
+    /// After our move `played` (answering `turn`) is on the board: searches the position after the reply the engine
+    /// expects, on the opponent's time (`go ponder`, with the clocks as they stand now). The next search picks it up
+    /// with `ponderhit` when the opponent plays that reply, and stops it otherwise. Does nothing when pondering is off,
+    /// the game has no clock, or the engine expected no reply.
+    pub(crate) async fn ponder(
+        &mut self,
+        turn: &Turn<'_>,
+        played: &str,
+        clocks: Option<dameless_core::SidePair<u64>>,
+    ) -> Result<(), Error> {
+        let expected = self.expected.take().filter(|(ply, _)| *ply == turn.ply).map(|(_, reply)| reply);
+        let (true, Some(reply), TimeControl::Clock { .. }) = (self.ponder, expected, turn.time) else {
+            return Ok(());
+        };
+        if self.engine.searching() {
+            return Ok(());
+        }
+        let mut moves = turn.moves.to_vec();
+        moves.extend([played.to_owned(), reply]);
+        let Ok(after) = dameless_core::chess::Position::after(turn.start_fen, &moves) else { return Ok(()) };
+        let fen = after.fen();
+        let next = Turn { ply: turn.ply + 2, moves: &moves, fen: &fen, clocks, ..*turn };
+        let go = self.limits(&next).command().replacen("go", "go ponder", 1);
+        let position = uci::Position { fen: turn.start_fen.map(str::to_owned), moves: moves.clone() };
+        self.engine.go_command(&position, &go).await.map_err(error::internal)?;
+        self.flight = Some(Flight::new(next.ply, &fen, true));
+        Ok(())
     }
 
     /// Plays at `level`: `nodes` per move (the level's own when `None`; full strength then plays on the game's
@@ -169,24 +228,23 @@ impl EngineSeat {
 
     /// Searches `turn` and answers the move with the engine's own last report.
     pub(crate) async fn search(&mut self, turn: &Turn<'_>) -> Result<SeatMove, Error> {
-        // A search the runtime dropped (something else woke it) is picked up again when it is for the same position;
-        // any other is ended first.
+        // A search the runtime dropped (something else woke it) is picked up again when it is for the same position,
+        // and so is a ponder that guessed the opponent's move (`ponderhit`); any other is ended first, its bestmove
+        // read and dropped.
         let same = self.flight.as_ref().is_some_and(|f| f.ply == turn.ply && f.fen == turn.fen);
-        if !(same && self.engine.searching()) {
+        if same && self.engine.searching() {
+            if let Some(flight) = self.flight.as_mut().filter(|f| f.pondering) {
+                flight.pondering = false;
+                self.engine.send("ponderhit").await.map_err(error::internal)?;
+            }
+        } else {
             if self.engine.searching() {
                 self.engine.finish(std::time::Duration::from_secs(5)).await.map_err(error::internal)?;
             }
             let position = uci::Position { fen: turn.start_fen.map(str::to_owned), moves: turn.moves.to_vec() };
             let limits = self.limits(turn);
             self.engine.go(&position, &limits).await.map_err(error::internal)?;
-            self.flight = Some(Flight {
-                ply: turn.ply,
-                fen: turn.fen.to_owned(),
-                last: None,
-                sent: None,
-                unsent: false,
-                lines: BTreeMap::new(),
-            });
+            self.flight = Some(Flight::new(turn.ply, turn.fen, false));
         }
         loop {
             let event = self.engine.next().await.map_err(error::internal)?;
@@ -210,14 +268,7 @@ impl EngineSeat {
                 }
                 SearchEvent::Info(_) => {}
                 SearchEvent::BestMove(best) => {
-                    let flight = self.flight.take().unwrap_or_else(|| Flight {
-                        ply: turn.ply,
-                        fen: String::new(),
-                        last: None,
-                        sent: None,
-                        unsent: false,
-                        lines: BTreeMap::new(),
-                    });
+                    let flight = self.flight.take().unwrap_or_else(|| Flight::new(turn.ply, "", false));
                     let last = flight.last;
                     if flight.unsent
                         && let Some(info) = &last
@@ -230,6 +281,9 @@ impl EngineSeat {
                     if let Some(chosen) = self.choose(&flight.lines, &uci, turn.side) {
                         return Ok(chosen);
                     }
+                    // The reply it expects, for pondering: `bestmove … ponder`, else its PV's second move.
+                    let from_pv = || last.as_ref().filter(|i| i.pv.first() == Some(&uci)).and_then(|i| i.pv.get(1));
+                    self.expected = best.ponder.or_else(|| from_pv().cloned()).map(|reply| (turn.ply, reply));
                     return Ok(SeatMove {
                         uci,
                         eval: last.as_ref().map(|i| white_score(i.score, turn.side)),

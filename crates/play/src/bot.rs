@@ -609,7 +609,7 @@ impl Bot {
             leave(client, id, plies).await;
             return Err(Error::conflict("no version is chosen to play: left the game"));
         };
-        let binary = match self.inner.binaries.binary(&version).await {
+        let binary = match self.inner.binaries.playing_binary(&version).await {
             Ok(b) => b,
             Err(e) => {
                 leave(client, id, plies).await;
@@ -623,7 +623,7 @@ impl Bot {
             minimal: false,
         };
         let owner = format!("Lichess game {id}");
-        let engine =
+        let mut engine =
             match EngineSeat::start(&binary, options, &self.inner.hub.ledger, self.inner.hub.bus.clone(), &owner).await
             {
                 Ok(e) => e.pace(self.inner.timing.info_every, self.inner.timing.unclocked_movetime_ms),
@@ -632,6 +632,13 @@ impl Bot {
                     return Err(e);
                 }
             };
+        // The bot thinks on its opponent's time when its engine can (a version without UCI's Ponder option plays as
+        // before). Only here: no other game ponders.
+        if settings.ponder
+            && let Err(e) = engine.allow_ponder().await
+        {
+            tracing::warn!("lichess game {id} (bot): pondering is off: {e}");
+        }
         let player = full.player(lichess_side(our));
         let seat = Seat {
             version: Some(binary.version.id),

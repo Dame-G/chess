@@ -1634,6 +1634,12 @@ export interface components {
              */
             move_overhead: number;
             /**
+             * @description Think on the opponent's time: after its move the engine searches the reply it expects (`go ponder`), and a
+             *     right guess saves that time. Only with a version whose engine declares UCI's `Ponder` option. Default true.
+             * @default true
+             */
+            ponder: boolean;
+            /**
              * @description The clocks the bot challenges other bots at when it looks for a game, as Lichess writes them: minutes plus
              *     increment seconds, such as `3+2`. One is picked at random for each challenge. Default 3+0, 3+2 and 5+3.
              * @default [
@@ -1731,7 +1737,10 @@ export interface components {
              * @description What its `bench` measured: must equal the commit's `Bench:` line.
              */
             bench?: number | null;
-            /** @description Cargo features it was built with, such as `spsa`. */
+            /**
+             * @description Cargo features it was built with, such as `spsa`, and `pgo` for a profile-guided build (made for the bot and
+             *     for games against you, never for trials).
+             */
             features: string[];
             id: components["schemas"]["BuildId"];
             net?: components["schemas"]["NetId"] | null;
@@ -2585,7 +2594,7 @@ export interface components {
             action?: components["schemas"]["HealthAction"] | null;
             /** @description One sentence for people. */
             detail: string;
-            /** @description `fastchess`, `book`, `engine`, `clang`, `cuda`, `gpu`, `disk`, `database`, `builds`, `harness`. */
+            /** @description `fastchess`, `book`, `engine`, `clang`, `pgo`, `cuda`, `gpu`, `disk`, `database`, `builds`, `harness`. */
             key: string;
             level: components["schemas"]["HealthLevel"];
             /** @description Not failing (a warning or a note is still ok). */

@@ -8,7 +8,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use dameless_engine::{
     bench::{self, Measurement},
-    build::{self, Bench, BuildSpec, Built},
+    build::{self, Bench, BuildSpec, Built, PgoMissing, PgoTools},
     fastchess::{self, Progress, Round, RoundResult},
     tools::{self, Installed},
 };
@@ -53,6 +53,12 @@ pub trait Toolchain: Send + Sync {
 
     /// fastchess and the opening book in the tools directory, if installed.
     fn tools(&self, dir: &Path) -> Installed;
+
+    /// cargo-pgo and llvm-profdata, which PGO builds need, or what is missing. A toolchain that does not say makes
+    /// no PGO builds.
+    async fn pgo(&self) -> Result<PgoTools, PgoMissing> {
+        Err(PgoMissing::Unsupported)
+    }
 }
 
 /// The real thing: cargo, `reckless bench`, fastchess.
@@ -101,6 +107,10 @@ impl Toolchain for Reckless {
 
     fn tools(&self, dir: &Path) -> Installed {
         tools::installed(dir)
+    }
+
+    async fn pgo(&self) -> Result<PgoTools, PgoMissing> {
+        build::pgo_tools().await
     }
 }
 
