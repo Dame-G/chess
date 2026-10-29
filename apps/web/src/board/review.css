@@ -8,6 +8,7 @@
   --rv-mistake: #a6460f;
   --rv-blunder: #b3261e;
   --rv-miss: #8a5a52;
+  --rv-best: var(--c-ink-2);
 }
 
 :root[data-scheme="dark"] {
@@ -19,26 +20,33 @@
   --rv-miss: #c49a92;
 }
 
+/* A judgement's colour (`--rv`) and its wash (`--rv-wash`): the tint behind a chip or a glyph badge. */
 .rv-brilliant {
   --rv: var(--rv-brilliant);
+  --rv-wash: color-mix(in oklab, var(--rv-brilliant) 14%, transparent);
 }
 
 .rv-great {
   --rv: var(--rv-great);
+  --rv-wash: color-mix(in oklab, var(--rv-great) 14%, transparent);
 }
 
 .rv-inaccuracy {
   --rv: var(--rv-inaccuracy);
+  --rv-wash: color-mix(in oklab, var(--rv-inaccuracy) 14%, transparent);
 }
 
 .rv-mistake {
   --rv: var(--rv-mistake);
+  --rv-wash: color-mix(in oklab, var(--rv-mistake) 14%, transparent);
 }
 
 .rv-blunder {
   --rv: var(--rv-blunder);
+  --rv-wash: color-mix(in oklab, var(--rv-blunder) 14%, transparent);
 }
 
 .rv-miss {
   --rv: var(--rv-miss);
+  --rv-wash: color-mix(in oklab, var(--rv-miss) 14%, transparent);
 }

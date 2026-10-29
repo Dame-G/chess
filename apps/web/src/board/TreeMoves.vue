@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { EButton } from "@eos-ui/vue/components/EButton";
-import { ECellRow, type CellRowCell } from "@eos-ui/vue/components/ECellRow";
-import { EList } from "@eos-ui/vue/components/EList";
+import UiEmpty from "../ui/UiEmpty.vue";
 import { focusCurrent, followCurrent, stepOf, type Step } from "./follow";
+import MoveRow from "./MoveRow.vue";
 import { rows, type GameTree, type Row, type TreeNode } from "./tree";
 
 /**
- * Explore's move list: the main line in numbered pairs (cells of an `EList`) and, under a move with alternatives, its
- * variations as runs of moves (deeper ones indented), as Lichess shows a study. Any move is a click away.
+ * Explore's move list: the main line in numbered pairs and, under a move with alternatives, its variations as runs of
+ * moves (deeper ones indented and italic), as Lichess shows a study. Any move is a click away. The rows look like the
+ * game's move list, so a position is read the same in every mode.
  */
 const props = defineProps<{
   tree: GameTree;
@@ -24,22 +24,49 @@ const list = computed(() => {
   return rows(props.tree);
 });
 
-/** The cells of a numbered pair, named by node id; a missing White move is a disabled gap that can never be chosen. */
-function cells(row: Extract<Row, { type: "moves" }>): CellRowCell[] {
-  const out: CellRowCell[] = [
-    row.white ? { value: row.white.id, label: row.white.san } : { value: -row.number - 1, label: "…", disabled: true },
-  ];
-  if (row.black) out.push({ value: row.black.id, label: row.black.san });
-  return out;
+type MovesRow = Extract<Row, { type: "moves" }>;
+
+/** The node ids of the main line, to tell what is ahead of the board from what is behind it. */
+const ahead = computed(() => {
+  const ids = new Set<number>();
+  for (let n: TreeNode | undefined = props.node.children[0]; n; n = n.children[0]) ids.add(n.id);
+  return ids;
+});
+
+/** The one move that takes the tab stop: the one on the board, else the first move of the first row. */
+const tabId = computed(() => {
+  if (props.node.id !== 0) return props.node.id;
+  const first = list.value.find((r): r is MovesRow => r.type === "moves");
+  return first?.white?.id ?? first?.black?.id ?? -1;
+});
+
+function rowProps(row: MovesRow) {
+  const w = row.white;
+  const b = row.black;
+  return {
+    number: row.number,
+    a: w?.san ?? null,
+    b: b?.san ?? null,
+    pa: w?.id ?? -1,
+    pb: b?.id ?? -1,
+    curA: !!w && w.id === props.node.id,
+    curB: !!b && b.id === props.node.id,
+    futA: !!w && ahead.value.has(w.id),
+    futB: !!b && ahead.value.has(b.id),
+    tabA: !!w && w.id === tabId.value,
+    tabB: !!b && b.id === tabId.value,
+  };
 }
 
-/** A choice is a node id; the nodes are looked up again in the tree, which keeps them. */
-function choose(id: string | number) {
-  const found = props.tree.find(Number(id));
+const box = ref<HTMLElement>();
+
+/** A click on a move goes to it: the nodes are looked up again in the tree, which keeps them. */
+function onClick(e: MouseEvent) {
+  const id = (e.target as Element).closest<HTMLElement>("[data-id]")?.dataset["id"];
+  const found = id === undefined ? undefined : props.tree.find(Number(id));
   if (found) emit("select", found);
 }
 
-const box = ref<InstanceType<typeof EList>>();
 /** The arrow keys, Home and End step the board past the end of a row, as they do from anywhere else. */
 function onKeys(e: KeyboardEvent) {
   const to = stepOf(e);
@@ -48,100 +75,92 @@ function onKeys(e: KeyboardEvent) {
   e.stopPropagation();
   if (e.repeat) return;
   emit("step", to);
-  focusCurrent(() => box.value?.$el as HTMLElement | undefined);
+  focusCurrent(() => box.value);
 }
 
 followCurrent(
-  () => box.value?.$el as HTMLElement | undefined,
+  () => box.value,
   () => props.node.id,
 );
 </script>
 
 <template>
-  <EList
-    ref="box"
-    :model-value="node.id"
-    label="Moves and variations"
-    flush
-    follow-focus
-    class="tree"
-    @keydown.capture="onKeys"
-    @select="choose"
-  >
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- the moves inside are buttons: the click is delegated, the keys are theirs -->
+  <div ref="box" class="tree" role="group" aria-label="Moves and variations" @click="onClick" @keydown.capture="onKeys">
     <template
       v-for="row in list"
       :key="row.type === 'moves' ? `m${row.number}-${row.white?.id}-${row.black?.id}` : row.key"
     >
-      <ECellRow v-if="row.type === 'moves'" :label="`${row.number}.`" :columns="2" :cells="cells(row)">
-        <template #cell="{ cell }">
-          <span class="mv">{{ cell.label }}</span>
-        </template>
-      </ECellRow>
+      <MoveRow v-if="row.type === 'moves'" v-bind="rowProps(row)" />
       <div v-else class="vars">
         <p v-for="(line, i) in row.lines" :key="i" class="var">
-          <EButton
+          <button
             v-for="t in line"
             :key="t.node.id"
-            size="xs"
-            variant="quiet"
+            type="button"
             class="vm"
             :class="{ deep: t.depth > 1 }"
+            :data-id="t.node.id"
             :aria-current="t.node.id === node.id ? 'true' : undefined"
-            @click="emit('select', t.node)"
+            :tabindex="t.node.id === tabId ? 0 : -1"
           >
             {{ t.text }}
-          </EButton>
+          </button>
         </p>
       </div>
     </template>
-    <p v-if="!list.length" class="none">No moves yet. Move a piece, or paste a FEN or PGN.</p>
-  </EList>
+    <UiEmpty v-if="!list.length" dense title="No moves yet." body="Move a piece on the board." class="none" />
+  </div>
 </template>
 
 <style scoped>
 .tree {
-  align-content: start;
+  min-height: 0;
   height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-/* A move is a short word: its cell is the 2rem tall line of a chess client, not the 2.25rem of a form control. Touch
-   keeps eos's full target. */
-@media (pointer: fine) {
-  .tree {
-    --e-tap: 2rem;
-  }
-}
-
-.mv {
-  font-family: var(--e-font-mono);
-}
-
 /* Variations sit under the move they branch from, quieter than the main line. */
 .vars {
-  padding-block: var(--e-gap-tight);
-  border-block: var(--e-stroke-hair) solid color-mix(in oklab, var(--e-border) 50%, transparent);
-  background: color-mix(in oklab, var(--e-ink) 3%, transparent);
+  padding-block: var(--sp-1);
+  padding-inline-start: 2.5rem;
+  border-block: var(--e-stroke-hair) solid var(--c-line);
+  background: var(--c-raise);
 }
 
 .var {
   display: flex;
   flex-wrap: wrap;
   margin: 0;
-  padding-inline: var(--e-gap-snug);
+  padding-inline: var(--sp-2);
 }
 
 .vm {
-  color: var(--e-muted);
-  font-family: var(--e-font-mono);
-  text-decoration: none;
+  min-height: var(--h-move);
+  padding: 0 var(--sp-1);
+  border: 0;
+  border-radius: var(--r-1);
+  background: transparent;
+  color: var(--c-ink-2);
+  font: var(--t-fig);
+  cursor: pointer;
+}
+
+.vm:hover {
+  background: var(--c-sunk);
+  color: var(--c-ink);
 }
 
 .vm[aria-current] {
-  background: var(--e-primary-soft);
-  color: var(--e-primary);
+  background: var(--c-sunk);
+  box-shadow: inset 0 calc(-1 * var(--e-stroke-focus)) 0 var(--c-act);
+  color: var(--c-ink);
   font-weight: 700;
+}
+
+.vm:focus-visible {
+  outline: var(--focus-ring);
 }
 
 .vm.deep {
@@ -149,9 +168,6 @@ followCurrent(
 }
 
 .none {
-  margin: 0;
-  padding: var(--ws-pad, var(--e-pad-control));
-  color: var(--e-muted);
-  font: var(--e-type-small);
+  padding: var(--sp-3);
 }
 </style>

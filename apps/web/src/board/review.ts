@@ -12,7 +12,7 @@ export interface Mark {
 
 const MARKS: Record<Classification, Mark> = {
   brilliant: { glyph: "!!", label: "Brilliant", tone: "brilliant" },
-  great: { glyph: "!", label: "Great move", tone: "great" },
+  great: { glyph: "!", label: "Great", tone: "great" },
   best: { glyph: "", label: "Best move", tone: null },
   excellent: { glyph: "", label: "Excellent", tone: null },
   good: { glyph: "", label: "Good", tone: null },
@@ -20,9 +20,20 @@ const MARKS: Record<Classification, Mark> = {
   inaccuracy: { glyph: "?!", label: "Inaccuracy", tone: "inaccuracy" },
   mistake: { glyph: "?", label: "Mistake", tone: "mistake" },
   blunder: { glyph: "??", label: "Blunder", tone: "blunder" },
-  miss: { glyph: "×", label: "Missed chance", tone: "miss" },
+  miss: { glyph: "×", label: "Missed win", tone: "miss" },
 };
 export const markOf = (c: Classification): Mark => MARKS[c];
+
+/** What a judgement means, for a tooltip on its chip. */
+const TIPS: Partial<Record<Classification, string>> = {
+  brilliant: "A good sacrifice: gives up material and still holds the advantage.",
+  great: "The only move that keeps the position.",
+  inaccuracy: "Gives away a little of the advantage.",
+  mistake: "Gives away a lot of the advantage.",
+  blunder: "Throws away most of the advantage, or the game.",
+  miss: "You missed a chance to win material or the game.",
+};
+export const markTip = (c: Classification): string => TIPS[c] ?? markOf(c).label;
 
 /** The marks the summary counts, in the order Lichess lists them. */
 export const SUMMARY_MARKS = ["brilliant", "great", "inaccuracy", "mistake", "blunder", "miss"] as const;
@@ -40,7 +51,7 @@ export function hint(p: ReviewedMove): string {
         ? `Brilliant: gives up about ${Math.round(p.sacrifice)} ${Math.round(p.sacrifice) === 1 ? "pawn" : "pawns"} of material and still holds the advantage`
         : "Brilliant: a sacrifice that works";
     case "great":
-      return "Great move: the only move that keeps the position";
+      return "Great: the only move that keeps the position";
     case "inaccuracy":
     case "mistake":
     case "blunder":
