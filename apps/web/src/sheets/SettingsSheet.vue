@@ -2,41 +2,47 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { useToast } from "@eos-ui/vue";
-import { ESheet } from "@eos-ui/vue/components/ESheet";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { ELink } from "@eos-ui/vue/components/ELink";
 import { ECopyButton } from "@eos-ui/vue/components/ECopyButton";
-import { EDescriptionList } from "@eos-ui/vue/components/EDescriptionList";
 import { EForm } from "@eos-ui/vue/components/EForm";
+import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { EPasswordField } from "@eos-ui/vue/components/EPasswordField";
-import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
-import { EStamp } from "@eos-ui/vue/components/EStamp";
-import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import { connect, connection } from "../api/client";
-import type { ConnectionKey, ConnectionStatus, HealthLevel, Pruned } from "../api/types";
-import { bytes, plural, shortDate } from "../format";
-import { EConfirmDialog } from "@eos-ui/vue/components/EConfirmDialog";
+import type { ConnectionKey, ConnectionStatus, HealthItem } from "../api/types";
+import { bytes, formatDate, plural } from "../format";
+import PathText from "../parts/PathText.vue";
 import { choice, type Choice } from "../scheme";
 import { useConnections } from "../stores/connections";
 import { useDameless } from "../stores/dameless";
 import { usePolicy } from "../stores/policy";
-import { useSheet } from "./useSheet";
+import { healthTone } from "../ui/badge";
+import UiBadge from "../ui/UiBadge.vue";
+import UiEmpty from "../ui/UiEmpty.vue";
+import UiField from "../ui/UiField.vue";
+import UiKeyValue from "../ui/UiKeyValue.vue";
+import UiKv from "../ui/UiKv.vue";
+import UiLive from "../ui/UiLive.vue";
+import UiSection from "../ui/UiSection.vue";
+import UiSeg from "../ui/UiSeg.vue";
+import UiSheetPage from "../ui/UiSheetPage.vue";
+import { useConfirm } from "../ui/useConfirm";
 
 /**
  * Settings: the two Lichess connections (your login, the bot's token), the machine (cores, the engine checkout, the
- * binaries kept and the disk they take), its health (what the work needs and whether it is there), whether the harness
- * can be trusted here, the theme, and the token the hosted app needs. Logging out and disconnecting ask first; so do
- * freeing disk space, after saying what it would free, and checking the harness, which plays games for a while. What
- * cannot be read says so, with a way to try again, rather than staying a placeholder.
+ * binaries kept and the disk they take, and whether the harness can be trusted here), its health (what the work needs
+ * and whether it is there, failures first), and how the app looks, with the token the hosted app needs. Logging out and
+ * disconnecting ask first; so do freeing disk space, after saying what it would free, and checking the harness, which
+ * plays games for a while. What cannot be read says so, with a way to try again, rather than staying a placeholder.
  */
-const sheet = useSheet();
 const policy = usePolicy();
 const connections = useConnections();
 const dameless = useDameless();
 const toast = useToast();
+const confirm = useConfirm();
 
+const tab = ref("accounts");
 const themes: { value: Choice; label: string }[] = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },
@@ -76,43 +82,17 @@ async function attempt<T>(title: string, action: () => Promise<T>): Promise<T | 
 
 const you = computed(() => connections.you);
 const bot = computed(() => connections.bot);
-type Tone = "neutral" | "success" | "info" | "warning" | "danger";
+type Tone = "win" | "info" | "loss" | "neutral";
 const stateOf = (c: ConnectionStatus): { word: string; tone: Tone } =>
   c.state === "online"
-    ? { word: "Connected", tone: "success" }
+    ? { word: "Connected", tone: "win" }
     : c.state === "connecting"
       ? { word: "Connecting", tone: "info" }
       : c.state === "error"
-        ? { word: "Cannot reach Lichess", tone: "danger" }
+        ? { word: "Cannot reach Lichess", tone: "loss" }
         : { word: "Offline", tone: "neutral" };
-
-/** Health, less what this sheet already shows in its own sections: the builds and the checkout (This machine) and the harness. */
-const healthItems = computed(() =>
-  (dameless.health?.items ?? []).filter((i) => !["builds", "harness", "engine"].includes(i.key)),
-);
-
-/** A linked account's rows: who, in what state, and for your login how long it lasts. A missing link has no rows. */
-const lichessItems = (c: ConnectionStatus) => {
-  if (!c.configured) return [];
-  const s = stateOf(c);
-  return [
-    {
-      label: "Account",
-      text: c.account ? `${c.account.username}${c.account.title ? ` (${c.account.title})` : ""}` : "Linked",
-      stamp: s.word,
-      stampTone: s.tone,
-    },
-    ...(c.state === "error" && c.error ? [{ label: "Problem", text: c.error }] : []),
-    ...(c.key === "you" && c.you?.expires_at
-      ? [
-          {
-            label: "Login ends",
-            text: shortDate(c.you.expires_at),
-          },
-        ]
-      : []),
-  ];
-};
+const accountName = (c: ConnectionStatus) =>
+  c.account ? `${c.account.username}${c.account.title ? ` (${c.account.title})` : ""}` : "Linked";
 
 const loggingIn = ref(false);
 async function login() {
@@ -122,23 +102,18 @@ async function login() {
   else loggingIn.value = false;
 }
 
-const leaving = ref<ConnectionKey | null>(null);
-const leaveBusy = ref(false);
-const leaveOpen = computed({
-  get: () => leaving.value !== null,
-  set: (v: boolean) => {
-    if (!v) leaving.value = null;
-  },
-});
-async function leave() {
-  const key = leaving.value;
-  if (!key) return;
-  leaveBusy.value = true;
-  const done = await attempt(key === "you" ? "Logging out did not work" : "Disconnecting did not work", () =>
-    connections.disconnect(key),
-  );
-  leaveBusy.value = false;
-  if (done !== undefined || connections[key].configured === false) leaving.value = null;
+async function leave(key: ConnectionKey) {
+  const you = key === "you";
+  const yes = await confirm({
+    title: you ? "Log out of Lichess?" : "Disconnect the bot?",
+    body: you
+      ? "Your login is revoked at Lichess and forgotten here. Games you are playing there carry on. You can log in again at any time."
+      : "Dameless goes offline and its token is forgotten. Games it is playing finish first. You will need a token to connect it again.",
+    confirmLabel: you ? "Log out" : "Disconnect the bot",
+    danger: true,
+  });
+  if (!yes) return;
+  await attempt(you ? "Logging out did not work" : "Disconnecting did not work", () => connections.disconnect(key));
 }
 
 const botToken = ref("");
@@ -161,92 +136,57 @@ async function saveBotToken() {
 // ---- Machine
 
 const machine = computed(() => dameless.machine);
-const machineItems = computed(() => {
+const engine = computed(() => machine.value?.engine);
+const binaries = computed(() => {
   const m = machine.value;
-  return [
-    { label: "Cores", text: policy.status ? String(policy.status.cores) : "Unknown" },
-    {
-      label: "Engine checkout",
-      text: m?.engine
-        ? `${m.engine.dir}${m.engine.branch ? ` · ${m.engine.branch}` : ""}${m.engine.commit ? ` at ${m.engine.commit.slice(0, 8)}` : ""}${m.engine.dirty ? " · has uncommitted changes" : ""}`
-        : "Not found",
-    },
-    { label: "Data", text: m?.data_dir ?? "Unknown" },
-    {
-      label: "Binaries",
-      // The bytes include the build cache, so they are not zero without binaries: say which is which.
-      text: m
-        ? m.builds.count
-          ? `${plural(m.builds.count, "binary", "binaries")}, ${bytes(m.builds.bytes)} with the build cache`
-          : `None yet (${bytes(m.builds.bytes)} of build cache)`
-        : "Unknown",
-    },
-  ];
+  if (!m) return "Unknown";
+  // The bytes include the build cache, so they are not zero without binaries: say which is which.
+  return m.builds.count
+    ? `${plural(m.builds.count, "binary", "binaries")}, ${bytes(m.builds.bytes)} with the cache`
+    : `None yet (${bytes(m.builds.bytes)} of cache)`;
 });
 
-// ---- Health and the harness
-
-const LEVEL: Record<HealthLevel, { tone: "success" | "info" | "warning" | "danger"; word: string }> = {
-  ok: { tone: "success", word: "Ready" },
-  info: { tone: "info", word: "Note" },
-  warn: { tone: "warning", word: "Check" },
-  fail: { tone: "danger", word: "Missing" },
-};
-/** fastchess or the book is missing: the one thing Install tools fixes. */
-const toolsMissing = computed(() =>
-  (dameless.health?.items ?? []).some((i) => (i.key === "fastchess" || i.key === "book") && i.level === "fail"),
-);
-const installing = ref(false);
-const installBusy = ref(false);
-async function installTools() {
-  installBusy.value = true;
-  const r = await attempt("The tools were not installed", () => dameless.installTools());
-  installBusy.value = false;
-  if (!r) return;
-  installing.value = false;
-  toast.show({ title: "The tools are installed", tone: "success" });
-}
 const harness = computed(() => dameless.harness);
-const harnessStamp = computed(() => {
+const harnessBadge = computed(() => {
   const h = harness.value;
   if (!h) return null;
   if (h.running != null) return { word: "Checking", tone: "info" as const };
-  return h.trusted
-    ? { word: "Trusted", tone: "success" as const }
-    : { word: "Not trusted here", tone: "warning" as const };
+  return h.trusted ? { word: "Trusted", tone: "win" as const } : { word: "Not trusted here", tone: "warn" as const };
 });
-const checking = ref(false);
 const checkBusy = ref(false);
 async function checkHarness() {
+  const yes = await confirm({
+    title: "Check the harness?",
+    body: "The champion plays an identical copy of itself: 1,000 pairs at fixed nodes, where every pair must be the same game twice, then 4,000 pairs of quick timed games, which must come out even and symmetric. It takes the machine's cores for a few hours; other work waits its turn, and live games still come first.",
+    confirmLabel: "Start the check",
+  });
+  if (!yes) return;
   checkBusy.value = true;
   const idea = await attempt("The check did not start", () => dameless.checkHarness());
   checkBusy.value = false;
-  if (!idea) return;
-  checking.value = false;
-  toast.show({ title: "Checking the harness", message: "The status line shows how it goes.", tone: "info" });
+  if (idea) toast.show({ title: "Checking the harness", message: "The header shows how it goes.", tone: "info" });
 }
 
-const pruning = ref(false);
-const plan = ref<Pruned | null>(null);
 const pruneBusy = ref(false);
-async function planPrune() {
+async function freeDisk() {
   pruneBusy.value = true;
-  const r = await attempt("The check did not work", () => dameless.prune(true));
+  const plan = await attempt("The check did not work", () => dameless.prune(true));
   pruneBusy.value = false;
-  if (!r) return;
-  if (r.builds.length === 0) {
+  if (!plan) return;
+  if (plan.builds.length === 0) {
     toast.show({ title: "Nothing to free", message: "Every binary kept is the newest of its version.", tone: "info" });
     return;
   }
-  plan.value = r;
-  pruning.value = true;
-}
-async function prune() {
+  const yes = await confirm({
+    title: `Free ${bytes(plan.bytes)}?`,
+    body: `${plural(plan.builds.length, "old binary", "old binaries")} would be removed. Only binaries that no trial, tune, game or the bot uses go; nothing else is touched, and they are rebuilt when needed.`,
+    confirmLabel: `Free ${bytes(plan.bytes)}`,
+  });
+  if (!yes) return;
   pruneBusy.value = true;
   const r = await attempt("The disk was not freed", () => dameless.prune(false));
   pruneBusy.value = false;
   if (r) {
-    pruning.value = false;
     toast.show({
       title: `Freed ${bytes(r.bytes)}`,
       message: `${plural(r.builds.length, "old binary", "old binaries")} removed.`,
@@ -255,296 +195,335 @@ async function prune() {
   }
 }
 
+// ---- Health
+
+/** Health, less what the machine tab already shows: the builds, the checkout and the harness. Failures first. */
+const ORDER = { fail: 0, warn: 1, info: 2, ok: 3 } as const;
+const healthItems = computed(() =>
+  (dameless.health?.items ?? [])
+    .filter((i) => !["builds", "harness", "engine"].includes(i.key))
+    .sort((a, b) => ORDER[a.level] - ORDER[b.level]),
+);
+const problems = computed(() => healthItems.value.filter((i) => i.level !== "ok").length);
+const isOk = (i: HealthItem) => i.level === "ok";
+/** The detail without the title it starts with: "fastchess 1.4.0 is installed." under "fastchess" says "1.4.0 is installed.". */
+const detailOf = (i: HealthItem) =>
+  i.detail.toLowerCase().startsWith(i.title.toLowerCase()) ? i.detail.slice(i.title.length).trim() : i.detail;
+/** fastchess or the book is missing: the one thing Install tools fixes. */
+const toolsMissing = computed(() =>
+  (dameless.health?.items ?? []).some((i) => (i.key === "fastchess" || i.key === "book") && i.level === "fail"),
+);
+const installBusy = ref(false);
+async function installTools() {
+  const yes = await confirm({
+    title: "Install the tools?",
+    body: "Downloads fastchess (from its GitHub release, Disservin/fastchess) and the UHO opening book (official-stockfish/books), which trials need. Together a few tens of megabytes, into the tools folder in the data directory. This can take a minute.",
+    confirmLabel: "Install",
+  });
+  if (!yes) return;
+  installBusy.value = true;
+  const r = await attempt("The tools were not installed", () => dameless.installTools());
+  installBusy.value = false;
+  if (r) toast.show({ title: "The tools are installed", tone: "success" });
+}
+
 // ---- This page and its server
 
-const facts = computed(() => [
-  { label: "Server", text: connection.url || location.origin },
-  { label: "Version", text: policy.status?.version ?? "Unknown" },
-]);
+const example = "http://127.0.0.1:7979";
+const server = connection.url || location.origin;
 
 /** Only a page from another origin (the hosted site) pairs with a server; one the server serves needs nothing. */
 const remote = computed(() => connection.url !== "");
-const url = ref(connection.url);
+const serverUrl = ref(connection.url);
 const token = ref("");
 const urlError = computed(() =>
-  url.value && !/^https?:\/\/[^\s/]+\S*$/.test(url.value.trim())
+  serverUrl.value && !/^https?:\/\/[^\s/]+\S*$/.test(serverUrl.value.trim())
     ? "Start with http:// or https://, as in http://127.0.0.1:7979."
     : undefined,
 );
 function pair() {
-  connect(url.value.trim(), token.value.trim());
+  connect(serverUrl.value.trim(), token.value.trim());
   location.reload();
 }
+
+const tabs = computed(() => [
+  { id: "accounts", label: "Accounts" },
+  { id: "machine", label: "This machine" },
+  { id: "health", label: "Health", ...(problems.value ? { count: problems.value } : {}) },
+  { id: "appearance", label: "Appearance" },
+]);
 </script>
 
 <template>
-  <ESheet v-bind="sheet.bind" title="Settings" description="Lichess, the machine, the theme and the hosted app.">
-    <section class="sec" aria-labelledby="s-you">
-      <h2 id="s-you" class="part-title">Your Lichess account</h2>
-      <ESkeleton v-if="!connections.loaded" :lines="2" label="Reading your Lichess account" />
-      <template v-else>
-        <EDescriptionList v-if="you.configured" :items="lichessItems(you)" />
-        <p v-else class="sec-note">Not linked. Log in to play on Lichess from here.</p>
-        <ENotice v-if="you.you?.missing_scopes.length" tone="warning" title="The login is missing a permission">
-          It lacks {{ you.you.missing_scopes.join(", ") }}. Log in again to give it.
-        </ENotice>
-        <div class="sheet-actions">
-          <EButton v-if="!you.configured" :loading="loggingIn" @click="login">Log in with Lichess</EButton>
-          <EButton v-else variant="outline" @click="leaving = 'you'">Log out</EButton>
-        </div>
-      </template>
-    </section>
+  <UiSheetPage v-model:tab="tab" title="Settings" :tabs="tabs">
+    <template #tab-accounts>
+      <div>
+        <UiSection title="Your account">
+          <template v-if="connections.loaded && you.configured" #aside>
+            <UiBadge :tone="stateOf(you).tone" dot>{{ stateOf(you).word }}</UiBadge>
+          </template>
+          <span v-if="!connections.loaded" class="skel block" aria-label="Reading your Lichess account" />
+          <template v-else-if="you.configured">
+            <UiKeyValue dense>
+              <UiKv label="Account">{{ accountName(you) }}</UiKv>
+              <UiKv v-if="you.state === 'error' && you.error" label="Problem" tone="loss">{{ you.error }}</UiKv>
+              <UiKv v-if="you.you?.expires_at" label="Login ends">{{ formatDate(you.you.expires_at) }}</UiKv>
+            </UiKeyValue>
+            <ENotice v-if="you.you?.missing_scopes.length" tone="warning" title="The login is missing a permission">
+              It lacks {{ you.you.missing_scopes.join(", ") }}. Log in again to give it.
+            </ENotice>
+            <div class="actions"><EButton variant="outline" size="sm" @click="leave('you')">Log out</EButton></div>
+          </template>
+          <UiEmpty v-else dense title="Not connected." body="Log in to play on Lichess from here.">
+            <template #actions>
+              <EButton size="sm" :loading="loggingIn" @click="login">Log in with Lichess</EButton>
+            </template>
+          </UiEmpty>
+        </UiSection>
 
-    <section class="sec" aria-labelledby="s-bot">
-      <h2 id="s-bot" class="part-title">Dameless's BOT account</h2>
-      <ESkeleton v-if="!connections.loaded" :lines="2" label="Reading the bot's account" />
-      <template v-else>
-        <EDescriptionList v-if="bot.configured" :items="lichessItems(bot)" />
-        <EForm v-if="!bot.configured" class="token" @submit.prevent="saveBotToken">
-          <EPasswordField
-            v-model="botToken"
-            label="Personal token"
-            autocomplete="off"
-            required
-            :error="tokenError"
-            hint="Made on lichess.org with the bot:play scope, for a BOT account. Kept on this machine, never shown again."
-            @update:model-value="tokenError = undefined"
-          />
-          <div class="sheet-actions">
-            <EButton type="submit" :loading="savingToken" :disabled="botToken.trim().length < 8">Connect</EButton>
-          </div>
-        </EForm>
-        <template v-else>
-          <p class="sec-note">
-            Going online, looking for games and the rules it plays by are on the
-            <ELink :link-component="RouterLink" :to="{ path: '/dameless', hash: '#bot' }">Bot controls</ELink>.
-          </p>
-          <div class="sheet-actions">
-            <EButton variant="outline" @click="leaving = 'bot'">Disconnect</EButton>
-          </div>
-        </template>
-      </template>
-    </section>
-
-    <section class="sec" aria-labelledby="s-machine">
-      <h2 id="s-machine" class="part-title">This machine</h2>
-      <ENotice
-        v-if="failed.machine"
-        tone="warning"
-        title="The machine could not be read"
-        retry
-        @retry="load('machine')"
-      >
-        Dameless did not answer.
-      </ENotice>
-      <ESkeleton v-else-if="!machine" :lines="4" label="Reading the machine" />
-      <template v-else>
-        <EDescriptionList :items="machineItems" />
-        <div class="sheet-actions">
-          <EButton
-            variant="outline"
-            :loading="pruneBusy && !pruning"
-            :disabled="!machine.builds.count"
-            @click="planPrune"
-          >
-            Free disk space
-          </EButton>
-        </div>
-        <p class="sec-note">Old engine binaries are rebuilt when needed. The newest of each version is kept.</p>
-      </template>
-    </section>
-
-    <section class="sec" aria-labelledby="s-health">
-      <h2 id="s-health" class="part-title">Health</h2>
-      <ENotice v-if="failed.health" tone="warning" title="The health check did not run" retry @retry="load('health')">
-        Dameless did not answer.
-      </ENotice>
-      <ESkeleton v-else-if="!dameless.health" :lines="3" label="Checking the machine" />
-      <ul v-else class="plain rows">
-        <li v-for="item in healthItems" :key="item.key" class="row">
-          <div class="row-head">
-            <p class="row-title">{{ item.title }}</p>
-            <EStamp size="sm" :tone="LEVEL[item.level].tone" :label="LEVEL[item.level].word" />
-          </div>
-          <p class="sec-note wrap">{{ item.detail }}</p>
-          <p v-if="item.action" class="sec-note fix-label">{{ item.action.label }}</p>
-          <div v-if="item.action" class="fix">
-            <code class="mono fix-command">{{ item.action.command }}</code>
-            <ECopyButton :text="item.action.command" :label="`Copy the command for ${item.title}`" size="sm" />
-          </div>
-        </li>
-      </ul>
-      <div v-if="toolsMissing" class="sheet-actions">
-        <EButton variant="outline" @click="installing = true">Install tools</EButton>
+        <UiSection title="The bot">
+          <template v-if="connections.loaded && bot.configured" #aside>
+            <UiBadge :tone="stateOf(bot).tone" dot>{{ stateOf(bot).word }}</UiBadge>
+          </template>
+          <span v-if="!connections.loaded" class="skel block" aria-label="Reading the bot's account" />
+          <template v-else-if="bot.configured">
+            <UiKeyValue dense>
+              <UiKv label="Account">{{ accountName(bot) }}</UiKv>
+              <UiKv v-if="bot.state === 'error' && bot.error" label="Problem" tone="loss">{{ bot.error }}</UiKv>
+              <UiKv label="Controls">
+                <ELink :link-component="RouterLink" :to="{ path: '/dameless', hash: '#bot' }">Bot controls</ELink>
+              </UiKv>
+            </UiKeyValue>
+            <div class="actions">
+              <EButton variant="outline" size="sm" @click="leave('bot')">Disconnect the bot</EButton>
+            </div>
+          </template>
+          <EForm v-else class="token" @submit.prevent="saveBotToken">
+            <UiField
+              v-slot="{ id, describedby, invalid }"
+              label="Personal token"
+              :error="tokenError"
+              hint="Made on lichess.org with the bot:play scope, for a BOT account. Kept on this machine, never shown again."
+            >
+              <EPasswordField
+                :id="id"
+                v-model="botToken"
+                label="Personal token"
+                hide-label
+                autocomplete="off"
+                required
+                :aria-describedby="describedby"
+                :aria-invalid="invalid || undefined"
+                @update:model-value="tokenError = undefined"
+              />
+            </UiField>
+            <div class="actions">
+              <EButton type="submit" size="sm" :loading="savingToken" :disabled="botToken.trim().length < 8">
+                Connect the bot
+              </EButton>
+            </div>
+          </EForm>
+        </UiSection>
       </div>
-    </section>
+    </template>
 
-    <section class="sec" aria-labelledby="s-harness">
-      <h2 id="s-harness" class="part-title">The harness</h2>
-      <ENotice
-        v-if="failed.harness"
-        tone="warning"
-        title="The last check could not be read"
-        retry
-        @retry="load('harness')"
-      >
-        Dameless did not answer.
-      </ENotice>
-      <ESkeleton v-else-if="!harness || !harnessStamp" :lines="2" label="Reading the last check" />
-      <template v-else>
-        <div class="row">
-          <div class="row-head">
-            <p class="row-title">Last check</p>
-            <EStamp size="sm" :tone="harnessStamp.tone" :label="harnessStamp.word" />
-          </div>
-          <p class="sec-note wrap">{{ harness.summary }}</p>
-        </div>
-        <div class="sheet-actions">
-          <EButton
-            variant="outline"
-            :disabled="harness.running != null"
-            :loading="checkBusy && !checking"
-            @click="checking = true"
-          >
-            Check the harness
-          </EButton>
-        </div>
-        <p class="sec-note">
-          Plays the champion against an identical copy. A change that does nothing should not pass; if it does, the
-          results on this machine are not to be trusted.
-        </p>
-      </template>
-    </section>
+    <template #tab-machine>
+      <div>
+        <UiSection title="Engine and data">
+          <UiEmpty v-if="failed.machine" dense title="The machine could not be read.">
+            <template #actions>
+              <EButton variant="quiet" size="sm" @click="load('machine')">Try again</EButton>
+            </template>
+          </UiEmpty>
+          <span v-else-if="!machine" class="skel block" aria-label="Reading the machine" />
+          <UiKeyValue v-else dense>
+            <UiKv label="Cores">{{ policy.status ? policy.status.cores : "Unknown" }}</UiKv>
+            <UiKv label="Engine checkout" copy>
+              <PathText v-if="engine?.dir" :text="engine.dir" />
+              <template v-else>Not found</template>
+            </UiKv>
+            <UiKv v-if="engine?.dir && (engine.branch || engine.commit)" label="Checked out" mono>
+              {{ engine.branch ?? "detached"
+              }}<template v-if="engine.commit"> at {{ engine.commit.slice(0, 8) }}</template>
+              <UiBadge v-if="engine.dirty" tone="warn">Uncommitted changes</UiBadge>
+            </UiKv>
+            <UiKv label="Data" copy><PathText :text="machine.data_dir" /></UiKv>
+            <UiKv label="Binaries">
+              {{ binaries }}
+              <EButton
+                variant="quiet"
+                size="sm"
+                :loading="pruneBusy"
+                :disabled="!machine.builds.count"
+                title="Old engine binaries are rebuilt when needed. The newest of each version is kept."
+                @click="freeDisk"
+              >
+                Free disk space
+              </EButton>
+            </UiKv>
+          </UiKeyValue>
+        </UiSection>
 
-    <section class="sec" aria-labelledby="s-look">
-      <h2 id="s-look" class="part-title">Appearance</h2>
-      <ESegmented v-model="choice" label="Theme" hide-label :options="themes" />
-    </section>
-
-    <section class="sec" aria-labelledby="s-token">
-      <h2 id="s-token" class="part-title">The hosted app</h2>
-      <EDescriptionList :items="facts" />
-      <ENotice v-if="failed.token" tone="warning" title="The token could not be read" retry @retry="load('token')">
-        Dameless did not answer.
-      </ENotice>
-      <div v-else-if="dameless.token" class="copy">
-        <EPasswordField :model-value="dameless.token" label="Token" readonly autocomplete="off" class="grow" />
-        <ECopyButton :text="dameless.token" label="Copy the token" variant="outline" />
+        <UiSection title="Harness">
+          <UiEmpty v-if="failed.harness" dense title="The last check could not be read.">
+            <template #actions>
+              <EButton variant="quiet" size="sm" @click="load('harness')">Try again</EButton>
+            </template>
+          </UiEmpty>
+          <span v-else-if="!harness || !harnessBadge" class="skel block" aria-label="Reading the last check" />
+          <template v-else>
+            <UiKeyValue dense>
+              <UiKv label="Status">
+                <UiBadge :tone="harnessBadge.tone">{{ harnessBadge.word }}</UiBadge>
+              </UiKv>
+              <UiKv label="Last check">{{ harness.summary }}</UiKv>
+            </UiKeyValue>
+            <div class="actions">
+              <EButton
+                variant="outline"
+                size="sm"
+                title="Plays the champion against an identical copy. A change that does nothing should not pass; if it does, results on this machine are not to be trusted."
+                :disabled="harness.running != null"
+                :loading="checkBusy"
+                @click="checkHarness"
+              >
+                Check the harness
+              </EButton>
+            </div>
+          </template>
+        </UiSection>
       </div>
-      <ESkeleton v-else :lines="1" label="Reading the token" />
-      <p v-if="!failed.token" class="sec-note">
-        Paste this token on chess.dame.gg to let it reach this machine. Anyone with it can use this server.
-      </p>
-      <EForm v-if="remote" class="token" @submit.prevent="pair">
-        <ETextField
-          v-model="url"
-          label="Server"
-          placeholder="http://127.0.0.1:7979"
-          autocomplete="off"
-          required
-          :error="urlError"
-        />
-        <EPasswordField
-          v-model="token"
-          label="Token"
-          required
-          autocomplete="off"
-          hint="Run dameless token on the machine with the server, and paste what it prints."
-        />
-        <div class="sheet-actions">
-          <EButton type="submit" variant="outline" :disabled="!url.trim() || !token.trim() || !!urlError">
-            Connect
-          </EButton>
-        </div>
-      </EForm>
-    </section>
+    </template>
 
-    <EConfirmDialog
-      v-model:open="leaveOpen"
-      :title="leaving === 'you' ? 'Log out of Lichess?' : 'Disconnect the bot?'"
-      :description="
-        leaving === 'you'
-          ? 'Your login is revoked at Lichess and forgotten here.'
-          : 'Dameless goes offline and its token is forgotten.'
-      "
-      :confirm-label="leaving === 'you' ? 'Log out' : 'Disconnect'"
-      tone="danger"
-      :loading="leaveBusy"
-      :close-on-confirm="false"
-      @confirm="leave"
-    >
-      <p class="text">
-        {{
-          leaving === "you"
-            ? "Games you are playing on Lichess carry on there. You can log in again at any time."
-            : "Games it is playing finish first. You will need a token to connect it again."
-        }}
-      </p>
-    </EConfirmDialog>
+    <template #tab-health>
+      <div>
+        <UiSection title="Checks">
+          <template v-if="toolsMissing" #aside>
+            <EButton variant="outline" size="sm" :loading="installBusy" @click="installTools">Install tools</EButton>
+          </template>
+          <UiEmpty v-if="failed.health" dense title="The health check did not run.">
+            <template #actions><EButton variant="quiet" size="sm" @click="load('health')">Try again</EButton></template>
+          </UiEmpty>
+          <span v-else-if="!dameless.health" class="skel block" aria-label="Checking the machine" />
+          <ul v-else class="health">
+            <li v-for="item in healthItems" :key="item.key" class="item" :class="{ 'item--ok': isOk(item) }">
+              <span class="mark">
+                <UiLive v-if="isOk(item)" tone="win" :label="healthTone.ok.word" />
+                <UiBadge v-else :tone="healthTone[item.level].tone">{{ healthTone[item.level].word }}</UiBadge>
+              </span>
+              <span class="what">
+                <span class="title">{{ item.title }}</span>
+                <span class="detail">{{ isOk(item) ? detailOf(item) : item.detail }}</span>
+                <span v-if="item.action" class="fix">
+                  <span class="fix-label">{{ item.action.label }}</span>
+                  <span class="fix-line">
+                    <code class="fix-command">{{ item.action.command }}</code>
+                    <ECopyButton :text="item.action.command" :label="`Copy the command for ${item.title}`" size="sm" />
+                  </span>
+                </span>
+              </span>
+            </li>
+          </ul>
+        </UiSection>
+      </div>
+    </template>
 
-    <EConfirmDialog
-      v-model:open="installing"
-      title="Install the tools?"
-      description="Downloads fastchess and the opening book, which trials need."
-      confirm-label="Install"
-      :loading="installBusy"
-      :close-on-confirm="false"
-      @confirm="installTools"
-    >
-      <p class="text">
-        fastchess v1.8.2 comes from its GitHub release (github.com/Disservin/fastchess), and the UHO opening book from
-        the Stockfish books repository (github.com/official-stockfish/books). Together a few tens of megabytes; they go
-        into the tools folder in the data directory. This can take a minute.
-      </p>
-    </EConfirmDialog>
+    <template #tab-appearance>
+      <div>
+        <UiSection title="Theme">
+          <UiSeg v-model="choice" label="Theme" :options="themes" />
+        </UiSection>
 
-    <EConfirmDialog
-      v-model:open="checking"
-      title="Check the harness?"
-      description="The champion plays an identical copy of itself: 1,000 pairs at fixed nodes, where every pair must be the same game twice, then 4,000 pairs of quick timed games, which must come out even and symmetric."
-      confirm-label="Start the check"
-      :loading="checkBusy"
-      :close-on-confirm="false"
-      @confirm="checkHarness"
-    >
-      <p class="text">
-        It takes the machine's cores for a few hours. Other work waits its turn, and live games still come first.
-      </p>
-    </EConfirmDialog>
-
-    <EConfirmDialog
-      v-model:open="pruning"
-      title="Free disk space?"
-      :description="
-        plan ? `${plural(plan.builds.length, 'old binary', 'old binaries')}, about ${bytes(plan.bytes)}.` : undefined
-      "
-      :confirm-label="plan ? `Free ${bytes(plan.bytes)}` : 'Free'"
-      :loading="pruneBusy"
-      :close-on-confirm="false"
-      @confirm="prune"
-    >
-      <p class="text">Only binaries that no trial, tune, game or the bot uses are removed. Nothing else is touched.</p>
-    </EConfirmDialog>
-  </ESheet>
+        <UiSection title="The hosted app">
+          <UiKeyValue dense>
+            <UiKv label="Server" copy><PathText :text="server" /></UiKv>
+            <UiKv label="Version">{{ policy.status?.version ?? "Unknown" }}</UiKv>
+          </UiKeyValue>
+          <UiEmpty v-if="failed.token" dense title="The token could not be read.">
+            <template #actions><EButton variant="quiet" size="sm" @click="load('token')">Try again</EButton></template>
+          </UiEmpty>
+          <UiField
+            v-else
+            v-slot="{ id }"
+            label="Token"
+            hint="Paste this token on chess.dame.gg to let it reach this machine. Anyone with it can use this server."
+          >
+            <div class="copy">
+              <EPasswordField
+                v-if="dameless.token"
+                :id="id"
+                :model-value="dameless.token"
+                label="Token"
+                hide-label
+                readonly
+                autocomplete="off"
+                class="grow"
+              />
+              <span v-else class="skel grow" aria-label="Reading the token" />
+              <ECopyButton v-if="dameless.token" :text="dameless.token" label="Copy the token" variant="outline" />
+            </div>
+          </UiField>
+          <EForm v-if="remote" class="token" @submit.prevent="pair">
+            <UiField v-slot="{ id, describedby, invalid }" label="Server" :error="urlError">
+              <ETextField
+                :id="id"
+                v-model="serverUrl"
+                label="Server"
+                hide-label
+                :placeholder="example"
+                autocomplete="off"
+                required
+                :aria-describedby="describedby"
+                :aria-invalid="invalid || undefined"
+              />
+            </UiField>
+            <UiField
+              v-slot="{ id }"
+              label="Token"
+              hint="Run dameless token on the machine with the server, and paste what it prints."
+            >
+              <EPasswordField :id="id" v-model="token" label="Token" hide-label required autocomplete="off" />
+            </UiField>
+            <div class="actions">
+              <EButton
+                type="submit"
+                variant="outline"
+                size="sm"
+                :disabled="!serverUrl.trim() || !token.trim() || !!urlError"
+              >
+                Connect to it
+              </EButton>
+            </div>
+          </EForm>
+        </UiSection>
+      </div>
+    </template>
+  </UiSheetPage>
 </template>
 
 <style scoped>
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
 /* A form in a section: its fields as wide as the section, its button under them. */
 .token {
   display: grid;
-  gap: var(--e-gap-snug);
+  gap: var(--sp-3);
 }
 
-/* Long paths and addresses break where they must instead of widening the sheet. */
-.sec :deep(.e-fact-value) {
-  overflow-wrap: anywhere;
+.block {
+  block-size: var(--h-row-2);
 }
 
-/* The token's field stretches; its copy button sits level with the box (the field has no hint under it). */
+/* The token's field stretches; its copy button sits level with the box. */
 .copy {
   display: flex;
-  align-items: flex-end;
-  gap: var(--e-gap-snug);
+  align-items: flex-start;
+  gap: var(--sp-2);
 }
 
 .grow {
@@ -552,66 +531,84 @@ function pair() {
   min-width: 0;
 }
 
-.text {
-  margin: 0;
-}
-
-/* Health and the harness: a title with its stamp at the end, the detail under it, ruled apart. */
-.rows {
-  gap: 0;
-}
-
-.row {
+/* Health: failures first, each with its words; a healthy one is a green dot and a line. */
+.health {
   display: grid;
-  gap: 2px;
-  min-width: 0;
-  padding-block: var(--e-gap-snug);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.rows .row + .row {
-  border-block-start: var(--line);
+.item {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  align-items: start;
+  gap: var(--sp-2);
+  padding-block: var(--sp-2);
+  border-block-end: var(--e-stroke-hair) solid var(--c-line);
 }
 
-.rows .row:first-child {
-  padding-block-start: 0;
+.item:last-child {
+  border-block-end: 0;
 }
 
-.row-head {
+.item--ok {
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+}
+
+.mark {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--e-gap-snug);
+  min-block-size: var(--h-badge);
 }
 
-.row-title {
+.what {
+  display: grid;
+  gap: var(--sp-1);
   min-width: 0;
-  margin: 0;
-  font-weight: 600;
 }
 
-.wrap {
+.title {
+  font: var(--t-body-strong);
+}
+
+.detail {
+  color: var(--c-ink-2);
+  font: var(--t-meta);
   overflow-wrap: anywhere;
 }
 
-/* The command that fixes a missing piece, in a block with a button that copies it. */
-.fix-label {
-  margin-block-start: 0.25rem;
+.item--ok .what {
+  display: block;
+}
+
+.item--ok .detail::before {
+  content: " ";
 }
 
 .fix {
+  display: grid;
+  gap: var(--sp-1);
+  margin-block-start: var(--sp-1);
+}
+
+.fix-label {
+  font: var(--t-meta);
+}
+
+.fix-line {
   display: flex;
   align-items: center;
-  gap: var(--e-gap-snug);
-  padding-inline-start: var(--e-gap-snug);
-  border: var(--line);
-  border-radius: var(--e-radius-sm);
-  background: color-mix(in oklab, var(--e-muted) 8%, transparent);
+  gap: var(--sp-2);
+  padding-inline-start: var(--sp-2);
+  border-radius: var(--r-1);
+  background: var(--c-raise);
 }
 
 .fix-command {
   flex: 1 1 auto;
   min-width: 0;
+  font: var(--t-fig);
   overflow-wrap: anywhere;
-  font-size: 0.8125rem;
 }
 </style>

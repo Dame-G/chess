@@ -1,53 +1,58 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useToast } from "@eos-ui/vue";
-import { EButton } from "@eos-ui/vue/components/EButton";
-import { ECheckbox } from "@eos-ui/vue/components/ECheckbox";
-import { EDialog } from "@eos-ui/vue/components/EDialog";
-import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
-import { EForm } from "@eos-ui/vue/components/EForm";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import { bytes } from "../format";
-import { importConfirmText, importNeed, nameFromUrl, validName, whyNoRoom } from "../sheets/training";
+import { importNeed, nameFromUrl, validName, whyNoRoom } from "../sheets/training";
 import { useTraining } from "../stores/training";
+import UiDialog from "../ui/UiDialog.vue";
+import UiField from "../ui/UiField.vue";
 
 /**
  * Import a dataset: one shard from a URL, downloaded and converted in the background. Nothing is downloaded without an
- * explicit go-ahead that states the size and where it goes; the size is the one the source reports, and the download
+ * explicit go-ahead that states the size and where it comes from: the primary button is that go-ahead and carries the
+ * size (`Download 7.9 GB`), under a line that names the host. The size is the one the source reports, and the download
  * stops if the server sends anything else.
  */
 const open = defineModel<boolean>("open", { required: true });
 const training = useTraining();
 const toast = useToast();
 
-const url = ref("");
+/** What the address field shows while empty. */
+const scheme = "https://";
+const address = ref("");
 const name = ref("");
 const gigabytes = ref<number | null>(null);
 const sha = ref("");
-const agreed = ref(false);
 const busy = ref(false);
 let named = false;
 
 watch(open, (isOpen) => {
   if (!isOpen) return;
-  url.value = "";
+  address.value = "";
   name.value = "";
   gigabytes.value = null;
   sha.value = "";
-  agreed.value = false;
   named = false;
 });
 // A name from the address, until it is typed over.
-watch(url, (u) => {
+watch(address, (u) => {
   if (!named) name.value = nameFromUrl(u);
 });
 
 const expected = computed(() => Math.round((gigabytes.value ?? 0) * 1e9));
 const need = computed(() => importNeed(expected.value));
 const noRoom = computed(() => (training.data && expected.value ? whyNoRoom(need.value.peak, training.data) : null));
+const host = computed(() => {
+  try {
+    return new URL(address.value.trim()).host;
+  } catch {
+    return "";
+  }
+});
 const urlError = computed(() =>
-  url.value && !/^https:\/\/\S+$/.test(url.value.trim())
+  address.value && !/^https:\/\/\S+$/.test(address.value.trim())
     ? "Start with https://, as in https://example.com/shard.zst."
     : undefined,
 );
@@ -57,9 +62,10 @@ const nameError = computed(() =>
 const shaError = computed(() =>
   sha.value && !/^[0-9a-fA-F]{64}$/.test(sha.value.trim()) ? "A SHA-256 is 64 hexadecimal digits." : undefined,
 );
+const sizeError = computed(() => noRoom.value ?? undefined);
 const ready = computed(
   () =>
-    !!url.value.trim() &&
+    !!address.value.trim() &&
     !urlError.value &&
     validName(name.value) &&
     expected.value > 0 &&
@@ -68,10 +74,11 @@ const ready = computed(
 );
 
 async function start() {
+  if (!ready.value) return;
   busy.value = true;
   try {
     const w = await training.importDataset({
-      url: url.value.trim(),
+      url: address.value.trim(),
       name: name.value.trim(),
       expected_bytes: expected.value,
       ...(sha.value.trim() ? { sha256: sha.value.trim().toLowerCase() } : {}),
@@ -92,51 +99,100 @@ async function start() {
 </script>
 
 <template>
-  <EDialog
+  <UiDialog
     v-model:open="open"
     title="Import a dataset"
-    description="One shard from the web, downloaded and converted to the engine's format."
-    size="md"
-    initial-focus="#import-form input"
+    size="sm"
+    :confirm-label="expected ? `Download ${bytes(expected)}` : 'Download'"
+    :busy="busy"
+    :confirm-disabled="!ready"
+    @confirm="start"
   >
-    <EForm id="import-form" @submit.prevent="start">
-      <ETextField v-model="url" label="Address" placeholder="https://" autocomplete="off" :error="urlError" />
-      <ENumberField
-        v-model="gigabytes"
+    <div class="stack">
+      <UiField v-slot="{ id, describedby, invalid }" label="Address" :error="urlError">
+        <ETextField
+          :id="id"
+          v-model="address"
+          label="Address"
+          hide-label
+          :placeholder="scheme"
+          autocomplete="off"
+          :aria-describedby="describedby"
+          :aria-invalid="invalid || undefined"
+        />
+      </UiField>
+      <UiField
+        v-slot="{ id, describedby, invalid }"
         label="Size it reports"
-        suffix="GB"
-        :min="0"
-        :step="0.1"
+        :error="sizeError"
         hint="Read it from the page that offers the file. The download stops if the server sends a different size."
-      />
-      <ETextField
-        v-model="name"
-        label="Name"
-        autocomplete="off"
-        :error="nameError"
-        @update:model-value="named = true"
-      />
-      <ETextField
-        v-model="sha"
+      >
+        <ENumberField
+          :id="id"
+          v-model="gigabytes"
+          label="Size it reports"
+          hide-label
+          suffix="GB"
+          class="num"
+          :min="0"
+          :step="0.1"
+          :aria-describedby="describedby"
+          :aria-invalid="invalid || undefined"
+        />
+      </UiField>
+      <UiField v-slot="{ id, describedby, invalid }" label="Name" :error="nameError">
+        <ETextField
+          :id="id"
+          v-model="name"
+          label="Name"
+          hide-label
+          autocomplete="off"
+          :aria-describedby="describedby"
+          :aria-invalid="invalid || undefined"
+          @update:model-value="named = true"
+        />
+      </UiField>
+      <UiField
+        v-slot="{ id, describedby, invalid }"
         label="SHA-256"
         optional
-        autocomplete="off"
         :error="shaError"
         hint="If the page gives one, the file is checked against it."
-      />
-      <template v-if="expected">
-        <p class="sec-note">{{ importConfirmText(name, expected) }}</p>
-        <ENotice v-if="noRoom" tone="warning" title="There is not enough room">{{ noRoom }}</ENotice>
-        <ECheckbox
-          v-model="agreed"
-          :label="`Yes, download ${bytes(expected)}`"
-          description="Nothing is downloaded until this is ticked."
+      >
+        <ETextField
+          :id="id"
+          v-model="sha"
+          label="SHA-256"
+          hide-label
+          autocomplete="off"
+          :aria-describedby="describedby"
+          :aria-invalid="invalid || undefined"
         />
-      </template>
-    </EForm>
-    <template #actions>
-      <EButton type="submit" form="import-form" :loading="busy" :disabled="!ready || !agreed">Import</EButton>
-      <EButton variant="outline" @click="open = false">Cancel</EButton>
-    </template>
-  </EDialog>
+      </UiField>
+      <p v-if="expected && host" class="go" role="status">
+        <strong>Download {{ bytes(expected) }} from {{ host }}?</strong>
+        It goes into your data folder (data/{{ name || "name" }}), needs up to {{ bytes(need.peak) }} while it converts
+        and keeps about {{ bytes(need.kept) }}.
+      </p>
+    </div>
+  </UiDialog>
 </template>
+
+<style scoped>
+/* A number takes the room a number needs: narrow enough that the field drops its step buttons. */
+.num {
+  inline-size: 11rem;
+}
+
+.go {
+  margin: 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+}
+
+.go strong {
+  display: block;
+  color: var(--c-ink);
+  font: var(--t-body-strong);
+}
+</style>

@@ -1,39 +1,55 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { RouterLink, useRoute } from "vue-router";
-import { ESheet } from "@eos-ui/vue/components/ESheet";
-import { EButton } from "@eos-ui/vue/components/EButton";
-import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
-import { EStamp } from "@eos-ui/vue/components/EStamp";
-import { EVisuallyHidden } from "@eos-ui/vue/components/EVisuallyHidden";
-import { ETag } from "@eos-ui/vue/components/ETag";
 import { ApiError } from "../api/client";
-import { ago, plusMinus } from "../format";
+import type { Seat } from "../api/types";
+import { formatRelative, plural, plusMinus, resultOf, seatName } from "../format";
 import IdeaActions from "../parts/IdeaActions.vue";
+import { useIdeaActions } from "../parts/ideaActions";
 import Notes from "../parts/Notes.vue";
 import Term from "../parts/Term.vue";
 import TrainView from "../parts/TrainView.vue";
 import TrialEvidence from "../parts/TrialEvidence.vue";
 import TuneView from "../parts/TuneView.vue";
 import { useDameless } from "../stores/dameless";
+import { useGames } from "../stores/games";
 import { useIdeas } from "../stores/ideas";
 import { useVersions } from "../stores/versions";
-import { KIND_WORD, STAGE_WORD, STATUS_TONE, STATUS_WORD, TRIAL_TONE, TRIAL_WORD } from "./idea";
-import { useSheet } from "./useSheet";
+import { ideaTone, trialTone } from "../ui/badge";
+import UiBadge from "../ui/UiBadge.vue";
+import UiEmpty from "../ui/UiEmpty.vue";
+import UiKeyValue from "../ui/UiKeyValue.vue";
+import UiKv from "../ui/UiKv.vue";
+import UiResult from "../ui/UiResult.vue";
+import UiSection from "../ui/UiSection.vue";
+import UiSheetPage from "../ui/UiSheetPage.vue";
+import UiStat from "../ui/UiStat.vue";
+import UiStats from "../ui/UiStats.vue";
+import UiTable from "../ui/UiTable.vue";
+import { decidingTrial, eloFigure, KIND_WORD, STAGE_WORD, STATUS_WORD, TRIAL_WORD } from "./idea";
 
 /**
- * An idea: what it is for, how it is going or ended, the funnel as a row of stages each with its status and deciding
- * number, and under it the chosen stage's evidence: the gauge, Elo, the pairs, the clock it was played at, its games,
- * and for a tune its trajectory. Stop, Resume and Promote are in the head, Push the fork after promoting.
+ * An idea: its verdict first (Elo against the base, what the trials said), and under it three tabs. Trials is the funnel
+ * as a row of stages and, under it, the chosen stage's evidence: the gauge, Elo, the pairs, the clock it was played at,
+ * and for a tune its trajectory. Notes is what it is for and who had it, and Games is every game its trials played.
+ * Stop, Resume and Promote are in the header, Push the fork after promoting.
  */
-const sheet = useSheet();
 const route = useRoute();
+const router = useRouter();
 const ideas = useIdeas();
 const dameless = useDameless();
 const versions = useVersions();
+const games = useGames();
+
+const tabs = [
+  { id: "trials", label: "Trials" },
+  { id: "notes", label: "Notes" },
+  { id: "games", label: "Games" },
+];
+const tab = ref("trials");
 
 const id = computed(() => Number(route.params["id"]));
 const idea = computed(() => ideas.ideas[id.value]);
@@ -83,6 +99,7 @@ watch(
   { immediate: true },
 );
 
+/** The number that decides a stage: its Elo, else its pairs so far. */
 const decider = (t: (typeof trials.value)[number]) =>
   t.elo ? plusMinus(t.elo) : t.pairs ? `${t.pairs.toLocaleString("en-GB")} pairs` : "";
 
@@ -91,161 +108,302 @@ const change = computed(
   () => (idea.value?.version != null ? versions.name(idea.value.version) : undefined) ?? idea.value?.branch,
 );
 const tune = computed(() => ideas.tuneStates[id.value]);
+const untrusted = computed(
+  () => !!dameless.harness && !dameless.harness.trusted && dameless.harness.running == null && trials.value.length > 0,
+);
+
+const actions = useIdeaActions(() => idea.value!);
+
+/**
+ * The headline: the Elo that decided it (or is deciding it) with the pairs behind it, and the stage it is at. A speed,
+ * tune or net idea has no Elo until games start, so there the stage and the verdict are the headline.
+ */
+const lead = computed(() => {
+  const i = idea.value;
+  if (!i) return null;
+  const t = decidingTrial(i) ?? i.trials.find((x) => x.status === "running");
+  const now =
+    i.trials.find((x) => x.status === "running") ?? i.trials.find((x) => x.status === "failed") ?? i.trials.at(-1);
+  return {
+    elo: t?.elo ? eloFigure(t.elo) : null,
+    pairs: t?.pairs ? plural(t.pairs, "pair") : undefined,
+    stage: now ? STAGE_WORD[now.stage] : i.status === "queued" ? "Waiting" : null,
+  };
+});
+const subtitle = computed(() => {
+  const i = idea.value;
+  return i
+    ? `${KIND_WORD[i.kind]} · by ${i.author === "you" ? "you" : "Claude"} · ${formatRelative(i.created_at)}`
+    : undefined;
+});
+
+// ---- Games: every game the idea's trials played, newest first (what the rail holds of them).
+
+const trialStage = computed(() => new Map(trials.value.map((t) => [t.id as number, STAGE_WORD[t.stage]])));
+interface GameRow {
+  id: number;
+  stage: string;
+  white: string;
+  black: string;
+  result: ReturnType<typeof resultOf>;
+  moves: number | null;
+}
+function name(seat: Seat): string {
+  const version = seat.player === "dameless" ? versions.name(seat.version) : undefined;
+  return version ?? seatName(seat);
+}
+const gameRows = computed<GameRow[]>(() =>
+  games.list
+    .filter((g) => g.source.type === "trial" && trialStage.value.has(g.source.trial))
+    .map((g) => ({
+      id: g.id,
+      stage: trialStage.value.get((g.source as { trial: number }).trial) ?? "",
+      white: name(g.white),
+      black: name(g.black),
+      result: g.status === "live" ? "*" : resultOf(g.outcome),
+      moves: g.status === "live" ? null : Math.ceil(g.plies / 2),
+    })),
+);
+const gameColumns = [
+  { key: "white", label: "White" },
+  { key: "black", label: "Black" },
+  { key: "result", label: "Result", align: "center" as const },
+  { key: "moves", label: "Moves", fig: true, hide: "sm" as const },
+  { key: "stage", label: "Trial", hide: "md" as const },
+];
+const openGame = (row: GameRow) => void router.push({ path: "/", query: { game: String(row.id) } });
 </script>
 
 <template>
-  <ESheet v-bind="sheet.bind" :title="idea?.title ?? 'Idea'" :description="idea?.hypothesis">
-    <EEmptyState v-if="missing" title="No such idea">It may have been removed, or the link is wrong.</EEmptyState>
-    <ENotice v-else-if="failed" tone="danger" title="The idea did not load" retry @retry="open">
-      {{ failed }}
-    </ENotice>
-    <div v-else-if="!idea" aria-busy="true"><ESkeleton :lines="5" label="Loading the idea" /></div>
-    <template v-else>
-      <section class="sec" aria-label="The idea">
-        <div class="meta">
-          <EStamp :tone="STATUS_TONE[idea.status]" :label="STATUS_WORD[idea.status]" />
-          <span class="sec-note">
-            {{ idea.author === "you" ? "You" : "Claude" }} · {{ KIND_WORD[idea.kind] }} ·
-            {{ idea.kind === "net" ? "trains a network, tried" : "tries" }}
-            <span v-if="idea.kind !== 'net'" class="mono">{{ change }}</span> against
-            <ELink :link-component="RouterLink" to="/dameless">{{ base ?? "the champion" }}</ELink> ·
-            {{ ago(idea.created_at) }}
-          </span>
-        </div>
+  <UiSheetPage
+    v-model:tab="tab"
+    :title="idea?.title ?? 'Idea'"
+    :subtitle="subtitle"
+    :tabs="idea ? tabs : undefined"
+    wide
+    :loading="!idea && !missing && !failed"
+    :error="failed"
+    @retry="open"
+  >
+    <template v-if="idea" #actions><IdeaActions :idea="idea" :actions="actions" /></template>
+
+    <template v-if="idea && lead" #lead>
+      <UiStats>
+        <UiStat v-if="lead.elo" label="Elo" hint="elo" :value="lead.elo" unit="Elo" size="xl" :sub="lead.pairs" />
+        <UiStat label="Stage" :value="lead.stage" />
+        <UiStat label="Against" :value="base ?? 'The champion'" />
+      </UiStats>
+      <div class="status">
+        <UiBadge :tone="ideaTone[idea.status]">{{ STATUS_WORD[idea.status] }}</UiBadge>
         <p v-if="idea.verdict" class="verdict">{{ idea.verdict }}</p>
-        <p v-if="idea.tags.length" class="tags"><ETag v-for="t in idea.tags" :key="t" :label="t" size="sm" /></p>
-        <IdeaActions :idea="idea" />
-      </section>
-
-      <section v-if="idea.notes" class="sec" aria-labelledby="i-notes">
-        <h2 id="i-notes" class="part-title">Notes</h2>
-        <Notes :text="idea.notes" />
-      </section>
-
-      <section class="sec" aria-labelledby="i-funnel">
-        <div class="sec-head">
-          <h2 id="i-funnel" class="part-title">The trials</h2>
-          <p class="sec-note">Each stage must pass before the next one runs.</p>
-        </div>
-        <ENotice
-          v-if="dameless.harness && !dameless.harness.trusted && dameless.harness.running == null && trials.length"
-          tone="warning"
-          title="Results on this machine are not trusted yet"
-        >
-          {{ dameless.harness.summary }}
-          <ELink :link-component="RouterLink" to="/settings">Check the harness in Settings</ELink>.
-        </ENotice>
-        <p v-if="!trials.length" class="sec-note">
-          {{ idea.status === "queued" ? "It is waiting its turn. The first stage checks the bench." : "No trial ran." }}
-        </p>
-        <ol v-else class="funnel" aria-label="Stages">
-          <li v-for="t in trials" :key="t.id" class="funnel-item">
-            <EButton
-              variant="quiet"
-              class="stage"
-              :aria-pressed="current === String(t.id)"
-              @click="selected = String(t.id)"
-            >
-              <span class="stage-name">{{ STAGE_WORD[t.stage] }}</span>
-              <span class="stage-line">
-                <EStamp size="sm" :tone="TRIAL_TONE[t.status]" :label="TRIAL_WORD[t.status]" />
-                <span class="stage-num mono">{{ decider(t) }}</span>
-              </span>
-            </EButton>
-          </li>
-        </ol>
-        <div v-if="trial" class="panel" aria-live="polite">
-          <EVisuallyHidden as="h3">{{ STAGE_WORD[trial.stage] }}</EVisuallyHidden>
-          <TuneView v-if="trial.stage === 'tune' && tune" :tune="tune" :running="trial.status === 'running'" />
-          <TrainView v-else-if="trial.stage === 'train'" :idea="idea" :status="trial.status" />
-          <ESkeleton v-else-if="!full && trial.stage !== 'tune'" :lines="4" label="Loading the stage" />
-          <TrialEvidence v-else-if="full" :trial="full" />
-          <p v-else-if="trial.detail" class="verdict">{{ trial.detail }}</p>
-        </div>
-        <p v-if="idea.kind === 'speed'" class="sec-note">
-          A speed change must leave the <Term k="bench" /> exactly as it was; then the two builds race and no games are
-          played.
-        </p>
-      </section>
+      </div>
+      <p v-if="actions.promoted && !actions.pushed" class="meta">
+        Promoted on this machine. The fork's main has not been pushed to the remote.
+      </p>
+      <p v-if="actions.pushed" class="meta">Pushed at {{ actions.pushed }}.</p>
+      <ENotice v-if="actions.problem" tone="danger" title="That did not work" role="alert">
+        {{ actions.problem }}
+      </ENotice>
     </template>
-  </ESheet>
+
+    <UiEmpty v-if="missing" title="That idea isn't here" body="It may have been removed, or the link is wrong.">
+      <template #actions>
+        <ELink :link-component="RouterLink" to="/dameless?tab=ideas">Back to the ideas</ELink>
+      </template>
+    </UiEmpty>
+
+    <template v-if="idea" #tab-trials>
+      <div>
+        <ENotice v-if="untrusted" tone="warning" title="Results on this machine are not trusted yet">
+          {{ dameless.harness?.summary }}
+          <ELink :link-component="RouterLink" to="/settings?tab=machine">Check the harness in Settings</ELink>.
+        </ENotice>
+        <UiEmpty
+          v-if="!trials.length"
+          dense
+          :title="
+            idea.status === 'queued' ? 'It is waiting its turn. The first stage checks the bench.' : 'No trial ran.'
+          "
+        />
+        <template v-else>
+          <ol v-if="trials.length > 1" class="stages" aria-label="Stages">
+            <li v-for="t in trials" :key="t.id">
+              <button
+                type="button"
+                class="stage"
+                :aria-pressed="current === String(t.id)"
+                @click="selected = String(t.id)"
+              >
+                <span class="stage-name">{{ STAGE_WORD[t.stage] }}</span>
+                <UiBadge :tone="trialTone[t.status]">{{ TRIAL_WORD[t.status] }}</UiBadge>
+                <span class="stage-num">{{ decider(t) || "–" }}</span>
+              </button>
+            </li>
+          </ol>
+          <div v-if="trial" class="panel" aria-live="polite">
+            <TuneView v-if="trial.stage === 'tune' && tune" :tune="tune" :running="trial.status === 'running'" />
+            <TrainView v-else-if="trial.stage === 'train'" :idea="idea" :status="trial.status" />
+            <ESkeleton v-else-if="!full && trial.stage !== 'tune'" :lines="4" label="Loading the stage" />
+            <TrialEvidence v-else-if="full" :trial="full" />
+            <p v-else-if="trial.detail" class="verdict">{{ trial.detail }}</p>
+          </div>
+          <p v-if="idea.kind === 'speed'" class="meta">
+            A speed change must leave the <Term k="bench" /> exactly as it was; then the two builds race and no games
+            are played.
+          </p>
+        </template>
+      </div>
+    </template>
+
+    <template v-if="idea" #tab-notes>
+      <div>
+        <UiSection title="Hypothesis">
+          <p class="prose">{{ idea.hypothesis || "No hypothesis was written." }}</p>
+        </UiSection>
+        <UiSection title="Details">
+          <UiKeyValue>
+            <UiKv label="Kind">{{ KIND_WORD[idea.kind] }}</UiKv>
+            <UiKv v-if="idea.kind !== 'net'" label="Change" mono>{{ change }}</UiKv>
+            <UiKv label="Against">
+              <ELink :link-component="RouterLink" to="/dameless">{{ base ?? "The champion" }}</ELink>
+            </UiKv>
+            <UiKv label="By">{{ idea.author === "you" ? "You" : "Claude" }}</UiKv>
+            <UiKv v-if="idea.tags.length" label="Tags">
+              <span class="tags"
+                ><UiBadge v-for="t in idea.tags" :key="t">{{ t }}</UiBadge></span
+              >
+            </UiKv>
+          </UiKeyValue>
+        </UiSection>
+        <UiSection v-if="idea.notes" title="Notes"><Notes :text="idea.notes" /></UiSection>
+      </div>
+    </template>
+
+    <template v-if="idea" #tab-games>
+      <UiTable
+        label="Games its trials played"
+        :columns="gameColumns"
+        :rows="gameRows"
+        row-key="id"
+        empty="Its trials have not played a game the rail holds yet."
+        @select="openGame"
+      >
+        <template #cell-result="{ row }"><UiResult :result="row.result" /></template>
+        <template #cell-moves="{ row }">{{ row.moves ?? "–" }}</template>
+      </UiTable>
+    </template>
+  </UiSheetPage>
 </template>
 
 <style scoped>
-.meta {
+.status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--e-gap-snug);
+  gap: var(--sp-2);
 }
 
 .verdict {
   margin: 0;
-  font-weight: 600;
+  font: var(--t-body-strong);
+}
+
+.meta {
+  margin: 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+}
+
+.prose {
+  max-inline-size: var(--w-measure);
+  margin: 0;
 }
 
 .tags {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--e-gap-tight);
-  margin: 0;
+  gap: var(--sp-1);
 }
 
-.funnel {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--e-gap-tight);
+/* The funnel is a row of equal cells, as many as it has stages: each says its name, its state and its number. */
+.stages {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--sp-1);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.funnel-item {
-  display: flex;
-  align-items: center;
-}
-
 .stage {
+  position: relative;
   display: grid;
   justify-items: start;
-  gap: 0.25rem;
-  block-size: auto;
-  padding-block: 0.375rem;
-  border: var(--line);
+  gap: var(--sp-1);
+  inline-size: 100%;
+  min-block-size: var(--h-row-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: var(--e-stroke-hair) solid var(--c-line-strong);
+  border-radius: var(--r-1);
+  background: transparent;
+  color: var(--c-ink);
   text-align: start;
+  cursor: pointer;
 }
 
-/* The chosen stage is marked by its border and a soft wash; its words stay in ink, which the button's pressed colour
-   would turn white on the light wash. */
+.stage:hover {
+  background: var(--c-raise);
+}
+
 .stage[aria-pressed="true"] {
-  border-color: var(--e-primary);
-  background: var(--e-primary-soft);
-  color: var(--e-ink);
+  background: var(--c-sunk);
 }
 
-.stage[aria-pressed="true"] .stage-name,
-.stage[aria-pressed="true"] .stage-num {
-  color: var(--e-ink);
+.stage[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  inset: auto var(--sp-2) 0;
+  block-size: var(--e-stroke-focus);
+  background: var(--c-act);
+}
+
+.stage:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: calc(-1 * var(--e-stroke-focus));
 }
 
 .stage-name {
-  font-weight: 600;
-}
-
-.stage-line {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--e-gap-snug);
+  max-inline-size: 100%;
+  overflow: hidden;
+  font: var(--t-body-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stage-num {
-  color: var(--e-muted);
-  font-size: 0.8125rem;
+  max-inline-size: 100%;
+  overflow: hidden;
+  color: var(--c-ink-2);
+  font: var(--t-fig);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .panel {
   display: grid;
-  gap: var(--e-gap-snug);
-  padding-block-start: var(--e-gap-base);
+  gap: var(--sp-3);
+}
+
+.stages + .panel {
+  padding-block-start: var(--sp-4);
+}
+
+@media (width < 30rem) {
+  /* Four stages do not fit side by side on a phone: two and two. */
+  .stages {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>

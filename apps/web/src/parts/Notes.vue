@@ -30,7 +30,7 @@ const tag = (s: Span) =>
 <style scoped>
 .notes {
   display: grid;
-  gap: var(--e-gap-tight);
+  gap: var(--sp-2);
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -40,18 +40,17 @@ const tag = (s: Span) =>
 }
 
 .notes :is(ul, ol) {
-  padding-inline-start: 1.25rem;
+  padding-inline-start: var(--sp-5);
 }
 
 .notes h4 {
-  font-weight: 600;
+  font: var(--t-body-strong);
 }
 
 .notes code {
-  padding: 0 0.25rem;
-  border-radius: var(--e-radius-sm);
-  background: var(--e-surface-tint, var(--e-border));
-  font-family: var(--e-font-mono);
-  font-size: 0.875em;
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-1);
+  background: var(--c-sunk);
+  font: var(--t-fig);
 }
 </style>

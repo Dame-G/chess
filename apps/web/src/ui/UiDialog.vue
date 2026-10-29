@@ -123,6 +123,16 @@ function onKey(e: KeyboardEvent) {
   background: var(--c-raise);
 }
 
+/* The disabled primary is a quiet, filled-in-grey button, not eos's dashed outline (issue D-6). */
+.ui-dialog-confirm:disabled {
+  background: var(--c-sunk);
+  color: var(--c-ink-3);
+}
+
+.ui-dialog-confirm:disabled::before {
+  display: none;
+}
+
 .ui-dialog-hint {
   flex: 1 1 auto;
   min-width: 0;

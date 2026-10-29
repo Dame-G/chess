@@ -4,24 +4,34 @@ import { RouterLink } from "vue-router";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
-import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import type { SeekMode } from "../api/types";
 import { speedName, timeControl, timeOfDay } from "../format";
 import { useConnections } from "../stores/connections";
-import { declineWords, rulesSummary } from "./bot";
+import UiBadge from "../ui/UiBadge.vue";
+import UiEmpty from "../ui/UiEmpty.vue";
+import UiField from "../ui/UiField.vue";
+import UiKeyValue from "../ui/UiKeyValue.vue";
+import UiKv from "../ui/UiKv.vue";
+import UiMeter from "../ui/UiMeter.vue";
+import UiSection from "../ui/UiSection.vue";
+import UiSeg from "../ui/UiSeg.vue";
+import UiTable from "../ui/UiTable.vue";
+import { declineWords, rulesItems } from "./bot";
 import BotSettingsDialog from "./BotSettingsDialog.vue";
 
 /**
- * Out in the world: Dameless on Lichess as its BOT account. The online switch, its rating, whether it is looking for
- * games, the rules it takes challenges by (with an edit dialog) and the challenges it answered lately. Every control
- * just calls its route; the person clicking is the one deciding.
+ * The bot: Dameless on Lichess as its BOT account. The online switch, whether it is looking for games, how many of the
+ * day's games against bots are used, the rules it takes challenges by (with an edit dialog) and the challenges it
+ * answered lately. Every control just calls its route; the person clicking is the one deciding.
  */
 const connections = useConnections();
 
 const conn = computed(() => connections.bot);
 const bot = computed(() => conn.value.bot);
 const online = computed(() => bot.value?.online === true);
+const username = computed(() => conn.value.account?.username ?? null);
+const rules = computed(() => (bot.value ? rulesItems(bot.value.settings) : []));
 const editing = ref(false);
 const busy = ref(false);
 /** Why the last control did not work, said under the controls until the next try. */
@@ -42,11 +52,16 @@ async function run(action: () => Promise<unknown>) {
 }
 
 const seekMode = computed({
-  get: () => bot.value?.seek.mode ?? "off",
-  set: (v: string | undefined) => {
-    if (v) void run(() => connections.setBotSeek(v as SeekMode));
-  },
+  get: () => (bot.value?.seek.mode ?? "off") as SeekMode,
+  set: (v: SeekMode) => void run(() => connections.setBotSeek(v)),
 });
+const seekOptions = computed(() =>
+  [
+    { value: "off", label: "Off" },
+    { value: "once", label: "Find one game" },
+    { value: "always", label: "Always" },
+  ].map((o) => ({ ...o, value: o.value as SeekMode, disabled: !online.value || busy.value })),
+);
 
 const state = computed(() => {
   const c = conn.value;
@@ -73,151 +88,162 @@ const seekLine = computed(() => {
 const limit = computed(() => {
   const b = bot.value;
   if (!b) return null;
-  if (b.bot_limit_until)
-    return `Played 100 games against bots today. It looks again at ${timeOfDay(b.bot_limit_until)}.`;
-  return `${b.bot_games_today} of 100 games against bots in the last day.`;
+  const used = b.bot_games_today;
+  return {
+    used,
+    reached: !!b.bot_limit_until,
+    text: `${used} of 100`,
+    note: b.bot_limit_until
+      ? `It played 100 games against bots. It looks again at ${timeOfDay(b.bot_limit_until)}.`
+      : undefined,
+  };
 });
 
-const recent = computed(() => connections.recent.filter((e) => e.challenge.connection === "bot").slice(0, 5));
-const answered = (e: (typeof recent.value)[number]) => {
-  const c = e.challenge;
-  const who = `${c.opponent.name}${c.opponent.rating ? ` (${c.opponent.rating})` : ""}`;
-  const what = `${c.rated ? "rated" : "casual"} ${speedName[c.speed].toLowerCase()}${c.time ? ` ${timeControl(c.time)}` : ""}`;
-  const rest = `${who}, ${what}`;
-  if (e.event === "accepted") return { verdict: "Accepted", good: true, rest };
-  const why = declineWords(e.reason);
-  const verdict = e.event === "canceled" ? "Withdrawn" : c.direction === "outgoing" ? "Declined by" : "Declined";
-  return { verdict, good: false, rest: `${rest}${why ? ` · ${why}` : ""}` };
-};
+interface Entry {
+  id: string;
+  verdict: string;
+  tone: "win" | "neutral" | "info";
+  who: string;
+  what: string;
+  why: string;
+}
+const entries = computed<Entry[]>(() => {
+  const who = (o: { name: string; rating?: number | null }) => `${o.name}${o.rating ? ` (${o.rating})` : ""}`;
+  const waiting: Entry[] = conn.value.challenges.map((c) => ({
+    id: c.id,
+    verdict: "Waiting",
+    tone: "info",
+    who: who(c.opponent),
+    what: `${c.rated ? "Rated" : "Casual"} ${speedName[c.speed].toLowerCase()}${c.time ? ` ${timeControl(c.time)}` : ""}`,
+    why: "Waiting for an answer",
+  }));
+  const answered: Entry[] = connections.recent
+    .filter((e) => e.challenge.connection === "bot")
+    .slice(0, 5)
+    .map((e) => {
+      const c = e.challenge;
+      const accepted = e.event === "accepted";
+      return {
+        id: `${c.id}-${e.event}`,
+        verdict: accepted
+          ? "Accepted"
+          : e.event === "canceled"
+            ? "Withdrawn"
+            : c.direction === "outgoing"
+              ? "Declined by"
+              : "Declined",
+        tone: accepted ? "win" : "neutral",
+        who: who(c.opponent),
+        what: `${c.rated ? "Rated" : "Casual"} ${speedName[c.speed].toLowerCase()}${c.time ? ` ${timeControl(c.time)}` : ""}`,
+        why: accepted ? "" : declineWords(e.reason),
+      };
+    });
+  return [...waiting, ...answered];
+});
+const columns = [
+  { key: "verdict", label: "Answer" },
+  { key: "who", label: "Challenger" },
+  { key: "what", label: "Game", hide: "sm" as const },
+  { key: "why", label: "Why", hide: "sm" as const },
+];
 </script>
 
 <template>
-  <section id="d-bot" class="world" aria-labelledby="w-title">
-    <div class="sec-head">
-      <h2 id="w-title" class="part-title">Out in the world</h2>
-      <p class="sec-note">
-        <template v-if="conn.account">
-          <ELink :href="`https://lichess.org/@/${conn.account?.username}`" external>{{ conn.account?.username }}</ELink>
-          <span v-if="connections.botRating">
-            · <span class="mono">{{ connections.botRating }}</span> blitz</span
-          >
-        </template>
-        <template v-else>No Lichess account linked</template>
-      </p>
-    </div>
-
-    <p v-if="!conn.configured" class="sec-note">
-      Dameless has no BOT account token yet.
-      <ELink :link-component="RouterLink" to="/settings">Add one in Settings</ELink>.
-    </p>
+  <div id="d-bot" class="bot">
+    <UiEmpty v-if="!conn.configured" dense title="Dameless has no BOT account token yet.">
+      <template #actions>
+        <ELink :link-component="RouterLink" to="/settings?tab=accounts">Add one in Settings</ELink>
+      </template>
+    </UiEmpty>
     <template v-else-if="bot">
-      <div class="line">
-        <ESwitch
-          :model-value="online"
-          label="Play on Lichess"
-          :description="state"
-          :disabled="busy || (noVersion && !online)"
-          @update:model-value="run(() => connections.setBotOnline($event))"
-        />
-      </div>
+      <UiSection title="On Lichess">
+        <template #aside>
+          <span v-if="username" class="who">
+            <ELink :href="`https://lichess.org/@/${username}`" external>{{ username }}</ELink>
+            <span v-if="connections.botRating" class="rating"> · {{ connections.botRating }} blitz</span>
+          </span>
+        </template>
+        <div class="controls">
+          <ESwitch
+            :model-value="online"
+            label="Play on Lichess"
+            :description="state"
+            :disabled="busy || (noVersion && !online)"
+            @update:model-value="run(() => connections.setBotOnline($event))"
+          />
 
-      <ENotice v-if="failure" tone="warning" title="That did not work" role="alert">{{ failure }}</ENotice>
+          <ENotice v-if="failure" tone="warning" title="That did not work" role="alert">{{ failure }}</ENotice>
 
-      <div class="line">
-        <ESegmented
-          v-model="seekMode"
-          label="Looking for games"
-          size="sm"
-          :disabled="!online || busy"
-          :options="[
-            { value: 'off', label: 'Off' },
-            { value: 'once', label: 'Find one game' },
-            { value: 'always', label: 'Keep playing' },
-          ]"
-        />
-        <p v-if="seekLine" class="sec-note" role="status">{{ seekLine }}</p>
-        <p v-if="limit && seekMode !== 'off'" class="sec-note">{{ limit }}</p>
-      </div>
+          <UiField group label="Looking for games">
+            <UiSeg v-model="seekMode" label="Looking for games" :options="seekOptions" />
+          </UiField>
+          <p v-if="seekLine" class="line" role="status">{{ seekLine }}</p>
 
-      <div class="rules">
-        <p v-if="noVersion" class="rules-text" role="status">
+          <UiMeter
+            v-if="limit"
+            label="Games against bots in the last day"
+            :value="limit.used"
+            :max="100"
+            :text="limit.text"
+            :tone="limit.reached ? 'warn' : undefined"
+          />
+          <p v-if="limit?.note" class="line">{{ limit.note }}</p>
+        </div>
+      </UiSection>
+
+      <UiSection title="Rules">
+        <template #aside>
+          <EButton :variant="noVersion ? 'primary' : 'outline'" size="sm" @click="editing = true">
+            <template v-if="noVersion">Choose a version</template>
+            <template v-else>Edit rules</template>
+          </EButton>
+        </template>
+        <p v-if="noVersion" class="line" role="status">
           No version chosen: the bot won't play. Choose the version that plays in its rules.
         </p>
-        <p v-else class="rules-text">{{ rulesSummary(bot.settings) }}</p>
-        <EButton :variant="noVersion ? 'primary' : 'outline'" size="sm" @click="editing = true">
-          <template v-if="noVersion">Choose a version</template>
-          <template v-else>Edit rules</template>
-        </EButton>
-      </div>
+        <UiKeyValue dense>
+          <UiKv v-for="r in rules" :key="r.label" :label="r.label" :tone="r.tone">
+            {{ r.value }}
+          </UiKv>
+        </UiKeyValue>
+      </UiSection>
 
-      <div v-if="conn.challenges.length || recent.length" class="recent">
-        <h3 class="part-title">Recent challenges</h3>
-        <ul class="plain">
-          <li v-for="c in conn.challenges" :key="c.id" class="sec-note">
-            {{ c.opponent.name }}{{ c.opponent.rating ? ` (${c.opponent.rating})` : "" }} is waiting for an answer
-          </li>
-          <li v-for="e in recent" :key="e.challenge.id" class="entry">
-            <span :class="answered(e).good ? 'yes' : 'no'">{{ answered(e).verdict }}</span>
-            {{ answered(e).rest }}
-          </li>
-        </ul>
-      </div>
-      <p v-else class="sec-note">Challenges it answers show here, with why it said no.</p>
+      <UiSection title="Recent challenges">
+        <UiEmpty v-if="!entries.length" dense title="Challenges it answers show here, with why it said no." />
+        <UiTable v-else label="Recent challenges" :columns="columns" :rows="entries" row-key="id">
+          <template #cell-verdict="{ row }">
+            <UiBadge :tone="row.tone">{{ row.verdict }}</UiBadge>
+          </template>
+          <template #cell-why="{ row }">{{ row.why || "–" }}</template>
+        </UiTable>
+      </UiSection>
 
-      <BotSettingsDialog v-model:open="editing" :settings="bot.settings" />
+      <BotSettingsDialog v-if="bot" v-model:open="editing" :settings="bot.settings" />
     </template>
-  </section>
+  </div>
 </template>
 
 <style scoped>
-.world {
-  display: grid;
-  gap: var(--e-gap-snug);
+.bot {
   min-width: 0;
 }
 
+.controls {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.who {
+  font: var(--t-meta);
+}
+
+.rating {
+  color: var(--c-ink-2);
+}
+
 .line {
-  display: grid;
-  gap: var(--e-gap-tight);
-}
-
-.rules {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--e-gap-snug);
-  padding-block: var(--e-gap-snug);
-  border-block: var(--line);
-}
-
-.rules-text {
-  flex: 1 1 16rem;
   margin: 0;
-}
-
-.recent {
-  display: grid;
-  gap: var(--e-gap-tight);
-}
-
-.entry .yes,
-.entry .no {
-  font-weight: 600;
-}
-
-.entry .yes {
-  color: var(--e-success);
-}
-
-.entry .no {
-  color: var(--e-ink);
-}
-
-.entry {
-  padding-block: 0.25rem;
-  border-block-end: var(--line);
-  color: var(--e-muted);
-  font: var(--e-type-small);
+  color: var(--c-ink-2);
+  font: var(--t-meta);
 }
 </style>

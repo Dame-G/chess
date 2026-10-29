@@ -1,40 +1,50 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { ESheet } from "@eos-ui/vue/components/ESheet";
+import { PhLightbulb } from "@phosphor-icons/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ELink } from "@eos-ui/vue/components/ELink";
-import { ENotice } from "@eos-ui/vue/components/ENotice";
-import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
-import { EStamp } from "@eos-ui/vue/components/EStamp";
 import type { ChartSeries } from "../parts/chart";
 import BotCard from "../parts/BotCard.vue";
 import BrainCard from "../parts/BrainCard.vue";
+import IdeaRow from "../parts/IdeaRow.vue";
 import LevelsCard from "../parts/LevelsCard.vue";
-import ProgressChart from "../parts/ProgressChart.vue";
 import LineChart from "../parts/LineChart.vue";
 import Logbook from "../parts/Logbook.vue";
 import NewIdea from "../parts/NewIdea.vue";
-import Term from "../parts/Term.vue";
-import { signed } from "../format";
+import { formatElo, seatName } from "../format";
+import { useConnections } from "../stores/connections";
 import { useDameless } from "../stores/dameless";
+import { useGames } from "../stores/games";
 import { useIdeas } from "../stores/ideas";
-import { useProgress } from "../stores/progress";
 import { useVersions } from "../stores/versions";
-import { KIND_WORD, progressWord, STATUS_TONE, STATUS_WORD } from "./idea";
-import { useSheet } from "./useSheet";
+import UiEmpty from "../ui/UiEmpty.vue";
+import UiLive from "../ui/UiLive.vue";
+import UiSection from "../ui/UiSection.vue";
+import UiSheetPage from "../ui/UiSheetPage.vue";
+import UiStat from "../ui/UiStat.vue";
+import UiStats from "../ui/UiStats.vue";
 
 /**
- * Dameless: the champion and its strength line over the versions, the ideas running and queued, the logbook of every
- * idea, New idea (one dialog for every kind), and Out in the world: the bot on Lichess.
+ * Dameless: the champion and its strength over the versions and the levels (Strength), the ideas running and the
+ * logbook of every one (Ideas), the network and the data it learns from (Brain), and its games on Lichess (Bot). New
+ * idea is one dialog for every kind. Settings links to `/dameless#bot`, which opens the Bot tab.
  */
-const sheet = useSheet();
 const dameless = useDameless();
 const ideas = useIdeas();
-const progress = useProgress();
 const versions = useVersions();
+const connections = useConnections();
+const games = useGames();
 const route = useRoute();
 const router = useRouter();
+
+const tabs = [
+  { id: "strength", label: "Strength" },
+  { id: "ideas", label: "Ideas" },
+  { id: "brain", label: "Brain" },
+  { id: "bot", label: "Bot" },
+];
+const tab = ref("strength");
 
 const failed = ref<string | null>(null);
 async function read() {
@@ -45,17 +55,14 @@ async function read() {
     failed.value = e instanceof Error ? e.message : String(e);
   }
 }
-/** Settings links to `/dameless#bot`: scroll to the bot once the sections above it have their height. */
-async function toBot() {
-  if (route.hash !== "#bot") return;
-  await nextTick();
-  document.getElementById("d-bot")?.scrollIntoView({ block: "start" });
+onMounted(() => void read());
+
+/** `/dameless#bot` (Settings's Bot controls link) lands on the Bot tab; `?new=idea` on Ideas, with the dialog open. */
+function fromAddress() {
+  if (route.hash === "#bot") tab.value = "bot";
 }
-onMounted(() => {
-  void Promise.allSettled([progress.load(), read()]).then(toBot);
-  void toBot();
-});
-watch(() => route.hash, toBot);
+fromAddress();
+watch(() => route.hash, fromAddress);
 
 const overview = computed(() => dameless.overview);
 const champion = computed(() => overview.value?.champion ?? versions.current);
@@ -78,15 +85,28 @@ const readout = computed(() => {
   const p = strength.value[hover.value ?? strength.value.length - 1];
   if (!p) return "";
   const margin = p.high != null && p.low != null ? `, ±${((p.high - p.low) / 2).toFixed(1)}` : "";
-  return `${p.label ?? ""}: ${signed(p.value, 1)} Elo over v1${margin}`;
+  return `${p.label ?? ""}: ${formatElo(p.value, 1)} Elo over v1${margin}`;
+});
+/** The champion's Elo over v1 and its margin; nothing until a second version has been promoted. */
+const over = computed(() => {
+  const p = strength.value.at(-1);
+  if (!p || strength.value.length < 2) return null;
+  return { value: formatElo(p.value, 1), margin: p.high != null && p.low != null ? (p.high - p.low) / 2 : null };
 });
 
-/** Both players have a line to draw: yours (rating) and Dameless's (Elo). */
-const both = computed(() => {
-  const s = progress.chart?.series ?? [];
-  return (
-    s.some((x) => x.metric === "rating" && x.points.length) && s.some((x) => x.metric === "elo" && x.points.length)
-  );
+/** The bot's live game: who it plays, and where to watch it. */
+const playing = computed(() => {
+  const id = connections.bot.playing[0];
+  const g = id != null ? games.list.find((x) => x.id === id) : undefined;
+  if (!g) return null;
+  const them = g.white.player === "dameless" ? g.black : g.white;
+  return { id, name: seatName(them), count: connections.bot.playing.length };
+});
+const botState = computed(() => {
+  const c = connections.bot;
+  if (!c.configured) return "Not linked";
+  if (c.bot?.online) return playing.value ? "Playing" : "Online";
+  return !c.bot?.settings.version ? "No version" : "Offline";
 });
 
 /** Champions taken from upstream Reckless, newest first, and the last sync (shown when it failed). */
@@ -98,19 +118,17 @@ function upstreamLabel(v: (typeof fromUpstream.value)[number]): string {
 }
 
 const inProgress = computed(() => [...ideas.running, ...ideas.queued]);
-/** "Gain · Short games · 412 pairs so far", leaving out a stage that only repeats the kind (a tune is at "Tune"). */
-function note(i: (typeof inProgress.value)[number]): string {
-  const stage = progressWord(i);
-  const detail = ideas.ideas[i.id]?.trials.find((t) => t.status === "running")?.detail;
-  return [KIND_WORD[i.kind], stage === KIND_WORD[i.kind] ? "" : stage, detail ?? ""].filter(Boolean).join(" · ");
-}
 
 // New idea: opened from the button, or by `/dameless?new=idea` (the command bar's "new idea").
 const creating = ref(route.query["new"] === "idea");
+if (creating.value) tab.value = "ideas";
 watch(
   () => route.query["new"],
   (v) => {
-    if (v === "idea") creating.value = true;
+    if (v === "idea") {
+      tab.value = "ideas";
+      creating.value = true;
+    }
   },
 );
 watch(creating, (open) => {
@@ -119,124 +137,137 @@ watch(creating, (open) => {
 </script>
 
 <template>
-  <ESheet
-    v-bind="sheet.bind"
+  <UiSheetPage
+    v-model:tab="tab"
     title="Dameless"
-    description="The engine: its strength over its versions, the ideas being tried, and its games on Lichess."
+    :subtitle="champion ? `Champion ${champion.name}` : undefined"
+    :tabs="tabs"
+    wide
+    :loading="!overview && !failed"
+    :error="failed"
+    @retry="read"
   >
-    <ENotice v-if="failed" tone="danger" title="Dameless did not load" class="gap" retry @retry="read">
-      {{ failed }}
-    </ENotice>
+    <template #lead>
+      <UiStats :columns="3">
+        <UiStat label="Champion" hint="champion" :value="champion?.name ?? null" size="xl" />
+        <UiStat
+          label="Over v1"
+          hint="elo"
+          :value="over?.value ?? null"
+          unit="Elo"
+          :sub="
+            over ? (over.margin != null ? `±${over.margin.toFixed(1)}` : undefined) : 'Starts with the second champion'
+          "
+        />
+        <UiStat label="Bot" :value="botState">
+          <template v-if="playing" #sub>
+            <RouterLink :to="{ path: '/', query: { game: String(playing.id) } }" class="playing">
+              <UiLive label="Live" /> {{ playing.name
+              }}<template v-if="playing.count > 1"> and {{ playing.count - 1 }} more</template>
+            </RouterLink>
+          </template>
+        </UiStat>
+      </UiStats>
+    </template>
 
-    <section class="sec" aria-labelledby="d-strength">
-      <div class="sec-head">
-        <h2 id="d-strength" class="part-title">Strength</h2>
-        <p v-if="champion" class="sec-note">
-          <Term k="champion" /> <strong class="mono">{{ champion.name }}</strong>
-        </p>
+    <template #tab-strength>
+      <div>
+        <UiSection title="Strength">
+          <template #aside>
+            <ELink :link-component="RouterLink" :to="{ path: '/compare', query: { players: 'you,dameless' } }">
+              Compare with you
+            </ELink>
+          </template>
+          <LineChart
+            v-if="strength.length > 1"
+            label="Dameless's strength: cumulative Elo over each champion version"
+            :x="x"
+            :series="series"
+            :height="170"
+            :x-format="(v) => (Number.isInteger(v) ? `v${v}` : '')"
+            :format="(v) => formatElo(v, 0)"
+            @point="hover = $event"
+          >
+            <span class="mono">{{ readout }}</span>
+          </LineChart>
+          <UiEmpty v-else dense title="The line starts once a second version is promoted." />
+        </UiSection>
+
+        <UiSection v-if="fromUpstream.length || lastSync?.outcome === 'failed'" title="From upstream">
+          <ul class="upstream">
+            <li v-for="v in fromUpstream" :key="v.id">
+              <strong class="mono">{{ upstreamLabel(v) }}</strong>
+              {{ v.upstream?.commits.map((c) => c.subject).join("; ") }}
+            </li>
+          </ul>
+          <p v-if="lastSync?.outcome === 'failed'" class="muted">Taking upstream: {{ lastSync.detail }}</p>
+        </UiSection>
+
+        <LevelsCard />
       </div>
-      <div v-if="!overview && !failed" aria-busy="true">
-        <ESkeleton :lines="3" label="Loading the strength line" />
+    </template>
+
+    <template #tab-ideas>
+      <div>
+        <UiEmpty
+          v-if="ideas.loaded && !ideas.list.length"
+          :icon="PhLightbulb"
+          title="No ideas yet"
+          body="An idea is a change to try against the champion."
+        >
+          <template #actions><EButton @click="creating = true">New idea</EButton></template>
+        </UiEmpty>
+        <template v-else>
+          <UiSection title="In progress">
+            <template #aside><EButton size="sm" @click="creating = true">New idea</EButton></template>
+            <ul v-if="inProgress.length" class="rows">
+              <li v-for="i in inProgress" :key="i.id"><IdeaRow :idea="i" /></li>
+            </ul>
+            <UiEmpty v-else dense :title="ideas.loaded ? 'Nothing is being tried.' : 'Loading the ideas…'" />
+          </UiSection>
+          <Logbook />
+        </template>
+        <NewIdea v-model:open="creating" />
       </div>
-      <p v-else-if="!overview" class="sec-note">The strength line is not available.</p>
-      <LineChart
-        v-else-if="strength.length > 1"
-        label="Dameless's strength: cumulative Elo over each champion version"
-        :x="x"
-        :series="series"
-        :height="170"
-        :x-format="(v) => (Number.isInteger(v) ? `v${v}` : '')"
-        :format="(v) => signed(v, 0)"
-        @point="hover = $event"
-      >
-        <span class="mono">{{ readout }}</span>
-      </LineChart>
-      <p v-else class="sec-note">The line starts once a second version is promoted.</p>
-    </section>
+    </template>
 
-    <section v-if="progress.chart && both" class="sec" aria-labelledby="d-progress">
-      <div class="sec-head">
-        <h2 id="d-progress" class="part-title">Progress</h2>
-        <ELink :link-component="RouterLink" to="/you">Your profile</ELink>
-      </div>
-      <ProgressChart :chart="progress.chart" compact />
-    </section>
-
-    <LevelsCard />
-
-    <section class="sec" aria-labelledby="d-ideas">
-      <div class="sec-head">
-        <h2 id="d-ideas" class="part-title">Ideas in progress</h2>
-        <EButton @click="creating = true">New idea</EButton>
-      </div>
-      <div v-if="!ideas.loaded && !failed" aria-busy="true"><ESkeleton :lines="2" label="Loading the ideas" /></div>
-      <p v-else-if="!ideas.loaded" class="sec-note">The ideas are not available.</p>
-      <ul v-else-if="inProgress.length" class="plain progress">
-        <li v-for="i in inProgress" :key="i.id" class="item">
-          <EStamp size="sm" :tone="STATUS_TONE[i.status]" :label="STATUS_WORD[i.status]" />
-          <div class="item-text">
-            <ELink :link-component="RouterLink" :to="`/dameless/ideas/${i.id}`" class="item-title">{{ i.title }}</ELink>
-            <span class="sec-note">
-              {{ note(i) }}
-            </span>
-          </div>
-        </li>
-      </ul>
-      <p v-else class="sec-note">Nothing is being tried. Start with a new idea.</p>
-    </section>
-
-    <section class="sec" aria-labelledby="d-log">
-      <h2 id="d-log" class="part-title">Logbook</h2>
-      <ul v-if="fromUpstream.length" class="plain upstream">
-        <li v-for="v in fromUpstream" :key="v.id" class="sec-note">
-          <strong class="mono">{{ upstreamLabel(v) }}</strong>
-          {{ v.upstream?.commits.map((c) => c.subject).join("; ") }}
-        </li>
-      </ul>
-      <p v-if="lastSync?.outcome === 'failed'" class="sec-note">Taking upstream: {{ lastSync.detail }}</p>
-      <Logbook />
-    </section>
-
-    <BrainCard />
-
-    <section class="sec">
-      <BotCard />
-    </section>
-
-    <NewIdea v-model:open="creating" />
-  </ESheet>
+    <template #tab-brain><BrainCard /></template>
+    <template #tab-bot><BotCard /></template>
+  </UiSheetPage>
 </template>
 
 <style scoped>
-.gap {
-  margin-block-end: var(--e-gap-base);
-}
-
-.progress {
-  gap: 0;
+.rows {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .upstream {
   display: grid;
-  gap: var(--e-gap-tight);
-  margin-block-end: var(--e-gap-snug);
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+  list-style: none;
 }
 
-.item {
-  display: grid;
-  grid-template-columns: 5.5rem minmax(0, 1fr);
+.muted {
+  margin: 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+}
+
+.playing {
+  display: inline-flex;
   align-items: center;
-  gap: var(--e-gap-snug);
-  padding-block: var(--e-gap-snug);
-  border-block-end: var(--line);
-}
-
-.item-text {
-  display: grid;
-  min-width: 0;
-}
-
-.item-title {
-  font-weight: 600;
+  gap: var(--sp-1);
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--c-line-strong);
+  text-underline-offset: 0.2em;
 }
 </style>

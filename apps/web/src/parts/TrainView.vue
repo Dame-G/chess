@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { EProgress } from "@eos-ui/vue/components/EProgress";
+import UiMeter from "../ui/UiMeter.vue";
+import UiStat from "../ui/UiStat.vue";
+import UiStats from "../ui/UiStats.vue";
+import UiEmpty from "../ui/UiEmpty.vue";
 import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import type { Idea, TrialStatus } from "../api/types";
 import { bytes, duration } from "../format";
@@ -19,7 +22,6 @@ import { useDameless } from "../stores/dameless";
 import { useTraining } from "../stores/training";
 import type { ChartSeries } from "./chart";
 import LineChart from "./LineChart.vue";
-import Term from "./Term.vue";
 
 /**
  * The training stage of a network idea: where the run is, its loss as it falls (from the stored steps, extended live
@@ -111,15 +113,13 @@ const readout = computed(() => {
 
 <template>
   <div class="train">
-    <p class="detail">
-      {{ schedulePreset }}: {{ datasetNames }}, from {{ parent }}.
-      <span class="sec-note">{{ trainCostText(trainCost(schedule, run?.spec.keep_checkpoints ?? 2)) }}</span>
-    </p>
+    <p class="detail">{{ schedulePreset }}: {{ datasetNames }}, from {{ parent }}.</p>
+    <p class="meta">{{ trainCostText(trainCost(schedule, run?.spec.keep_checkpoints ?? 2)) }}</p>
 
     <div v-if="!run && !failed" aria-busy="true"><ESkeleton :lines="3" label="Loading the training" /></div>
-    <p v-else-if="!steps.length" class="sec-note">{{ noSteps }}</p>
+    <UiEmpty v-else-if="!steps.length" dense :title="noSteps" />
     <template v-else>
-      <EProgress :value="fraction" :label="where" />
+      <UiMeter label="Progress" :value="fraction" :max="100" :text="where" :tone="running ? 'info' : undefined" />
       <LineChart
         label="The training loss as the run goes on"
         :x="curve.x"
@@ -131,37 +131,18 @@ const readout = computed(() => {
       >
         <span class="mono readout">{{ readout }}</span>
       </LineChart>
-      <dl class="figs figs--small">
-        <div class="fig">
-          <dt><Term k="loss" /></dt>
-          <dd>{{ last!.loss.toFixed(4) }}</dd>
-        </div>
-        <div class="fig">
-          <dt>Speed</dt>
-          <dd>
-            <small>{{ rateText(last!.positions_per_sec) }}</small>
-          </dd>
-        </div>
-        <div class="fig">
-          <dt>{{ finished ? "Took" : "Running for" }}</dt>
-          <dd>
-            <small
-              >{{ duration(last!.elapsed_seconds)
-              }}<template v-if="remaining && remaining !== duration(last!.elapsed_seconds)">
-                · {{ remaining }} left</template
-              ></small
-            >
-          </dd>
-        </div>
-        <div v-if="gpu" class="fig">
-          <dt>GPU</dt>
-          <dd>
-            <small>{{ gpu }}</small>
-          </dd>
-        </div>
-      </dl>
+      <UiStats dense>
+        <UiStat label="Loss" hint="loss" :value="last!.loss.toFixed(4)" size="lg" />
+        <UiStat label="Speed" :value="rateText(last!.positions_per_sec)" />
+        <UiStat
+          :label="finished ? 'Took' : 'Running for'"
+          :value="duration(last!.elapsed_seconds)"
+          :sub="remaining && remaining !== duration(last!.elapsed_seconds) ? `${remaining} left` : undefined"
+        />
+        <UiStat v-if="gpu" label="GPU" :value="gpu" />
+      </UiStats>
     </template>
-    <p class="sec-note">
+    <p class="meta">
       Checkpoints are saved {{ checkpointText(run?.spec ?? {}) }}. A stopped run picks up from the last one.
     </p>
     <p v-if="run?.net" class="made">
@@ -174,22 +155,19 @@ const readout = computed(() => {
 <style scoped>
 .train {
   display: grid;
-  gap: var(--e-gap-snug);
+  gap: var(--sp-3);
   min-width: 0;
 }
 
 .detail {
   margin: 0;
-  font-weight: 600;
+  font: var(--t-body-strong);
 }
 
-.detail .sec-note {
-  display: block;
-  font-weight: 400;
-}
-
-.train .fig {
-  align-content: start;
+.meta {
+  margin: 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
 }
 
 .made {
@@ -197,6 +175,6 @@ const readout = computed(() => {
 }
 
 .readout {
-  font-size: 0.8125rem;
+  font: var(--t-fig);
 }
 </style>
