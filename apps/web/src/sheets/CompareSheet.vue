@@ -1,32 +1,31 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
-import { PhX } from "@phosphor-icons/vue";
-import { ESheet } from "@eos-ui/vue/components/ESheet";
-import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
+import { useRoute, useRouter } from "vue-router";
+import { PhCaretDown, PhX } from "@phosphor-icons/vue";
+import { EButton } from "@eos-ui/vue/components/EButton";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
-import { ELink } from "@eos-ui/vue/components/ELink";
-import { ENotice } from "@eos-ui/vue/components/ENotice";
-import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESelect } from "@eos-ui/vue/components/ESelect";
-import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
-import { ETable } from "@eos-ui/vue/components/ETable";
 import { EVisuallyHidden } from "@eos-ui/vue/components/EVisuallyHidden";
-import type { Speed } from "../api/types";
-import { speedName, windowName } from "../format";
+import type { Profile, Speed } from "../api/types";
+import { formatRating, speedName, windowName } from "../format";
 import AddPlayer from "../parts/AddPlayer.vue";
 import Term from "../parts/Term.vue";
 import TopPlayers from "../parts/TopPlayers.vue";
+import { useMedia, up } from "../media";
 import { usePlayers } from "../stores/players";
+import UiEmpty from "../ui/UiEmpty.vue";
+import UiPlayer from "../ui/UiPlayer.vue";
+import UiSeg from "../ui/UiSeg.vue";
+import UiSheetPage from "../ui/UiSheetPage.vue";
+import UiTable from "../ui/UiTable.vue";
+import UiToolbar from "../ui/UiToolbar.vue";
 import { addressQuery, compareGroups, type CompareAddress, LIMITS, leads, parseAddress, SPEEDS } from "./compare";
-import { useSheet } from "./useSheet";
 
 /**
- * Compare: players as columns, rows grouped (results, accuracy, moves per game, time, openings), the leader of a row
- * tinted. The address holds everything (`?players=you,dameless,lichess:x&speeds=blitz&rated=true&limit=100`), so a
- * comparison is a link. Add someone by name or pasted profile link, or from the leaderboard.
+ * Compare: players as columns, rows in groups (results, accuracy, moves per game, time, openings), the leader of a row
+ * in bold with a dot. The address holds everything (`?players=you,dameless,lichess:x&speeds=blitz&rated=true&limit=100`),
+ * so a comparison is a link. Add someone by name or pasted profile link at the top, or from the leaderboard.
  */
-const sheet = useSheet();
 const route = useRoute();
 const router = useRouter();
 const players = usePlayers();
@@ -67,7 +66,7 @@ const speeds = computed({
 });
 const rated = computed({
   get: () => (address.value.rated == null ? "both" : address.value.rated ? "rated" : "casual"),
-  set: (v: string | undefined) => set({ rated: v === "rated" ? true : v === "casual" ? false : null }),
+  set: (v: string) => set({ rated: v === "rated" ? true : v === "casual" ? false : null }),
 });
 const limit = computed({
   get: () => String(address.value.limit),
@@ -75,12 +74,22 @@ const limit = computed({
 });
 
 const speedOptions = SPEEDS.map((s) => ({ value: s, label: speedName[s] }));
+const kinds = [
+  { value: "both", label: "All" },
+  { value: "rated", label: "Rated" },
+  { value: "casual", label: "Casual" },
+];
 const limitOptions = LIMITS.map((n) => ({ value: String(n), label: windowName(n) }));
 
 const profiles = computed(() => comparison.value?.profiles ?? []);
 const groups = computed(() => compareGroups(profiles.value));
-const to = (key: string) => (key === "you" ? "/you" : key === "dameless" ? "/dameless" : `/players/${key}`);
-const cell = (v: number | null | undefined, text: (v: number) => string) => (v == null ? "—" : text(v));
+const stale = computed(
+  () =>
+    !!comparison.value && comparison.value.profiles.map((p) => p.player.key).join() !== address.value.players.join(),
+);
+const subtitle = computed(() => profiles.value.map((p) => p.player.name).join(" · "));
+const anyReviewedOnly = computed(() => groups.value.some((g) => g.reviewed));
+
 /** Whether column `i` leads a row. A row where everyone ties has no leader worth marking. */
 function leading(row: Parameters<typeof leads>[1], i: number): boolean {
   const c = comparison.value;
@@ -88,242 +97,486 @@ function leading(row: Parameters<typeof leads>[1], i: number): boolean {
   const lead = c.leaders.find((l) => l.row === row);
   return !lead || lead.players.length < c.profiles.length;
 }
-const stale = computed(
-  () =>
-    !!comparison.value && comparison.value.profiles.map((p) => p.player.key).join() !== address.value.players.join(),
+
+/** The head sticks while the table fits; a table that needs the width scrolls sideways instead, labels in view. */
+const roomy = useMedia(up("md"));
+const sticky = computed(() => roomy.value && profiles.value.length <= 3);
+
+const columnsFor = (headFirst: string) => [
+  { key: "label", label: headFirst },
+  ...profiles.value.map((p, i) => ({ key: `p${i}`, label: p.player.name, align: "end" as const, fig: true })),
+];
+const tables = computed(() =>
+  groups.value.map((g, n) => ({
+    id: g.id,
+    n,
+    title: g.title,
+    reviewed: !!g.reviewed,
+    columns: columnsFor(g.title),
+    rows: g.rows.map((r) => ({ id: r.id, label: r.label, term: r.term, spec: r })),
+  })),
 );
+const openings = computed(() => ({
+  columns: columnsFor("Openings most played"),
+  rows: [{ id: "top3" }],
+}));
+const ref_ = (p: Profile) => ({ name: p.player.name, key: p.player.key, title: null, rating: null });
+
+const cell = (v: number | null | undefined, text: (v: number) => string) => (v == null ? null : text(v));
+
+const showTop = ref(false);
 </script>
 
 <template>
-  <ESheet
-    v-bind="sheet.bind"
-    title="Compare"
-    description="Players side by side over the games they have here, reviewed by the same engine."
-  >
-    <ENotice v-if="failed" tone="danger" title="The comparison did not load" class="gap">{{ failed }}</ENotice>
-
-    <section class="sec" aria-label="Filters">
-      <div class="filters">
-        <ESegmented v-model:values="speeds" label="Speeds" size="sm" multiple :options="speedOptions" />
-        <ESegmented
-          v-model="rated"
-          label="Games"
-          size="sm"
-          :options="[
-            { value: 'both', label: 'Rated and casual' },
-            { value: 'rated', label: 'Rated' },
-            { value: 'casual', label: 'Casual' },
-          ]"
-        />
-        <ESelect v-model="limit" label="Games" size="sm" :options="limitOptions" />
+  <UiSheetPage title="Compare" :subtitle="subtitle" wide :loading="!comparison && !failed">
+    <div class="bar">
+      <UiToolbar label="Which games to compare">
+        <UiSeg v-model:values="speeds" label="Speeds" size="sm" multiple :options="speedOptions" />
+        <UiSeg v-model="rated" label="Rated or casual" size="sm" :options="kinds" />
+        <ESelect v-model="limit" label="Games" hide-label size="sm" :options="limitOptions" class="span" />
+      </UiToolbar>
+      <div class="add">
+        <AddPlayer :taken="address.players" :full="address.players.length >= MAX" class="add-box" @add="add" />
+        <EButton variant="quiet" size="sm" :aria-expanded="showTop" @click="showTop = !showTop">
+          Top players
+          <PhCaretDown class="caret" :class="{ 'is-open': showTop }" aria-hidden="true" />
+        </EButton>
       </div>
-    </section>
+    </div>
 
-    <section class="sec" aria-label="The players">
-      <div v-if="!comparison && !failed" aria-busy="true"><ESkeleton :lines="8" label="Loading the comparison" /></div>
-      <div
-        v-else-if="comparison"
-        class="scroll"
-        :class="{ stale: stale || loading }"
-        :style="{ '--cols': profiles.length }"
+    <div v-if="showTop" class="top">
+      <TopPlayers :taken="address.players" :full="address.players.length >= MAX" @add="add" />
+    </div>
+
+    <UiEmpty v-if="failed" tone="error" title="The comparison didn't load" :body="failed">
+      <template #actions>
+        <EButton variant="outline" @click="load">Try again</EButton>
+      </template>
+    </UiEmpty>
+    <div v-else-if="comparison" class="cmp" :class="{ stale: stale || loading }" :style="{ '--n': profiles.length }">
+      <UiTable
+        v-for="t in tables"
+        :key="t.id"
+        :label="t.title"
+        :columns="t.columns"
+        :rows="t.rows"
+        row-key="id"
+        :sticky="sticky"
       >
-        <ETable caption="Players compared" hide-caption dense class="table">
-          <thead>
-            <tr>
-              <th scope="col" class="label-col"><EVisuallyHidden>Measure</EVisuallyHidden></th>
-              <th v-for="p in profiles" :key="p.player.key" scope="col" class="col-head">
-                <span class="who">
-                  <ELink :link-component="RouterLink" :to="to(p.player.key)" class="who-name">{{
-                    p.player.name
-                  }}</ELink>
-                  <EIconButton
-                    v-if="profiles.length > 1"
-                    :icon="PhX"
-                    :label="`Remove ${p.player.name}`"
-                    tooltip
-                    size="sm"
-                    @click="remove(p.player.key)"
-                  />
-                </span>
-                <span class="who-sub">{{ p.rating ?? "—" }} rating</span>
-                <span class="who-sub">{{ p.reviewed }} of {{ p.games }} reviewed</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody v-for="g in groups" :key="g.id">
-            <tr class="group">
-              <th :colspan="profiles.length + 1" scope="colgroup">{{ g.title }}</th>
-            </tr>
-            <tr v-for="r in g.rows" :key="r.id">
-              <th scope="row" class="label-col">
-                <Term v-if="r.term" :k="r.term" :text="r.label" />
-                <template v-else>{{ r.label }}</template>
-              </th>
-              <td v-for="(p, i) in profiles" :key="p.player.key" class="e-num" :class="{ lead: leading(r.leader, i) }">
-                {{ cell(r.get(p), r.text) }}
-                <EVisuallyHidden v-if="leading(r.leader, i)"> (leads)</EVisuallyHidden>
-              </td>
-            </tr>
-          </tbody>
-          <tbody>
-            <tr class="group">
-              <th :colspan="profiles.length + 1" scope="colgroup">Openings most played</th>
-            </tr>
-            <tr>
-              <th scope="row" class="label-col">Top three</th>
-              <td v-for="p in profiles" :key="p.player.key" class="opens">
-                <ol v-if="p.openings.length" class="plain">
-                  <li v-for="o in p.openings.slice(0, 3)" :key="o.name">
-                    {{ o.name }} <span class="mono muted">{{ o.results.games }}</span>
-                  </li>
-                </ol>
-                <template v-else>—</template>
-              </td>
-            </tr>
-          </tbody>
-        </ETable>
-      </div>
-      <p v-if="comparison && profiles.some((p) => p.pending_review > 0)" class="sec-note">
-        Rows that need the engine count reviewed games only. Open a player to review the rest.
-      </p>
-    </section>
+        <template #head-p0>
+          <template v-if="profiles[0]">
+            <template v-if="t.n === 0">
+              <span class="who">
+                <UiPlayer :seat="ref_(profiles[0]!)" link />
+                <EIconButton
+                  v-if="profiles.length > 1"
+                  :icon="PhX"
+                  :label="`Remove ${profiles[0]!.player.name}`"
+                  tooltip
+                  size="sm"
+                  @click="remove(profiles[0]!.player.key)"
+                />
+              </span>
+              <span class="sub"
+                ><span class="num">{{ formatRating(profiles[0]!.rating) }}</span> · {{ profiles[0]!.reviewed }} of
+                {{ profiles[0]!.games }} reviewed</span
+              >
+            </template>
+            <span v-else class="name truncate">{{ profiles[0]!.player.name }}</span>
+          </template>
+        </template>
+        <template #head-p1>
+          <template v-if="profiles[1]">
+            <template v-if="t.n === 0">
+              <span class="who">
+                <UiPlayer :seat="ref_(profiles[1]!)" link />
+                <EIconButton
+                  v-if="profiles.length > 1"
+                  :icon="PhX"
+                  :label="`Remove ${profiles[1]!.player.name}`"
+                  tooltip
+                  size="sm"
+                  @click="remove(profiles[1]!.player.key)"
+                />
+              </span>
+              <span class="sub"
+                ><span class="num">{{ formatRating(profiles[1]!.rating) }}</span> · {{ profiles[1]!.reviewed }} of
+                {{ profiles[1]!.games }} reviewed</span
+              >
+            </template>
+            <span v-else class="name truncate">{{ profiles[1]!.player.name }}</span>
+          </template>
+        </template>
+        <template #head-p2>
+          <template v-if="profiles[2]">
+            <template v-if="t.n === 0">
+              <span class="who">
+                <UiPlayer :seat="ref_(profiles[2]!)" link />
+                <EIconButton
+                  v-if="profiles.length > 1"
+                  :icon="PhX"
+                  :label="`Remove ${profiles[2]!.player.name}`"
+                  tooltip
+                  size="sm"
+                  @click="remove(profiles[2]!.player.key)"
+                />
+              </span>
+              <span class="sub"
+                ><span class="num">{{ formatRating(profiles[2]!.rating) }}</span> · {{ profiles[2]!.reviewed }} of
+                {{ profiles[2]!.games }} reviewed</span
+              >
+            </template>
+            <span v-else class="name truncate">{{ profiles[2]!.player.name }}</span>
+          </template>
+        </template>
+        <template #head-p3>
+          <template v-if="profiles[3]">
+            <template v-if="t.n === 0">
+              <span class="who">
+                <UiPlayer :seat="ref_(profiles[3]!)" link />
+                <EIconButton
+                  v-if="profiles.length > 1"
+                  :icon="PhX"
+                  :label="`Remove ${profiles[3]!.player.name}`"
+                  tooltip
+                  size="sm"
+                  @click="remove(profiles[3]!.player.key)"
+                />
+              </span>
+              <span class="sub"
+                ><span class="num">{{ formatRating(profiles[3]!.rating) }}</span> · {{ profiles[3]!.reviewed }} of
+                {{ profiles[3]!.games }} reviewed</span
+              >
+            </template>
+            <span v-else class="name truncate">{{ profiles[3]!.player.name }}</span>
+          </template>
+        </template>
+        <template #head-p4>
+          <template v-if="profiles[4]">
+            <template v-if="t.n === 0">
+              <span class="who">
+                <UiPlayer :seat="ref_(profiles[4]!)" link />
+                <EIconButton
+                  v-if="profiles.length > 1"
+                  :icon="PhX"
+                  :label="`Remove ${profiles[4]!.player.name}`"
+                  tooltip
+                  size="sm"
+                  @click="remove(profiles[4]!.player.key)"
+                />
+              </span>
+              <span class="sub"
+                ><span class="num">{{ formatRating(profiles[4]!.rating) }}</span> · {{ profiles[4]!.reviewed }} of
+                {{ profiles[4]!.games }} reviewed</span
+              >
+            </template>
+            <span v-else class="name truncate">{{ profiles[4]!.player.name }}</span>
+          </template>
+        </template>
+        <template #cell-label="{ row }">
+          <Term v-if="row.term" :k="row.term" :text="row.label" />
+          <template v-else>{{ row.label }}</template>
+          <span v-if="t.reviewed" class="mark" title="Counts reviewed games only" aria-hidden="true"> ◦</span>
+        </template>
+        <template #cell-p0="{ row }">
+          <template v-if="profiles[0]">
+            <span v-if="cell(row.spec.get(profiles[0]!), row.spec.text) == null" class="none">–</span>
+            <span v-else class="val" :class="{ lead: leading(row.spec.leader, 0) }">
+              {{ cell(row.spec.get(profiles[0]!), row.spec.text) }}
+              <EVisuallyHidden v-if="leading(row.spec.leader, 0)"> (leads)</EVisuallyHidden>
+            </span>
+          </template>
+        </template>
+        <template #cell-p1="{ row }">
+          <template v-if="profiles[1]">
+            <span v-if="cell(row.spec.get(profiles[1]!), row.spec.text) == null" class="none">–</span>
+            <span v-else class="val" :class="{ lead: leading(row.spec.leader, 1) }">
+              {{ cell(row.spec.get(profiles[1]!), row.spec.text) }}
+              <EVisuallyHidden v-if="leading(row.spec.leader, 1)"> (leads)</EVisuallyHidden>
+            </span>
+          </template>
+        </template>
+        <template #cell-p2="{ row }">
+          <template v-if="profiles[2]">
+            <span v-if="cell(row.spec.get(profiles[2]!), row.spec.text) == null" class="none">–</span>
+            <span v-else class="val" :class="{ lead: leading(row.spec.leader, 2) }">
+              {{ cell(row.spec.get(profiles[2]!), row.spec.text) }}
+              <EVisuallyHidden v-if="leading(row.spec.leader, 2)"> (leads)</EVisuallyHidden>
+            </span>
+          </template>
+        </template>
+        <template #cell-p3="{ row }">
+          <template v-if="profiles[3]">
+            <span v-if="cell(row.spec.get(profiles[3]!), row.spec.text) == null" class="none">–</span>
+            <span v-else class="val" :class="{ lead: leading(row.spec.leader, 3) }">
+              {{ cell(row.spec.get(profiles[3]!), row.spec.text) }}
+              <EVisuallyHidden v-if="leading(row.spec.leader, 3)"> (leads)</EVisuallyHidden>
+            </span>
+          </template>
+        </template>
+        <template #cell-p4="{ row }">
+          <template v-if="profiles[4]">
+            <span v-if="cell(row.spec.get(profiles[4]!), row.spec.text) == null" class="none">–</span>
+            <span v-else class="val" :class="{ lead: leading(row.spec.leader, 4) }">
+              {{ cell(row.spec.get(profiles[4]!), row.spec.text) }}
+              <EVisuallyHidden v-if="leading(row.spec.leader, 4)"> (leads)</EVisuallyHidden>
+            </span>
+          </template>
+        </template>
+      </UiTable>
 
-    <section class="sec" aria-label="Add a player">
-      <AddPlayer :taken="address.players" :full="address.players.length >= MAX" @add="add" />
-      <EDisclosure title="Top players now">
-        <TopPlayers :taken="address.players" :full="address.players.length >= MAX" @add="add" />
-      </EDisclosure>
-      <p class="sec-note">
-        <Term k="accuracy" /> and <Term k="acpl" /> come from the same engine for everyone, so they compare fairly.
+      <UiTable label="Openings most played" :columns="openings.columns" :rows="openings.rows" row-key="id">
+        <template #cell-label>Top three</template>
+        <template #head-p0>
+          <span v-if="profiles[0]" class="name truncate">{{ profiles[0]!.player.name }}</span>
+        </template>
+        <template #head-p1>
+          <span v-if="profiles[1]" class="name truncate">{{ profiles[1]!.player.name }}</span>
+        </template>
+        <template #head-p2>
+          <span v-if="profiles[2]" class="name truncate">{{ profiles[2]!.player.name }}</span>
+        </template>
+        <template #head-p3>
+          <span v-if="profiles[3]" class="name truncate">{{ profiles[3]!.player.name }}</span>
+        </template>
+        <template #head-p4>
+          <span v-if="profiles[4]" class="name truncate">{{ profiles[4]!.player.name }}</span>
+        </template>
+        <template #cell-p0>
+          <template v-if="profiles[0]">
+            <ol v-if="profiles[0]!.openings.length" class="opens">
+              <li v-for="o in profiles[0]!.openings.slice(0, 3)" :key="o.name">
+                <span class="open-name">{{ o.name }}</span> <span class="num muted">{{ o.results.games }}</span>
+              </li>
+            </ol>
+            <span v-else class="none">–</span>
+          </template>
+        </template>
+        <template #cell-p1>
+          <template v-if="profiles[1]">
+            <ol v-if="profiles[1]!.openings.length" class="opens">
+              <li v-for="o in profiles[1]!.openings.slice(0, 3)" :key="o.name">
+                <span class="open-name">{{ o.name }}</span> <span class="num muted">{{ o.results.games }}</span>
+              </li>
+            </ol>
+            <span v-else class="none">–</span>
+          </template>
+        </template>
+        <template #cell-p2>
+          <template v-if="profiles[2]">
+            <ol v-if="profiles[2]!.openings.length" class="opens">
+              <li v-for="o in profiles[2]!.openings.slice(0, 3)" :key="o.name">
+                <span class="open-name">{{ o.name }}</span> <span class="num muted">{{ o.results.games }}</span>
+              </li>
+            </ol>
+            <span v-else class="none">–</span>
+          </template>
+        </template>
+        <template #cell-p3>
+          <template v-if="profiles[3]">
+            <ol v-if="profiles[3]!.openings.length" class="opens">
+              <li v-for="o in profiles[3]!.openings.slice(0, 3)" :key="o.name">
+                <span class="open-name">{{ o.name }}</span> <span class="num muted">{{ o.results.games }}</span>
+              </li>
+            </ol>
+            <span v-else class="none">–</span>
+          </template>
+        </template>
+        <template #cell-p4>
+          <template v-if="profiles[4]">
+            <ol v-if="profiles[4]!.openings.length" class="opens">
+              <li v-for="o in profiles[4]!.openings.slice(0, 3)" :key="o.name">
+                <span class="open-name">{{ o.name }}</span> <span class="num muted">{{ o.results.games }}</span>
+              </li>
+            </ol>
+            <span v-else class="none">–</span>
+          </template>
+        </template>
+      </UiTable>
+
+      <p v-if="anyReviewedOnly" class="foot">
+        ◦ Counts reviewed games only. <Term k="accuracy" /> and <Term k="acpl" /> come from the same engine for
+        everyone, so they compare fairly.
       </p>
-    </section>
-  </ESheet>
+    </div>
+  </UiSheetPage>
 </template>
 
 <style scoped>
-.gap {
-  margin-block-end: var(--e-gap-base);
+/* The toolbar and the add field stay in reach while the table scrolls under them. */
+.bar {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--e-z-sticky);
+  display: grid;
+  gap: var(--sp-1);
+  margin: calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3)) 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-block-end: var(--e-stroke-hair) solid var(--c-line);
+  background: var(--c-pane);
 }
 
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--e-gap-snug) var(--e-gap-base);
-}
-
-.scroll {
-  --label-w: 9.5rem;
-
-  position: relative;
-  min-width: 0;
-  overflow: clip;
-  transition: opacity var(--e-duration-fade, 0.15s);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .scroll {
-    transition: none;
+@media (width >= 56rem) {
+  .bar {
+    margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) 0;
+    padding-inline: var(--sp-4);
   }
 }
 
-.scroll.stale {
+.span {
+  min-width: 10rem;
+}
+
+.add {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+
+.add-box {
+  flex: 1 1 auto;
+}
+
+.caret {
+  transition: transform var(--m-fast);
+}
+
+.caret.is-open {
+  transform: rotate(180deg);
+}
+
+.top {
+  max-height: 22rem;
+  overflow: auto;
+  padding: var(--sp-2) var(--sp-3);
+  border: var(--e-stroke-hair) solid var(--c-line-strong);
+  border-radius: var(--r-1);
+}
+
+.cmp {
+  --label-w: 11rem;
+
+  display: grid;
+  gap: var(--sp-4);
+  min-width: 0;
+  transition: opacity var(--m-fast);
+}
+
+@media (width < 30rem) {
+  .cmp {
+    --label-w: 7rem;
+  }
+}
+
+.cmp.stale {
   opacity: 0.6;
 }
 
-/* The table is wider than a phone: it scrolls sideways inside eos's region while the labels stay in view. */
-.table :deep(table) {
-  min-inline-size: calc(var(--label-w) + var(--cols, 2) * 8.5rem);
+/* Every group is its own table; fixed columns make them line up as one. */
+.cmp :deep(table) {
+  min-width: calc(var(--label-w) + var(--n, 2) * 6rem);
   table-layout: fixed;
 }
 
-.table :deep(td),
-.table :deep(th) {
-  vertical-align: middle;
+.cmp :deep(th.is-fig),
+.cmp :deep(td.is-fig) {
+  width: auto;
 }
 
-.table :deep(thead th) {
-  vertical-align: top;
-}
-
-.table :deep(thead th.label-col) {
-  background: var(--e-surface-tint);
-}
-
-.label-col {
+.cmp :deep(th:first-child),
+.cmp :deep(td:first-child) {
   position: sticky;
   inset-inline-start: 0;
-  z-index: var(--e-z-raised);
-  inline-size: var(--label-w);
-  min-inline-size: var(--label-w);
-  background: var(--e-surface);
-  font-family: var(--e-font-sans);
-  font-weight: 500;
-  letter-spacing: normal;
-  text-transform: none;
-  white-space: normal;
-  text-align: start;
+  z-index: 1;
+  width: var(--label-w);
+  min-width: var(--label-w);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.col-head {
-  min-inline-size: 7.5rem;
-  font: var(--e-type-body);
-  font-weight: 600;
-  letter-spacing: normal;
-  text-transform: none;
-  vertical-align: top;
-  white-space: normal;
+.cmp :deep(td:first-child) {
+  background: var(--c-pane);
+  font: var(--t-body);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cmp :deep(th) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cmp :deep(thead) {
+  font-size: var(--e-text-xs);
 }
 
 .who {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--e-gap-tight);
-}
-
-.who-name {
+  justify-content: flex-end;
   min-width: 0;
-  font-weight: 600;
-  overflow-wrap: anywhere;
 }
 
-.who-sub {
+.sub {
   display: block;
-  color: var(--e-muted);
-  font: var(--e-type-small);
-  font-variant-numeric: tabular-nums;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+  text-align: end;
 }
 
-.group th {
-  padding-block: var(--e-gap-snug) var(--e-gap-tight);
-  background: var(--e-surface);
-  color: var(--e-muted);
-  font: var(--e-type-small);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  text-align: start;
+.name {
+  display: block;
+  color: var(--c-ink-2);
 }
 
-/* The leader of a row. */
-.lead {
-  background: var(--e-success-soft);
-  font-weight: 600;
+.val {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.val.lead {
+  font-weight: 700;
+}
+
+.val.lead::before {
+  content: "";
+  flex: none;
+  inline-size: var(--sp-1);
+  block-size: var(--sp-1);
+  border-radius: var(--r-pill);
+  background: var(--c-ink);
+}
+
+.none {
+  color: var(--c-ink-3);
+}
+
+.mark {
+  color: var(--c-ink-3);
 }
 
 .opens {
-  vertical-align: top;
-  text-align: start;
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font: var(--t-body);
+  text-align: end;
 }
 
-@media (width < 36rem) {
-  .scroll {
-    --label-w: 7rem;
-  }
+.open-name {
+  overflow-wrap: anywhere;
 }
 
 .muted {
-  color: var(--e-muted);
+  color: var(--c-ink-2);
+}
+
+.foot {
+  margin: 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
 }
 </style>

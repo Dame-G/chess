@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { RouterLink } from "vue-router";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { EList } from "@eos-ui/vue/components/EList";
-import { EListRow } from "@eos-ui/vue/components/EListRow";
 import type { Challenge, ConnectionKey } from "../api/types";
 import { speedName, timeControl } from "../format";
 import { useConnections } from "../stores/connections";
+import type { PlayerRef } from "../ui/player";
+import UiPlayer from "../ui/UiPlayer.vue";
 
 /** Challenges waiting on an account: incoming ones to accept or decline, outgoing ones to cancel. */
 defineProps<{ challenges: Challenge[]; connection: ConnectionKey }>();
@@ -27,6 +26,13 @@ async function run(id: string, action: () => Promise<unknown>) {
   }
 }
 
+const who = (c: Challenge): PlayerRef => ({
+  name: c.opponent.name,
+  key: `lichess:${c.opponent.name.toLowerCase()}`,
+  title: c.opponent.title ?? null,
+  rating: c.opponent.rating ?? null,
+});
+
 const describe = (c: Challenge) =>
   [
     c.rated ? "Rated" : "Casual",
@@ -39,58 +45,77 @@ const describe = (c: Challenge) =>
 </script>
 
 <template>
-  <EList :model-value="null" label="Challenges">
-    <EListRow
-      v-for="c in challenges"
-      :key="c.id"
-      :value="c.id"
-      :link-component="RouterLink"
-      :to="`/players/lichess:${c.opponent.name.toLowerCase()}`"
-    >
-      <template #title>
-        <span v-if="c.opponent.title" class="title">{{ c.opponent.title }}</span>
-        {{ c.opponent.name }}
-        <span v-if="c.opponent.rating" class="mono rating">{{ c.opponent.rating }}</span>
-      </template>
-      <template #subtitle>
-        {{ c.direction === "incoming" ? "Incoming" : "Sent" }} · {{ describe(c) }}
-        <template v-if="!c.playable"> · not playable here</template>
-      </template>
-      <template #actions>
+  <ul class="list" aria-label="Challenges">
+    <li v-for="c in challenges" :key="c.id" class="row">
+      <div class="text">
+        <UiPlayer :seat="who(c)" link />
+        <p class="meta">
+          {{ c.direction === "incoming" ? "Incoming" : "Sent" }} · {{ describe(c) }}
+          <template v-if="!c.playable"> · not playable here</template>
+        </p>
+      </div>
+      <div class="acts">
         <template v-if="c.direction === 'incoming'">
           <EButton
             v-if="c.playable"
             variant="outline"
-            size="xs"
+            size="sm"
             :loading="busy === c.id"
             @click="run(c.id, () => connections.accept(connection, c.id))"
           >
             Accept
           </EButton>
-          <EButton v-else variant="outline" size="xs" :href="c.url" external>Play on lichess.org</EButton>
-          <EButton variant="quiet" size="xs" @click="run(c.id, () => connections.decline(connection, c.id))">
+          <EButton v-else variant="outline" size="sm" :href="c.url" external>Play on lichess.org</EButton>
+          <EButton variant="quiet" size="sm" @click="run(c.id, () => connections.decline(connection, c.id))">
             Decline
           </EButton>
         </template>
-        <EButton v-else variant="outline" size="xs" @click="run(c.id, () => connections.cancel(connection, c.id))">
+        <EButton v-else variant="quiet" size="sm" @click="run(c.id, () => connections.cancel(connection, c.id))">
           Cancel
         </EButton>
-      </template>
-    </EListRow>
-  </EList>
+      </div>
+    </li>
+  </ul>
 </template>
 
 <style scoped>
-.title {
-  margin-inline-end: 0.25rem;
-  color: var(--e-primary);
-  font: var(--e-type-small);
-  font-weight: 700;
+.list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.rating {
-  margin-inline-start: 0.25rem;
-  color: var(--e-muted);
-  font-weight: 400;
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2) var(--sp-3);
+  min-height: var(--h-row-2);
+  padding-block: var(--sp-2);
+}
+
+.row + .row {
+  border-block-start: var(--e-stroke-hair) solid var(--c-line);
+}
+
+.text {
+  display: grid;
+  flex: 1 1 14rem;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.meta {
+  margin: 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+}
+
+.acts {
+  display: flex;
+  flex: none;
+  gap: var(--sp-1);
 }
 </style>

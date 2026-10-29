@@ -2,24 +2,35 @@
 import { computed, onMounted, ref } from "vue";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { ENotice } from "@eos-ui/vue/components/ENotice";
-import { todayText } from "../board/drill";
-import { plural, shortDate } from "../format";
+import { formatDate, formatPercent, plural } from "../format";
 import { useStartDrills } from "../shell/drillFlow";
 import { useDrills } from "../stores/drills";
+import UiEmpty from "../ui/UiEmpty.vue";
+import UiSection from "../ui/UiSection.vue";
+import UiStat from "../ui/UiStat.vue";
+import UiStats from "../ui/UiStats.vue";
+import UiToolbar from "../ui/UiToolbar.vue";
 import type { ChartSeries } from "./chart";
+import ChartKey from "./ChartKey.vue";
 import LineChart from "./LineChart.vue";
 
 /**
- * Drills on the You sheet: today's set and a way to start it, how your hit rate moves, and, while there are few, a way
- * to make more from the mistakes in your reviewed games. Local practice; hidden while you play on Lichess.
+ * Drills on the You sheet: how many wait today and a way to start them, your hit rate over time, and, while there are
+ * few, a way to make more from the mistakes in your reviewed games. Local practice; hidden while you play on Lichess.
+ * `review` asks the sheet to show where games are reviewed.
  */
+const emit = defineEmits<{ review: [] }>();
+
 const drills = useDrills();
 const toast = useToast();
 const startDrills = useStartDrills();
 
 const failed = ref<string | null>(null);
-onMounted(() => drills.load().catch((e: unknown) => (failed.value = e instanceof Error ? e.message : String(e))));
+const load = () => {
+  failed.value = null;
+  return drills.load().catch((e: unknown) => (failed.value = e instanceof Error ? e.message : String(e)));
+};
+onMounted(load);
 
 /** Below this many drills the sheet offers to make more. */
 const FEW = 8;
@@ -31,14 +42,28 @@ const few = computed(() => drills.loaded && drills.total < FEW);
 const trend = computed(() => drills.trend.filter((p) => p.answers > 0));
 const x = computed(() => trend.value.map((p) => Math.round(new Date(`${p.date}T12:00:00Z`).getTime() / 1000)));
 const series = computed<ChartSeries[]>(() => [
-  { label: "Each day", values: trend.value.map((p) => p.rate * 100), color: "--e-muted", kind: "points" },
-  { label: "Last 50 answers", values: trend.value.map((p) => p.rolling * 100), color: "--e-primary", width: 2 },
+  { label: "Each day", values: trend.value.map((p) => p.rate * 100), color: "--c-ink-3", kind: "points" },
+  { label: "Last 50 answers", values: trend.value.map((p) => p.rolling * 100), color: "--c-info", width: 2 },
 ]);
+const keys = [
+  { label: "Each day", shape: "dot" as const, color: "--c-ink-3" },
+  { label: "Last 50 answers", shape: "line" as const, color: "--c-info" },
+];
 const hover = ref<number | null>(null);
 const readout = computed(() => {
-  const p = trend.value[hover.value ?? trend.value.length - 1];
+  const p = trend.value[hover.value ?? -1];
   if (!p) return "";
-  return `${shortDate(`${p.date}T12:00:00Z`)} · ${p.passes} of ${plural(p.answers, "answer")} · last 50 answers ${Math.round(p.rolling * 100)}%`;
+  return `${formatDate(`${p.date}T12:00:00Z`)} · ${p.passes} of ${plural(p.answers, "answer")} · last 50 answers ${Math.round(p.rolling * 100)}%`;
+});
+/** Where the hit rate stands now: the rolling rate at the last day with answers. */
+const hitRate = computed(() => {
+  const p = trend.value[trend.value.length - 1];
+  return p ? formatPercent(p.rolling * 100, 0) : null;
+});
+const dueText = computed(() => {
+  const t = today.value;
+  if (!t || !t.drills.length) return "Nothing due";
+  return [t.due ? `${t.due} due` : "", t.new ? `${t.new} new` : ""].filter(Boolean).join(", ");
 });
 
 const making = ref(false);
@@ -64,90 +89,58 @@ async function make() {
 </script>
 
 <template>
-  <section v-if="drills.available" class="sec" aria-labelledby="y-drills">
-    <div class="sec-head">
-      <h2 id="y-drills" class="part-title">Drills</h2>
-      <p class="sec-note">Find the move you missed. They come back as you forget them.</p>
-    </div>
-    <ENotice v-if="failed" tone="danger" title="Drills did not load">{{ failed }}</ENotice>
+  <UiSection v-if="drills.available" id="y-drills" title="Drills">
+    <template #note>Find the move you missed. They come back as you forget them.</template>
+    <UiEmpty v-if="failed" tone="error" title="Drills did not load" :body="failed">
+      <template #actions>
+        <EButton variant="outline" @click="load">Try again</EButton>
+      </template>
+    </UiEmpty>
     <template v-else-if="drills.loaded">
-      <div class="today">
-        <p v-if="!few || drills.total" class="count">{{ todayText(today ?? { drills: [], due: 0, new: 0 }) }}</p>
-        <div class="sheet-actions">
-          <EButton v-if="count" variant="outline" size="sm" @click="startDrills">Start</EButton>
-          <EButton v-if="few" variant="outline" size="sm" :loading="making" @click="make">
-            Make drills from my mistakes
-          </EButton>
+      <UiEmpty v-if="!drills.total" title="No drills yet" body="Review your games, and your mistakes become drills.">
+        <template #actions>
+          <EButton :loading="making" @click="make">Make drills from my mistakes</EButton>
+          <EButton variant="quiet" @click="emit('review')">Review my games</EButton>
+        </template>
+      </UiEmpty>
+      <template v-else>
+        <UiStats>
+          <UiStat label="Today" :value="count" :sub="dueText" size="lg" />
+          <UiStat label="Hit rate" :value="hitRate" hint="Your share of right answers over the last 50" size="lg" />
+          <UiStat label="Drills" :value="drills.total" size="lg" />
+        </UiStats>
+        <UiToolbar>
+          <EButton v-if="count" @click="startDrills">Practice {{ count }}</EButton>
+          <EButton v-if="few" variant="outline" :loading="making" @click="make">Make more from my mistakes</EButton>
+        </UiToolbar>
+        <div v-if="trend.length > 1" class="chart">
+          <ChartKey :items="keys" :readout="hover == null ? undefined : readout" />
+          <LineChart
+            label="Your drill hit rate over time"
+            :x="x"
+            :series="series"
+            time
+            :height="110"
+            :range="[0, 100]"
+            :format="(v) => `${Math.round(v)}%`"
+            @point="hover = $event"
+          />
         </div>
-      </div>
-      <p v-if="few && !drills.total" class="sec-note">
-        No drills yet. Review your games, and your mistakes become drills.
-      </p>
-      <p v-if="trend.length > 1" class="key" aria-hidden="true">
-        <span class="k k-dot">Each day</span><span class="k k-line">Last 50 answers</span>
-      </p>
-      <LineChart
-        v-if="trend.length > 1"
-        label="Your drill hit rate over time"
-        :x="x"
-        :series="series"
-        time
-        :height="110"
-        :range="[0, 100]"
-        :format="(v) => `${Math.round(v)}%`"
-        @point="hover = $event"
-      >
-        <span class="mono readout">{{ readout }}</span>
-      </LineChart>
-      <p v-else-if="drills.total" class="sec-note">Your hit rate shows here after a few days of drills.</p>
+        <UiEmpty v-else dense title="Your hit rate shows here after a few days of drills." />
+      </template>
     </template>
-  </section>
+    <div v-else class="skel load" aria-hidden="true"></div>
+  </UiSection>
 </template>
 
 <style scoped>
-.today {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--e-gap-snug) var(--e-gap-base);
+.chart {
+  display: grid;
+  gap: var(--sp-1);
+  min-width: 0;
 }
 
-.count {
-  margin: 0;
-  font-weight: 600;
-}
-
-.key {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--e-gap-base);
-  margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
-}
-
-.k::before {
-  display: inline-block;
-  margin-inline-end: 0.375rem;
-  vertical-align: middle;
-  content: "";
-}
-
-.k-dot::before {
-  inline-size: 0.375rem;
-  block-size: 0.375rem;
-  border-radius: 50%;
-  background: var(--e-muted);
-}
-
-.k-line::before {
-  inline-size: 0.875rem;
-  block-size: 2px;
-  background: var(--e-primary);
-}
-
-.readout {
-  font-size: 0.8125rem;
+.load {
+  block-size: calc(var(--sp-6) * 3);
 }
 </style>

@@ -4,16 +4,18 @@ import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EProgress } from "@eos-ui/vue/components/EProgress";
 import { plural, progressText, reviewCost } from "../format";
-import { usePlayers } from "../stores/players";
+import { useImport } from "../sheets/useImport";
 import { useGames } from "../stores/games";
 import { usePolicy } from "../stores/policy";
 import { useWork } from "../stores/work";
+import ProfileNotice from "./ProfileNotice.vue";
 
 /**
- * What a profile can do next with its games, as one filled button: import the player's games when none are here,
- * else review every one not reviewed yet. The review runs in the background, newest first, below ideas, so trials keep
- * playing; while it runs the bar shows how far it is and can stop it. Both are analysis, so they are off (with one
- * calm line why) while you play on Lichess. `mine` is You, whose games are already here.
+ * What a profile can do next with its games, as one banner row with one filled button: import the player's games when
+ * none are here, else review every one not reviewed yet. The review runs in the background, newest first, below ideas,
+ * so trials keep playing; while it runs the bar shows how far it is and can stop it. Both are analysis, so they are off
+ * (with one calm line why) while you play on Lichess. `mine` is You, whose games are already here; with `importable`
+ * it also offers to bring in what is new on Lichess, as a quiet button beside the review.
  */
 const props = defineProps<{
   playerKey: string;
@@ -26,13 +28,21 @@ const props = defineProps<{
   mine?: boolean;
   /** Another action on the screen is the filled one. */
   quiet?: boolean;
+  /** The first thing to do on this screen (nothing is reviewed yet): bigger, with what a review gives. */
+  lead?: boolean;
+  /** Just the action, with its progress: no frame and no sentence, for a screen that says the rest itself. */
+  bare?: boolean;
+  /** Offer to bring in new games from Lichess too. */
+  importable?: boolean;
+  /** What that button says; "Import my Lichess games" for You. */
+  importLabel?: string;
 }>();
 
-const players = usePlayers();
 const gamesStore = useGames();
 const policy = usePolicy();
 const work = useWork();
 const toast = useToast();
+const importing = useImport(() => props.playerKey);
 
 const IMPORT = 50;
 const busy = ref(false);
@@ -73,7 +83,7 @@ const note = computed(() => {
 async function go() {
   busy.value = true;
   try {
-    if (next.value === "import") await players.importHistory(props.playerKey, { max: IMPORT });
+    if (next.value === "import") await importing.run(IMPORT);
     else await gamesStore.reviewAll(props.playerKey);
   } catch (e) {
     toast.show({ title: "That did not start", message: e instanceof Error ? e.message : String(e), tone: "warning" });
@@ -97,74 +107,63 @@ async function stop() {
 </script>
 
 <template>
-  <div v-if="next || underway" class="bar">
+  <ProfileNotice v-if="next || underway || (importable && !bare)" :lead="lead && !!next" :bare="bare && !underway">
     <template v-if="underway">
-      <div class="line stack">
-        <EProgress v-if="underway.progress?.total" :value="fraction" :label="underway.title" :value-text="where" />
-        <p v-else class="title" role="status">{{ underway.title }}: {{ where }}.</p>
-        <p v-if="note" class="cost">{{ note }}</p>
-      </div>
-      <EButton variant="outline" :loading="stopping" @click="stop">Stop</EButton>
+      <EProgress v-if="underway.progress?.total" :value="fraction" :label="underway.title" :value-text="where" />
+      <p v-else class="title" role="status">{{ underway.title }}: {{ where }}.</p>
+      <p v-if="note" class="cost">{{ note }}</p>
+    </template>
+    <template v-else-if="next === 'import'">
+      <p class="title">None of {{ name }}'s games are here yet.</p>
+      <p class="cost">Reading the last {{ IMPORT }} from Lichess takes a moment.</p>
+    </template>
+    <template v-else-if="next === 'review'">
+      <p class="title">{{ plural(todo, "game") }} not reviewed yet</p>
+      <p v-if="lead && mine" class="cost">
+        A review scores your accuracy, finds your mistakes and turns them into drills. It runs in the background, newest
+        first (takes {{ reviewCost(todo) }}), so this page fills in as it goes.
+      </p>
+      <p v-else class="cost">Takes {{ reviewCost(todo) }} in the background, newest first.</p>
     </template>
     <template v-else>
-      <p class="line">
-        <template v-if="next === 'import'">
-          None of {{ name }}'s games are here yet. Reading the last {{ IMPORT }} from Lichess takes a moment.
-        </template>
-        <template v-else>
-          {{ plural(todo, "game") }} not reviewed yet
-          <span class="cost">— {{ reviewCost(todo) }} in the background, newest first</span>
-        </template>
-      </p>
-      <EButton :variant="quiet ? 'outline' : 'primary'" :loading="busy" :disabled="!policy.allowed" @click="go">
-        {{
-          next === "import"
-            ? `Import their last ${IMPORT} games`
-            : todo === 1
-              ? "Review it"
-              : `Review all ${todo.toLocaleString("en-GB")}`
-        }}
-      </EButton>
-      <p v-if="!policy.allowed" class="sec-note why" role="status">
-        {{ policy.reason }}. This works again when your game ends.
-      </p>
+      <p class="title">Every game is reviewed.</p>
     </template>
-  </div>
+    <p v-if="!policy.allowed && !underway" class="cost" role="status">
+      {{ policy.reason }}. This works again when your game ends.
+    </p>
+
+    <template #actions>
+      <template v-if="underway">
+        <EButton variant="outline" size="sm" :loading="stopping" @click="stop">Stop</EButton>
+      </template>
+      <template v-else>
+        <EButton
+          v-if="next"
+          :variant="quiet ? 'outline' : 'primary'"
+          :loading="busy"
+          :disabled="!policy.allowed"
+          @click="go"
+        >
+          {{
+            next === "import"
+              ? bare
+                ? `Import ${IMPORT} games`
+                : `Import their last ${IMPORT} games`
+              : todo === 1
+                ? "Review it"
+                : `Review all ${todo.toLocaleString("en-GB")}`
+          }}
+        </EButton>
+        <EButton
+          v-if="importable && next !== 'import'"
+          :variant="next ? 'outline' : 'primary'"
+          :loading="importing.busy.value"
+          :disabled="!policy.allowed"
+          @click="importing.run(mine ? undefined : IMPORT)"
+        >
+          {{ importLabel ?? "Import my Lichess games" }}
+        </EButton>
+      </template>
+    </template>
+  </ProfileNotice>
 </template>
-
-<style scoped>
-.bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--e-gap-snug) var(--e-gap-base);
-  padding: var(--e-gap-snug);
-  border: var(--line);
-  border-radius: var(--e-radius-sm);
-  background: var(--e-surface-tint, transparent);
-}
-
-.stack {
-  display: grid;
-  gap: var(--e-gap-tight);
-}
-
-.line {
-  flex: 1 1 14rem;
-  margin: 0;
-  min-width: 0;
-}
-
-.title {
-  margin: 0;
-}
-
-.cost {
-  margin: 0;
-  color: var(--e-muted);
-}
-
-.why {
-  flex-basis: 100%;
-}
-</style>
