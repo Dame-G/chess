@@ -49,22 +49,24 @@ const groups = [
 
 <template>
   <UiDialog v-model:open="ui.shortcuts" title="Keyboard shortcuts" size="lg" cancel-label="Close">
-    <p class="touch">Shortcuts are for a keyboard. On a touch screen every one of these has a button.</p>
-    <div class="groups">
-      <UiSection v-for="g in groups" :key="g.title" :title="g.title" :level="2">
-        <UiKeyValue dense>
-          <UiKv v-for="r in g.rows" :key="r.does" :label="r.does">
-            <span class="keys">
-              <template v-for="(combo, i) in r.keys" :key="combo.join('+')">
-                <span v-if="i" class="or" aria-hidden="true">/</span>
-                <span class="combo"
-                  ><EKbd v-for="k in combo" :key="k">{{ k }}</EKbd></span
-                >
-              </template>
-            </span>
-          </UiKv>
-        </UiKeyValue>
-      </UiSection>
+    <div class="shortcuts" tabindex="-1" data-autofocus>
+      <p class="touch">Shortcuts are for a keyboard. On a touch screen every one of these has a button.</p>
+      <div class="groups">
+        <UiSection v-for="g in groups" :key="g.title" :title="g.title" :level="2">
+          <UiKeyValue dense>
+            <UiKv v-for="r in g.rows" :key="r.does" :label="r.does">
+              <span class="keys">
+                <template v-for="(combo, i) in r.keys" :key="combo.join('+')">
+                  <span v-if="i" class="or" aria-hidden="true">/</span>
+                  <span class="combo"
+                    ><EKbd v-for="k in combo" :key="k">{{ k }}</EKbd></span
+                  >
+                </template>
+              </span>
+            </UiKv>
+          </UiKeyValue>
+        </UiSection>
+      </div>
     </div>
   </UiDialog>
 </template>
@@ -82,8 +84,17 @@ const groups = [
   }
 }
 
-.groups {
+.shortcuts {
   container-type: inline-size;
+  min-width: 0;
+}
+
+/* Nothing here takes input: focus rests on the list itself, so the dialog does not open on its close button. */
+.shortcuts:focus {
+  outline: none;
+}
+
+.groups {
   display: grid;
   gap: var(--sp-4);
   min-width: 0;

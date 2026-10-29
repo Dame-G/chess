@@ -65,6 +65,8 @@ function go(id: Tab) {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   box-sizing: border-box;
   height: calc(var(--h-tabbar) + env(safe-area-inset-bottom, 0px));
+
+  /* stylelint-disable-next-line length-zero-no-unit -- the fallback is a length inside a calc() above */
   padding-block-end: env(safe-area-inset-bottom, 0px);
   border-block-start: var(--e-stroke-hair) solid var(--c-line);
   background: var(--c-pane);

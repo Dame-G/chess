@@ -44,7 +44,9 @@ export const useRailFeed = defineStore("rail-feed", () => {
 
   /** The state a list changes, made on first use. */
   function entry(key: FeedKey): Feed {
-    return (feeds.value[key] ??= fresh());
+    // Answer the stored object (the reactive one), not the fresh one the assignment would hand back.
+    feeds.value[key] ??= fresh();
+    return feeds.value[key]!;
   }
 
   /** Brings the next page of a list; does nothing while one is on its way or when there are no more. */

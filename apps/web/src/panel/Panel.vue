@@ -238,8 +238,9 @@ function goTo(id: number) {
   overflow-y: auto;
 }
 
-@media (width < 75rem) {
-  /* lg: stacked under the board, the page scrolls and the list grows with the game. */
+@media (width < 48rem) {
+  /* md: a phone stacks the panel under the board, the page scrolls and the list grows with the game. A tablet keeps two
+     columns, so the list scrolls inside the panel as it does beside the board. */
   .moves {
     flex: none;
   }

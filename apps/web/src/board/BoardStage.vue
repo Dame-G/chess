@@ -271,6 +271,7 @@ watch(
   --graph: 3.5rem;
   --transport: 2rem;
   --chrome: calc(2 * var(--strip) + var(--graph) + var(--transport) + 4 * var(--gap));
+
   /* A container query unit is the container's content box, so the padding is already out of it. */
   --side: max(10rem, min(100cqh - var(--chrome), 100cqw - var(--col) - var(--egap)));
 

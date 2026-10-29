@@ -117,20 +117,6 @@ export function resultText(outcome: Outcome | null | undefined): string {
   return "*";
 }
 
-/** A side's score in a finished game: 1, ½ or 0. */
-export function sideResult(outcome: Outcome | null | undefined, side: Side): "1" | "½" | "0" | null {
-  if (!outcome) return null;
-  if (outcome === "draw") return "½";
-  return (outcome === "white_wins") === (side === "white") ? "1" : "0";
-}
-
-/** How You did in a game: won, drew or lost; `null` when You did not play or it is not over. */
-export function yourResult(g: GameSummary): "won" | "drew" | "lost" | null {
-  if (!g.you || !g.outcome) return null;
-  const r = sideResult(g.outcome, g.you);
-  return r === "1" ? "won" : r === "½" ? "drew" : "lost";
-}
-
 /** Dameless at a level of its ladder (the server names it by its rating, `Dameless 1650`). */
 export const isLevelSeat = (seat: Seat): boolean => seat.player === "dameless" && seat.level != null;
 

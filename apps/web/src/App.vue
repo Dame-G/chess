@@ -4,6 +4,7 @@ import { RouterView, useRoute } from "vue-router";
 import { EAppShell } from "@eos-ui/vue/components/EAppShell";
 import { EToastProvider } from "@eos-ui/vue/components/EToastProvider";
 import { useBoardAddress } from "./board/address";
+import { reachable } from "./api/stream";
 import { useBoard } from "./board/board";
 import BoardStage from "./board/BoardStage.vue";
 import { seatName } from "./format";
@@ -91,6 +92,7 @@ watchEffect(() => {
         <BoardStage class="ws-stage" />
         <Panel class="ws-panel" />
         <RouterView v-if="sheet" />
+        <p v-if="!reachable" class="offline" role="status">Can't reach the app. Reconnecting…</p>
       </div>
       <TabBar v-if="phone" />
     </EAppShell>
@@ -167,6 +169,19 @@ watchEffect(() => {
 
 .ws--sheet .ws-panel {
   display: none;
+}
+
+/* One notice for a lost connection, over the top of the workspace, instead of an error in every pane. */
+.offline {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: var(--e-z-sticky);
+  margin: 0;
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--c-warn-wash);
+  color: var(--c-ink);
+  font: var(--t-meta);
+  text-align: center;
 }
 
 .scrim {

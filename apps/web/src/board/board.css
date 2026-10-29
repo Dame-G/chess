@@ -19,6 +19,7 @@
   --board-coord-dark: #2b1a0c;
 
   position: relative;
+
   /* Its pieces carry z-indexes of their own; they stay inside the board and never rise over a drawer or a menu. */
   isolation: isolate;
   width: 100%;

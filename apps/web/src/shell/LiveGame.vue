@@ -62,6 +62,7 @@ function back() {
     <UiLive label="Live" :pulse="mine?.plies" />
     <span class="vs truncate">{{ opponent }}</span>
     <span v-if="ms !== null" class="time num" :class="{ 'time--run': running }">{{ clock(ms) }}</span>
+    <span v-else class="word">Live</span>
   </button>
 </template>
 
@@ -105,9 +106,20 @@ function back() {
   color: var(--c-ink);
 }
 
+/* Where there is no room for a name, the chip says what it is. */
+.word {
+  display: none;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+}
+
 @media (width < 30rem) {
   .vs {
     display: none;
+  }
+
+  .word {
+    display: inline;
   }
 }
 </style>

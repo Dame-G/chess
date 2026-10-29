@@ -279,3 +279,12 @@ const empty = computed(() => !work.running.length && !work.queued.length && !wor
   }
 }
 </style>
+
+<!-- The popover is portaled out of this component, so its title is restyled by class, not scoped. -->
+<style>
+.work-panel .e-pop-title {
+  font: var(--t-head);
+  letter-spacing: normal;
+  text-transform: none;
+}
+</style>

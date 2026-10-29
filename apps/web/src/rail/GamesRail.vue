@@ -25,7 +25,7 @@ import { useUi } from "../shell/ui";
 import { useRailFeed, type FeedKey } from "./feed";
 import GameRow from "./GameRow.vue";
 import MoreRow from "./MoreRow.vue";
-import { emptyNote, FILTERS, readFilter, railRows, stageLabel, type RailFilter } from "./rail";
+import { emptyNote, FILTERS, monthOf, readFilter, railRows, stageLabel, type RailFilter } from "./rail";
 
 /**
  * The Games rail: the filter you pick is asked of the server and paged as you scroll, in one windowed list. Live
@@ -108,7 +108,8 @@ function toggle(id: number) {
 type Item =
   | { key: string; kind: "game"; game: GameSummary; nested: boolean }
   | { key: string; kind: "trial"; trial: TrialItem; open: boolean }
-  | { key: string; kind: "more"; feed: FeedKey; nested: boolean };
+  | { key: string; kind: "more"; feed: FeedKey; nested: boolean }
+  | { key: string; kind: "month"; label: string };
 
 function trialItems(trial: TrialItem): Item[] {
   const open = opened.value.has(trial.id);
@@ -128,11 +129,17 @@ function trialItems(trial: TrialItem): Item[] {
 const items = computed<Item[]>(() => {
   const f = gameFilter.value;
   if (!f) return trialList.value.flatMap(trialItems);
-  const out = railRows(games.list, f, feed.of(f).floor).flatMap((row): Item[] =>
-    row.type === "game"
-      ? [{ key: row.key, kind: "game", game: row.game, nested: false }]
-      : trialItems(trialItemOfRow(row.trial)),
-  );
+  const out: Item[] = [];
+  // Games older than two weeks sit under the month they were played in.
+  let month: string | null = null;
+  for (const row of railRows(games.list, f, feed.of(f).floor)) {
+    if (row.type === "game") {
+      const label = monthOf(row.game.started_at);
+      if (label && label !== month) out.push({ key: `month-${label}`, kind: "month", label });
+      month = label;
+      out.push({ key: row.key, kind: "game", game: row.game, nested: false });
+    } else out.push(...trialItems(trialItemOfRow(row.trial)));
+  }
   const state = feed.of(f);
   if (!state.done && state.started)
     out.push({ key: `more-${f}-${state.cursor}`, kind: "more", feed: f, nested: false });
@@ -151,7 +158,7 @@ const state = computed(() => {
   const s = feed.of(f);
   return { loading: !s.started || (s.loading && !items.value.length), error: s.error };
 });
-const rows = computed(() => items.value.filter((i) => i.kind !== "more"));
+const rows = computed(() => items.value.filter((i) => i.kind === "game" || i.kind === "trial"));
 
 /** The game on the board is the list's current row; picking a row does not make it current until the board shows it. */
 const current = computed({
@@ -220,14 +227,14 @@ const coarse = useMedia("(pointer: coarse)");
           <EButton size="sm" @click="router.push({ path: '/dameless', query: { new: 'idea' } })">New idea</EButton>
         </template>
         <template v-else-if="filter === 'lichess'">
-          <EButton v-if="connections.you.configured" size="sm" @click="importMine">Import my Lichess games</EButton>
-          <EButton v-else size="sm" variant="outline" @click="router.push('/settings')">Open Settings</EButton>
+          <EButton v-if="connections.you.configured" size="sm" @click="importMine"> Import my Lichess games </EButton>
+          <EButton v-else size="sm" variant="outline" @click="router.push('/settings')"> Open Settings </EButton>
         </template>
         <template v-else>
           <EButton size="sm" @click="ui.startNewGame()">New game</EButton>
-          <EButton v-if="filter === 'all'" size="sm" variant="quiet" @click="router.push('/settings')"
-            >Open Settings</EButton
-          >
+          <EButton v-if="filter === 'all'" size="sm" variant="quiet" @click="router.push('/settings')">
+            Open Settings
+          </EButton>
         </template>
       </template>
     </UiEmpty>
@@ -242,13 +249,16 @@ const coarse = useMedia("(pointer: coarse)");
           class="trial-row"
         >
           <template #title>{{ item.trial.title }}</template>
-          <template #subtitle
-            ><span class="truncate">{{ item.trial.detail }}</span></template
-          >
+          <template #subtitle>
+            <span class="truncate">{{ item.trial.detail }}</span>
+          </template>
           <template #trailing>
             <UiLive v-if="item.trial.live" label="Running" class="dot" />
             <component :is="item.open ? PhCaretDown : PhCaretRight" class="caret" aria-hidden="true" />
           </template>
+        </EListRow>
+        <EListRow v-else-if="item.kind === 'month'" :value="item.key" disabled class="month">
+          <template #title>{{ item.label }}</template>
         </EListRow>
         <MoreRow
           v-else
@@ -342,6 +352,17 @@ const coarse = useMedia("(pointer: coarse)");
 /* A trial's games sit one step in under its row. */
 .rail :deep(.nested > .e-listrow) {
   padding-inline-start: var(--sp-5);
+}
+
+.rail :deep(.month .e-listrow) {
+  min-height: var(--h-row);
+  background: var(--c-raise);
+}
+
+.rail :deep(.month .e-listrow-title) {
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+  font-weight: 600;
 }
 
 .trial-row .caret {

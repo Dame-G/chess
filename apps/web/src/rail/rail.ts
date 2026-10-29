@@ -106,6 +106,17 @@ export function agoShort(iso: string, now = Date.now()): string {
   return `${Math.floor(days / 365)}y`;
 }
 
+/**
+ * The month a game belongs under, for the separator before it: `null` for a game from the last two weeks (the short
+ * times beside each row say it), else `October`, or `October 2025` from another year.
+ */
+export function monthOf(iso: string, now = Date.now()): string | null {
+  const at = new Date(iso);
+  if (now - at.getTime() < 14 * 86_400_000) return null;
+  const month = at.toLocaleString("en", { month: "long" });
+  return at.getFullYear() === new Date(now).getFullYear() ? month : `${month} ${at.getFullYear()}`;
+}
+
 /** What an empty rail says for each filter: the title, one sentence that teaches the next step, and what to offer. */
 export const emptyNote: Record<RailFilter, { title: string; body?: string }> = {
   all: { title: "No games yet", body: "Play Dameless, or link your Lichess account to bring in your games." },

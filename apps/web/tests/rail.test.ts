@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
+import { watch } from "vue";
 import { queryGames } from "../src/api/fixtures-shell";
 import type { GameSummary, Seat } from "../src/api/types";
 import { materialLead } from "../src/board/material";
 import { PAGE, useRailFeed } from "../src/rail/feed";
-import { matches, queryOf, railRows, readFilter, type GameFilter } from "../src/rail/rail";
+import { matches, monthOf, queryOf, railRows, readFilter, type GameFilter } from "../src/rail/rail";
 import { useGames } from "../src/stores/games";
 import { shortWork } from "../src/shell/work";
 
@@ -80,6 +81,14 @@ describe("the rail's rows", () => {
     const live = game(3, { status: "live", started_at: "2025-01-01T00:00:00Z" });
     expect(railRows([old, mid, live], "all", "2026-02-01T00:00:00Z").map((x) => x.key)).toEqual(["game-3", "game-2"]);
     expect(railRows([old, mid, live], "all", null).map((x) => x.key)).toEqual(["game-3", "game-2", "game-1"]);
+  });
+
+  it("files games older than two weeks under their month", () => {
+    const now = Date.UTC(2026, 9, 29);
+    expect(monthOf("2026-10-20T10:00:00Z", now)).toBeNull();
+    expect(monthOf("2026-10-01T10:00:00Z", now)).toBe("October");
+    expect(monthOf("2026-03-12T10:00:00Z", now)).toBe("March");
+    expect(monthOf("2025-12-31T12:00:00Z", now)).toBe("December 2025");
   });
 
   it("reads an old remembered filter", () => {
@@ -181,6 +190,21 @@ describe("the rail's feed", () => {
     expect(asked[0]).toContain("trial=7");
     expect(games.list.map((g) => g.id)).not.toContain(500);
     expect(feed.of("trial:7").done).toBe(false);
+  });
+
+  it("lets a computed watch a list's progress", async () => {
+    serve(Array.from({ length: 10 }, (_, i) => imported(i + 1)));
+    const feed = useRailFeed();
+    const states: string[] = [];
+    const stop = watch(
+      () => `${feed.of("you").started}/${feed.of("you").loading}/${feed.of("you").done}`,
+      (now) => states.push(now),
+      { flush: "sync" },
+    );
+    await feed.start("you");
+    stop();
+    expect(states.at(-1)).toBe("true/false/true");
+    expect(states).toContain("false/true/false");
   });
 
   it("says when a page failed, and tries again", async () => {

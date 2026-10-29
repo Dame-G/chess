@@ -1,3 +1,4 @@
+import { ref } from "vue";
 import { retryDelay } from "./backoff";
 import { serverFetch } from "./client";
 import type { AppEvent, EventKind, EventPayloads } from "./types";
@@ -39,6 +40,9 @@ export function parseEvents(buffer: string): [AppEvent[], string] {
   }
   return [events, rest];
 }
+
+/** Whether the server answers: false once the stream has failed twice in a row, true again as soon as it connects. */
+export const reachable = ref(true);
 
 type Handler<K extends EventKind> = (data: EventPayloads[K], event: AppEvent) => void;
 const handlers = new Map<EventKind, Set<Handler<never>>>();
@@ -140,6 +144,7 @@ class Stream {
         const res = await serverFetch(this.url(), { signal, headers: { Accept: "text/event-stream" } });
         if (!res.ok || !res.body) throw new Error(String(res.status));
         failures = 0;
+        reachable.value = true;
         if (dropped) for (const h of reconnectHandlers) h();
         dropped = false;
         const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -161,6 +166,7 @@ class Stream {
         if (!signal.aborted) {
           dropped = true;
           failures++;
+          if (failures >= 2) reachable.value = false;
         }
       }
       // A change of topics reconnects at once; a lost server after a pause that grows while it stays lost.
