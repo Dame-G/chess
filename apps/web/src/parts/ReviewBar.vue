@@ -36,6 +36,8 @@ const props = defineProps<{
   importable?: boolean;
   /** What that button says; "Import my Lichess games" for You. */
   importLabel?: string;
+  /** Your whole history is already here, so the button only looks for new games: "Check for new games", an outline. */
+  historyComplete?: boolean;
 }>();
 
 const gamesStore = useGames();
@@ -156,12 +158,12 @@ async function stop() {
         </EButton>
         <EButton
           v-if="importable && next !== 'import'"
-          :variant="next ? 'outline' : 'primary'"
+          :variant="next || historyComplete ? 'outline' : 'primary'"
           :loading="importing.busy.value"
           :disabled="!policy.allowed"
           @click="importing.run(mine ? undefined : IMPORT)"
         >
-          {{ importLabel ?? "Import my Lichess games" }}
+          {{ importLabel ?? (historyComplete ? "Check for new games" : "Import my Lichess games") }}
         </EButton>
       </template>
     </template>

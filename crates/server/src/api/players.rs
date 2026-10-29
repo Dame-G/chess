@@ -75,6 +75,10 @@ pub async fn get_profile(
     let key = parse::<PlayerKey>("a player", &p.key)?;
     let mut profile = app.profiles.profile(key.clone(), q.filter()?).await?;
     profile.unreviewed_total = app.reviews.unreviewed_count(&key).await.ok();
+    if key == PlayerKey::You {
+        profile.history_complete =
+            Some(app.hub.store.meta::<bool>(dameless_play::import::COMPLETE_KEY).await?.unwrap_or(false));
+    }
     Ok(Json(profile))
 }
 

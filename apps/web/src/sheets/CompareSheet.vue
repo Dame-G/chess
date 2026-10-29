@@ -35,6 +35,8 @@ const failed = ref<string | null>(null);
 const loading = ref(false);
 const comparison = computed(() => players.comparison);
 const MAX = 5;
+/** Who a column is, as the rest of the app says it: you are "You", not your Lichess name. */
+const named = (p: Profile): string => (p.player.key === "you" ? "You" : p.player.name);
 
 async function load() {
   failed.value = null;
@@ -103,7 +105,7 @@ const sticky = computed(() => roomy.value && profiles.value.length <= 3);
 
 const columnsFor = (headFirst: string) => [
   { key: "label", label: headFirst },
-  ...profiles.value.map((p, i) => ({ key: `p${i}`, label: p.player.name, align: "end" as const, fig: true })),
+  ...profiles.value.map((p, i) => ({ key: `p${i}`, label: named(p), align: "end" as const, fig: true })),
 ];
 /** A row no one has a figure for is left out, and a group left with no rows with it: a column of dashes says nothing. */
 const tables = computed(() =>
@@ -124,7 +126,7 @@ const openings = computed(() => ({
   columns: columnsFor("Openings most played"),
   rows: [{ id: "top3" }],
 }));
-const ref_ = (p: Profile) => ({ name: p.player.name, key: p.player.key, title: null, rating: null });
+const ref_ = (p: Profile) => ({ name: named(p), key: p.player.key, title: null, rating: null });
 
 const cell = (v: number | null | undefined, text: (v: number) => string) => (v == null ? null : text(v));
 
@@ -175,7 +177,7 @@ const showTop = ref(false);
                 <EIconButton
                   v-if="profiles.length > 1"
                   :icon="PhX"
-                  :label="`Remove ${profiles[0]!.player.name}`"
+                  :label="`Remove ${named(profiles[0]!)}`"
                   tooltip
                   size="sm"
                   @click="remove(profiles[0]!.player.key)"
@@ -186,7 +188,7 @@ const showTop = ref(false);
                 {{ profiles[0]!.games }} reviewed</span
               >
             </template>
-            <span v-else class="name truncate">{{ profiles[0]!.player.name }}</span>
+            <span v-else class="name truncate">{{ named(profiles[0]!) }}</span>
           </template>
         </template>
         <template #head-p1>
@@ -197,7 +199,7 @@ const showTop = ref(false);
                 <EIconButton
                   v-if="profiles.length > 1"
                   :icon="PhX"
-                  :label="`Remove ${profiles[1]!.player.name}`"
+                  :label="`Remove ${named(profiles[1]!)}`"
                   tooltip
                   size="sm"
                   @click="remove(profiles[1]!.player.key)"
@@ -208,7 +210,7 @@ const showTop = ref(false);
                 {{ profiles[1]!.games }} reviewed</span
               >
             </template>
-            <span v-else class="name truncate">{{ profiles[1]!.player.name }}</span>
+            <span v-else class="name truncate">{{ named(profiles[1]!) }}</span>
           </template>
         </template>
         <template #head-p2>
@@ -219,7 +221,7 @@ const showTop = ref(false);
                 <EIconButton
                   v-if="profiles.length > 1"
                   :icon="PhX"
-                  :label="`Remove ${profiles[2]!.player.name}`"
+                  :label="`Remove ${named(profiles[2]!)}`"
                   tooltip
                   size="sm"
                   @click="remove(profiles[2]!.player.key)"
@@ -230,7 +232,7 @@ const showTop = ref(false);
                 {{ profiles[2]!.games }} reviewed</span
               >
             </template>
-            <span v-else class="name truncate">{{ profiles[2]!.player.name }}</span>
+            <span v-else class="name truncate">{{ named(profiles[2]!) }}</span>
           </template>
         </template>
         <template #head-p3>
@@ -241,7 +243,7 @@ const showTop = ref(false);
                 <EIconButton
                   v-if="profiles.length > 1"
                   :icon="PhX"
-                  :label="`Remove ${profiles[3]!.player.name}`"
+                  :label="`Remove ${named(profiles[3]!)}`"
                   tooltip
                   size="sm"
                   @click="remove(profiles[3]!.player.key)"
@@ -252,7 +254,7 @@ const showTop = ref(false);
                 {{ profiles[3]!.games }} reviewed</span
               >
             </template>
-            <span v-else class="name truncate">{{ profiles[3]!.player.name }}</span>
+            <span v-else class="name truncate">{{ named(profiles[3]!) }}</span>
           </template>
         </template>
         <template #head-p4>
@@ -263,7 +265,7 @@ const showTop = ref(false);
                 <EIconButton
                   v-if="profiles.length > 1"
                   :icon="PhX"
-                  :label="`Remove ${profiles[4]!.player.name}`"
+                  :label="`Remove ${named(profiles[4]!)}`"
                   tooltip
                   size="sm"
                   @click="remove(profiles[4]!.player.key)"
@@ -274,7 +276,7 @@ const showTop = ref(false);
                 {{ profiles[4]!.games }} reviewed</span
               >
             </template>
-            <span v-else class="name truncate">{{ profiles[4]!.player.name }}</span>
+            <span v-else class="name truncate">{{ named(profiles[4]!) }}</span>
           </template>
         </template>
         <template #cell-label="{ row }">
@@ -332,19 +334,19 @@ const showTop = ref(false);
       <UiTable label="Openings most played" :columns="openings.columns" :rows="openings.rows" row-key="id">
         <template #cell-label>Top three</template>
         <template #head-p0>
-          <span v-if="profiles[0]" class="name truncate">{{ profiles[0]!.player.name }}</span>
+          <span v-if="profiles[0]" class="name truncate">{{ named(profiles[0]!) }}</span>
         </template>
         <template #head-p1>
-          <span v-if="profiles[1]" class="name truncate">{{ profiles[1]!.player.name }}</span>
+          <span v-if="profiles[1]" class="name truncate">{{ named(profiles[1]!) }}</span>
         </template>
         <template #head-p2>
-          <span v-if="profiles[2]" class="name truncate">{{ profiles[2]!.player.name }}</span>
+          <span v-if="profiles[2]" class="name truncate">{{ named(profiles[2]!) }}</span>
         </template>
         <template #head-p3>
-          <span v-if="profiles[3]" class="name truncate">{{ profiles[3]!.player.name }}</span>
+          <span v-if="profiles[3]" class="name truncate">{{ named(profiles[3]!) }}</span>
         </template>
         <template #head-p4>
-          <span v-if="profiles[4]" class="name truncate">{{ profiles[4]!.player.name }}</span>
+          <span v-if="profiles[4]" class="name truncate">{{ named(profiles[4]!) }}</span>
         </template>
         <template #cell-p0>
           <template v-if="profiles[0]">

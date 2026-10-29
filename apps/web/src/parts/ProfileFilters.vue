@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { ProfileFilter, Speed } from "../api/types";
-import { coverage, speedName, WINDOWS, windowName } from "../format";
+import { ALL_LIMIT, coverage, speedName, WINDOWS, windowName } from "../format";
 import UiSeg from "../ui/UiSeg.vue";
 import UiToolbar from "../ui/UiToolbar.vue";
 import UiSelect from "../ui/UiSelect.vue";
@@ -36,9 +36,13 @@ const kinds = [
   { value: "casual", label: "Casual" },
 ];
 const windows = WINDOWS.map((n) => ({ value: String(n), label: windowName(n) }));
-const covers = computed(() =>
-  props.games ? `Figures are from ${coverage(filter.value.limit ?? 200, props.games, props.whose)}.` : "",
-);
+/** The select already says "Last 200 games"; this line is only for what it does not: how many games there are in all, or fewer than asked. */
+const covers = computed(() => {
+  const limit = filter.value.limit ?? 200;
+  return props.games && (limit >= ALL_LIMIT || props.games < limit)
+    ? `Figures are from ${coverage(limit, props.games, props.whose)}.`
+    : "";
+});
 </script>
 
 <template>

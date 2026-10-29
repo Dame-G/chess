@@ -269,6 +269,10 @@ pub struct Profile {
     /// "Review all" does. Only a single profile fills it; `None` when unknown (no champion yet).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unreviewed_total: Option<u32>,
+    /// Whether your whole Lichess history has been imported, so later imports only look for new games. Only your own
+    /// profile fills it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_complete: Option<bool>,
     pub first_game: Option<Timestamp>,
     pub last_game: Option<Timestamp>,
     /// The rating in the newest game considered.
@@ -487,6 +491,7 @@ pub fn profile(player: Player, filter: ProfileFilter, games: &[ProfileGame], wea
         reviewed,
         pending_review: total - reviewed,
         unreviewed_total: None,
+        history_complete: None,
         first_game: mine.last().map(|(g, _)| g.summary.started_at.clone()),
         last_game: newest.map(|(g, _)| g.summary.started_at.clone()),
         results,

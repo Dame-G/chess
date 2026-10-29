@@ -227,6 +227,13 @@ async fn pasted_pgn_becomes_games_that_are_reviewed_and_profiled() {
     assert_eq!(status, 200, "{p}");
     assert_eq!(p["games"], 1);
     assert_eq!(p["reviewed"], 1);
+    // Your whole history is not here until an import says so; other players have no such flag.
+    assert_eq!(p["history_complete"], false);
+    t.app.hub.store.put_meta(dameless_play::import::COMPLETE_KEY, &true).await.unwrap();
+    let (_, p) = t.get("/api/players/you/profile").await;
+    assert_eq!(p["history_complete"], true);
+    let (_, p) = t.get("/api/players/lichess:alice/profile").await;
+    assert!(p.get("history_complete").is_none(), "{p}");
     let (status, c) = t.get("/api/compare?players=you,lichess:alice").await;
     assert_eq!(status, 200, "{c}");
     assert_eq!(c["profiles"].as_array().unwrap().len(), 2);
