@@ -56,12 +56,12 @@ eos's compact density ships 3 / 6 / 9 / 12 / 18 px gaps, which is not a grid and
 
 ```css
 :root {
-  --sp-1: 0.25rem;  /*  4  hairline gaps: icon to text, chip internals, stacked label/value */
-  --sp-2: 0.5rem;   /*  8  inside a control group, between inline items, row padding-block */
-  --sp-3: 0.75rem;  /* 12  panel/sheet inner padding, between a label and its field, cell padding-inline */
-  --sp-4: 1rem;     /* 16  between blocks inside a section, dialog padding, sheet gutter on desktop */
-  --sp-5: 1.5rem;   /* 24  between sections */
-  --sp-6: 2rem;     /* 32  page-level breathing (empty states, sheet top) */
+  --sp-1: 0.25rem; /*  4  hairline gaps: icon to text, chip internals, stacked label/value */
+  --sp-2: 0.5rem; /*  8  inside a control group, between inline items, row padding-block */
+  --sp-3: 0.75rem; /* 12  panel/sheet inner padding, between a label and its field, cell padding-inline */
+  --sp-4: 1rem; /* 16  between blocks inside a section, dialog padding, sheet gutter on desktop */
+  --sp-5: 1.5rem; /* 24  between sections */
+  --sp-6: 2rem; /* 32  page-level breathing (empty states, sheet top) */
 
   /* eos follows the grid */
   --e-gap-tight: var(--sp-1);
@@ -76,17 +76,17 @@ Foundation owner: after aliasing, screenshot every eos control (Button, Segmente
 
 Rules of use:
 
-| Where | Value |
-| --- | --- |
-| Sheet / panel inner padding | `--sp-3` (mobile) `--sp-4` (>= 56rem) |
-| Between sections in a sheet | `--sp-5` with a hairline (see 2.5), no extra padding on both sides |
-| Between blocks inside a section | `--sp-4` |
-| Section header to its content | `--sp-2` |
-| Label to field in a form | `--sp-1` |
-| Between form fields | `--sp-3` |
-| Dialog padding | `--sp-4`; footer padding `--sp-3` `--sp-4` |
-| Rail row padding | `--sp-2` block, `--sp-3` inline |
-| Table cell | `--sp-1` block, `--sp-2` inline; first/last cell `--sp-3` if the table touches the container edge |
+| Where                           | Value                                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Sheet / panel inner padding     | `--sp-3` (mobile) `--sp-4` (>= 56rem)                                                             |
+| Between sections in a sheet     | `--sp-5` with a hairline (see 2.5), no extra padding on both sides                                |
+| Between blocks inside a section | `--sp-4`                                                                                          |
+| Section header to its content   | `--sp-2`                                                                                          |
+| Label to field in a form        | `--sp-1`                                                                                          |
+| Between form fields             | `--sp-3`                                                                                          |
+| Dialog padding                  | `--sp-4`; footer padding `--sp-3` `--sp-4`                                                        |
+| Rail row padding                | `--sp-2` block, `--sp-3` inline                                                                   |
+| Table cell                      | `--sp-1` block, `--sp-2` inline; first/last cell `--sp-3` if the table touches the container edge |
 
 `--ws-pad` (0.75rem) in `App.vue` becomes `var(--sp-3)`; delete `--ws-pad` and use the token.
 
@@ -94,17 +94,17 @@ Rules of use:
 
 Two families already loaded: Hanken Grotesk Variable (sans), JetBrains Mono Variable (figures), Fraunces only in the wordmark. Collapse the many sizes (0.75, 0.8125, 0.875, 1, 1.125, 1.25, 1.5 and several clamp()s) to this:
 
-| Token | Size / line | Weight | Family | Use |
-| --- | --- | --- | --- | --- |
-| `--t-title` | 1.25rem / 1.3 | 600 | sans | Sheet title, dialog title, empty-state title |
-| `--t-head` | 1rem / 1.35 | 600 | sans | Section title (the one section label style), card title |
-| `--t-body` | 0.875rem / 1.45 | 400 | sans | Everything: panels, sheets, rows, forms, tables. Default for the whole app. |
-| `--t-body-strong` | 0.875rem / 1.45 | 600 | sans | Row primary text, table first column, field values |
-| `--t-meta` | 0.75rem / 1.35 | 400 | sans | Muted secondary: labels on stats, axes, helper text, timestamps |
-| `--t-fig` | 0.875rem / 1.3 | 500 | mono | Figures in tables, lists, strips, rail |
-| `--t-fig-lg` | 1.25rem / 1.2 | 600 | mono | Stat values |
-| `--t-fig-xl` | 1.75rem / 1.1 | 600 | mono | The one hero figure of a screen (accuracy in review, rating on You) |
-| `--t-clock` | 1.125rem / 1 | 600 | mono | Board clocks |
+| Token             | Size / line     | Weight | Family | Use                                                                         |
+| ----------------- | --------------- | ------ | ------ | --------------------------------------------------------------------------- |
+| `--t-title`       | 1.25rem / 1.3   | 600    | sans   | Sheet title, dialog title, empty-state title                                |
+| `--t-head`        | 1rem / 1.35     | 600    | sans   | Section title (the one section label style), card title                     |
+| `--t-body`        | 0.875rem / 1.45 | 400    | sans   | Everything: panels, sheets, rows, forms, tables. Default for the whole app. |
+| `--t-body-strong` | 0.875rem / 1.45 | 600    | sans   | Row primary text, table first column, field values                          |
+| `--t-meta`        | 0.75rem / 1.35  | 400    | sans   | Muted secondary: labels on stats, axes, helper text, timestamps             |
+| `--t-fig`         | 0.875rem / 1.3  | 500    | mono   | Figures in tables, lists, strips, rail                                      |
+| `--t-fig-lg`      | 1.25rem / 1.2   | 600    | mono   | Stat values                                                                 |
+| `--t-fig-xl`      | 1.75rem / 1.1   | 600    | mono   | The one hero figure of a screen (accuracy in review, rating on You)         |
+| `--t-clock`       | 1.125rem / 1    | 600    | mono   | Board clocks                                                                |
 
 Body text becomes 14 px app-wide (today the body is 16 px, panels fall back to 14 px, and sheets mix both). The `--e-type-body` the eos shell uses stays for eos internals; set `body { font: var(--t-body) }`.
 
@@ -121,21 +121,25 @@ Keep the Saddle theme inputs. Add semantic aliases so components never choose a 
 ```css
 :root {
   /* surfaces */
-  --c-page: var(--e-background);          /* app background, behind the board */
-  --c-pane: var(--e-surface);             /* rail, panel, sheet, dialog */
-  --c-raise: color-mix(in oklab, var(--e-ink) 4%, var(--e-surface));   /* table header, code, inset, hover */
-  --c-sunk: color-mix(in oklab, var(--e-ink) 7%, var(--e-surface));    /* selected row, segmented track */
+  --c-page: var(--e-background); /* app background, behind the board */
+  --c-pane: var(--e-surface); /* rail, panel, sheet, dialog */
+  --c-raise: color-mix(in oklab, var(--e-ink) 4%, var(--e-surface)); /* table header, code, inset, hover */
+  --c-sunk: color-mix(in oklab, var(--e-ink) 7%, var(--e-surface)); /* selected row, segmented track */
   /* ink */
   --c-ink: var(--e-ink);
-  --c-ink-2: var(--e-muted);              /* labels, meta; already meets 4.5:1 */
-  --c-ink-3: color-mix(in oklab, var(--e-muted) 70%, var(--e-surface)); /* disabled, axis ticks only; never for text that carries information */
+  --c-ink-2: var(--e-muted); /* labels, meta; already meets 4.5:1 */
+  --c-ink-3: color-mix(
+    in oklab,
+    var(--e-muted) 70%,
+    var(--e-surface)
+  ); /* disabled, axis ticks only; never for text that carries information */
   /* lines */
-  --c-line: color-mix(in oklab, var(--e-border) 40%, transparent);      /* hairline dividers (replaces .ws --line at 55%) */
-  --c-line-strong: var(--e-border);       /* control borders, table outer border */
+  --c-line: color-mix(in oklab, var(--e-border) 40%, transparent); /* hairline dividers (replaces .ws --line at 55%) */
+  --c-line-strong: var(--e-border); /* control borders, table outer border */
   /* action */
-  --c-act: var(--e-primary);              /* primary button fill, the selected marker bar, the live dot, focus */
+  --c-act: var(--e-primary); /* primary button fill, the selected marker bar, the live dot, focus */
   --c-act-ink: var(--e-on-primary);
-  --c-act-wash: var(--e-primary-soft);    /* selected row/tab wash, 15% */
+  --c-act-wash: var(--e-primary-soft); /* selected row/tab wash, 15% */
   /* outcomes (the only place green/red are allowed besides status dots and stamps of the same meaning) */
   --c-win: var(--e-success);
   --c-loss: var(--e-danger);
@@ -156,11 +160,11 @@ Rules:
 
 ### 2.4 Radii, borders, elevation
 
-| Token | Value | Use |
-| --- | --- | --- |
-| `--r-0` | 0 | Table internals, board edges against the stage, strips |
-| `--r-1` | 3px (`--e-radius-md`) | Controls, badges, inputs, rows' selected state, board, cards |
-| `--r-pill` | `--e-radius-pill` | The live dot, WDL/penta bars' ends only |
+| Token      | Value                 | Use                                                          |
+| ---------- | --------------------- | ------------------------------------------------------------ |
+| `--r-0`    | 0                     | Table internals, board edges against the stage, strips       |
+| `--r-1`    | 3px (`--e-radius-md`) | Controls, badges, inputs, rows' selected state, board, cards |
+| `--r-pill` | `--e-radius-pill`     | The live dot, WDL/penta bars' ends only                      |
 
 Only two radii in the app. The theme's `radius: 3` stays; remove the `--e-radius-sm` (1.5px) usage in custom CSS.
 
@@ -174,19 +178,19 @@ Pane-to-pane (rail | stage | panel): one `1px var(--c-line)`. Section-to-section
 
 ### 2.6 Density targets (row heights)
 
-| Thing | Fine pointer | Coarse (`pointer: coarse`) |
-| --- | --- | --- |
-| Button / input / select / segmented option | 32 | 44 |
-| Icon button | 32 | 44 |
-| Header bar | 48 | 48 |
-| Status footer | 32 | removed (moves into the header indicator) |
-| Rail row (2 lines) | 48 | 56 |
-| Move row | 28 | 40 |
-| List row, one line | 32 | 44 |
-| List row, two lines | 48 | 56 |
-| Table row | 28 | 40 |
-| Table header | 24 | 32 |
-| Tab (panel and sheet) | 36 | 44 |
+| Thing                                      | Fine pointer | Coarse (`pointer: coarse`)                |
+| ------------------------------------------ | ------------ | ----------------------------------------- |
+| Button / input / select / segmented option | 32           | 44                                        |
+| Icon button                                | 32           | 44                                        |
+| Header bar                                 | 48           | 48                                        |
+| Status footer                              | 32           | removed (moves into the header indicator) |
+| Rail row (2 lines)                         | 48           | 56                                        |
+| Move row                                   | 28           | 40                                        |
+| List row, one line                         | 32           | 44                                        |
+| List row, two lines                        | 48           | 56                                        |
+| Table row                                  | 28           | 40                                        |
+| Table header                               | 24           | 32                                        |
+| Tab (panel and sheet)                      | 36           | 44                                        |
 
 Set `--e-control-height: 2rem; --e-tap: 2rem` under `@media (pointer: fine)` in `base.css` (today 2.5rem/2.25rem in `App.vue`, which gives 40 px buttons that are the biggest thing in a panel full of 14 px text) and `2.75rem` under coarse. Tokens: `--h-control`, `--h-row`, `--h-row-2`, `--h-table-row`, `--h-move`, `--h-tab` for the rest, defined once.
 
@@ -202,9 +206,9 @@ Keep eos snappy. Add: `@media (prefers-reduced-motion: reduce)` kills sheet slid
 
 ```css
 :root {
-  --w-rail: clamp(16rem, 18vw, 20rem);   /* 256..320 (today 288..352) */
-  --w-panel: clamp(22rem, 24vw, 28rem);  /* 352..448 */
-  --w-sheet: clamp(32rem, 34vw, 44rem);  /* sheets dock here beside the board */
+  --w-rail: clamp(16rem, 18vw, 20rem); /* 256..320 (today 288..352) */
+  --w-panel: clamp(22rem, 24vw, 28rem); /* 352..448 */
+  --w-sheet: clamp(32rem, 34vw, 44rem); /* sheets dock here beside the board */
   --w-sheet-wide: clamp(40rem, 52vw, 64rem); /* Compare, You > Openings, Dameless > Ideas tables */
   --w-measure: 62ch;
 }
@@ -335,7 +339,7 @@ Label (`--t-meta` 500, sentence case, "Optional" appended in muted instead of ri
 
 ```
 props: open (v-model); title: string; size?: 'sm'(26rem)|'md'(32rem)|'lg'(40rem); busy?: boolean; danger?: boolean
-slots: default; #footer-start (hints, validation like "Give it a title."); #actions (override); 
+slots: default; #footer-start (hints, validation like "Give it a title."); #actions (override);
 emits: confirm; cancel
 props for actions: confirmLabel: string; cancelLabel?: string (default Cancel); confirmDisabled?: boolean
 ```
@@ -399,12 +403,12 @@ Three regions plus header, exactly as now, with these changes.
 
 Breakpoints (single list, defined once in `src/media.ts`, referenced by name not number): `sm` 30rem (480), `md` 48rem (768), `lg` 75rem (1200), `xl` 100rem (1600). Today the code uses 30, 40, 56, 75 rem in different files (header collapses at 56, new-game label at 40, stage at 40 and 75). Collapse to the list above.
 
-| Width | Layout |
-| --- | --- |
-| < 48rem (phone) | Single column. Board edge to edge, then the panel content, then nothing else on the page. Navigation = **bottom tab bar** (4.5). The Games rail is its own tab (full screen). Sheets are full-screen pages with the tab bar still visible. |
-| 48 to 75rem (tablet) | Two columns: board (sized by height) left, panel right (`--w-panel`), rail behind a left drawer button in the header (`Games` icon) that slides over. Never a 768 px square board (the audit's 768 shot scrolls 2,466 px). Sheets: right drawer `--w-sheet` over the panel, board stays. |
-| 75rem to 100rem | Rail + stage + panel/sheet as above. |
-| >= 100rem (1920) | Same, but the panel grows to 28rem and the rail to 20rem; remaining width goes to the stage margins. The board is capped by height (see 4.2), so extra width is **not** given to the board: instead, below the board at >= 100rem and >= 56rem height, nothing is added. Accept margin; do not stretch. (The 1920 shot has a 770 px board with 330 px of margin each side; acceptable and calm. The fix there is smaller rail/panel gaps, not a bigger board.) |
+| Width                | Layout                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| < 48rem (phone)      | Single column. Board edge to edge, then the panel content, then nothing else on the page. Navigation = **bottom tab bar** (4.5). The Games rail is its own tab (full screen). Sheets are full-screen pages with the tab bar still visible.                                                                                                                                                                                                                     |
+| 48 to 75rem (tablet) | Two columns: board (sized by height) left, panel right (`--w-panel`), rail behind a left drawer button in the header (`Games` icon) that slides over. Never a 768 px square board (the audit's 768 shot scrolls 2,466 px). Sheets: right drawer `--w-sheet` over the panel, board stays.                                                                                                                                                                       |
+| 75rem to 100rem      | Rail + stage + panel/sheet as above.                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| >= 100rem (1920)     | Same, but the panel grows to 28rem and the rail to 20rem; remaining width goes to the stage margins. The board is capped by height (see 4.2), so extra width is **not** given to the board: instead, below the board at >= 100rem and >= 56rem height, nothing is added. Accept margin; do not stretch. (The 1920 shot has a 770 px board with 330 px of margin each side; acceptable and calm. The fix there is smaller rail/panel gaps, not a bigger board.) |
 
 ### 4.2 The board stage
 
@@ -477,8 +481,9 @@ Ref: `main-1440-light.png`, `board-play-375-light.png`, `board-review-768-dark.p
 Ref: `main-1440-light.png`, `real-main-1440.png`, `real-rail-you-1440.png`, `empty-1440-light.png`, `error-1440-light.png`, `board-play-375-light.png` (bottom), `board-review-768-dark.png`.
 
 **Data (P1, a bug that looks like design):** `stores/games.ts` loads `limit: 300` newest and filters client-side. On the real app trial games fill all 300, so imported history never appears, You filter shows "No games here yet" with 3,708 games. Fix: the rail asks the server for the active filter (`player=you`, `source=…`, `trial` for Trials, none for All but with `exclude_trial` or by folding trial rows server-side) and pages 50 at a time with infinite scroll in the virtual list (a "Load more" row at the end). Keep the live games always loaded (they come over SSE). `All` = games you or Dameless played + live; trial games only under Trials (they are not "games" in the user's sense; AGENTS defines game as every record, but the rail's job is the user's attention: a 4,000-pair trial must be one folded row and never be in All beyond its single row; as now but not at the cost of the 300).
+
 - Remove: the "live" mono word at row end (replace by the pulsing dot only; the word duplicates the dot); the accuracy pair `97.0 · 96.0` in mono bold on the second line for reviewed games (it competes with the names; move it to a trailing muted `97 / 96` with a tooltip, only when reviewed); the caret-only trial rows' extra indentation gutter on non-trial rows (rows have a fixed 16 px gutter that is empty for 90% of rows).
-- Merge: the "You - Dameless" title format. Replace the hyphen with ` - ` en-dash rendering done through `UiPlayer` pair: `You  vs  Dameless` is wrong for AGENTS' "match" ban? No: `vs` is fine (the trial rows already say `deeper-lmr vs v14`). Use ` vs ` consistently (today games use ` - ` and trials use ` vs `).
+- Merge: the "You - Dameless" title format. Replace the hyphen with `-` en-dash rendering done through `UiPlayer` pair: `You  vs  Dameless` is wrong for AGENTS' "match" ban? No: `vs` is fine (the trial rows already say `deeper-lmr vs v14`). Use `vs` consistently (today games use `-` and trials use `vs`).
 - Row (48 px): line 1: `UiPlayer(white) vs UiPlayer(black)` with names `--t-body-strong` ellipsis; trailing `UiResult` or live dot. Line 2 `--t-meta`: `10+5 · Rapid · rated` left, relative time right (`20h`). Selected row: `--c-sunk` + 2 px act bar at start (today full cognac outline box).
 - Filter row: `UiSeg` sm: `All · You · Dameless · Lichess · Trials`, no wrap at 256 px (labels `All You Dameless Lichess Trials`: 5 options at 256 px = 51 px each; at `--w-rail` 256 use `Dameless` truncated? Instead: `All · You · Dameless · Lichess · Trials` at `--t-meta` 12 px fits 256 minus gutters; verify at 16rem).
 - Add a search field? No: the command palette already finds games. Instead the filter row gets a trailing icon button `Import` only when You has 0 games (newcomer).
@@ -513,6 +518,7 @@ Current state is the most visibly broken panel: result line, a Rematch button, a
 ```
 
 then **the current move card** (`17. Rd8#  Best move` with the glyph, the eval, and `Better: Qb3` with an arrow toggle) and the moves list. Judgement chips replace the table: click a chip to step through those moves (`n`/`p` keys already exist for this? if not, add: it is the most useful review interaction).
+
 - Copy: `Best move` stays; `Missed chance` -> `Missed win` only for the lila `miss` class (keep the classification id, change the label), tooltip `You missed a chance to win material or the game.` Keep `Great move` -> `Great`. `Brilliant` stays. Word `Inaccuracy` fine.
 - States: `Not reviewed` shows `UiEmpty dense`: `This game hasn't been reviewed.` + `Review it` primary (queues work), plus `about 1 min` estimate; running review shows a progress `n of 33 positions` bar with Pause; fair-play block shows the existing notice reworded: `Analysis is off while you play on Lichess.` (matches the server's 409 copy).
 - Ref bug P1: `Play this out` clipped at 1280x800.
@@ -634,6 +640,7 @@ Ref: `sheet-settings-1440-light.png`, `sheet-settings-tall-1440-light.png`, `set
 All use `UiDialog`; frame sizes: New game `md`, New idea `md`, Bot rules `lg`, Datagen/Import `sm`, Confirms `sm`.
 
 **New game** (ref `dlg-newgame-1440-light.png`, `dlg-newgame-375-light.png`)
+
 - Remove: the uppercase kickers `OPPONENT`, `VERSION`, `STRENGTH`, `TIME CONTROL`, `YOU PLAY`; the helper `Minutes + seconds added each move.` (move to the placeholder/tooltip on the custom clock input); the helper under book line.
 - Order: Opponent `UiSeg` (Dameless / Lichess / Stockfish); for Dameless one row `Version [v14 champion ▾]  Strength [Full ▾]` (if there is only one version, hide the Version select and show `v14`); Time control as a `UiSeg` of 5 presets + `Custom…` (a reveal of two number fields); You play `UiSeg` `White · Random · Black` (rename `Either` -> `Random`); advanced (`Start from a book line`, hash, threads) in a collapsed `Options` disclosure (the book switch is today a prominent control but rarely used).
 - Footer: `[Cancel] ........ [Start game]`; the primary label includes the setup `Start 5+3 vs Dameless`, so the user can confirm what they are about to start without re-reading. Press Enter to start.
@@ -641,16 +648,19 @@ All use `UiDialog`; frame sizes: New game `md`, New idea `md`, Bot rules `lg`, D
 - At 375: bottom sheet, `UiSeg full`.
 
 **New idea** (ref `dlg-newidea-1440-light.png`)
+
 - Remove: the `A change to test against the champion.` sentence under the title; the helper `Commit the change on a branch with its Bench: line first.` as always-visible (show only as the error when a branch fails the check, as today `check-branch`).
 - Order: Kind `UiSeg` + a one-line explanation that updates with the kind (`Should play stronger. Bench must change, then quick screen, then short games.`), Title, `What it should do, and why` -> `Hypothesis`, Branch (combobox) with live validation (`Bench line OK` / `Missing Bench line`), `Also play long games` switch with its hint folded into the tooltip, Tags (optional).
 - Footer: `[Cancel] ... [Queue idea]`, the validation message `Give it a title.` moves to the field. Disabled-primary state uses the standard disabled look (today a dashed outline: remove the dashed border).
 - Copy: `Custom trial` is jargon: `Single trial`.
 
 **Bot rules** (ref `dlg-botrules-1440-light.png`)
+
 - Order: Version; Takes challenges: `Rated`, `Casual`, `From people`, `From bots` as four checkboxes in a 2x2 (switches here feel like settings that apply now; checkboxes fit a form with a Save); Speeds checkboxes; Game length: **one range row** `Clock from [1 min] to [30 min]`, `Added time from [0 s] to [30 s]`, `Games at once [1]` with number fields not full-width steppers (the stepper rows today use ~50 px height each, six of them); `Clocks to look for games at` as a tag-style input (`3+0 3+2 5+3`); `Engine` disclosure for hash/threads/move overhead.
 - Copy: `The bot's rules` -> `Bot rules`; remove the description; `Required` hint -> inline error.
 
 **Generate data / Import dataset** (ref `dlg-datagen-1440-light.png`)
+
 - Positions field `20 million`: a number field with the unit as suffix text `million`, not a stepper pair; Threads field with the default shown `7 (half of 15)`; Name optional with the hint inside the placeholder (`Reuse a name to add to it`); the estimate line `86.0 MB on disk, about 4 h to 5 h in the background.` becomes a summary row above the footer (`~86 MB · 4 to 5 h`). Import: the size confirmation is part of the dialog (`Download 7.9 MB from <host>?` with the host shown) and the primary label is `Download 7.9 MB`.
 
 **Confirms** (Promote, Push, Resign, Delete dataset/build, Disconnect): `UiConfirm` only. Title is the action as a question, one sentence of consequence, `Cancel` left, action right, danger tone for destructive. Never a 2-line title.
@@ -716,7 +726,7 @@ Severity: **P1** must fix, **P2** should, **P3** nice. Files relative to `apps/w
 
 - R-1 **P1** Real data: rail shows a single trial row, You filter says `No games here yet`, with 3,708 games, due to `limit=300` + client filter. Server-side filter + paging (5.2). `stores/games.ts`, `rail/GamesRail.vue`, `rail/rail.ts`, API query params (`GET /api/games` already supports `player`, `source`, `trial`).
 - R-2 **P2** `1-0` coloured by raw result not by the user's outcome: `cutemouse83 - You 1-0` (you lost) shows red; `You - Dameless 1-0` green; `Dameless - Bot-Sam 1-0` green though you are not in it. `UiResult` (3.10). `rail/GameRow.vue`.
-- R-3 **P2** Game titles use ` - `, trials `vs`; mixed. ` vs ` everywhere. `rail/GameRow.vue`, `rail/GamesRail.vue`.
+- R-3 **P2** Game titles use `-`, trials `vs`; mixed. `vs` everywhere. `rail/GameRow.vue`, `rail/GamesRail.vue`.
 - R-4 **P2** Selected row is a full cognac outline box plus tinted fill: loudest object on screen. Act bar + `--c-sunk`.
 - R-5 **P2** `live` word + dot duplicates; the word is red-brown mono. Dot only (plus `Live` tooltip). `rail/GameRow.vue`.
 - R-6 **P2** Second line packs accuracy, clock, speed, rated: `97.0 · 96.0 · 3+0 · Blitz · rated` truncates to `10+5 · Rapid · rat…` at 288 px. Accuracy to a trailing tooltip; `3+0 Blitz · rated`.
@@ -794,6 +804,7 @@ The first agent must land before the others start (they can read this brief and 
 Owns: `src/base.css`, `src/theme.ts`, `src/media.ts`, `src/format.ts` (`formatScore`, `formatResult`), `src/ui/**` (new, all components in section 3 plus `badge.ts`, `useConfirm.ts`), `tests/ui/**`, `src/parts/Term.vue`, `src/shell/Logo.vue`.
 
 Deliver:
+
 1. Tokens in 2 (spacing, type, colour, radii, density, layout, breakpoints), eos aliasing and per-control regression check at both schemes.
 2. `src/ui/`: `UiSection`, `UiStat(s)`, `UiTable`, `UiKeyValue`, `UiEmpty`, `UiToolbar`, `UiPlayer`, `UiScore`, `UiBadge`, `UiResult`, `UiSeg`, `UiField`, `UiDialog`, `UiConfirm`, `UiSheetPage`, `UiPanelHead`, `UiLive`.
 3. A hidden dev route `/?fixtures&kit` (route name `kit`, only in dev/fixtures) that renders every component in every variant, light and dark: the cohesion pass uses it as the reference.
@@ -828,6 +839,7 @@ Rules for B to E: use only `src/ui/` components and tokens for sections, stats, 
 ### Area F (final): Cohesion pass (one agent, after B to E)
 
 Checks, in order:
+
 1. Delete `.sec*`, `.figs*`, `.part-title`, `.plain`, `.sheet-actions`, `.toast-actions` if unused; knip clean; no bare rem/px/hex outside the exceptions list (grep).
 2. One section header look, one stat, one table, one badge, one empty, one dialog frame everywhere (screenshot every screen; compare to `/?kit`).
 3. Exactly one filled cognac button per view; list the violations. Cognac only as primary fill, selected marker, live dot, focus.
