@@ -861,3 +861,128 @@ Checks, in order:
 - Not fully covered (flag for the implementers): `?fixtures=fairplay` states, `botnoversion`, `untrusted`, `nogpu`, tune5000 and the Train/Tune views, challenge toast flows, promotion picker, 1920 dark sheets. Shoot them after your change and apply the same rules.
 - Measured at 1440x900: header 49, footer 37, rail 288, stage 778, panel 374, board 647 (explore) / 593 (review) / 727 (drill). Tokens: control 44 px by eos default (40 px in `App.vue` fine pointer), gap scale 3/6/9/12/18.
 - Decisions that deliberately depart from `docs/design.md` (update it in the cohesion pass): sheets are tabbed pages; the status footer is replaced by the header work indicator; mobile has a bottom tab bar; the rail is server-filtered and paged; single-tab tablists are hidden.
+
+---
+
+## 9. How to use the kit (written by Area A, Foundation)
+
+The kit is built and on main. Read this before you touch a screen; it is how B to E use it the same way. See it at **`/?fixtures&kit`**: every component in every state, the scales, a measured contrast table, and what each `format.ts` function writes. It is its own app root, loaded only when fixtures are on (`main.ts`), so it is not in the app's main path. The scheme switch at its top flips light and dark.
+
+### 9.1 The rules
+
+1. Import by path, never a barrel: `import UiSection from "../ui/UiSection.vue"`. The components are `src/ui/Ui*.vue`; `UiKv` is a row of `UiKeyValue`; `badge.ts` has the status tones; `useConfirm.ts` the confirmation; `player.ts` the `PlayerRef` type.
+2. **No screen styles its own section header, stat, table, empty state, badge, player name, result, score, segmented control, field label or dialog frame.** If a component lacks something, add it to `src/ui/` (a small PR, said so in its description) instead of styling locally.
+3. Style only with tokens: `--sp-1..6`, `--t-*`, `--c-*`, `--r-*`, `--h-*`, `--i-*`, `--w-*` (all in `base.css`; the kit page draws each). No bare `rem`, `px` or hex, except 1 px hairlines through `--e-stroke-hair` and `--e-stroke-focus`. A font is `font: var(--t-body)`, never a size on its own. A figure is `--t-fig*` (mono); a name is sans.
+4. Cognac (`--c-act`) is the one primary button, the selected marker, the live dot and focus. Never a link, a label or a decoration. Green and red are for results and judgements: `UiResult`, `UiScore perspective="mover"`, `UiBadge tone`.
+5. Every state is designed: pass `loading` and `error` to `UiSheetPage` and `UiTable`, use `UiEmpty` for empties and failures, instead of writing a skeleton or a message of your own. For a skeleton the kit does not cover use the `.skel` class (it appears after 150 ms, so a fast answer never flashes one).
+6. Text is sentence case. A missing number is `NONE` (`–`), or let `UiStat` and `UiTable` write it.
+
+### 9.2 Old pattern, new component
+
+| You have                                                    | Use                                                                                                                                        |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `.sec`, `.sec-head`, `.sec-note`, `<h3 class="part-title">` | `<UiSection title="…">` with `#aside` and `#note`; `:level="2"` for a part of a part; `collapsible` with `v-model:open`                    |
+| `.figs`, `.fig`, `EMetric`                                  | `<UiStats><UiStat label value unit delta tone hint size sub /></UiStats>`; `hint="accuracy"` (a glossary key) replaces a `<Term>` label    |
+| `EDataGrid`, `ETable`, a grid of divs                       | `<UiTable :columns :rows row-key label>` with `#cell-<key>="{ row, value }"`; a `@select` makes rows buttons                               |
+| `EDescriptionList`, the `5+3 · local game` line             | `<UiKeyValue :items>` or `<UiKeyValue><UiKv label>…</UiKv></UiKeyValue>`; `inline` for the middle-dot line                                 |
+| `EEmptyState`, `.sec-note` empties, `ENotice` as an empty   | `<UiEmpty title body>` with `#actions` (`dense` for the one-liner; `tone="error"` for a failed region with a Try again button)             |
+| A row of filter buttons, `ESegmented`                       | `<UiSeg v-model label :options size full>`; `multiple` with `v-model:values`; `count` and `icon` per option                                |
+| `EStamp`                                                    | `<UiBadge :tone>`; the tones of statuses are `ideaTone`, `trialTone`, `workTone`, `healthTone` in `ui/badge.ts`                            |
+| Names with ratings (Strip, GameRow, headers, Top players)   | `<UiPlayer :seat colour size link live current :rating :provisional>`; a person who is not a seat is a `PlayerRef` `{ name, key, rating }` |
+| `1-0` coloured by hand                                      | `<UiResult :result="resultOf(game.outcome)" :you="game.you">`; no `you` means no colour                                                    |
+| A signed eval (`scoreText`)                                 | `<UiScore :score>`; `perspective="mover"` only in profile contexts                                                                         |
+| `EField` and a kicker label                                 | `<UiField label hint error optional v-slot="{ id, describedby, invalid }">` around the control; `group` around a `UiSeg`                   |
+| `EDialog`, `EConfirmDialog`                                 | `<UiDialog v-model:open title confirm-label @confirm>`; confirmations: `await useConfirm()({ title, body, confirmLabel, danger })`         |
+| `ESheet` and `useSheet`                                     | `<UiSheetPage title subtitle :tabs v-model:tab>` (it does its own Close and Back)                                                          |
+| The first lines of Play, Watch and Review panels            | `<UiPanelHead :game :mode>` with `#status` and `#actions`                                                                                  |
+| Dots                                                        | `<UiLive tone pulse label>`                                                                                                                |
+| Rows of buttons                                             | `<UiToolbar>` with `#end`                                                                                                                  |
+
+### 9.3 Patterns
+
+A sheet (this is the whole frame; there is no `ESheet`, `useSheet` or `.ws--sheet` to wire):
+
+```vue
+<UiSheetPage
+  v-model:tab="tab"
+  title="You"
+  subtitle="dame_g · Lichess"
+  :tabs="tabs"
+  :loading="!profile"
+  :error="failed"
+  @retry="load"
+>
+  <template #actions><EButton variant="outline" size="sm">Review all</EButton></template>
+  <template #lead><UiStats><UiStat label="Rating" :value="profile.rating" size="xl" /></UiStats></template>
+  <template #tab-overview><UiSection title="Results">…</UiSection></template>
+  <template #tab-games>…</template>
+</UiSheetPage>
+```
+
+- `tabs` is `{ id, label, count? }[]`; one tab hides the tab row. The chosen tab is kept in the address as `?tab=` (`:sync="false"` turns that off). `#tab-<id>` is that tab's content; the default slot gets `{ tab }` if you prefer one slot.
+- The title takes focus on open and draws no box. Close and Back return to the board as it was (what `useSheet` did) unless you listen for `@close` or `@back` yourself. Do not wrap it in anything else.
+- It docks `position: absolute` to the right of the nearest positioned ancestor (`.ws`) at `--w-sheet` (`wide`: `--w-sheet-wide`) and covers the window below 75rem. **B**: make the workspace's third column `var(--w-sheet)` while a sheet is open (it is `--e-panel-width-md` today), and set `--sheet-inset-top` and `--sheet-inset-bottom` on the shell to what you keep visible on a phone (the tab bar's height). Both default to 0.
+
+A dialog and a confirmation:
+
+```vue
+<UiDialog
+  v-model:open="open"
+  title="New idea"
+  confirm-label="Queue idea"
+  :busy="busy"
+  :confirm-disabled="!title"
+  @confirm="save"
+>
+  <UiField label="Title" v-slot="{ id }"><ETextField :id label="Title" hide-label v-model="title" /></UiField>
+  <template #footer-start>{{ title ? "" : "Give it a title." }}</template>
+</UiDialog>
+```
+
+```ts
+const confirm = useConfirm();
+if (await confirm({ title: "Resign this game?", body: "You lose the game.", confirmLabel: "Resign", danger: true }))
+  resign();
+```
+
+- `UiDialog` never closes itself on confirm: you set `open` false when the work succeeds. Enter confirms from a field (Ctrl+Enter from a textarea); Escape and Cancel emit `cancel` and close; focus goes to the first field. Under 40rem it is a bottom sheet. `alert` is for a question that needs an answer (focus lands on Cancel).
+- **B (once): mount `<UiConfirm />` once in `App.vue`**, next to `<NewGame />`. It is the host of every `useConfirm()`; without it a confirmation logs a warning and answers no.
+
+A table:
+
+```vue
+<UiTable
+  label="Levels"
+  :columns="[
+    { key: 'name', label: 'Level' },
+    { key: 'rating', label: 'Rating', fig: true, sort: true, hide: 'sm' },
+  ]"
+  :rows="levels"
+  row-key="level"
+  @select="open"
+>
+  <template #cell-name="{ row }"><UiPlayer :seat="row.seat" /></template>
+</UiTable>
+```
+
+- `fig` columns are mono, grouped, at the end edge; the first column is strong; words get the rest of the width, and a table that cannot fit scrolls inside itself with a fade. `hide: 'sm' | 'md'` hides a column when the **table's own** width is under 30rem or 48rem (a 32rem sheet hides `md` columns). `sticky` pins the head to the pane that scrolls (the table then does not scroll sideways: hide columns instead). `manual` with `sort` and `@sort` lets the parent sort (server paging).
+
+### 9.4 Formatting (`format.ts`)
+
+One function per kind of figure; use these in new code, and let a missing value be `NONE` (`–`). `formatNumber(n, digits)` (`3,708`), `formatElo(n, digits)` (`+12`, `−5`), `formatEloPm(elo, err)` (`+3.1 ± 2.0`), `formatPercent(n)` (`81.3%`), `formatRating(n, provisional)` (`1,345?`), `formatDuration(s)` (`45 s`, `1 h 20 min`), `formatRelative(when)` (`5 minutes ago`), `formatDate(when)` (`12 Oct`), `formatDateTime(when)` (for a tooltip), `formatScore(score)` (`+0.6`, `#3`), `scoreSide(score)`, `resultOf(outcome)`, `formatResult(result, you)`. The older `signed`, `scoreText`, `plusMinus`, `figure`, `percent`, `ago`, `shortDate` and `duration` stay for screens not yet migrated; move to the canonical ones as you go. The kit page lists what each writes.
+
+### 9.5 What changed under you
+
+- **Spacing is the 4 px grid.** eos's gaps and spaces are aliased onto `--sp-*` in `theme.ts` (after the theme's own tokens, so it wins), and eos paddings are tighter (`--e-pad-control` 12, `--e-pad-card` 12, `--e-pad-chip` 8). **Body is 14 px** (`--e-text-md` and `--e-text-sm` are 14, helper text is 12). **Controls are 32 px with a fine pointer, 44 px with a coarse one** (`--e-control-height` and `--e-tap`; `--h-control` for your own). **Buttons are flat**: `--e-depth` is 0, the slab under every button is gone, and the controls stay legible (see the kit). **One radius** (`--e-radius-sm` is `--e-radius-md`). eos links are ink with a quiet underline, glossary terms are dotted and carry no colour, `EField` labels are 12 px sentence case.
+- `App.vue` still sets `--e-control-height: 2.5rem; --e-tap: 2.25rem` for fine pointers on `.shell`, which overrides the token below it: **B deletes that block** (T-6), with `--ws-pad` and `--line` (use `--sp-3` and `--c-line`).
+- The legacy `.sec`, `.figs`, `.part-title`, `.plain`, `.sheet-actions` and `.toast-actions` classes still exist in `base.css` for screens not yet migrated. Do not use them in new code; the cohesion pass deletes them.
+- Breakpoints: `src/media.ts` (`BREAKPOINTS`, `up("lg")`, `down("md")`, `useMedia`). A stylesheet writes the same numbers with the name in a comment.
+- Tests: `tests/ui/` has a `mount()` helper (memory router, pinia) if you add to the kit.
+
+### 9.6 Deviations from section 3 (decided while building; section 3 is otherwise as built)
+
+- **`UiSeg` is homebrew, not a wrapper of `ESegmented`.** `ESegmented` allows two to five options and its markup fights the quiet style; `UiSeg` takes any number, shows `count`, has `multiple` (`v-model:values`), a roving-tabindex radio group with arrow keys, Home and End, a reserved bold width so choosing never shifts a neighbour, and a 44 px target on a coarse pointer (`size="sm"` is 28 px fine, 44 coarse).
+- **`UiSheetPage` is homebrew, not `ESheet`**, which cannot give a sticky tab row, a title without a focus box, or the `--w-sheet` widths. It does Close and Back itself (`useSheetNav`, which replaces `useSheet`); `contained` is for previews; `tab` is `v-model:tab`; it emits `close`, `back` and `retry`.
+- **`UiDialog` wraps `EDialog`** (focus trap, portal, Escape) and restyles it. `open` is `v-model:open`; it adds `alert`, and `confirm-label` makes the default primary (the `#actions` slot replaces both buttons). **`UiConfirm` is the host component** of `useConfirm()`: a composable alone has nowhere to render.
+- `UiStat`: `digits` for a numeric value; each stat is its own `<dl>`. `UiTable`: `label`, `manual`, `sort`, `expanded` and `edge` added; `hide` is by container width; row selection is detected by a `@select` listener. `UiKeyValue`: `UiKv` rows, `inline`, and items may carry a `key` for `#value-<key>`. `UiPlayer`: `current`, `PlayerRef`, and the tooltip is the full name. `UiScore`: `turn` (for `mate: 0`). `UiField`: a scoped slot `{ id, describedby, invalid }` and `group`. `UiSection`: `headingLevel`. `UiToolbar`: `label`. `UiLive`: `pulse` and `label`. `UiPanelHead`: draws nothing without a game, and says how a finished game ended when it has no `#status`.
+- The kit is a query toggle (`?kit` with `?fixtures`) that swaps the app root in `main.ts`, not a router route named `kit`.

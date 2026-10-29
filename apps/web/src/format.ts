@@ -95,14 +95,8 @@ const units: [Intl.RelativeTimeFormatUnit, number][] = [
 export const aboutDuration = (seconds: number): string =>
   seconds < 60 ? "under a minute" : `about ${duration(seconds)}`;
 
-/** "5 minutes ago", "yesterday". */
-export function ago(iso: string, now = Date.now()): string {
-  const seconds = (new Date(iso).getTime() - now) / 1000;
-  for (const [unit, size] of units) {
-    if (Math.abs(seconds) >= size) return relative.format(Math.round(seconds / size), unit);
-  }
-  return "just now";
-}
+/** "5 minutes ago", "yesterday": `formatRelative`, under its older name. */
+export const ago = (iso: string, now = Date.now()): string => formatRelative(iso, now);
 
 /** "3 min", "1 h 20 min". */
 export function duration(seconds: number): string {
@@ -156,12 +150,12 @@ export function plusMinus(e: Estimate, digits = 1): string {
   return `${signed(e.elo, digits)} ± ${((e.high - e.low) / 2).toFixed(digits)}`;
 }
 
-/** A figure with `digits` decimals, or an em dash when there is none. */
+/** A figure with `digits` decimals, or an en dash when there is none (see `NONE`). */
 export function figure(n: number | null | undefined, digits = 1): string {
-  return n == null ? "—" : n.toFixed(digits);
+  return n == null ? NONE : n.toFixed(digits);
 }
 
-/** A percentage as `81.3`, or an em dash. */
+/** A percentage as `81.3`, or an en dash. */
 export const percent = (n: number | null | undefined, digits = 1): string => figure(n, digits);
 
 /** A file size as `412 MB`, `1.3 GB`. */
@@ -178,12 +172,8 @@ export function bytes(n: number): string {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** `12 Oct`, with the year when it is not this one. The months are written here, so every browser spells them alike. */
-export function shortDate(iso: string, now = new Date()): string {
-  const d = new Date(iso);
-  const year = d.getFullYear() === now.getFullYear() ? "" : ` ${d.getFullYear()}`;
-  return `${d.getDate()} ${MONTHS[d.getMonth()]}${year}`;
-}
+/** `12 Oct`, with the year when it is not this one: `formatDate`, under its older name. The months are written here, so every browser spells them alike. */
+export const shortDate = (iso: string, now = new Date()): string => formatDate(iso, now);
 
 /** A time of day as `14:30`, in the viewer's time zone. */
 export function timeOfDay(when: string | number | Date): string {
@@ -277,4 +267,133 @@ export function endingText(ending: Ending, outcome: Outcome | null | undefined):
     default:
       return "Game over";
   }
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+   The canonical formatters of the UI kit (docs/ui-brief.md, 3.2, 3.8, 3.10). New code calls these. Every one writes a
+   missing value as the same en dash, uses a true minus sign, and groups thousands the same way, so a figure reads alike
+   in a stat, a table, a tooltip and a toast.
+   ------------------------------------------------------------------------------------------------------------------ */
+
+/** What a missing figure looks like everywhere: an en dash, never "0", "?" or "-". */
+export const NONE = "–";
+
+const MINUS = "−";
+
+/** A figure with thousands separators and `digits` decimals: `3,708`, `81.3`, `−12`. */
+export function formatNumber(n: number | null | undefined, digits = 0): string {
+  if (n == null || !Number.isFinite(n)) return NONE;
+  const text = Math.abs(n).toLocaleString("en-GB", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return n < 0 && Number(text.replace(/,/g, "")) !== 0 ? `${MINUS}${text}` : text;
+}
+
+/** An Elo difference, always signed: `+12`, `−5`, `0`; with `digits` decimals when it is an estimate. */
+export function formatElo(n: number | null | undefined, digits = 0): string {
+  if (n == null || !Number.isFinite(n)) return NONE;
+  const text = Math.abs(n).toLocaleString("en-GB", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return Number(text.replace(/,/g, "")) === 0 ? text : `${n < 0 ? MINUS : "+"}${text}`;
+}
+
+/** An estimate with its error, `+3.1 ± 2.0`: the figure and half its 95 % interval (`error` is already the half). */
+export function formatEloPm(elo: number | null | undefined, error: number | null | undefined, digits = 1): string {
+  if (elo == null || error == null) return NONE;
+  return `${formatElo(elo, digits)} ± ${Math.abs(error).toFixed(digits)}`;
+}
+
+/** A percentage from 0 to 100: `81.3%`. */
+export function formatPercent(n: number | null | undefined, digits = 1): string {
+  if (n == null || !Number.isFinite(n)) return NONE;
+  return `${formatNumber(n, digits)}%`;
+}
+
+/** A rating as it is shown beside a name: `1,840`, with `?` when it is still provisional. */
+export function formatRating(rating: number | string | null | undefined, provisional = false): string {
+  if (rating == null || rating === "") return NONE;
+  const text = typeof rating === "number" ? formatNumber(Math.round(rating)) : rating;
+  return provisional ? `${text}?` : text;
+}
+
+/** A length of time as people read it: `45 s`, `3 min`, `1 h 20 min`, `2 d 3 h`. Whole units, no decimals. */
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return NONE;
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s} s`;
+  const minutes = Math.round(s / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return minutes % 60 ? `${hours} h ${minutes % 60} min` : `${hours} h`;
+  const days = Math.floor(hours / 24);
+  return hours % 24 ? `${days} d ${hours % 24} h` : `${days} d`;
+}
+
+/** How long ago, or how far ahead: `just now`, `5 minutes ago`, `yesterday`, `in 2 hours`. */
+export function formatRelative(when: string | number | Date, now: number = Date.now()): string {
+  const seconds = (new Date(when).getTime() - now) / 1000;
+  for (const [unit, size] of units) {
+    if (Math.abs(seconds) >= size) return relative.format(Math.round(seconds / size), unit);
+  }
+  return "just now";
+}
+
+/** A day as `12 Oct`, with the year when it is not this one. */
+export function formatDate(when: string | number | Date, now: Date = new Date()): string {
+  const d = new Date(when);
+  const year = d.getFullYear() === now.getFullYear() ? "" : ` ${d.getFullYear()}`;
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}${year}`;
+}
+
+/** A moment in full, for a tooltip: `12 Oct 2026, 14:30`. */
+export function formatDateTime(when: string | number | Date): string {
+  const d = new Date(when);
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${timeOfDay(d)}`;
+}
+
+/** One decimal, a sign unless it rounds to zero: `+0.6`, `−4.2`, `0.0`. */
+function signedOne(pawnsUp: number): string {
+  const text = Math.abs(pawnsUp).toFixed(1);
+  return Number(text) === 0 ? text : `${pawnsUp < 0 ? MINUS : "+"}${text}`;
+}
+
+/** A White-POV score as `+0.6`, `−4.2` or `#3` (mate in 3; `#−3` when Black mates). `mate: 0` is `#0`. */
+export function formatScore(score: Score | number | null | undefined): string {
+  if (score == null) return NONE;
+  if (typeof score === "number") return signedOne(score);
+  if ("cp" in score) return signedOne(score.cp / 100);
+  return score.mate < 0 ? `#${MINUS}${-score.mate}` : `#${score.mate}`;
+}
+
+/** Which side a White-POV score favours: `null` when it is level. A mate of 0 is against the side to move. */
+export function scoreSide(score: Score | number | null | undefined, turn: Side = "white"): Side | null {
+  if (score == null) return null;
+  const pawnsUp = typeof score === "number" ? score : "cp" in score ? score.cp / 100 : null;
+  if (pawnsUp == null) {
+    const mate = (score as { mate: number }).mate;
+    return mate === 0 ? other(turn) : mate > 0 ? "white" : "black";
+  }
+  return Number(Math.abs(pawnsUp).toFixed(1)) === 0 ? null : pawnsUp > 0 ? "white" : "black";
+}
+
+/** A result as a game record writes it. */
+export type Result = "1-0" | "0-1" | "1/2-1/2" | "*";
+
+/** The record of a game's outcome; `null` for a game with none. */
+export function resultOf(outcome: Outcome | null | undefined): Result | null {
+  if (outcome === "white_wins") return "1-0";
+  if (outcome === "black_wins") return "0-1";
+  if (outcome === "draw") return "1/2-1/2";
+  return null;
+}
+
+/** How a result reads: its text and, when you played it, whether you won, lost or drew. Others' games have no tone. */
+export interface ResultView {
+  text: string;
+  tone: "win" | "loss" | "draw" | null;
+}
+
+/** A result as `1-0`, `0-1`, `½-½` or `*`; with `you` set it also says whether it was yours to win. */
+export function formatResult(result: Result | null | undefined, you?: Side | null): ResultView {
+  const text = result === "1/2-1/2" ? "½-½" : (result ?? "*");
+  if (!you || !result || result === "*") return { text, tone: null };
+  if (result === "1/2-1/2") return { text, tone: "draw" };
+  return { text, tone: (result === "1-0") === (you === "white") ? "win" : "loss" };
 }
