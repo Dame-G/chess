@@ -18,9 +18,11 @@ import RepertoireView from "../parts/RepertoireView.vue";
 import ReviewBar from "../parts/ReviewBar.vue";
 import { useUi } from "../shell/ui";
 import { useConnections } from "../stores/connections";
+import { progressText } from "../format";
 import { usePolicy } from "../stores/policy";
 import { ALL_GAMES, usePlayers } from "../stores/players";
 import { useProgress } from "../stores/progress";
+import { useWork } from "../stores/work";
 import { useSheet } from "./useSheet";
 
 /**
@@ -32,6 +34,7 @@ const sheet = useSheet();
 const connections = useConnections();
 const players = usePlayers();
 const progress = useProgress();
+const work = useWork();
 const router = useRouter();
 const toast = useToast();
 
@@ -45,10 +48,20 @@ const firstRun = computed(
   () => profile.value?.games === 0 && !filter.value.speeds?.length && filter.value.rated == null && !filter.value.since,
 );
 const importing = ref(false);
+/** Your import, queued or running: the first brings in your whole history, later ones only what is new. */
+const importWork = computed(() =>
+  [...work.running, ...work.queued].find(
+    (w) => w.kind === "import" && w.subject.type === "player" && w.subject.key === "you",
+  ),
+);
+const importLine = computed(() => {
+  const w = importWork.value;
+  return w ? `${w.title}: ${progressText(w.progress) ?? "starting"}.` : "";
+});
 async function importMine() {
   importing.value = true;
   try {
-    await players.importHistory("you", { max: 50 });
+    await players.importHistory("you");
   } catch (e) {
     toast.show({ title: "That did not start", message: e instanceof Error ? e.message : String(e), tone: "warning" });
   } finally {
@@ -123,11 +136,18 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
       <template #action>
         <div class="sheet-actions">
           <EButton @click="ui.startNewGame()">New game</EButton>
-          <EButton v-if="linked" variant="outline" :loading="importing" :disabled="!policy.allowed" @click="importMine">
+          <EButton
+            v-if="linked"
+            variant="outline"
+            :loading="importing || !!importWork"
+            :disabled="!policy.allowed"
+            @click="importMine"
+          >
             Import my Lichess games
           </EButton>
           <EButton v-else variant="outline" :loading="logging" @click="login">Log in with Lichess</EButton>
         </div>
+        <p v-if="importWork" class="sec-note" role="status">{{ importLine }}</p>
       </template>
     </EEmptyState>
     <template v-else>
@@ -142,6 +162,11 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
           :pending="profile.pending_review"
         />
         <p v-if="profile.games === 0" class="sec-note">No games match these filters.</p>
+        <div v-if="linked && !importWork" class="sheet-actions">
+          <EButton variant="outline" :loading="importing" :disabled="!policy.allowed" @click="importMine">
+            Import my Lichess games
+          </EButton>
+        </div>
       </section>
 
       <ProfileView :profile="profile" is-you />

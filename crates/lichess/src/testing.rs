@@ -1451,8 +1451,16 @@ async fn token_test(State(shared): State<Shared>, body: String) -> Response {
 }
 
 async fn account(State(shared): State<Shared>, headers: HeaderMap) -> Response {
-    match shared.lock().unwrap().account_by_token(&headers) {
-        Some(a) => Json(a.json()).into_response(),
+    let inner = shared.lock().unwrap();
+    match inner.account_by_token(&headers) {
+        Some(a) => {
+            // The account's game count is what its export holds.
+            let mut json = a.json();
+            if let Some(games) = inner.exports.get(&a.id) {
+                json["count"] = json!({ "all": games.len() });
+            }
+            Json(json).into_response()
+        }
         None => refuse(401, "No such token"),
     }
 }

@@ -235,7 +235,7 @@ impl Levels {
         let spec = CalibrateSpec { matches, version: version.name.clone() };
         Ok(NewWork {
             kind: WorkKind::Calibrate,
-            priority: Priority::Idea,
+            priority: Priority::Background,
             title: format!("Calibrating levels {pairs} · {games} games"),
             subject: Subject::Player { key: PlayerKey::Dameless },
             spec: serde_json::to_value(&spec).map_err(|e| Error::internal(e.to_string()))?,

@@ -11,7 +11,7 @@ use dameless_core::{
     events::{EventKind, ReviewUpserted},
     game::Outcome,
     review::judge::Classification,
-    work::{Subject, Work, WorkKind},
+    work::{Priority, Subject, Work, WorkKind},
 };
 use dameless_hub::{Control, Executor, TopicFilter, WorkContext};
 use tokio_util::sync::CancellationToken;
@@ -99,8 +99,15 @@ async fn a_players_newest_unreviewed_games_are_found() {
     let draw = finished_game(&h.hub, PlayerKey::Dameless, PlayerKey::You, &QUIET_DRAW, Outcome::Draw, 2).await;
     finished_game(&h.hub, PlayerKey::Dameless, PlayerKey::Stockfish(3), &QUIET_DRAW, Outcome::Draw, 3).await;
 
+    // All of them in the background: below ideas, newest first, with no cap.
+    let all = reviews.prepare(ReviewRequest { player: Some(PlayerKey::You), background: true, ..Default::default() });
+    let all = all.await.unwrap();
+    assert_eq!((all.priority, all.title.as_str()), (Priority::Background, "Reviewing all 2 of your games"));
+    assert_eq!(serde_json::from_value::<ReviewSpec>(all.spec).unwrap().games, [draw, mate]);
+
     let req = ReviewRequest { player: Some(PlayerKey::You), concurrency: Some(3), ..Default::default() };
     let (work, spec) = queue(&h, &reviews, req.clone()).await;
+    assert_eq!(work.priority, Priority::Review);
     assert_eq!(work.title, "Reviewing 2 of your games");
     let resolved: ReviewSpec = serde_json::from_value(spec.clone()).unwrap();
     assert_eq!(resolved.games, [draw, mate]);

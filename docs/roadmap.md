@@ -162,14 +162,14 @@ GET    /api/progress?window=10            Progress
 - **Seeing a drill** (`GET /api/drills/today`) shows `fen`, `side` and `theme`. The web client must not show `best_moves`, `best_san` or `line` before the answer; the answer route returns them.
 - **Fair play.** Drills are not refused by the server. The web client hides them while `policy.assist ≠ allowed`. The repertoire is refused with 409 while you play (it is assistance, like the explorer: allowed when every live game is correspondence).
 - **Theory for the repertoire.** By default a position is theory when it was reached within the named opening's plies (`opening.ply`) in any of your Lichess games: free, and Lichess's own book. The explorer (masters) can refine it later, outside live games.
-- **Calibration** is background work at `Priority::Idea`, the lowest priority. Every level plays at fixed nodes with the tests' book, and level 1 to 6 seats use `choose_move` (fastchess cannot), so all calibration games are played by `play`'s engine seats.
+- **Calibration** is background work at `Priority::Background`, the lowest priority (beside reviews of all of a player's games). Every level plays at fixed nodes with the tests' book, and level 1 to 6 seats use `choose_move` (fastchess cannot), so all calibration games are played by `play`'s engine seats.
 - **When the fit runs.** The server refits (`fit` over `level_games` with `priors(ladder, your Lichess rating)`) after each calibration match and after each finished game of yours against a level, then stores it.
 
 **Services and wiring** (built: `play::levels`, `play::calibrate`, `analysis::drills`, `analysis::repertoire`, `analysis::progress`). Each route calls one function.
 
 - **Construction** (in the server's app):
   - `Games::new(hub, binaries, timing)` makes its own `Levels` (the default ladder): `games.levels()`. Set the anchor once the connections exist: `games.levels().set_anchor(Arc::new(move || play::your_anchor(&connections.status(ConnectionKey::You))))`. It uses your rapid rating, else blitz, classical, bullet, an established rating before a provisional one.
-  - `scheduler.register(Arc::new(play::Calibrate::new(games.clone())))` for `WorkKind::Calibrate` (the trials' lane, priority Idea).
+  - `scheduler.register(Arc::new(play::Calibrate::new(games.clone())))` for `WorkKind::Calibrate` (the trials' lane, priority Background).
   - `let drills = analysis::Drills::new(hub.clone())`, and the review executor registered as `Reviews::new(eval).with_drills(drills.clone())`: each review of one of your games then makes drills from it.
   - Repertoire and progress are methods of the existing `analysis::Profiles`.
 - **Routes → calls:**

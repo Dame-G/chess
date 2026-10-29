@@ -45,9 +45,14 @@ pub struct ReviewRequest {
     /// This player's newest finished games not yet reviewed with this version and budget.
     #[serde(default)]
     pub player: Option<PlayerKey>,
-    /// How many of the player's games; 20 when none, at most 1000.
+    /// How many of the player's games; 20 when none, at most 1000. In the background: every one when none.
     #[serde(default)]
     pub limit: Option<u32>,
+    /// Review in the background: at the lowest priority, below ideas, so trials keep their cores, and in a lane of its
+    /// own, so a review asked for meanwhile runs at once. For long reviews: with `player` and no `limit`, every game
+    /// of theirs not reviewed yet, newest first.
+    #[serde(default)]
+    pub background: bool,
     /// Only the player's games at these speeds.
     #[serde(default)]
     pub speeds: Vec<Speed>,
@@ -152,7 +157,10 @@ impl Reviews {
                 (req.games.clone(), title, Subject::Game { id: first.id })
             }
             (Some(player), true) => {
-                let limit = req.limit.unwrap_or(review::DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+                let limit = match (req.limit, req.background) {
+                    (None, true) => u32::MAX,
+                    (limit, _) => limit.unwrap_or(review::DEFAULT_LIMIT).clamp(1, MAX_LIMIT),
+                };
                 let games = self.unreviewed(player, &req.speeds, req.rated, version.id, nodes, limit).await?;
                 let whose = match player {
                     PlayerKey::You => "your".to_owned(),
@@ -160,7 +168,11 @@ impl Reviews {
                     other => format!("{other}'s"),
                 };
                 let n = games.len();
-                let title = format!("Reviewing {n} of {whose} games");
+                let title = if limit == u32::MAX {
+                    format!("Reviewing all {n} of {whose} games")
+                } else {
+                    format!("Reviewing {n} of {whose} games")
+                };
                 (games, title, Subject::Player { key: player.clone() })
             }
             _ => return Err(Error::bad_request("give games, or a player")),
@@ -168,7 +180,7 @@ impl Reviews {
         let spec = ReviewSpec { games, version: version.id, nodes, multipv: review::MULTIPV, concurrency };
         Ok(NewWork {
             kind: WorkKind::Review,
-            priority: Priority::Review,
+            priority: if req.background { Priority::Background } else { Priority::Review },
             title,
             subject,
             spec: serde_json::to_value(&spec).map_err(|e| Error::internal(e.to_string()))?,

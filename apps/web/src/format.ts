@@ -1,4 +1,15 @@
-import type { Ending, Estimate, GameSummary, Outcome, Score, Seat, Side, Speed, TimeControl } from "./api/types";
+import type {
+  Ending,
+  Estimate,
+  GameSummary,
+  Outcome,
+  Progress,
+  Score,
+  Seat,
+  Side,
+  Speed,
+  TimeControl,
+} from "./api/types";
 
 /** `+1.23`, `−0.50` or `0.00`: a figure that rounds to zero has no sign. */
 export function signed(n: number, digits = 2): string {
@@ -183,10 +194,24 @@ export function timeOfDay(when: string | number | Date): string {
 /** Seconds a review takes per game on this machine, as the design quotes it. */
 const REVIEW_SECONDS_PER_GAME = 20;
 
-/** What reviewing `games` games costs, in words: "about 40 s", "about 7 min". */
+/** What reviewing `games` games costs, in words: "about 40 s", "about 7 min", "about 21 h", "about 3 days". */
 export function reviewCost(games: number): string {
   const seconds = games * REVIEW_SECONDS_PER_GAME;
-  return seconds < 90 ? `about ${Math.max(5, Math.round(seconds / 5) * 5)} s` : `about ${duration(seconds)}`;
+  if (seconds < 90) return `about ${Math.max(5, Math.round(seconds / 5) * 5)} s`;
+  const hours = Math.round(seconds / 3600);
+  if (hours >= 36) return `about ${Math.round(hours / 24)} days`;
+  if (hours >= 2) return `about ${hours} h`;
+  return `about ${duration(seconds)}`;
+}
+
+/** How far a piece of work is, in words: its own sentence when it has one, else "120 of 3,708 games". */
+export function progressText(progress: Progress | null | undefined): string | null {
+  if (!progress) return null;
+  if (progress.text) return progress.text;
+  const done = progress.done.toLocaleString("en-GB");
+  return progress.total != null
+    ? `${done} of ${plural(progress.total, progress.unit.replace(/s$/, ""))}`
+    : `${done} ${progress.unit}`;
 }
 
 /** `1 game`, `3 games`. */

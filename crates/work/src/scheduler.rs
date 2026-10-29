@@ -1,9 +1,9 @@
 //! The scheduler: the one queue every piece of background work goes through.
 //!
 //! Work is stored first (`work` table) and then started by a loop when its executor is free: queued items by priority,
-//! then oldest first. Each kind has a lane that runs one item at a time (builds; trials and tunes together; reviews;
-//! promotions and upstream syncs, which both merge into `main`), so a trial waiting for its build never blocks the build, and imports, which only use the network, run
-//! at once. Cores are not handed out here: a running item asks the ledger for them itself (`cx.cores`), between units,
+//! then oldest first. Each kind has a lane that runs one item at a time (builds; trials and tunes together; reviews,
+//! with background reviews in a lane of their own; promotions and upstream syncs, which both merge into `main`), so a
+//! trial waiting for its build never blocks the build, and imports, which only use the network, run at once. Cores are not handed out here: a running item asks the ledger for them itself (`cx.cores`), between units,
 //! and the ledger serves waiting items by priority, then in the order they asked. An item that needs cores starts once
 //! one is free, or when lower-priority work holds some: that work hands them back at its next unit and the item, by
 //! then waiting in line, is served first.
@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use dameless_core::{
     Error, WorkId,
     events::{Payload, WorkLog},
-    work::{Work, WorkKind, WorkStatus},
+    work::{Priority, Work, WorkKind, WorkStatus},
 };
 use dameless_hub::{Control, Executor, Hub, WorkContext};
 use dameless_store::{WorkLists, WorkUpdate, now};
@@ -68,7 +68,7 @@ struct Inner {
 /// A running item, as the scheduler steers it.
 struct Running {
     kind: WorkKind,
-    rank: u8,
+    priority: Priority,
     cancel: CancellationToken,
     control: watch::Sender<Control>,
     /// A person stopped it: its end is recorded as stopped whatever it returns.
@@ -79,11 +79,14 @@ struct Running {
     preempted: Option<u32>,
 }
 
-/// One item at a time per lane; `None` runs at once.
-fn lane(kind: WorkKind) -> Option<u8> {
+/// One item at a time per lane; `None` runs at once. A background review (all of a player's games, which can take
+/// days) has a lane of its own, so a review asked for now never waits for it to end: both run, and the ledger serves
+/// the one asked for now first.
+fn lane(kind: WorkKind, priority: Priority) -> Option<u8> {
     match kind {
         WorkKind::Build => Some(0),
         WorkKind::Trial | WorkKind::Tune | WorkKind::Calibrate => Some(1),
+        WorkKind::Review if priority == Priority::Background => Some(6),
         WorkKind::Review => Some(2),
         // Taking upstream merges into main as a promotion does: never both at once.
         WorkKind::Promote | WorkKind::Upstream => Some(3),
@@ -360,9 +363,11 @@ impl Scheduler {
             let Some(executor) = self.inner.executors.lock().unwrap().get(&w.kind).cloned() else { continue };
             let (busy, lower) = {
                 let running = self.inner.running.lock().unwrap();
-                let busy = lane(w.kind).is_some_and(|l| running.values().any(|r| lane(r.kind) == Some(l)));
+                let busy = lane(w.kind, w.priority)
+                    .is_some_and(|l| running.values().any(|r| lane(r.kind, r.priority) == Some(l)));
                 let rank = w.priority.rank();
-                let lower: Vec<WorkId> = running.iter().filter(|(_, r)| r.rank > rank).map(|(id, _)| *id).collect();
+                let lower: Vec<WorkId> =
+                    running.iter().filter(|(_, r)| r.priority.rank() > rank).map(|(id, _)| *id).collect();
                 (busy, lower)
             };
             if busy || (needs_a_core(w.kind) && !self.core_coming(&lower)) {
@@ -391,7 +396,7 @@ impl Scheduler {
             w.id,
             Running {
                 kind: w.kind,
-                rank: w.priority.rank(),
+                priority: w.priority,
                 cancel: cancel.clone(),
                 control,
                 stopping: false,
@@ -481,7 +486,7 @@ impl Scheduler {
                         .filter(|(id, r)| {
                             needs_a_core(r.kind) && r.preempted.is_none() && !r.paused_by_you && held(**id) > 0
                         })
-                        .max_by_key(|(id, r)| (r.rank, id.0))
+                        .max_by_key(|(id, r)| (r.priority.rank(), id.0))
                         .map(|(id, _)| *id);
                     if let Some(id) = victim
                         && let Some(r) = running.get_mut(&id)

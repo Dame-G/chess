@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { leaders } from "../src/api/leaders";
 import type { BotSettings, Idea, Profile, TrendPoint, TrialSummary } from "../src/api/types";
-import { bytes, plusMinus, reviewCost } from "../src/format";
+import { bytes, plusMinus, progressText, reviewCost } from "../src/format";
 import { rulesSummary, declineWords } from "../src/parts/bot";
 import { blocks, inline } from "../src/parts/markdown";
 import { addressQuery, compareGroups, leads, parseAddress, playerFromInput } from "../src/sheets/compare";
@@ -330,6 +330,15 @@ describe("figures", () => {
     expect(bytes(512)).toBe("512 B");
     expect(reviewCost(2)).toBe("about 40 s");
     expect(reviewCost(20)).toBe("about 7 min");
+    expect(reviewCost(3708)).toBe("about 21 h");
+    expect(reviewCost(9000)).toBe("about 2 days");
+    expect(progressText({ done: 1200, total: 3708, unit: "games", eta_seconds: null, text: null })).toBe(
+      "1,200 of 3,708 games",
+    );
+    expect(progressText({ done: 3, total: null, unit: "games", eta_seconds: null, text: "3 games read" })).toBe(
+      "3 games read",
+    );
+    expect(progressText(null)).toBeNull();
   });
 });
 
