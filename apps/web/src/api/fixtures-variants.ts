@@ -3,6 +3,7 @@
  * `?fixtures=<name>`, or several joined by `+` (`?fixtures=many+untrusted`):
  *
  * - `empty`: no ideas, no trials, and a champion line of one version
+ * - `unmeasured`: a champion line whose versions have not been measured against v1 (every figure is zero)
  * - `loading`: the Dameless overview, the ideas, the networks and the data never answer
  * - `error`: the same routes answer 500
  * - `long`: an idea whose title and branch are 60 characters, with long tags, notes and a long verdict

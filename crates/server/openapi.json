@@ -9000,6 +9000,13 @@
             "description": "Games considered, of them reviewed, and the rest.",
             "minimum": 0
           },
+          "history_complete": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether your whole Lichess history has been imported, so later imports only look for new games. Only your own\nprofile fills it."
+          },
           "judgements": {
             "$ref": "#/components/schemas/JudgementCounts",
             "description": "Lichess's own counts (a miss counts as its mistake or blunder)."

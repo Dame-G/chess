@@ -241,7 +241,7 @@ async function start() {
     <div class="form">
       <UiField v-if="!fromPosition" label="Opponent" group>
         <UiSeg v-model="opponent" label="Opponent" :options="opponents" full />
-        <p v-if="!linked" class="login">
+        <p v-if="connections.loaded && !linked" class="login">
           <UiBadge>Log in first</UiBadge>
           Lichess and Stockfish need your Lichess account.
           <RouterLink to="/settings" @click="ui.newGame = false">Open Settings</RouterLink>

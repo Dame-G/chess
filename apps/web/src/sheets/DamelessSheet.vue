@@ -89,10 +89,10 @@ const readout = computed(() => {
   const margin = p.high != null && p.low != null ? `, ±${((p.high - p.low) / 2).toFixed(1)}` : "";
   return `${p.label ?? ""}: ${formatElo(p.value, 1)} Elo over v1${margin}`;
 });
-/** The champion's Elo over v1 and its margin; nothing until a second version has been promoted. */
+/** The champion's Elo over v1 and its margin; nothing until a promoted version has been measured against v1. */
 const over = computed(() => {
   const p = strength.value.at(-1);
-  if (!p || strength.value.length < 2) return null;
+  if (!p || !measured.value) return null;
   return { value: formatElo(p.value, 1), margin: p.high != null && p.low != null ? (p.high - p.low) / 2 : null };
 });
 
@@ -106,6 +106,7 @@ const playing = computed(() => {
 });
 const botState = computed(() => {
   const c = connections.bot;
+  if (!connections.loaded) return null;
   if (!c.configured) return "Not linked";
   if (c.bot?.online) return playing.value ? "Playing" : "Online";
   return !c.bot?.settings.version ? "No version" : "Offline";
@@ -156,9 +157,8 @@ watch(creating, (open) => {
           hint="elo"
           :value="over?.value ?? null"
           unit="Elo"
-          :sub="
-            over ? (over.margin != null ? `±${over.margin.toFixed(1)}` : undefined) : 'Starts with the second champion'
-          "
+          :sub="over ? (over.margin != null ? `±${over.margin.toFixed(1)}` : undefined) : 'Not measured yet'"
+          none="Measured once a promoted version plays v1"
         />
         <UiStat label="Bot" :value="botState">
           <template v-if="playing" #sub>

@@ -179,7 +179,6 @@ const momentColumns = [
           ]"
         />
       </template>
-      <template v-if="trendShown && !progressView" #note>Last {{ plural(profile.trend.length, "game") }}</template>
       <ProgressChart v-if="progress && (progressView || !trendShown)" :chart="progress" />
       <TrendChart
         v-else

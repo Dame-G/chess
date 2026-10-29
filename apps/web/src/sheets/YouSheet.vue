@@ -51,6 +51,8 @@ const firstRun = computed(
   () => profile.value?.games === 0 && !filter.value.speeds?.length && filter.value.rated == null && !filter.value.since,
 );
 const linked = computed(() => connections.you.configured && !!connections.you.account);
+/** Whether the connections have been read: until then "not linked" is not known, so nothing says it. */
+const known = computed(() => connections.loaded);
 
 async function load() {
   failed.value = null;
@@ -89,7 +91,7 @@ const lichessUrl = computed(() =>
   linked.value && player.value?.lichess ? `https://lichess.org/@/${player.value.lichess}` : null,
 );
 const subtitle = computed(() =>
-  linked.value && player.value ? `${player.value.name} · Lichess` : "Not linked to Lichess",
+  !known.value ? undefined : linked.value && player.value ? `${player.value.name} · Lichess` : "Not linked to Lichess",
 );
 
 const firstRunBody = computed(
@@ -115,7 +117,7 @@ const reviewFirst = computed(() => profile.value?.reviewed === 0);
 <template>
   <UiSheetPage v-model:tab="tab" title="You" :subtitle="subtitle" :tabs="tabs" wide :loading="loading">
     <template #actions>
-      <EButton variant="quiet" size="sm" @click="compare">Compare</EButton>
+      <EButton v-if="profile && profile.games > 0" variant="quiet" size="sm" @click="compare">Compare</EButton>
       <EButton
         v-if="lichessUrl"
         variant="quiet"
@@ -149,13 +151,13 @@ const reviewFirst = computed(() => profile.value?.reviewed === 0);
         >
           Import my Lichess games
         </EButton>
-        <EButton v-else variant="outline" :loading="logging" @click="login">Log in with Lichess</EButton>
+        <EButton v-else-if="known" variant="outline" :loading="logging" @click="login">Log in with Lichess</EButton>
       </template>
     </UiEmpty>
 
     <template v-if="profile" #tab-overview>
       <ProfileFilters v-model="filter" :games="profile.games" whose="your" tabs />
-      <ProfileNotice v-if="!linked">
+      <ProfileNotice v-if="known && !linked">
         <p class="title">Your Lichess account is not linked</p>
         <p class="cost">Log in to see your ratings, play on Lichess from here and bring your games in.</p>
         <template #actions>
@@ -171,6 +173,7 @@ const reviewFirst = computed(() => profile.value?.reviewed === 0);
           mine
           lead
           :importable="linked"
+          :history-complete="profile.history_complete === true"
           :quiet="!linked"
           :games="profile.games"
           :pending="profile.pending_review"
@@ -183,6 +186,7 @@ const reviewFirst = computed(() => profile.value?.reviewed === 0);
           name="You"
           mine
           :importable="linked"
+          :history-complete="profile.history_complete === true"
           :quiet="!linked"
           :games="profile.games"
           :pending="profile.pending_review"

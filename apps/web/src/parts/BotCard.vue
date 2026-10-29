@@ -150,7 +150,7 @@ const columns = [
 
 <template>
   <div id="d-bot" class="bot">
-    <UiEmpty v-if="!conn.configured" dense title="Dameless has no BOT account token yet.">
+    <UiEmpty v-if="connections.loaded && !conn.configured" dense title="Dameless has no BOT account token yet.">
       <template #actions>
         <ELink :link-component="RouterLink" to="/settings?tab=accounts">Add one in Settings</ELink>
       </template>

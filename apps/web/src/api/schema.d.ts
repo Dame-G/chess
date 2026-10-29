@@ -3237,6 +3237,11 @@ export interface components {
              * @description Games considered, of them reviewed, and the rest.
              */
             games: number;
+            /**
+             * @description Whether your whole Lichess history has been imported, so later imports only look for new games. Only your own
+             *     profile fills it.
+             */
+            history_complete?: boolean | null;
             /** @description Lichess's own counts (a miss counts as its mistake or blunder). */
             judgements: components["schemas"]["JudgementCounts"];
             last_game?: components["schemas"]["Timestamp"] | null;

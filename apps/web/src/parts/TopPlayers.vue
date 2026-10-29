@@ -63,7 +63,7 @@ const table = computed(() => rows.value.map((p, i) => ({ ...p, rank: i + 1, id: 
     </UiEmpty>
     <UiTable v-else label="Leaderboard" :columns="columns" :rows="table" row-key="id" :loading="loading">
       <template #cell-name="{ row }"><UiPlayer :seat="ref_(row)" link /></template>
-      <template #cell-progress="{ row }">{{ formatElo(row.progress ?? 0) }}</template>
+      <template #cell-progress="{ row }">{{ formatElo(row.progress) }}</template>
       <template #cell-add="{ row }">
         <EButton
           variant="quiet"

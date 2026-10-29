@@ -20,6 +20,8 @@ const props = withDefaults(
     hint?: string;
     size?: "md" | "lg" | "xl";
     sub?: string;
+    /** Why there is no figure, as a tooltip on the dash and in words for a screen reader (else "no value"). */
+    none?: string;
     /** Decimals for a numeric `value`; none for whole numbers, one otherwise. */
     digits?: number;
   }>(),
@@ -57,8 +59,8 @@ const deltaTone = computed(() =>
       <slot>
         <template v-if="shown != null">{{ shown }}</template>
         <template v-else>
-          <span class="ui-stat-none" aria-hidden="true">{{ NONE }}</span>
-          <span class="sr-only">no value</span>
+          <span class="ui-stat-none" :title="none" aria-hidden="true">{{ NONE }}</span>
+          <span class="sr-only">{{ none ?? "no value" }}</span>
         </template>
       </slot>
       <span v-if="unit && shown != null" class="ui-stat-unit">{{ unit }}</span>

@@ -15,6 +15,7 @@ import {
 import { routeLocationKey, routerKey } from "vue-router";
 import { up, useMedia } from "../media";
 import UiEmpty from "./UiEmpty.vue";
+import { captureOpener, returnToOpener } from "./opener";
 import { useSheetNav } from "./useSheetNav";
 
 export interface SheetTab {
@@ -97,6 +98,11 @@ watch(current, () => {
   void router.replace({ query: { ...route.query, tab: id } });
 });
 
+/** What opened the sheet: focus goes back there when the last sheet closes. */
+const opener = captureOpener();
+const root = useTemplateRef<HTMLElement>("root");
+onBeforeUnmount(() => returnToOpener(root.value, opener, (run) => void nextTick(run)));
+
 const heading = useTemplateRef<HTMLElement>("heading");
 onMounted(() => void nextTick(() => heading.value?.focus({ preventScroll: true })));
 
@@ -134,6 +140,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onEscape));
 
 <template>
   <section
+    ref="root"
     class="ui-sheet"
     :class="{ 'ui-sheet--wide': wide, 'ui-sheet--contained': contained }"
     role="dialog"

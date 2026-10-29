@@ -472,6 +472,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       reviewed,
       pending_review: games - reviewed,
       unreviewed_total: r.games - r.reviewed,
+      ...(key === "you" ? { history_complete: r.games > 0 } : {}),
       first_game: games ? minutesAgo(span * 60 * 30 + 600) : null,
       last_game: games ? minutesAgo(30) : null,
       rating: games ? rating : null,
@@ -605,7 +606,11 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
         recent: sorted.filter((i) => i.status !== "running" && i.status !== "queued").slice(0, 6),
       },
       connection: ctx.connections.bot.bot ?? null,
-      strength: variant("empty") ? [] : strength(),
+      strength: variant("empty")
+        ? []
+        : variant("unmeasured")
+          ? strength().map((p) => ({ ...p, value: 0, low: 0, high: 0 }))
+          : strength(),
     };
   }
 
@@ -1062,7 +1067,12 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
                 : "The tip's Bench line is older than its build.",
         });
       }
-      if (path === "/api/connections") return undefined;
+      if (path === "/api/connections") {
+        // `?fixtures=slow` reads the connections late, to see what a sheet says meanwhile.
+        if (ctx.mode !== "slow") return undefined;
+        const answer = reply("/api/connections", "get", structuredClone(ctx.connections));
+        return new Promise<Response>((done) => setTimeout(() => done(answer), 3000));
+      }
       if (path === "/api/diagnostics")
         return reply("/api/diagnostics", "get", {
           ok: true,
