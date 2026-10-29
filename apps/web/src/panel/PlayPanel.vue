@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useToast } from "@eos-ui/vue";
-import { EActions } from "@eos-ui/vue/components/EActions";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { ENotice } from "@eos-ui/vue/components/ENotice";
 import type { SeatAction, Side } from "../api/types";
-import { other, seatName, speedName, timeControl } from "../format";
+import { other, seatName } from "../format";
 import { useBoard } from "../board/board";
-import { EConfirmDialog } from "@eos-ui/vue/components/EConfirmDialog";
 import { useGames } from "../stores/games";
+import UiDialog from "../ui/UiDialog.vue";
+import UiLive from "../ui/UiLive.vue";
+import UiToolbar from "../ui/UiToolbar.vue";
+import PanelMenu from "./PanelMenu.vue";
 
 /**
  * Play: You are a seat in a live game. Whose move it is, offers to answer, the opponent leaving and the claims it
- * opens, and the actions the game allows You now. On Lichess nothing else is on screen.
+ * opens, and the actions the game allows You now. Who is playing whom and the clock are in the game card above.
  */
 const board = useBoard();
 const games = useGames();
@@ -22,11 +23,15 @@ const g = computed(() => board.game);
 const s = computed(() => board.summary);
 const yourSide = computed<Side>(() => s.value?.you ?? "white");
 const theirs = computed(() => other(yourSide.value));
-const opponent = computed(() => {
-  const seat = s.value?.[theirs.value];
-  return seat ? seatName(seat) : "Your opponent";
+const opponentSeat = computed(() => s.value?.[theirs.value]);
+const opponent = computed(() => (opponentSeat.value ? seatName(opponentSeat.value) : "Your opponent"));
+/** A person on Lichess can say no to a takeback; an engine, or a bot, is simply asked. */
+const person = computed(() => {
+  const seat = opponentSeat.value;
+  return s.value?.source.type === "lichess" && !!seat?.player.startsWith("lichess:") && seat.title !== "BOT";
 });
-const yourTurn = computed(() => board.atEnd && board.position.turn === yourSide.value);
+/** Whose turn it is in the game, wherever the board has been stepped to. */
+const turn = computed(() => board.plies[board.lastPly]?.turn);
 const can = (a: SeatAction) => !!g.value?.actions.includes(a);
 
 const busy = ref<SeatAction | null>(null);
@@ -68,118 +73,130 @@ watch(
 );
 onBeforeUnmount(() => clearInterval(timer));
 
+/** Whose move it is, said as a state: the board shows the last move, so this is only the turn. */
 const status = computed(() => {
   if (!s.value) return "";
-  if (s.value.status === "starting") return "The game is starting.";
-  // Said aloud as it changes, so the opponent's reply is part of it.
-  const last = g.value?.moves.at(-1)?.san;
-  if (yourTurn.value) return last ? `${opponent.value} played ${last}. Your move.` : "Your move.";
-  const seat = s.value[theirs.value];
-  return seat.player === "dameless" ? `${opponent.value} is thinking.` : `Waiting for ${opponent.value}.`;
-});
-const where = computed(() => {
-  const x = s.value;
-  if (!x) return "";
-  const tc = timeControl(x.time);
-  if (x.source.type === "lichess")
-    return `${tc} · ${speedName[x.source.speed]} on Lichess${x.source.rated ? ", rated" : ""}`;
-  return `${tc} · local game`;
+  if (s.value.status === "starting") return "Starting the game";
+  if (turn.value === yourSide.value) return "Your move";
+  return opponentSeat.value?.player.startsWith("dameless")
+    ? `${opponent.value} is thinking`
+    : `Waiting for ${opponent.value}`;
 });
 </script>
 
 <template>
   <div class="play">
-    <p class="status" aria-live="polite">{{ status }}</p>
-    <p class="where">{{ where }}</p>
+    <p class="turn" :class="{ 'turn--yours': turn === yourSide }" aria-live="polite">
+      <UiLive :pulse="board.lastPly" />
+      {{ status }}
+    </p>
 
-    <ENotice v-if="g?.offers.draw === theirs" tone="info" :title="`${opponent} offers a draw`">
-      <EActions>
-        <EButton size="sm" variant="outline" :loading="busy === 'accept_draw'" @click="act('accept_draw')">
-          Accept
-        </EButton>
-        <EButton size="sm" variant="quiet" :loading="busy === 'decline_draw'" @click="act('decline_draw')">
-          Decline
-        </EButton>
-      </EActions>
-    </ENotice>
-    <ENotice v-if="g?.offers.takeback === theirs" tone="info" :title="`${opponent} asks to take back a move`">
-      <EActions>
-        <EButton size="sm" variant="outline" @click="act('accept_takeback')">Accept</EButton>
-        <EButton size="sm" variant="quiet" @click="act('decline_takeback')">Decline</EButton>
-      </EActions>
-    </ENotice>
+    <div v-if="g?.offers.draw === theirs" class="offer" role="group" :aria-label="`${opponent} offers a draw`">
+      <p class="offer-text">{{ opponent }} offers a draw</p>
+      <UiToolbar>
+        <EButton variant="outline" :loading="busy === 'accept_draw'" @click="act('accept_draw')">Accept</EButton>
+        <EButton variant="quiet" :loading="busy === 'decline_draw'" @click="act('decline_draw')">Decline</EButton>
+      </UiToolbar>
+    </div>
+    <div
+      v-if="g?.offers.takeback === theirs"
+      class="offer"
+      role="group"
+      :aria-label="`${opponent} asks to take back a move`"
+    >
+      <p class="offer-text">{{ opponent }} asks to take back a move</p>
+      <UiToolbar>
+        <EButton variant="outline" @click="act('accept_takeback')">Accept</EButton>
+        <EButton variant="quiet" @click="act('decline_takeback')">Decline</EButton>
+      </UiToolbar>
+    </div>
     <p v-if="g?.offers.draw === yourSide" class="note">You offered a draw.</p>
     <p v-if="g?.offers.takeback === yourSide" class="note">You asked to take back a move.</p>
 
-    <ENotice v-if="games.opponentGone" tone="warning" :title="`${opponent} left the game`">
-      <template v-if="claimIn > 0">
+    <div v-if="games.opponentGone" class="offer offer--warn" role="group" :aria-label="`${opponent} left the game`">
+      <p class="offer-text">{{ opponent }} left the game</p>
+      <p v-if="claimIn > 0" class="note">
         You can claim the game in <span class="num">{{ claimIn }}</span> s.
+      </p>
+      <UiToolbar v-else>
+        <EButton v-if="can('claim_victory')" variant="outline" @click="act('claim_victory')">Claim victory</EButton>
+        <EButton v-if="can('claim_draw')" variant="outline" @click="act('claim_draw')">Call it a draw</EButton>
+      </UiToolbar>
+    </div>
+
+    <UiToolbar align="between" label="Game actions">
+      <EButton v-if="can('offer_draw')" variant="outline" :loading="busy === 'offer_draw'" @click="act('offer_draw')">
+        Offer draw
+      </EButton>
+      <EButton v-if="can('takeback')" variant="outline" :loading="busy === 'takeback'" @click="act('takeback')">
+        {{ person ? "Ask for takeback" : "Take back" }}
+      </EButton>
+      <EButton v-if="can('abort')" variant="outline" @click="act('abort')">Abort</EButton>
+      <template #end>
+        <EButton v-if="can('resign')" variant="quiet" class="resign" @click="confirmResign = true">Resign</EButton>
+        <PanelMenu />
       </template>
-      <EActions v-else>
-        <EButton v-if="can('claim_victory')" size="sm" variant="outline" @click="act('claim_victory')">
-          Claim victory
-        </EButton>
-        <EButton v-if="can('claim_draw')" size="sm" variant="outline" @click="act('claim_draw')">
-          Call it a draw
-        </EButton>
-      </EActions>
-    </ENotice>
+    </UiToolbar>
 
-    <EActions class="actions">
-      <EButton
-        v-if="can('offer_draw')"
-        size="sm"
-        variant="outline"
-        :loading="busy === 'offer_draw'"
-        @click="act('offer_draw')"
-      >
-        Offer a draw
-      </EButton>
-      <EButton
-        v-if="can('takeback')"
-        size="sm"
-        variant="outline"
-        :loading="busy === 'takeback'"
-        @click="act('takeback')"
-      >
-        Take back
-      </EButton>
-      <EButton v-if="can('abort')" size="sm" variant="outline" @click="act('abort')">Abort</EButton>
-      <EButton v-if="can('resign')" size="sm" variant="outline" @click="confirmResign = true">Resign</EButton>
-    </EActions>
-
-    <EConfirmDialog
+    <UiDialog
       v-model:open="confirmResign"
       title="Resign this game?"
+      size="sm"
+      alert
+      danger
       confirm-label="Resign"
-      tone="danger"
-      :close-on-confirm="false"
       @confirm="resign"
     >
-      {{ opponent }} wins the game.
-    </EConfirmDialog>
+      You lose the game.
+    </UiDialog>
   </div>
 </template>
 
 <style scoped>
 .play {
   display: grid;
-  gap: var(--e-gap-snug);
+  gap: var(--sp-3);
 }
 
-.status {
+.turn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   margin: 0;
-  font-weight: 600;
+  color: var(--c-ink-2);
+  font: var(--t-body-strong);
 }
 
-.where,
+.turn--yours {
+  color: var(--c-ink);
+}
+
 .note {
   margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
+  color: var(--c-ink-2);
+  font: var(--t-meta);
 }
 
-.actions {
-  margin-block-start: var(--e-gap-tight);
+/* A question put to You: marked on the start edge, in the quiet raised tone, so it is seen without shouting. */
+.offer {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-1);
+  background: var(--c-raise);
+  box-shadow: inset var(--e-stroke-focus) 0 0 var(--c-act);
+}
+
+.offer--warn {
+  box-shadow: inset var(--e-stroke-focus) 0 0 var(--c-warn);
+}
+
+.offer-text {
+  margin: 0;
+  font: var(--t-body-strong);
+}
+
+.resign {
+  color: var(--c-loss);
 }
 </style>

@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { useMedia } from "../media";
-import { EList } from "@eos-ui/vue/components/EList";
-import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { EVirtualList } from "@eos-ui/vue/components/EVirtualList";
+import UiEmpty from "../ui/UiEmpty.vue";
+import { useMedia } from "../media";
 import { focusCurrent, followCurrent, stepOf, type Step } from "./follow";
 import MoveRow from "./MoveRow.vue";
 import type { Classification } from "../api/types";
@@ -45,12 +44,19 @@ const rows = computed(() => {
   return out;
 });
 
-/** What a row needs: its moves, whether each is still ahead of the board, and the review's word on each. */
+/** The move that takes the tab stop: the one on the board, or the first before any move is played. */
+const tabPly = computed(() => Math.min(Math.max(props.cursor, 1), props.sans.length));
+
+/** What a row needs: its moves, where the board stands against each, and the review's word on each. */
 function rowProps(r: (typeof rows.value)[number]) {
   return {
     ...r,
+    curA: r.a !== null && r.pa === props.cursor,
+    curB: r.b !== null && r.pb === props.cursor,
     futA: r.pa > props.cursor,
     futB: r.pb > props.cursor,
+    tabA: r.pa === tabPly.value,
+    tabB: r.pb === tabPly.value,
     ma: props.marks?.[r.pa - 1],
     mb: props.marks?.[r.pb - 1],
     ha: props.hints?.[r.pa - 1],
@@ -65,85 +71,113 @@ function rowProps(r: (typeof rows.value)[number]) {
 const stacked = useMedia("(width < 75rem)");
 
 const scroller = ref<{ $el: HTMLElement; scrollToIndex: (index: number) => void }>();
+const plain = ref<HTMLElement>();
+const box = () => (scroller.value?.$el as HTMLElement | undefined) ?? plain.value;
 /** Scrolls to the row of the move on the board (the top, at the start), for a move far out of the rows drawn. */
 function reveal() {
   const index = props.cursor === 0 ? 0 : rows.value.findIndex((r) => r.pa === props.cursor || r.pb === props.cursor);
   if (index >= 0) scroller.value?.scrollToIndex(index);
 }
-const root = ref<{ $el: HTMLElement }>();
-/** The arrow keys, Home and End step the board past the end of a row, as they do from anywhere else. */
+
+const root = ref<HTMLElement>();
+
+/** A click on a move goes to it; the rows hold no listeners of their own. */
+function onClick(e: MouseEvent) {
+  const id = (e.target as Element).closest<HTMLElement>("[data-id]")?.dataset["id"];
+  if (id !== undefined) emit("go", Number(id));
+}
+
+/**
+ * The arrow keys, Home and End step the board past the end of a row, as they do from anywhere else; Up and Down go a
+ * whole move (two plies) back or forward. Enter and Space press the move in focus.
+ */
 function onKeys(e: KeyboardEvent) {
   const to = stepOf(e);
-  if (!to) return;
+  const full =
+    !to && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown");
+  if (!to && !full) return;
   e.preventDefault();
   e.stopPropagation();
   if (e.repeat) return;
-  emit("step", to);
-  focusCurrent(() => root.value?.$el);
+  if (to) emit("step", to);
+  else {
+    const by = e.key === "ArrowUp" ? -2 : 2;
+    emit("go", Math.min(Math.max(props.cursor + by, 0), props.sans.length));
+  }
+  focusCurrent(() => root.value);
 }
 
-followCurrent(
-  () => scroller.value?.$el as HTMLElement | undefined,
-  () => props.cursor,
-  reveal,
-);
+followCurrent(box, () => props.cursor, reveal);
 </script>
 
 <template>
-  <EList
+  <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- the moves inside are buttons: the click is delegated, the keys are theirs -->
+  <div
     ref="root"
-    :model-value="cursor"
-    label="Moves"
-    flush
     class="moves"
+    role="group"
+    aria-label="Moves"
     :aria-busy="loading || undefined"
-    follow-focus
+    @click="onClick"
     @keydown.capture="onKeys"
-    @select="emit('go', Number($event))"
   >
     <EVirtualList
       v-if="!stacked && rows.length"
       ref="scroller"
       v-slot="{ item }"
       :items="rows"
-      :row-height="32"
+      :row-height="28"
       measure
       item-key="number"
       class="scroll"
     >
       <MoveRow v-bind="rowProps(item)" />
     </EVirtualList>
-    <template v-else>
+    <div v-else-if="rows.length" ref="plain" class="plain">
       <MoveRow v-for="r in rows" :key="r.number" v-bind="rowProps(r)" />
-    </template>
-    <ESkeleton v-if="loading && !sans.length" :lines="8" label="Loading moves" class="none" />
-    <p v-else-if="!sans.length" class="none">No moves yet.</p>
-  </EList>
+    </div>
+    <div v-else-if="loading" class="wait" aria-label="Loading moves">
+      <span v-for="i in 6" :key="i" class="skel wait-row" />
+    </div>
+    <UiEmpty v-else dense title="No moves yet." class="none" />
+  </div>
 </template>
 
 <style scoped>
 .moves {
-  align-content: start;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   height: 100%;
   overscroll-behavior: contain;
 }
 
-/* A move is a short word: its cell is the 2rem tall line of a chess client, not the 2.25rem of a form control. Touch
-   keeps eos's full target. */
-@media (pointer: fine) {
-  .moves {
-    --e-tap: 2rem;
-  }
+.scroll,
+.plain {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.plain {
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .scroll {
   height: 100%;
 }
 
+.wait {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-3);
+}
+
+.wait-row {
+  height: var(--h-move);
+}
+
 .none {
-  margin: 0;
-  padding: var(--ws-pad);
-  color: var(--e-muted);
-  font: var(--e-type-small);
+  padding: var(--sp-3);
 }
 </style>

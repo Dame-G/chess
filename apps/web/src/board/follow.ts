@@ -9,13 +9,15 @@ const reduced = typeof matchMedia === "function" ? matchMedia("(prefers-reduced-
  */
 export function followCurrent(list: () => HTMLElement | undefined, source: WatchSource, reveal?: () => void) {
   let frame = 0;
-  function settle() {
+  function settle(again = 0) {
     frame = 0;
     const box = list();
     if (!box) return;
     const item = box.querySelector<HTMLElement>("[aria-current]");
     if (!item) {
       reveal?.();
+      // A virtual list measures its rows as they are drawn, so the jump can land short: look again, a few times.
+      if (again < 3) frame = requestAnimationFrame(() => settle(again + 1));
       return;
     }
     const rows = box.getBoundingClientRect();
@@ -31,7 +33,7 @@ export function followCurrent(list: () => HTMLElement | undefined, source: Watch
   watch(
     source,
     () => {
-      if (!frame) frame = requestAnimationFrame(settle);
+      if (!frame) frame = requestAnimationFrame(() => settle());
     },
     { immediate: true },
   );
