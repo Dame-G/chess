@@ -20,7 +20,6 @@ import TabBar from "./shell/TabBar.vue";
 import { useEventToasts, useLoginResult } from "./shell/toasts";
 import TopBar from "./shell/TopBar.vue";
 import { useUi } from "./shell/ui";
-import UiConfirm from "./ui/UiConfirm.vue";
 
 /**
  * The app is the board plus a panel, with the Games rail beside them; profiles and settings are sheets in the

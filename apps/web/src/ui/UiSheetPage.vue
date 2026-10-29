@@ -73,13 +73,22 @@ const current = computed(() => {
 // The tab is part of the address, so a reload or a shared link lands on the same one.
 const router = inject(routerKey, null);
 const route = inject(routeLocationKey, null);
+/** The address names a tab once the tabs exist (a sheet that is still loading has none yet): apply it, once. */
+let applied = false;
 function fromAddress() {
   const asked = route?.query["tab"];
-  if (props.sync && typeof asked === "string" && props.tabs?.some((t) => t.id === asked)) tab.value = asked;
+  if (applied || !props.sync || typeof asked !== "string" || !props.tabs?.some((t) => t.id === asked)) return;
+  applied = true;
+  tab.value = asked;
 }
 onMounted(fromAddress);
-watch(current, (id) => {
+watch(() => props.tabs?.map((t) => t.id).join(), fromAddress, { flush: "sync" });
+watch(current, () => {
+  const id = current.value;
   if (!props.sync || !router || !route || !tabbed.value || route.query["tab"] === id) return;
+  // The tab the address asked for is on its way in: do not write the first tab over it.
+  const asked = route.query["tab"];
+  if (!applied && typeof asked === "string" && props.tabs?.some((t) => t.id === asked)) return;
   void router.replace({ query: { ...route.query, tab: id } });
 });
 

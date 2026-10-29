@@ -1,15 +1,4 @@
-import type {
-  Ending,
-  Estimate,
-  GameSummary,
-  Outcome,
-  Progress,
-  Score,
-  Seat,
-  Side,
-  Speed,
-  TimeControl,
-} from "./api/types";
+import type { Ending, Estimate, Outcome, Progress, Score, Seat, Side, Speed, TimeControl } from "./api/types";
 
 /** `+1.23`, `−0.50` or `0.00`: a figure that rounds to zero has no sign. */
 export function signed(n: number, digits = 2): string {
