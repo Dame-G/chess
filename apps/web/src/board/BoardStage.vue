@@ -4,8 +4,8 @@ import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { useToast } from "@eos-ui/vue";
 import type { Side } from "../api/types";
-import { isLevelSeat, other, pawns, scoreText, seatName, winChance } from "../format";
-import type { PlayerRef } from "../ui/player";
+import { other, pawns, scoreText, winChance } from "../format";
+import { sideRef, type PlayerRef } from "../ui/player";
 import { answerArrow } from "./drill";
 import { useDrills } from "../stores/drills";
 import { useGames } from "../stores/games";
@@ -72,14 +72,7 @@ function clockOf(side: Side): { ms: number | null; running: boolean } {
 function player(side: Side): PlayerRef {
   const sum = s.value;
   if (!sum) return { name: side === "white" ? "White" : "Black" };
-  const seat = sum[side];
-  return {
-    name: sum.you === side ? "You" : seatName(seat),
-    key: seat.player,
-    title: seat.title,
-    // A level's name carries its rating ("Dameless 1650"), so the strip does not repeat it.
-    rating: isLevelSeat(seat) ? null : seat.rating,
-  };
+  return sideRef(sum, side);
 }
 
 /** A position with a move waiting in it: the side to move is told so, where no running clock tells it. */
@@ -267,9 +260,6 @@ watch(
   --egap: var(--sp-2);
   --pad: var(--sp-3);
   --gap: var(--sp-1);
-  --strip: 2.25rem;
-  --graph: 3.5rem;
-  --transport: 2rem;
   --chrome: calc(2 * var(--strip) + var(--graph) + var(--transport) + 4 * var(--gap));
 
   /* A container query unit is the container's content box, so the padding is already out of it. */
@@ -355,8 +345,6 @@ watch(
     --col: 0px;
     --egap: 0px;
     --pad: 0px;
-    --strip: 2rem;
-    --graph: 2.5rem;
     --side: 100cqw;
 
     display: block;

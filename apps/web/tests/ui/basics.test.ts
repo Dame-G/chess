@@ -553,10 +553,11 @@ describe("UiPanelHead", () => {
     expect(text(m.el.querySelector(".ui-kvs--inline"))).toContain("Lichess");
   });
 
-  it("says a local game is local and gives a live one a running result", async () => {
+  it("says a local game is local and sets the two names of a live one against each other", async () => {
     m = await mount(UiPanelHead, { game: liveGame, mode: "play" });
     expect(text(m.el.querySelector(".ui-kvs--inline"))).toContain("local");
-    expect(text(m.el.querySelector(".ui-result-mark"))).toBe("*");
+    expect(text(m.el.querySelector(".ui-head-vs"))).toBe("vs");
+    expect(m.el.querySelector(".ui-result-mark")).toBeNull();
   });
 
   it("says how a finished game ended when nothing else says what is happening", async () => {

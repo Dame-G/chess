@@ -6,7 +6,6 @@ import { ECombobox } from "@eos-ui/vue/components/ECombobox";
 import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
-import { ESelect } from "@eos-ui/vue/components/ESelect";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextarea } from "@eos-ui/vue/components/ETextarea";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
@@ -30,6 +29,7 @@ import UiDialog from "../ui/UiDialog.vue";
 import UiField from "../ui/UiField.vue";
 import UiSeg from "../ui/UiSeg.vue";
 import Term from "./Term.vue";
+import UiSelect from "../ui/UiSelect.vue";
 
 /**
  * New idea: one dialog for every kind. A gain should play stronger; a neutral change should play the same, simpler;
@@ -437,7 +437,7 @@ async function create() {
           placeholder="Every dataset in the engine's units"
           hint="Leave empty to train on all the data that is in the engine's own units."
         />
-        <ESelect v-model="parent" label="Start from" :options="parentOptions" />
+        <UiSelect v-model="parent" label="Start from" :options="parentOptions" />
         <UiField group label="Schedule">
           <UiSeg
             v-model="preset"
@@ -452,7 +452,7 @@ async function create() {
             <ENumberField v-model="superbatches" label="Superbatches" :min="1" :step="5" />
             <ENumberField v-model="batchesEach" label="Batches each" :min="1" :step="100" />
             <ENumberField v-model="batchSize" label="Batch size" :min="256" :step="1024" />
-            <ESelect v-model="rateFalls" label="Learning rate falls" :options="lrSchedules" />
+            <UiSelect v-model="rateFalls" label="Learning rate falls" :options="lrSchedules" />
             <ENumberField v-model="learningRate" label="Learning rate" :step="0.00001" />
             <ENumberField v-model="finalRate" label="Ends at" :step="0.000001" />
             <ENumberField v-model="resultWeight" label="Weight on the result" :min="0" :max="1" :step="0.1" />
@@ -461,7 +461,7 @@ async function create() {
       </template>
 
       <template v-if="kind === 'custom'">
-        <ESelect v-model="gamePreset" label="Games" :options="presets" />
+        <UiSelect v-model="gamePreset" label="Games" :options="presets" />
         <UiField group label="Stop">
           <UiSeg
             v-model="stop"
@@ -504,7 +504,7 @@ async function create() {
 }
 
 .narrow {
-  inline-size: 10rem;
+  inline-size: var(--w-field);
 }
 
 /* The sentence under the kinds is two lines for the longest, so the form below does not jump as they are switched. */

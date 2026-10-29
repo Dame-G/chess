@@ -122,8 +122,8 @@ function toggle(row: { name: string }) {
       </template>
     </UiTable>
     <p class="meta">
-      <Term k="tune" /> moves each constant a little after every batch of games. The trajectory can wander on noise, so
-      only the confirmation trial decides. Pick a constant to draw its line.
+      <Term k="tune" /> moves each constant a little after every few games. The trajectory can wander on noise, so only
+      the confirmation trial decides. Pick a constant to draw its line.
     </p>
   </div>
 </template>

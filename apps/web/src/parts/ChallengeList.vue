@@ -102,7 +102,7 @@ const describe = (c: Challenge) =>
 
 .text {
   display: grid;
-  flex: 1 1 14rem;
+  flex: 1 1 var(--w-basis);
   gap: var(--sp-1);
   min-width: 0;
 }

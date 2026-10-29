@@ -36,10 +36,6 @@ withDefaults(defineProps<{ align?: "start" | "between"; wrap?: boolean; sticky?:
   flex-wrap: wrap;
 }
 
-.ui-toolbar--between {
-  justify-content: space-between;
-}
-
 .ui-toolbar-end {
   display: flex;
   flex-wrap: wrap;

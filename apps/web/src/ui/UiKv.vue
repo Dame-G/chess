@@ -145,8 +145,8 @@ onBeforeUnmount(() => clearTimeout(timer));
   white-space: pre;
 }
 
-/* The list is a container: a narrow one stacks the label over the value. */
-@container (width < 30rem) {
+/* The list is a container: one under 22rem (a phone) stacks the label over the value; a docked sheet reads side by side. */
+@container (width < 22rem) {
   .ui-kv:not(.ui-kv--inline) {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;

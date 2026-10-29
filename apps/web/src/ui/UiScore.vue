@@ -75,8 +75,8 @@ const words = computed(() => {
 .ui-score-pip {
   flex: none;
   box-sizing: border-box;
-  width: 0.5rem;
-  height: 0.5rem;
+  width: var(--dot);
+  height: var(--dot);
   border: var(--e-stroke-hair) solid var(--c-line-strong);
   border-radius: var(--r-0);
 }

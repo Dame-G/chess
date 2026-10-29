@@ -62,7 +62,7 @@ export const GLOSSARY = {
   },
   superbatch: {
     term: "Superbatch",
-    text: "A fixed number of batches of positions. Training is counted in superbatches, and a checkpoint is saved every few of them.",
+    text: "A fixed number of passes over a set of positions. Training is counted in superbatches, and a checkpoint is saved every few of them.",
   },
   loss: {
     term: "Loss",

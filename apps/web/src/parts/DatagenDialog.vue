@@ -123,7 +123,7 @@ async function start() {
 <style scoped>
 /* A number takes the room a number needs: narrow enough that the field drops its step buttons. */
 .num {
-  inline-size: 11rem;
+  inline-size: var(--w-field);
 }
 
 .summary {

@@ -86,8 +86,23 @@
   --w-rail: clamp(16rem, 18vw, 20rem);
   --w-panel: clamp(22rem, 24vw, 28rem);
   --w-sheet: clamp(32rem, 34vw, 44rem);
-  --w-sheet-wide: clamp(40rem, 52vw, 64rem);
+  --w-sheet-wide: clamp(36rem, 44vw, 60rem);
   --w-measure: 62ch;
+  --w-field-sm: 8.5rem; /* a short input: a count, a number of seconds */
+  --w-field: 11rem; /* a select or an input beside its label */
+  --w-basis: 14rem; /* a flexible item's preferred width: a notice, a search, a card */
+
+  /* The dot that marks a side, a result, a score or a live state, in three sizes. */
+  --dot-sm: 0.375rem;
+  --dot: 0.5rem;
+  --dot-lg: 0.625rem;
+
+  /* The board stage's chrome: a player strip above and below the board, the eval graph and the transport. They keep
+     their heights whether or not they have anything to show, so the board never moves. */
+  --strip: 2.25rem;
+  --graph: 3.5rem;
+  --transport: 2rem;
+  --h-tabbar: 3.5rem; /* the phone's bottom tab bar */
 
   /* A sheet that covers the window (below `lg`) stops short of what the host keeps visible: a header above it, the
      tab bar below it. The host sets these; they are 0 when nothing is kept. */
@@ -105,6 +120,13 @@
     --h-table-head: 2rem;
     --h-move: 2.5rem;
     --h-tab: 2.75rem;
+  }
+}
+
+@media (width < 48rem) {
+  :root {
+    --strip: 2rem;
+    --graph: 2.5rem;
   }
 }
 
@@ -284,108 +306,19 @@ a.ui-link:hover {
   text-transform: none;
 }
 
-/* ---- Legacy shims: the parts the screens still style themselves with, until each moves to src/ui and the cohesion
-   pass deletes them (UiSection, UiStats, UiTable, UiEmpty replace them). */
-
-/* The small uppercase title of a part of a pane: Doing now, Plays, Recent challenges. */
-.part-title {
-  margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
+/* ---- Toasts. */
 
 /* Buttons a toast carries side by side (Accept · Decline). */
 .toast-actions {
   display: inline-flex;
-  gap: var(--e-gap-snug);
+  gap: var(--sp-2);
 }
 
-/* Sheets: sections divided by hairlines, key figures, plain lists. */
-.sec {
-  display: grid;
-  gap: var(--e-gap-snug);
-  min-width: 0;
-  padding-block: var(--e-gap-base);
-  border-block-start: var(--line);
-}
+/* ---- Sheets. */
 
-/* A section is a grid; its parts may shrink below their content, so a wide table scrolls inside its own frame
-   instead of widening the sheet. */
-.sec > *,
-.sec > * > * {
-  min-width: 0;
-}
-
-.sec:first-child {
+/* A sticky filter bar already ends in a hairline, so the first section under it needs no rule of its own. */
+.sheet-bar + .ui-section.ui-section--1 {
+  margin-block-start: var(--sp-4);
   padding-block-start: 0;
   border-block-start: 0;
-}
-
-.sec-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0 var(--e-gap-base);
-}
-
-.sec-note {
-  margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
-}
-
-.figs {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
-  gap: var(--e-gap-snug) var(--e-gap-base);
-  margin: 0;
-}
-
-.fig {
-  display: grid;
-  gap: 0.125rem;
-  min-width: 0;
-}
-
-.fig dt {
-  color: var(--e-muted);
-  font: var(--e-type-small);
-}
-
-.fig dd {
-  margin: 0;
-  font: 600 1.25rem/1.2 var(--e-font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.fig dd small {
-  color: var(--e-muted);
-  font: var(--e-type-small);
-}
-
-.plain {
-  display: grid;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.sheet-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--e-gap-snug);
-}
-
-/* Key figures in a tighter setting: evidence under a chart, where several fit a line. */
-.figs--small {
-  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-}
-
-.figs--small .fig dd {
-  font-size: 1rem;
 }

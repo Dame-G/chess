@@ -22,6 +22,8 @@ const props = withDefaults(
     confirmDisabled?: boolean;
     /** A dialog that needs an answer (a confirmation): focus lands on Cancel, never on a field or the close button. */
     alert?: boolean;
+    /** Something to read, not to answer: no footer, the close button is the way out. */
+    plain?: boolean;
   }>(),
   { size: "md", cancelLabel: "Cancel" },
 );
@@ -67,7 +69,7 @@ function onKey(e: KeyboardEvent) {
     @keydown="onKey"
   >
     <div class="ui-dialog-body"><slot /></div>
-    <template #actions>
+    <template v-if="!plain" #actions>
       <EButton variant="quiet" class="ui-dialog-cancel" :disabled="busy" @click="cancel">{{ cancelLabel }}</EButton>
       <div class="ui-dialog-hint"><slot name="footer-start" /></div>
       <slot name="actions">

@@ -4,7 +4,6 @@ import { useRoute, useRouter } from "vue-router";
 import { PhCaretDown, PhX } from "@phosphor-icons/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
-import { ESelect } from "@eos-ui/vue/components/ESelect";
 import { EVisuallyHidden } from "@eos-ui/vue/components/EVisuallyHidden";
 import type { Profile, Speed } from "../api/types";
 import { formatRating, speedName, windowName } from "../format";
@@ -20,6 +19,7 @@ import UiSheetPage from "../ui/UiSheetPage.vue";
 import UiTable from "../ui/UiTable.vue";
 import UiToolbar from "../ui/UiToolbar.vue";
 import { addressQuery, compareGroups, type CompareAddress, LIMITS, leads, parseAddress, SPEEDS } from "./compare";
+import UiSelect from "../ui/UiSelect.vue";
 
 /**
  * Compare: players as columns, rows in groups (results, accuracy, moves per game, time, openings), the leader of a row
@@ -87,7 +87,6 @@ const stale = computed(
   () =>
     !!comparison.value && comparison.value.profiles.map((p) => p.player.key).join() !== address.value.players.join(),
 );
-const subtitle = computed(() => profiles.value.map((p) => p.player.name).join(" · "));
 const anyReviewedOnly = computed(() => groups.value.some((g) => g.reviewed));
 
 /** Whether column `i` leads a row. A row where everyone ties has no leader worth marking. */
@@ -128,12 +127,12 @@ const showTop = ref(false);
 </script>
 
 <template>
-  <UiSheetPage title="Compare" :subtitle="subtitle" wide :loading="!comparison && !failed">
+  <UiSheetPage title="Compare" wide :loading="!comparison && !failed">
     <div class="bar">
       <UiToolbar label="Which games to compare">
         <UiSeg v-model:values="speeds" label="Speeds" size="sm" multiple :options="speedOptions" />
         <UiSeg v-model="rated" label="Rated or casual" size="sm" :options="kinds" />
-        <ESelect v-model="limit" label="Games" hide-label size="sm" :options="limitOptions" class="span" />
+        <UiSelect v-model="limit" label="Games" dense :options="limitOptions" />
       </UiToolbar>
       <div class="add">
         <AddPlayer :taken="address.players" :full="address.players.length >= MAX" class="add-box" @add="add" />
@@ -421,10 +420,6 @@ const showTop = ref(false);
     margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) 0;
     padding-inline: var(--sp-4);
   }
-}
-
-.span {
-  min-width: 10rem;
 }
 
 .add {

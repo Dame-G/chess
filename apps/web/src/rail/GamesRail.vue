@@ -203,7 +203,7 @@ const coarse = useMedia("(pointer: coarse)");
 <template>
   <nav class="rail" aria-label="Games">
     <UiToolbar class="rail-head" label="Games" :wrap="false">
-      <UiSeg v-model="filter" label="Show games" size="sm" :options="options" />
+      <UiSeg v-model="filter" label="Show games" size="sm" dense :options="options" />
     </UiToolbar>
     <div v-if="state.loading && !rows.length" class="skeleton" aria-busy="true" aria-label="Loading games">
       <div v-for="n in 7" :key="n" class="skeleton-row">
@@ -284,17 +284,6 @@ const coarse = useMedia("(pointer: coarse)");
 .rail-head {
   padding: var(--sp-1) var(--sp-2);
   border-block-end: var(--e-stroke-hair) solid var(--c-line);
-}
-
-/* Five options in a rail 16rem wide: the segments are set a step smaller and tighter than the kit's, so none is cut. */
-.rail-head :deep(.ui-seg) {
-  flex: 1 1 auto;
-}
-
-.rail-head :deep(.ui-seg-option) {
-  flex: 1 1 auto;
-  padding-inline: var(--sp-1);
-  font-size: var(--e-text-xs);
 }
 
 .rail-list {

@@ -144,7 +144,7 @@ function goTo(id: number) {
         />
       </div>
 
-      <UiDialog v-if="phone" v-model:open="sheet" title="Moves" size="sm" cancel-label="Close">
+      <UiDialog v-if="phone" v-model:open="sheet" title="Moves" size="sm" plain>
         <div class="sheet">
           <TreeMoves
             v-if="board.exploring"

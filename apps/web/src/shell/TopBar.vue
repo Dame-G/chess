@@ -7,10 +7,8 @@ import { EButton } from "@eos-ui/vue/components/EButton";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
 import { EKbd } from "@eos-ui/vue/components/EKbd";
 import { formatShortcut } from "@eos-ui/vue";
-import { isLive } from "../board/modes";
 import { down, up, useMedia } from "../media";
 import { useConnections } from "../stores/connections";
-import { useGames } from "../stores/games";
 import { useVersions } from "../stores/versions";
 import UiPlayer from "../ui/UiPlayer.vue";
 import Logo from "./Logo.vue";
@@ -27,10 +25,7 @@ const ui = useUi();
 const route = useRoute();
 const connections = useConnections();
 const versions = useVersions();
-const games = useGames();
 
-/** New game is the header's one filled button, until a game you sit in is running: then it is an outline, still there. */
-const playing = computed(() => games.list.some((g) => g.you && isLive(g)));
 const keys = formatShortcut("mod+k");
 
 const phone = useMedia(down("md"));
@@ -72,14 +67,7 @@ const onDameless = computed(() => route.path.startsWith("/dameless"));
     </template>
     <template #actions>
       <LiveGame />
-      <EButton
-        size="sm"
-        :variant="playing ? 'outline' : undefined"
-        :icon="PhPlus"
-        class="new"
-        aria-label="New game"
-        @click="ui.startNewGame()"
-      >
+      <EButton size="sm" variant="outline" :icon="PhPlus" class="new" aria-label="New game" @click="ui.startNewGame()">
         <span class="new-label">New game</span>
       </EButton>
       <template v-if="!phone">

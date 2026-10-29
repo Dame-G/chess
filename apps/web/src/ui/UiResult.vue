@@ -71,8 +71,8 @@ const words = computed(() => {
 
 .ui-result--dot .ui-result-mark {
   display: inline-block;
-  width: 0.5rem;
-  height: 0.5rem;
+  width: var(--dot);
+  height: var(--dot);
   border-radius: var(--r-pill);
   background: var(--c-ink-3);
 }

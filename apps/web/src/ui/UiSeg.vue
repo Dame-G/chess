@@ -26,6 +26,8 @@ const props = withDefaults(
     /** Fill the width, the options sharing it. */
     full?: boolean;
     multiple?: boolean;
+    /** Tighter options a step smaller, sharing the width of a narrow place (five in the games rail). */
+    dense?: boolean;
   }>(),
   { size: "md" },
 );
@@ -79,7 +81,7 @@ function onKey(e: KeyboardEvent, from: number) {
 <template>
   <div
     class="ui-seg"
-    :class="[`ui-seg--${size}`, { 'ui-seg--full': full }]"
+    :class="[`ui-seg--${size}`, { 'ui-seg--full': full, 'ui-seg--dense': dense }]"
     :role="multiple ? 'group' : 'radiogroup'"
     :aria-label="label"
   >
@@ -167,6 +169,16 @@ function onKey(e: KeyboardEvent, from: number) {
 .ui-seg--full .ui-seg-option {
   flex: 1 1 0;
   min-width: 0;
+}
+
+.ui-seg--dense {
+  flex: 1 1 auto;
+}
+
+.ui-seg--dense .ui-seg-option {
+  flex: 1 1 auto;
+  padding-inline: var(--sp-1);
+  font-size: var(--e-text-xs);
 }
 
 .ui-seg-option:hover:not(:disabled, .is-on) {

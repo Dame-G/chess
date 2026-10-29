@@ -186,7 +186,7 @@ const fmt = (n: number | null | undefined) => (n == null ? null : n.toFixed(1));
             <span class="pip" :class="`pip--${side}`" aria-hidden="true" />
             <span class="truncate">{{ name(side) }}</span>
           </p>
-          <div class="figs">
+          <div class="sum-figs">
             <UiStat label="Accuracy" hint="accuracy" size="xl" :value="fmt(review.summary[side].accuracy)" />
             <UiStat label="Avg. loss" hint="Average centipawn loss" :value="review.summary[side].acpl" :digits="0" />
           </div>
@@ -333,7 +333,7 @@ const fmt = (n: number | null | undefined) => (n == null ? null : n.toFixed(1));
   background: var(--c-pip-black);
 }
 
-.figs {
+.sum-figs {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;

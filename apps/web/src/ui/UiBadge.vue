@@ -68,8 +68,8 @@ withDefaults(defineProps<{ tone?: BadgeTone; solid?: boolean; dot?: boolean }>()
 }
 
 .ui-badge-dot {
-  width: 0.375rem;
-  height: 0.375rem;
+  width: var(--dot-sm);
+  height: var(--dot-sm);
   border-radius: var(--r-pill);
   background: currentcolor;
 }

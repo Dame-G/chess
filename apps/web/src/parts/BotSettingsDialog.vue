@@ -5,7 +5,6 @@ import { ECheckbox } from "@eos-ui/vue/components/ECheckbox";
 import { ECheckboxGroup } from "@eos-ui/vue/components/ECheckboxGroup";
 import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
-import { ESelect } from "@eos-ui/vue/components/ESelect";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import type { BotSettings, Speed } from "../api/types";
@@ -15,6 +14,7 @@ import { useVersions } from "../stores/versions";
 import UiBadge from "../ui/UiBadge.vue";
 import UiDialog from "../ui/UiDialog.vue";
 import UiField from "../ui/UiField.vue";
+import UiSelect from "../ui/UiSelect.vue";
 
 /**
  * Bot rules: which version plays, which speeds and clocks and challengers it takes, how many games at once, and the
@@ -121,18 +121,13 @@ async function save() {
     @confirm="save"
   >
     <div class="stack">
-      <UiField v-slot="{ id, describedby, invalid }" label="Version that plays" :error="versionError">
-        <ESelect
-          :id="id"
-          v-model="version"
-          label="Version that plays"
-          hide-label
-          placeholder="Choose a version"
-          :options="versionOptions"
-          :aria-describedby="describedby"
-          :aria-invalid="invalid || undefined"
-        />
-      </UiField>
+      <UiSelect
+        v-model="version"
+        label="Version that plays"
+        placeholder="Choose a version"
+        :options="versionOptions"
+        :error="versionError"
+      />
 
       <UiField group label="Takes challenges">
         <div class="checks">
@@ -258,11 +253,11 @@ async function save() {
 }
 
 .range > :is(.e-number-field, div) {
-  inline-size: 8.5rem;
+  inline-size: var(--w-field-sm);
 }
 
 .one {
-  inline-size: 8.5rem;
+  inline-size: var(--w-field-sm);
 }
 
 .to {

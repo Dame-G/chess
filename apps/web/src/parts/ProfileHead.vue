@@ -54,7 +54,7 @@ const others = computed(() => ratings.value.filter((r) => r !== hero.value));
 }
 
 .rest {
-  flex: 1 1 14rem;
+  flex: 1 1 var(--w-basis);
   max-width: 24rem;
 }
 </style>

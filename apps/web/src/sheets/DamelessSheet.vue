@@ -140,7 +140,6 @@ watch(creating, (open) => {
   <UiSheetPage
     v-model:tab="tab"
     title="Dameless"
-    :subtitle="champion ? `Champion ${champion.name}` : undefined"
     :tabs="tabs"
     wide
     :loading="!overview && !failed"
@@ -188,7 +187,7 @@ watch(creating, (open) => {
             :format="(v) => formatElo(v, 0)"
             @point="hover = $event"
           >
-            <span class="mono">{{ readout }}</span>
+            <span v-if="hover != null" class="mono">{{ readout }}</span>
           </LineChart>
           <UiEmpty v-else dense title="The line starts once a second version is promoted." />
         </UiSection>
