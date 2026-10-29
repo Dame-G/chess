@@ -93,6 +93,8 @@ const pairsWord = (n: number): string => `${n.toLocaleString("en-GB")} ${n === 1
 export function evidenceLine(idea: Pick<Idea, "status" | "trials">): string {
   const t = idea.trials.find((x) => x.status === "running") ?? decidingTrial(idea);
   if (!t) return "";
+  // A queued idea's trial only says it waits, which the row already says.
+  if (idea.status === "queued" && !t.elo && !t.pairs) return "";
   if (t.elo) return `${plusMinus(t.elo)} Elo${t.pairs ? ` after ${pairsWord(t.pairs)}` : ""}`;
   if (t.pairs) return pairsWord(t.pairs);
   return t.detail ?? "";

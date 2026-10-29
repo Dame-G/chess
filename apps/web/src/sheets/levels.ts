@@ -5,7 +5,7 @@ import { aboutDuration, formatNumber } from "../format";
 export const isCalibrated = (l: LevelRating): boolean => l.games > 0 && !!l.rating;
 
 /** A level's name: `Level 5`, and `Full strength` for the top of the ladder (it plays on the clock). */
-export const levelName = (level: Level): string => (level.nodes == null ? "Full strength" : `Level ${level.id}`);
+const levelName = (level: Level): string => (level.nodes == null ? "Full strength" : `Level ${level.id}`);
 
 /** The rating the app shows for a level: the calibrated Elo, else the nominal one (marked as an estimate by callers). */
 function levelElo(l: LevelRating): number {

@@ -8,7 +8,7 @@ import UiMeter from "../src/ui/UiMeter.vue";
 
 const trial = (t: Partial<TrialSummary>): TrialSummary => ({
   id: 1,
-  stage: "stc",
+  stage: "short",
   status: "running",
   pairs: 0,
   ...t,
