@@ -152,6 +152,12 @@ async function skip() {
   transition: inline-size var(--m-move) var(--m-ease);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .bar-fill {
+    transition: none;
+  }
+}
+
 .ask {
   display: grid;
   gap: var(--sp-1);

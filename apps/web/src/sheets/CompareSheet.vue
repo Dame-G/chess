@@ -87,7 +87,7 @@ const stale = computed(
   () =>
     !!comparison.value && comparison.value.profiles.map((p) => p.player.key).join() !== address.value.players.join(),
 );
-const anyReviewedOnly = computed(() => groups.value.some((g) => g.reviewed));
+const anyReviewedOnly = computed(() => tables.value.some((t) => t.reviewed));
 
 /** Whether column `i` leads a row. A row where everyone ties has no leader worth marking. */
 function leading(row: Parameters<typeof leads>[1], i: number): boolean {
@@ -105,16 +105,21 @@ const columnsFor = (headFirst: string) => [
   { key: "label", label: headFirst },
   ...profiles.value.map((p, i) => ({ key: `p${i}`, label: p.player.name, align: "end" as const, fig: true })),
 ];
+/** A row no one has a figure for is left out, and a group left with no rows with it: a column of dashes says nothing. */
 const tables = computed(() =>
-  groups.value.map((g, n) => ({
-    id: g.id,
-    n,
-    title: g.title,
-    reviewed: !!g.reviewed,
-    columns: columnsFor(g.title),
-    rows: g.rows.map((r) => ({ id: r.id, label: r.label, term: r.term, spec: r })),
-  })),
+  groups.value
+    .map((g) => ({ g, rows: g.rows.filter((r) => profiles.value.some((p) => r.get(p) != null)) }))
+    .filter((x) => x.rows.length)
+    .map(({ g, rows }, n) => ({
+      id: g.id,
+      n,
+      title: g.title,
+      reviewed: !!g.reviewed,
+      columns: columnsFor(g.title),
+      rows: rows.map((r) => ({ id: r.id, label: r.label, term: r.term, spec: r })),
+    })),
 );
+const nothingReviewed = computed(() => groups.value.some((g) => g.reviewed) && !tables.value.some((t) => t.reviewed));
 const openings = computed(() => ({
   columns: columnsFor("Openings most played"),
   rows: [{ id: "top3" }],
@@ -393,6 +398,9 @@ const showTop = ref(false);
         </template>
       </UiTable>
 
+      <p v-if="nothingReviewed" class="foot">
+        Accuracy and the judged moves come from reviewed games, and none of these has been reviewed yet.
+      </p>
       <p v-if="anyReviewedOnly" class="foot">
         ◦ Counts reviewed games only. <Term k="accuracy" /> and <Term k="acpl" /> come from the same engine for
         everyone, so they compare fairly.
@@ -440,6 +448,12 @@ const showTop = ref(false);
   transform: rotate(180deg);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    transition: none;
+  }
+}
+
 .top {
   max-height: 22rem;
   overflow: auto;
@@ -455,6 +469,12 @@ const showTop = ref(false);
   gap: var(--sp-4);
   min-width: 0;
   transition: opacity var(--m-fast);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cmp {
+    transition: none;
+  }
 }
 
 @media (width < 30rem) {

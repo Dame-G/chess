@@ -199,7 +199,15 @@ const graph = computed(() => {
   });
   return { values, marks, tips };
 });
-const graphShown = computed(() => analysis.value && !!g.value && !board.exploring && board.plies.length > 1);
+/** A graph with nothing to draw (a game no engine has looked at) is the baseline, not an empty frame. */
+const graphShown = computed(
+  () =>
+    analysis.value &&
+    !!g.value &&
+    !board.exploring &&
+    board.plies.length > 1 &&
+    graph.value.values.some((v, i) => i > 0 && v !== null),
+);
 
 // The sounds of a game as it is played: each new move at the end, and a game starting.
 watch(

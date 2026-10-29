@@ -106,6 +106,15 @@ const bodyId = `${props.id ?? uid}-body`;
   min-width: 0;
 }
 
+/* A link beside a heading is a target a finger has to hit. */
+@media (pointer: coarse) {
+  .ui-section-aside :deep(a) {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--h-control);
+  }
+}
+
 @container (width < 30rem) {
   .ui-section-aside {
     flex: 1 1 100%;
