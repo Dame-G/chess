@@ -1,88 +1,60 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { ELink } from "@eos-ui/vue/components/ELink";
-import { ETag } from "@eos-ui/vue/components/ETag";
 import type { Player } from "../api/types";
-import { speedName } from "../format";
+import { formatNumber, speedName } from "../format";
+import UiEmpty from "../ui/UiEmpty.vue";
+import UiStat from "../ui/UiStat.vue";
+import UiStats from "../ui/UiStats.vue";
 
 /**
- * Who a profile is about: the name, the title, and the Lichess ratings per speed. `hideName` leaves the name out where
- * the sheet's own title already says it.
+ * The hero strip of a profile: the Lichess rating at the speed they play most, large, and the other speeds beside it.
+ * A rating that is still provisional is written `~1,345` and says so on hover, not as a trailing question mark.
  */
-const props = defineProps<{ player: Player; games?: number; hideName?: boolean }>();
+const props = defineProps<{ player: Player }>();
 
 const ratings = computed(() =>
   (["bullet", "blitz", "rapid", "classical"] as const).flatMap((s) => {
     const r = props.player.ratings[s];
-    return r ? [{ speed: s, label: speedName[s], rating: r.rating, provisional: r.provisional, games: r.games }] : [];
+    return r
+      ? [
+          {
+            speed: s,
+            label: speedName[s],
+            value: `${r.provisional ? "~" : ""}${formatNumber(r.rating)}`,
+            hint: r.provisional ? "Provisional: too few games for a settled rating" : undefined,
+            games: r.games,
+          },
+        ]
+      : [];
   }),
 );
-const profileUrl = computed(() =>
-  props.player.lichess && props.player.key !== "dameless" ? `https://lichess.org/@/${props.player.lichess}` : null,
+/** The speed they play most, else the first they have. */
+const hero = computed(() =>
+  ratings.value.reduce((a, b) => ((b.games ?? 0) > (a.games ?? 0) ? b : a), ratings.value[0]!),
 );
+const others = computed(() => ratings.value.filter((r) => r !== hero.value));
 </script>
 
 <template>
-  <header class="head">
-    <div class="who">
-      <h2 v-if="!hideName" class="name">{{ player.name }}</h2>
-      <ETag v-if="player.title" :label="player.title" size="sm" />
-      <ELink v-if="profileUrl" :href="profileUrl" external class="out">On Lichess</ELink>
-    </div>
-    <ul v-if="ratings.length" class="plain ratings" aria-label="Lichess ratings">
-      <li v-for="r in ratings" :key="r.speed" class="rating">
-        <span class="rating-speed">{{ r.label }}</span>
-        <span class="rating-value mono">{{ r.rating }}{{ r.provisional ? "?" : "" }}</span>
-      </li>
-    </ul>
-    <p v-else class="sec-note">No Lichess ratings.</p>
-  </header>
+  <div v-if="ratings.length" class="head" role="group" aria-label="Lichess ratings">
+    <UiStat :label="hero.label" :value="hero.value" :hint="hero.hint" size="xl" />
+    <UiStats v-if="others.length" :columns="others.length" dense class="rest">
+      <UiStat v-for="r in others" :key="r.speed" :label="r.label" :value="r.value" :hint="r.hint" size="md" />
+    </UiStats>
+  </div>
+  <UiEmpty v-else dense title="No Lichess ratings" />
 </template>
 
 <style scoped>
 .head {
-  display: grid;
-  gap: var(--e-gap-snug);
-  padding-block-end: var(--e-gap-base);
-}
-
-.who {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: var(--e-gap-snug);
+  align-items: flex-end;
+  gap: var(--sp-3) var(--sp-5);
 }
 
-.name {
-  min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
-  font: var(--e-type-h4, 600 1.125rem/1.2 var(--e-font-sans));
-}
-
-.out {
-  margin-inline-start: auto;
-  font: var(--e-type-small);
-}
-
-.ratings {
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(4.25rem, max-content);
-  gap: var(--e-gap-snug) var(--e-gap-base);
-  overflow-x: auto;
-}
-
-.rating {
-  display: grid;
-}
-
-.rating-speed {
-  color: var(--e-muted);
-  font: var(--e-type-small);
-}
-
-.rating-value {
-  font-size: 1.125rem;
-  font-weight: 600;
+.rest {
+  flex: 1 1 14rem;
+  max-width: 24rem;
 }
 </style>

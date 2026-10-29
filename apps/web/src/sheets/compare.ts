@@ -88,12 +88,15 @@ interface RowSpec {
 export interface GroupSpec {
   id: string;
   title: string;
+  /** Its rows count reviewed games only, so an engine has to have looked at them. */
+  reviewed?: boolean;
   rows: RowSpec[];
 }
 
 const one = (v: number) => v.toFixed(1);
 const two = (v: number) => v.toFixed(2);
 const whole = (v: number) => String(Math.round(v));
+const percent = (v: number) => `${v.toFixed(1)}%`;
 const seconds = (v: number) => `${(v / 1000).toFixed(1)} s`;
 
 /** The rows of a comparison, grouped. Per-speed accuracy rows appear for the speeds some profile has played. */
@@ -103,7 +106,7 @@ export function compareGroups(profiles: readonly Profile[]): GroupSpec[] {
     id: `acc-${s}`,
     label: speedName[s],
     get: (p) => p.accuracy.by_speed.find((x) => x.speed === s)?.accuracy ?? null,
-    text: one,
+    text: percent,
   });
   const perGame = (id: keyof Profile["counts_per_game"], label: string, leader?: LeaderRow): RowSpec => ({
     id: `pg-${id}`,
@@ -118,9 +121,9 @@ export function compareGroups(profiles: readonly Profile[]): GroupSpec[] {
       title: "Results",
       rows: [
         { id: "games", label: "Games", get: (p) => p.games, text: whole },
-        { id: "score", label: "Score, %", leader: "score", get: (p) => p.results.overall.score, text: one },
-        { id: "white", label: "As White, %", get: (p) => p.results.white.score, text: one },
-        { id: "black", label: "As Black, %", get: (p) => p.results.black.score, text: one },
+        { id: "score", label: "Score", leader: "score", get: (p) => p.results.overall.score, text: percent },
+        { id: "white", label: "As White", get: (p) => p.results.white.score, text: percent },
+        { id: "black", label: "As Black", get: (p) => p.results.black.score, text: percent },
         {
           id: "performance",
           label: "Performance",
@@ -131,7 +134,7 @@ export function compareGroups(profiles: readonly Profile[]): GroupSpec[] {
         },
         {
           id: "streak",
-          label: "Longest win streak",
+          label: "Win streak",
           leader: "streak",
           get: (p) => (p.games ? p.longest_win_streak : null),
           text: whole,
@@ -141,6 +144,7 @@ export function compareGroups(profiles: readonly Profile[]): GroupSpec[] {
     {
       id: "accuracy",
       title: "Accuracy",
+      reviewed: true,
       rows: [
         {
           id: "acc",
@@ -148,36 +152,38 @@ export function compareGroups(profiles: readonly Profile[]): GroupSpec[] {
           term: "accuracy",
           leader: "accuracy",
           get: (p) => p.accuracy.overall,
-          text: one,
+          text: percent,
         },
-        { id: "acc-opening", label: "Opening", leader: "opening", get: (p) => p.accuracy.opening, text: one },
+        { id: "acc-opening", label: "Opening", leader: "opening", get: (p) => p.accuracy.opening, text: percent },
         {
           id: "acc-middlegame",
           label: "Middlegame",
           leader: "middlegame",
           get: (p) => p.accuracy.middlegame,
-          text: one,
+          text: percent,
         },
-        { id: "acc-endgame", label: "Endgame", leader: "endgame", get: (p) => p.accuracy.endgame, text: one },
+        { id: "acc-endgame", label: "Endgame", leader: "endgame", get: (p) => p.accuracy.endgame, text: percent },
         ...speeds.map(speedRow),
-        { id: "acpl", label: "Centipawn loss", term: "acpl", leader: "acpl", get: (p) => p.acpl, text: one },
+        { id: "acpl", label: "Avg. loss", term: "acpl", leader: "acpl", get: (p) => p.acpl, text: one },
       ],
     },
     {
       id: "moves",
       title: "Moves per game",
+      reviewed: true,
       rows: [
         perGame("brilliant", "Brilliant", "brilliant"),
         perGame("great", "Great"),
         perGame("inaccuracy", "Inaccuracies"),
         perGame("mistake", "Mistakes", "mistakes"),
         perGame("blunder", "Blunders", "blunders"),
-        perGame("miss", "Missed chances"),
+        perGame("miss", "Missed wins"),
       ],
     },
     {
       id: "time",
       title: "Time per move",
+      reviewed: true,
       rows: [
         { id: "t-avg", label: "Average", get: (p) => p.time.average_ms, text: seconds },
         { id: "t-opening", label: "Opening", get: (p) => p.time.opening_ms, text: seconds },

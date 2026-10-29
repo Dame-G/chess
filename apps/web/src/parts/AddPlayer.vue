@@ -49,30 +49,35 @@ async function add() {
 
 <template>
   <div class="add">
-    <h2 class="part-title">Add a player</h2>
     <ESearchBar
       v-model="text"
       label="Add a player"
-      placeholder="A Lichess name or a link to their profile"
+      placeholder="Add a player: a Lichess name or a link"
       action="Add"
       :loading="busy"
       :disabled="full"
       @submit="add"
     />
     <p v-if="error" class="err" role="alert">{{ error }}</p>
-    <p v-else-if="full" class="sec-note">Five players is the most that fit side by side.</p>
+    <p v-else-if="full" class="note">Five players is the most that fit side by side.</p>
   </div>
 </template>
 
 <style scoped>
 .add {
   display: grid;
-  gap: var(--e-gap-snug);
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.err,
+.note {
+  margin: 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
 }
 
 .err {
-  margin: 0;
-  color: var(--e-danger-ink);
-  font: var(--e-type-small);
+  color: var(--c-loss);
 }
 </style>

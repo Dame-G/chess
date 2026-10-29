@@ -85,7 +85,7 @@ function axisWidth(format: (v: number) => string): uPlot.Axis.Size {
     const pxRatio = devicePixelRatio || 1;
     const labels = values?.length ? values : [format(0)];
     u.ctx.save();
-    u.ctx.font = `11px ${css("--e-font-mono", "monospace")}`;
+    u.ctx.font = `12px ${css("--e-font-mono", "monospace")}`;
     const widest = Math.max(...labels.map((v) => u.ctx.measureText(String(v)).width / pxRatio));
     u.ctx.restore();
     return Math.ceil(Math.max(widest + 4 + 6, 28));
@@ -94,8 +94,8 @@ function axisWidth(format: (v: number) => string): uPlot.Axis.Size {
 
 function options(width: number): uPlot.Options {
   const mono = css("--e-font-mono", "monospace");
-  const font = `11px ${mono}`;
-  const muted = css("--e-muted");
+  const font = `12px ${mono}`;
+  const muted = css("--c-ink-2", css("--e-muted"));
   const grid = { stroke: css("--e-border", "#ccc"), width: 1, dash: [] as number[] };
   const hasRight = props.series.some((s) => s.right);
   const fmt = props.format ?? ((v: number) => String(Math.round(v * 10) / 10));
@@ -269,8 +269,8 @@ onBeforeUnmount(() => {
 }
 
 .chart-caption {
-  margin-block-start: 0.25rem;
-  color: var(--e-muted);
-  font: var(--e-type-small);
+  margin-block-start: var(--sp-1);
+  color: var(--c-ink-2);
+  font: var(--t-meta);
 }
 </style>

@@ -1,26 +1,25 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ESheet } from "@eos-ui/vue/components/ESheet";
+import { PhArrowUpRight } from "@phosphor-icons/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { EEmptyState } from "@eos-ui/vue/components/EEmptyState";
-import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ApiError } from "../api/client";
 import type { ProfileFilter } from "../api/types";
 import ProfileFilters from "../parts/ProfileFilters.vue";
 import ProfileHead from "../parts/ProfileHead.vue";
-import ProfileSkeleton from "../parts/ProfileSkeleton.vue";
+import ProfileOpenings from "../parts/ProfileOpenings.vue";
+import ProfileStats from "../parts/ProfileStats.vue";
 import ProfileView from "../parts/ProfileView.vue";
 import ReviewBar from "../parts/ReviewBar.vue";
 import { ALL_GAMES, usePlayers } from "../stores/players";
+import UiEmpty from "../ui/UiEmpty.vue";
+import UiSheetPage from "../ui/UiSheetPage.vue";
 import { isPlayerKey, nameOfKey } from "./compare";
-import { useSheet } from "./useSheet";
 
 /**
- * A person on Lichess: their games added up with the same building blocks as You. When none of their games are here,
- * the first step is to import the last fifty; then to review them; then Compare.
+ * A person on Lichess: their games added up with the same building blocks as You, on one page. When none of their games
+ * are here the page is the way to bring them in (the last fifty); then comes the review; then Compare.
  */
-const sheet = useSheet();
 const route = useRoute();
 const router = useRouter();
 const players = usePlayers();
@@ -31,6 +30,13 @@ const missing = ref(false);
 const failed = ref<string | null>(null);
 const profile = computed(() => players.profileOf(key.value, filter.value));
 const name = computed(() => profile.value?.player.name ?? nameOfKey(key.value));
+/** None of their games are here, with nothing filtered out: the import is the whole page. */
+const notImported = computed(
+  () => profile.value?.games === 0 && !filter.value.speeds?.length && filter.value.rated == null && !filter.value.since,
+);
+const loading = computed(() => !profile.value && !failed.value && !missing.value);
+const subtitle = computed(() => [profile.value?.player.title, "Lichess"].filter(Boolean).join(" · "));
+const lichessUrl = computed(() => `https://lichess.org/@/${nameOfKey(key.value)}`);
 
 async function load() {
   missing.value = false;
@@ -62,33 +68,67 @@ const compare = () => router.push({ path: "/compare", query: { players: `you,${k
 </script>
 
 <template>
-  <ESheet v-bind="sheet.bind" :title="name" description="A player on Lichess, from the games brought in here.">
-    <EEmptyState v-if="missing" title="No such player">
-      Lichess has no player called {{ nameOfKey(key) }}. Check the spelling, or paste a link to their profile in
-      Compare.
-    </EEmptyState>
-    <ENotice v-else-if="failed" tone="danger" title="This profile did not load" retry @retry="load">
-      {{ failed }}
-    </ENotice>
-    <ProfileSkeleton v-else-if="!profile" :label="`Loading ${name}`" />
-    <template v-else>
-      <ProfileHead :player="profile.player" hide-name />
-      <section class="sec" aria-label="Games and review">
-        <ProfileFilters v-if="profile.games" v-model="filter" :games="profile.games" />
-        <ReviewBar
-          :player-key="key"
-          :name="profile.player.name"
-          :games="profile.games"
-          :pending="profile.pending_review"
-          :total="profile.unreviewed_total"
-        />
-      </section>
-      <ProfileView :profile="profile" />
-      <section class="sec" aria-label="Compare">
-        <div class="sheet-actions">
-          <EButton variant="outline" @click="compare">Compare with you</EButton>
-        </div>
-      </section>
+  <UiSheetPage :title="name" :subtitle="subtitle" :loading="loading" :sync="false">
+    <template v-if="profile && !missing && !failed" #actions>
+      <EButton v-if="!notImported" variant="outline" size="sm" @click="compare">Compare with you</EButton>
+      <EButton variant="quiet" size="sm" :href="lichessUrl" external aria-label="On Lichess" title="On Lichess">
+        <PhArrowUpRight aria-hidden="true" />
+      </EButton>
     </template>
-  </ESheet>
+    <template v-if="profile && !missing && !failed" #lead>
+      <ProfileHead :player="profile.player" />
+    </template>
+
+    <UiEmpty
+      v-if="missing"
+      title="No such player"
+      :body="`Lichess has no player called ${nameOfKey(key)}. Check the spelling, or paste a link to their profile in Compare.`"
+    >
+      <template #actions>
+        <EButton variant="outline" @click="router.push('/compare')">Open Compare</EButton>
+      </template>
+    </UiEmpty>
+    <UiEmpty v-else-if="failed" tone="error" title="This profile didn't load" :body="failed">
+      <template #actions>
+        <EButton variant="outline" @click="load">Try again</EButton>
+      </template>
+    </UiEmpty>
+    <template v-else-if="profile">
+      <UiEmpty
+        v-if="notImported"
+        :title="`No games from ${profile.player.name} yet`"
+        body="Import their recent Lichess games to see how they play."
+      >
+        <template #actions>
+          <ReviewBar
+            :player-key="key"
+            :name="profile.player.name"
+            :games="profile.games"
+            :pending="profile.pending_review"
+            :total="profile.unreviewed_total"
+            bare
+          />
+        </template>
+      </UiEmpty>
+      <template v-else>
+        <ProfileFilters v-model="filter" :games="profile.games" />
+        <UiEmpty v-if="profile.games === 0" dense title="No games match these filters." />
+        <template v-else>
+          <ReviewBar
+            :player-key="key"
+            :name="profile.player.name"
+            :games="profile.games"
+            :pending="profile.pending_review"
+            :total="profile.unreviewed_total"
+            :lead="profile.reviewed === 0"
+            importable
+            import-label="Import more"
+          />
+          <ProfileStats :profile="profile" />
+          <ProfileView :profile="profile" />
+          <ProfileOpenings :profile="profile" />
+        </template>
+      </template>
+    </template>
+  </UiSheetPage>
 </template>

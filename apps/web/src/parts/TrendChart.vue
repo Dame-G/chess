@@ -4,6 +4,7 @@ import type { TrendPoint } from "../api/types";
 import { percent, shortDate } from "../format";
 import { trendSeries } from "../sheets/trend";
 import type { ChartSeries } from "./chart";
+import ChartKey from "./ChartKey.vue";
 import LineChart from "./LineChart.vue";
 
 /**
@@ -19,13 +20,23 @@ const hasRating = computed(() => data.value.rating.some((r) => r != null));
 const series = computed<ChartSeries[]>(() => [
   ...(hasAccuracy.value
     ? [
-        { label: "Accuracy", values: data.value.accuracy, color: "--e-muted", kind: "points" as const },
-        { label: "Average of 10 games", values: data.value.average, color: "--e-ink", width: 2 },
+        { label: "Accuracy", values: data.value.accuracy, color: "--c-ink-2", kind: "points" as const },
+        { label: "Average of 10 games", values: data.value.average, color: "--c-ink", width: 2 },
       ]
     : []),
   ...(hasRating.value
-    ? [{ label: "Rating", values: data.value.rating, color: "--e-primary", right: hasAccuracy.value, width: 1.5 }]
+    ? [{ label: "Rating", values: data.value.rating, color: "--c-info", right: hasAccuracy.value, width: 1.5 }]
     : []),
+]);
+
+const items = computed(() => [
+  ...(hasAccuracy.value
+    ? [
+        { label: "Accuracy per game", shape: "dot" as const, color: "--c-ink-2" },
+        { label: "Average of 10", shape: "line" as const, color: "--c-ink" },
+      ]
+    : []),
+  ...(hasRating.value ? [{ label: "Rating", shape: "line" as const, color: "--c-info" }] : []),
 ]);
 
 const hover = ref<number | null>(null);
@@ -47,11 +58,7 @@ const readout = computed(() => {
 
 <template>
   <div class="trend">
-    <p class="key" aria-hidden="true">
-      <span v-if="hasAccuracy" class="k k-dot">Accuracy per game</span>
-      <span v-if="hasAccuracy" class="k k-ink">Average of 10</span>
-      <span v-if="hasRating" class="k k-rate">Rating</span>
-    </p>
+    <ChartKey :items="items" :readout="hover == null ? undefined : readout" />
     <LineChart
       :label="label"
       :x="data.x"
@@ -62,57 +69,14 @@ const readout = computed(() => {
       :right-range="[null, null]"
       :format="(v) => String(Math.round(v))"
       @point="hover = $event"
-    >
-      <span class="mono readout">{{ readout }}</span>
-    </LineChart>
+    />
   </div>
 </template>
 
 <style scoped>
 .trend {
   display: grid;
-  gap: var(--e-gap-tight);
+  gap: var(--sp-1);
   min-width: 0;
-}
-
-.key {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--e-gap-base);
-  margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
-}
-
-.k::before {
-  display: inline-block;
-  margin-inline-end: 0.375rem;
-  vertical-align: middle;
-  content: "";
-}
-
-.k-dot::before {
-  inline-size: 0.375rem;
-  block-size: 0.375rem;
-  border-radius: 50%;
-  background: var(--e-muted);
-}
-
-.k-ink::before,
-.k-rate::before {
-  inline-size: 0.875rem;
-  block-size: 2px;
-}
-
-.k-ink::before {
-  background: var(--e-ink);
-}
-
-.k-rate::before {
-  background: var(--e-primary);
-}
-
-.readout {
-  font-size: 0.8125rem;
 }
 </style>

@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { RouterLink } from "vue-router";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { EList } from "@eos-ui/vue/components/EList";
-import { EListRow } from "@eos-ui/vue/components/EListRow";
-import { ENotice } from "@eos-ui/vue/components/ENotice";
-import { ESegmented } from "@eos-ui/vue/components/ESegmented";
-import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
-import type { Speed } from "../api/types";
-import { signed } from "../format";
+import type { LeaderboardEntry, Speed } from "../api/types";
+import { formatElo } from "../format";
 import { usePlayers } from "../stores/players";
+import UiEmpty from "../ui/UiEmpty.vue";
+import UiPlayer from "../ui/UiPlayer.vue";
+import UiSeg from "../ui/UiSeg.vue";
+import UiTable from "../ui/UiTable.vue";
 
 /** Lichess's leaderboard, one tap to put someone in the comparison. */
 const props = defineProps<{ taken: string[]; full: boolean }>();
@@ -18,7 +16,8 @@ const emit = defineEmits<{ add: [key: string] }>();
 const players = usePlayers();
 const speed = ref<Speed>("blitz");
 const failed = ref(false);
-const rows = computed(() => players.top[speed.value]);
+const rows = computed(() => players.top[speed.value] ?? []);
+const loading = computed(() => !players.top[speed.value] && !failed.value);
 
 async function load(s: Speed) {
   failed.value = false;
@@ -33,14 +32,23 @@ watch(speed, load, { immediate: true });
 
 const key = (username: string) => `lichess:${username.toLowerCase()}`;
 const has = (username: string) => props.taken.includes(key(username));
+const ref_ = (p: LeaderboardEntry) => ({ name: p.username, key: key(p.username), title: p.title ?? null });
+
+const columns = [
+  { key: "rank", label: "#", fig: true, width: "2rem" },
+  { key: "name", label: "Player" },
+  { key: "rating", label: "Rating", fig: true },
+  { key: "progress", label: "This week", fig: true, hide: "sm" as const },
+  { key: "add", label: "Add", width: "4.5rem", align: "end" as const },
+];
+const table = computed(() => rows.value.map((p, i) => ({ ...p, rank: i + 1, id: p.key })));
 </script>
 
 <template>
   <div class="top">
-    <ESegmented
+    <UiSeg
       v-model="speed"
       label="Leaderboard"
-      hide-label
       size="sm"
       :options="[
         { value: 'bullet', label: 'Bullet' },
@@ -48,66 +56,32 @@ const has = (username: string) => props.taken.includes(key(username));
         { value: 'rapid', label: 'Rapid' },
       ]"
     />
-    <ENotice v-if="failed" tone="warning" title="Lichess did not answer" retry @retry="load(speed)" />
-    <ESkeleton v-else-if="!rows" :lines="5" label="Loading the leaderboard" />
-    <EList v-else :model-value="null" label="Leaderboard">
-      <EListRow
-        v-for="(p, i) in rows"
-        :key="p.key"
-        :value="p.key"
-        :link-component="RouterLink"
-        :to="`/players/${key(p.username)}`"
-      >
-        <template #leading>
-          <span class="rank mono">{{ i + 1 }}</span>
-        </template>
-        <template #title>
-          <span v-if="p.title" class="title">{{ p.title }}</span>
-          {{ p.username }}
-        </template>
-        <template #trailing>
-          <span class="rating mono">{{ p.rating }}</span>
-          <span class="progress mono" :aria-label="`${p.progress ?? 0} this week`">{{
-            signed(p.progress ?? 0, 0)
-          }}</span>
-        </template>
-        <template #actions>
-          <EButton variant="quiet" size="xs" :disabled="full || has(p.username)" @click="emit('add', key(p.username))">
-            {{ has(p.username) ? "Added" : "Add" }}
-          </EButton>
-        </template>
-      </EListRow>
-    </EList>
+    <UiEmpty v-if="failed" tone="error" dense title="Lichess did not answer.">
+      <template #actions>
+        <EButton variant="quiet" size="sm" @click="load(speed)">Try again</EButton>
+      </template>
+    </UiEmpty>
+    <UiTable v-else label="Leaderboard" :columns="columns" :rows="table" row-key="id" :loading="loading">
+      <template #cell-name="{ row }"><UiPlayer :seat="ref_(row)" link /></template>
+      <template #cell-progress="{ row }">{{ formatElo(row.progress ?? 0) }}</template>
+      <template #cell-add="{ row }">
+        <EButton
+          variant="quiet"
+          size="xs"
+          :disabled="full || has(row.username)"
+          @click="emit('add', key(row.username))"
+        >
+          {{ has(row.username) ? "Added" : "Add" }}
+        </EButton>
+      </template>
+    </UiTable>
   </div>
 </template>
 
 <style scoped>
 .top {
   display: grid;
-  gap: var(--e-gap-snug);
-}
-
-.rank {
-  inline-size: 1.5rem;
-  color: var(--e-muted);
-  font-size: 0.8125rem;
-}
-
-/* The rating and the week's change sit side by side, each in its own column. */
-.rating,
-.progress {
-  inline-size: 3rem;
-  text-align: end;
-}
-
-.progress {
-  font-size: 0.8125rem;
-}
-
-.title {
-  margin-inline-end: 0.25rem;
-  color: var(--e-primary);
-  font: var(--e-type-small);
-  font-weight: 700;
+  gap: var(--sp-2);
+  min-width: 0;
 }
 </style>

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import type { Metric, ProgressChart } from "../api/types";
 import { shortDate, signed } from "../format";
 import { latest, progressData } from "../sheets/progress";
 import type { ChartSeries } from "./chart";
+import UiEmpty from "../ui/UiEmpty.vue";
+import UiSeg from "../ui/UiSeg.vue";
+import ChartKey from "./ChartKey.vue";
 import LineChart from "./LineChart.vue";
 
 /**
@@ -22,11 +24,18 @@ const data = computed(() => progressData(props.chart, metrics.value));
 const hasAccuracy = computed(() => progressData(props.chart, ["accuracy", "drill_hit_rate"]).lines.length > 0);
 
 const COLOR: Record<string, string> = {
-  rating: "--e-primary",
-  accuracy: "--e-primary",
-  drill_hit_rate: "--e-muted",
-  elo: "--e-ink",
+  rating: "--c-info",
+  accuracy: "--c-info",
+  drill_hit_rate: "--c-ink-2",
+  elo: "--c-ink",
 };
+const items = computed(() =>
+  data.value.lines.map((l) => ({
+    label: l.label,
+    shape: "line" as const,
+    color: COLOR[l.metric]!,
+  })),
+);
 const series = computed<ChartSeries[]>(() =>
   data.value.lines.map((l) => ({
     label: l.label,
@@ -58,20 +67,17 @@ const label = computed(
 
 <template>
   <div v-if="data.lines.length && data.x.length > 1" class="progress">
-    <ESegmented
+    <UiSeg
       v-if="!compact && hasAccuracy"
       v-model="view"
       label="Chart"
-      hide-label
       size="sm"
       :options="[
         { value: 'rating', label: 'Rating' },
         { value: 'accuracy', label: 'Accuracy' },
       ]"
     />
-    <p class="key" aria-hidden="true">
-      <span v-for="l in data.lines" :key="l.metric" class="k" :class="`k-${l.metric}`">{{ l.label }}</span>
-    </p>
+    <ChartKey :items="items" :readout="hover == null ? undefined : readout" />
     <LineChart
       :label="label"
       :x="data.x"
@@ -82,49 +88,19 @@ const label = computed(
       :format="(v) => String(Math.round(v))"
       :right-format="hasRight ? (v) => signed(v, 0) : undefined"
       @point="hover = $event"
-    >
-      <span class="mono readout">{{ readout }}</span>
-    </LineChart>
+    />
   </div>
-  <p v-else class="sec-note">The lines start with your first rated or reviewed game, and Dameless's second champion.</p>
+  <UiEmpty
+    v-else
+    dense
+    title="The lines start with your first rated or reviewed game, and Dameless's second champion."
+  />
 </template>
 
 <style scoped>
 .progress {
   display: grid;
-  gap: var(--e-gap-tight);
+  gap: var(--sp-1);
   min-width: 0;
-}
-
-.key {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--e-gap-base);
-  margin: 0;
-  color: var(--e-muted);
-  font: var(--e-type-small);
-}
-
-.k::before {
-  display: inline-block;
-  inline-size: 0.875rem;
-  block-size: 2px;
-  margin-inline-end: 0.375rem;
-  vertical-align: middle;
-  background: var(--e-ink);
-  content: "";
-}
-
-.k-rating::before,
-.k-accuracy::before {
-  background: var(--e-primary);
-}
-
-.k-drill_hit_rate::before {
-  background: var(--e-muted);
-}
-
-.readout {
-  font-size: 0.8125rem;
 }
 </style>

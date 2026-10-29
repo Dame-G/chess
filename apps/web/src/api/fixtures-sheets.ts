@@ -237,7 +237,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
   });
 
   // States to look at: `lichess:broken…` fails to load, `lichess:slow…` loads slowly, `lichess:nogames` has no games
-  // here; You is the same with `?fixtures=youbroken`, `?fixtures=slow` and `?fixtures=newcomer` (no games at all).
+  // here; You is the same with `?fixtures=youbroken`, `?fixtures=slow`, `?fixtures=newcomer` (no games at all) and `?fixtures=unreviewed` (3,708 games, none reviewed).
   roster.set("lichess:nogames", {
     name: "nogames",
     title: null,
@@ -250,6 +250,8 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
     seed: 606,
   });
   if (ctx.mode === "newcomer") Object.assign(roster.get("you")!, { games: 0, reviewed: 0 });
+  // The real first run: the whole Lichess history imported (3,708 games) and not one of them reviewed yet.
+  if (ctx.mode === "unreviewed") Object.assign(roster.get("you")!, { games: 3708, reviewed: 0 });
   const profileQuirk = (key: string): "broken" | "slow" | null =>
     /^lichess:broken/.test(key) || (key === "you" && ctx.mode === "youbroken")
       ? "broken"
