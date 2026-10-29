@@ -51,6 +51,12 @@ export function datagenText(e: DatagenEstimate): string {
   return `${bytes(e.bytes)} on disk, ${rangeText(e.seconds)} on this machine, in the background.`;
 }
 
+/** The same cost in one short line for a dialog's footer: `~86 MB · 4 to 5 h`. */
+export function datagenSummary(e: DatagenEstimate): string {
+  const [a, b] = e.seconds.map((s) => duration(s)) as [string, string];
+  return `~${bytes(e.bytes)} · ${a === b ? a : `${a} to ${b}`}`;
+}
+
 /** What the data folder can still take: under the cap, and leaving the disk its floor. `null` when the disk is unknown. */
 export function room(d: Pick<DataStatus, "cap_bytes" | "used_bytes" | "disk_free_bytes" | "keep_free_bytes">): number {
   const underCap = Math.max(0, d.cap_bytes - d.used_bytes);

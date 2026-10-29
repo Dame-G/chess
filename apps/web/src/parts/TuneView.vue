@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { EButton } from "@eos-ui/vue/components/EButton";
-import { ETable } from "@eos-ui/vue/components/ETable";
 import type { TuneDetail } from "../api/types";
-import { signed } from "../format";
+import { formatNumber, signed } from "../format";
 import { tuneCost, tuneCostText } from "../sheets/tune";
 import { usePolicy } from "../stores/policy";
+import UiEmpty from "../ui/UiEmpty.vue";
+import UiMeter from "../ui/UiMeter.vue";
+import UiTable from "../ui/UiTable.vue";
 import type { ChartSeries } from "./chart";
 import LineChart from "./LineChart.vue";
 import Term from "./Term.vue";
@@ -51,25 +52,50 @@ const ordered = computed(() =>
 );
 
 const done = computed(() => steps.value.at(-1)?.iteration ?? 0);
-const cost = computed(() =>
-  tuneCost(props.tune.spec.iterations - done.value, props.tune.spec.pairs, policy.status?.cores ?? 8),
-);
+const total = computed(() => props.tune.spec.iterations);
+const cost = computed(() => tuneCost(total.value - done.value, props.tune.spec.pairs, policy.status?.cores ?? 8));
+const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 const rows = computed(() =>
   params.value.map((p) => {
     const change = p.value - p.start;
-    return { ...p, change, percent: p.start ? (100 * change) / p.start : 0 };
+    return {
+      name: p.name,
+      start: fmt(p.start),
+      now: fmt(Math.round(p.value * 10) / 10),
+      change,
+      percent: p.start ? (100 * change) / p.start : 0,
+      range: p.min != null && p.max != null ? `${p.min}–${p.max}` : null,
+    };
   }),
 );
-const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+const columns = [
+  { key: "name", label: "Constant" },
+  { key: "start", label: "Start", fig: true },
+  { key: "now", label: "Now", fig: true },
+  { key: "change", label: "Change", fig: true },
+  { key: "range", label: "Range", fig: true, hide: "sm" as const },
+];
+function toggle(row: { name: string }) {
+  picked.value = picked.value === row.name ? null : row.name;
+}
 </script>
 
 <template>
   <div class="tune">
-    <p class="detail">
-      Iteration {{ done.toLocaleString("en-GB") }} of {{ tune.spec.iterations.toLocaleString("en-GB") }}
-      <template v-if="running && tune.spec.iterations > done"> · {{ tuneCostText(cost) }}</template>
-    </p>
-    <p v-if="!steps.length" class="sec-note">No iteration has finished yet. The trajectory appears with the first.</p>
+    <UiMeter
+      label="Iterations"
+      :value="done"
+      :max="total"
+      :text="`${formatNumber(done)} of ${formatNumber(total)}`"
+      :tone="running ? 'info' : undefined"
+    />
+    <p v-if="running && total > done" class="meta">{{ tuneCostText(cost) }}</p>
+    <UiEmpty
+      v-if="!steps.length"
+      dense
+      title="No iteration has finished yet."
+      body="The trajectory appears with the first."
+    />
     <LineChart
       v-else
       label="How far each constant has moved from its start, as a share of its range"
@@ -80,40 +106,24 @@ const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
       :x-format="(v) => String(Math.round(v))"
       :format="(v) => signed(v, 0) + '%'"
     />
-    <ETable caption="The constants being tuned" hide-caption dense>
-      <thead>
-        <tr>
-          <th scope="col">Constant</th>
-          <th scope="col" class="e-num">Start</th>
-          <th scope="col" class="e-num">Now</th>
-          <th scope="col" class="e-num">Change</th>
-          <th scope="col" class="e-num">Range</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="r in rows" :key="r.name" :class="{ picked: picked === r.name }">
-          <th scope="row" class="name-col">
-            <EButton
-              variant="quiet"
-              size="sm"
-              :aria-pressed="picked === r.name"
-              @click="picked = picked === r.name ? null : r.name"
-            >
-              <span class="mono">{{ r.name }}</span>
-            </EButton>
-          </th>
-          <td class="e-num">{{ fmt(r.start) }}</td>
-          <td class="e-num">{{ fmt(Math.round(r.value * 10) / 10) }}</td>
-          <td class="e-num">
-            {{ signed(r.change, 1) }} <small class="muted">{{ signed(r.percent, 0) }}%</small>
-          </td>
-          <td class="e-num muted">{{ r.min != null && r.max != null ? `${r.min}–${r.max}` : "—" }}</td>
-        </tr>
-      </tbody>
-    </ETable>
-    <p class="sec-note">
+    <UiTable
+      label="The constants being tuned"
+      :columns="columns"
+      :rows="rows"
+      row-key="name"
+      :selected="picked ?? undefined"
+      @select="toggle"
+    >
+      <template #cell-name="{ row }">
+        <span class="mono">{{ row.name }}</span>
+      </template>
+      <template #cell-change="{ row }">
+        {{ signed(row.change, 1) }} <span class="muted">{{ signed(row.percent, 0) }}%</span>
+      </template>
+    </UiTable>
+    <p class="meta">
       <Term k="tune" /> moves each constant a little after every batch of games. The trajectory can wander on noise, so
-      only the confirmation trial decides.
+      only the confirmation trial decides. Pick a constant to draw its line.
     </p>
   </div>
 </template>
@@ -121,25 +131,18 @@ const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 <style scoped>
 .tune {
   display: grid;
-  gap: var(--e-gap-snug);
+  gap: var(--sp-3);
   min-width: 0;
 }
 
-.detail {
+.meta {
   margin: 0;
-  font-weight: 600;
-}
-
-.name-col {
-  --e-control-height: 1.75rem;
-  --e-tap: 1.75rem;
-}
-
-.picked {
-  background: var(--e-primary-soft);
+  color: var(--c-ink-2);
+  font: var(--t-meta);
 }
 
 .muted {
-  color: var(--e-muted);
+  color: var(--c-ink-2);
+  font: var(--t-meta);
 }
 </style>

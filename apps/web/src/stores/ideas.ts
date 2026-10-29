@@ -78,6 +78,9 @@ export const useIdeas = defineStore("ideas", () => {
   /** The tunables a branch declares, to choose from when starting a tune. */
   const tunables = (branch: string) => ok(client.GET("/api/tunables", { params: { query: { branch } } }));
 
+  /** A branch's tip and whether its `Bench:` line matches (never builds): what the New idea form shows as you type. */
+  const checkBranch = (branch: string) => ok(client.GET("/api/ideas/check-branch", { params: { query: { branch } } }));
+
   async function create(idea: NewIdeaRequest): Promise<Idea> {
     const made = await ok(client.POST("/api/ideas", { body: idea }));
     ideas.value[made.id] = made;
@@ -143,6 +146,7 @@ export const useIdeas = defineStore("ideas", () => {
     loadTrial,
     loadTune,
     tunables,
+    checkBranch,
     create,
     stop,
     resume,

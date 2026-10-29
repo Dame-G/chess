@@ -13,6 +13,7 @@ import GamesRail from "./rail/GamesRail.vue";
 import CommandBar from "./shell/CommandBar.vue";
 import { useKeys } from "./shell/keys";
 import NewGame from "./shell/NewGame.vue";
+import UiConfirm from "./ui/UiConfirm.vue";
 import Shortcuts from "./shell/Shortcuts.vue";
 import StatusLine from "./shell/StatusLine.vue";
 import { useEventToasts, useLoginResult } from "./shell/toasts";
@@ -65,6 +66,7 @@ watchEffect(() => {
     <CommandBar />
     <Shortcuts />
     <NewGame />
+    <UiConfirm />
   </EToastProvider>
 </template>
 

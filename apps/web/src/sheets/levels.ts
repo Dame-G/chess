@@ -1,11 +1,11 @@
 import type { Level, LevelRating, LevelsOverview, PlannedMatch } from "../api/types";
-import { aboutDuration } from "../format";
+import { aboutDuration, formatNumber } from "../format";
 
 /** Whether a level has played enough to have a rating of its own: a fit exists and games went into it. */
 export const isCalibrated = (l: LevelRating): boolean => l.games > 0 && !!l.rating;
 
 /** A level's name: `Level 5`, and `Full strength` for the top of the ladder (it plays on the clock). */
-export const levelName = (level: Level): string => (level.nodes == null ? "Full strength" : `Level ${level.id}`);
+const levelName = (level: Level): string => (level.nodes == null ? "Full strength" : `Level ${level.id}`);
 
 /** The rating the app shows for a level: the calibrated Elo, else the nominal one (marked as an estimate by callers). */
 function levelElo(l: LevelRating): number {
@@ -64,13 +64,70 @@ function calibrationGameSeconds(nodes: number): number {
   return 60 * (nodes / 1_000_000 + 0.01);
 }
 
+/** How long the planned calibration takes in the background, as "About 1 min": empty when nothing is planned. */
+export function calibrationTime(plan: readonly PlannedMatch[], levels: readonly LevelRating[], slots: number): string {
+  if (plan.length === 0) return "";
+  const nodes = (id: number) => levels.find((l) => l.level.id === id)?.level.nodes ?? 1_000_000;
+  const seconds = plan.reduce((n, m) => n + m.games * calibrationGameSeconds(Math.max(nodes(m.a), nodes(m.b))), 0);
+  const when = aboutDuration(seconds / Math.max(1, slots));
+  return when.charAt(0).toUpperCase() + when.slice(1);
+}
+
 /** What queueing calibration costs, in words: the pairs of levels, their games and the time they take in the background. */
 export function calibrationCost(plan: readonly PlannedMatch[], levels: readonly LevelRating[], slots: number): string {
   if (plan.length === 0) return "";
-  const nodes = (id: number) => levels.find((l) => l.level.id === id)?.level.nodes ?? 1_000_000;
   const games = plan.reduce((n, m) => n + m.games, 0);
-  const seconds = plan.reduce((n, m) => n + m.games * calibrationGameSeconds(Math.max(nodes(m.a), nodes(m.b))), 0);
-  const when = aboutDuration(seconds / Math.max(1, slots));
   const pairs = plan.length === 1 ? "1 pair" : `${plan.length} pairs`;
-  return `${games} games between ${pairs} of neighbouring levels. ${when.charAt(0).toUpperCase() + when.slice(1)} in the background, behind everything else.`;
+  return `${games} games between ${pairs} of neighbouring levels. ${calibrationTime(plan, levels, slots)} in the background, behind everything else.`;
+}
+
+/** One rung of the ladder: a level or the marker for You, ordered by rating. */
+export interface Rung {
+  id: string;
+  kind: "level" | "you";
+  name: string;
+  elo: number;
+  /** A calibrated rating with its margin, or the estimate the level was designed for. */
+  text: string;
+  /** Whether the rating was found by playing (an estimate is drawn quieter). */
+  found: boolean;
+  games: number;
+  /** The level nearest your rating. */
+  near: boolean;
+}
+
+/**
+ * The ladder as rows from weakest to strongest, with You between the two levels your rating falls under and over.
+ * Levels without a rating of their own sit at the one they were designed for, marked as estimates.
+ */
+export function ladder(o: LevelsOverview): Rung[] {
+  const rungs: Rung[] = o.levels.map((l) => ({
+    id: `level-${l.level.id}`,
+    kind: "level",
+    name: levelName(l.level),
+    elo: levelElo(l),
+    text: isCalibrated(l)
+      ? `${formatNumber(Math.round(l.rating!.elo))} ± ${Math.round((l.rating!.high - l.rating!.low) / 2)}`
+      : `≈ ${formatNumber(l.level.nominal)}`,
+    found: isCalibrated(l),
+    games: l.games,
+    near: l.level.id === o.suggested,
+  }));
+  rungs.sort((a, b) => a.elo - b.elo);
+  if (o.you) {
+    const e = o.you.estimate;
+    const at = rungs.findIndex((r) => r.elo > e.elo);
+    const you: Rung = {
+      id: "you",
+      kind: "you",
+      name: "You",
+      elo: Math.round(e.elo),
+      text: `${formatNumber(Math.round(e.elo))} ± ${Math.round((e.high - e.low) / 2)}`,
+      found: true,
+      games: o.you.games,
+      near: false,
+    };
+    rungs.splice(at < 0 ? rungs.length : at, 0, you);
+  }
+  return rungs;
 }

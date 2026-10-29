@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { leaders } from "../src/api/leaders";
 import type { BotSettings, Idea, Profile, TrendPoint, TrialSummary } from "../src/api/types";
 import { bytes, plusMinus, progressText, reviewCost } from "../src/format";
-import { rulesSummary, declineWords } from "../src/parts/bot";
+import { declineWords, rulesItems } from "../src/parts/bot";
 import { blocks, inline } from "../src/parts/markdown";
 import { addressQuery, compareGroups, leads, parseAddress, playerFromInput } from "../src/sheets/compare";
 import { decidingTrial, gaugePosition, ideaElo, progressWord } from "../src/sheets/idea";
@@ -260,7 +260,7 @@ describe("ideas", () => {
   });
 });
 
-describe("the bot's rules in a sentence", () => {
+describe("the bot's rules as rows", () => {
   const settings: BotSettings = {
     version: "champion",
     hash: 64,
@@ -283,31 +283,41 @@ describe("the bot's rules in a sentence", () => {
     seek_range: 300,
   };
 
+  const rows = (s: BotSettings) => rulesItems(s).map((r) => `${r.label}: ${r.value}`);
+
   it("names what it takes", () => {
-    expect(rulesSummary(settings)).toBe(
-      "Rated and casual Bullet, Blitz and Rapid games, from 1 minute to 30 minutes with up to 30 s added a move, from people and bots, one at a time. Plays the champion.",
-    );
+    expect(rows(settings)).toEqual([
+      "Plays: The champion, as of each game",
+      "Speeds: Bullet, Blitz and Rapid",
+      "Takes: Rated and casual games from people and bots",
+      "Clock: 1 min to 30 min, up to 30 s added a move",
+      "At once: 1",
+    ]);
   });
 
   it("says no version is chosen rather than naming the champion", () => {
-    const text = rulesSummary({ ...settings, version: null });
-    expect(text).toMatch(/No version is chosen\.$/);
-    expect(text).not.toMatch(/champion/);
+    const plays = rulesItems({ ...settings, version: null })[0]!;
+    expect(plays).toEqual({ label: "Plays", value: "No version chosen", tone: "warn" });
   });
 
   it("follows the settings", () => {
-    const text = rulesSummary({
-      ...settings,
-      accept_casual: false,
-      accept_bots: false,
-      speeds: ["rapid"],
-      max_increment: 0,
-      max_games: 2,
-      version: "v13",
-    });
-    expect(text).toBe(
-      "Rated Rapid games, from 1 minute to 30 minutes with no added time, from people only, 2 at a time. Plays v13.",
-    );
+    expect(
+      rows({
+        ...settings,
+        accept_casual: false,
+        accept_bots: false,
+        speeds: ["rapid"],
+        max_increment: 0,
+        max_games: 2,
+        version: "v13",
+      }),
+    ).toEqual([
+      "Plays: v13",
+      "Speeds: Rapid",
+      "Takes: Rated games from people only",
+      "Clock: 1 min to 30 min, no added time",
+      "At once: 2",
+    ]);
   });
 
   it("writes Lichess's decline keys in words", () => {

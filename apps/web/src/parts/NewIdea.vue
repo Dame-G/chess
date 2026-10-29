@@ -2,19 +2,15 @@
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useToast } from "@eos-ui/vue";
-import { EButton } from "@eos-ui/vue/components/EButton";
 import { ECombobox } from "@eos-ui/vue/components/ECombobox";
-import { EDialog } from "@eos-ui/vue/components/EDialog";
 import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
-import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESelect } from "@eos-ui/vue/components/ESelect";
-import { EStack } from "@eos-ui/vue/components/EStack";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextarea } from "@eos-ui/vue/components/ETextarea";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
-import type { LrSchedule, NewIdeaRequest, Preset, Tunable } from "../api/types";
+import type { BranchCheck, LrSchedule, NewIdeaRequest, Preset, Tunable } from "../api/types";
 import { tuneCost, tuneCostText, tuneSpec } from "../sheets/tune";
 import {
   positionsText,
@@ -29,12 +25,17 @@ import { useIdeas } from "../stores/ideas";
 import { usePolicy } from "../stores/policy";
 import { useTraining } from "../stores/training";
 import { useVersions } from "../stores/versions";
+import UiBadge from "../ui/UiBadge.vue";
+import UiDialog from "../ui/UiDialog.vue";
+import UiField from "../ui/UiField.vue";
+import UiSeg from "../ui/UiSeg.vue";
 import Term from "./Term.vue";
 
 /**
  * New idea: one dialog for every kind. A gain should play stronger; a neutral change should play the same, simpler;
- * a speed change should only be faster; a tune moves the engine's constants by many short games; a custom trial is any
- * preset and bounds, or a fixed number of pairs. The branch is picked from the versions the fork has.
+ * a speed change should only be faster; a tune moves the engine's constants by many short games; a net trains a
+ * network; a single trial is any preset and bounds, or a fixed number of pairs. The branch is picked from the versions
+ * the fork has, and its `Bench:` line is checked as it is typed.
  */
 const open = defineModel<boolean>("open", { required: true });
 
@@ -50,17 +51,17 @@ const KINDS: { value: Kind; label: string; text: string }[] = [
   {
     value: "gain",
     label: "Gain",
-    text: "Should play stronger. Tried as a gain: the bench must change, then quick games, then short games.",
+    text: "Should play stronger. The bench must change, then a quick screen, then short games.",
   },
   {
     value: "neutral",
     label: "Neutral",
-    text: "Should play the same, with simpler code. Tried for no loss, with the same funnel as a gain.",
+    text: "Should play the same, with simpler code. Tried for no loss, through the same stages as a gain.",
   },
   {
     value: "speed",
     label: "Speed",
-    text: "Should only be faster. The search must not change, then speeds are compared. No games.",
+    text: "Should only be faster. The search must not change, then the speeds are compared. No games.",
   },
   {
     value: "tune",
@@ -70,15 +71,14 @@ const KINDS: { value: Kind; label: string; text: string }[] = [
   {
     value: "net",
     label: "Net",
-    text: "Trains a new network on your data, then tries the champion with it: the bench must change, then quick games, then short games.",
+    text: "Trains a new network on your data, then tries the champion with it: quick screen, then short games.",
   },
   {
     value: "custom",
-    label: "Custom trial",
+    label: "Single trial",
     text: "One trial with the settings you choose, for checks that are not an idea.",
   },
 ];
-
 const kindOptions = KINDS.map((k) => ({ value: k.value, label: k.label }));
 
 const kind = ref<Kind>("gain");
@@ -88,6 +88,8 @@ const branch = ref("");
 const long = ref(false);
 const tags = ref("");
 const busy = ref(false);
+/** Which fields were left once, so a missing one is flagged only after the person has passed it. */
+const left = ref({ title: false, hypothesis: false, branch: false });
 
 // Tune
 const available = ref<Tunable[]>([]);
@@ -95,7 +97,7 @@ const chosen = ref<string[]>([]);
 const iterations = ref<number | null>(1000);
 const pairs = 8;
 
-// Network
+// Net
 const datasetIds = ref<string[]>([]);
 const parent = ref("champion");
 const preset = ref<SchedulePreset | "custom">("quick");
@@ -119,7 +121,7 @@ const rateFalls = computed({
   set: (v: string) => (schedule.value.lr_schedule = v as LrSchedule),
 });
 
-// Custom
+// Single trial
 const gamePreset = ref<Preset>("stc");
 const stop = ref<"sprt" | "pairs">("sprt");
 const lower = ref<number | null>(0);
@@ -196,31 +198,83 @@ watch(open, (isOpen) => {
     preset.value = "quick";
     schedule.value = { ...SCHEDULES.quick.schedule };
     gamePreset.value = "stc";
+    left.value = { title: false, hypothesis: false, branch: false };
+    check.value = null;
+    fixBench.value = false;
     void training.load().catch(() => {});
   }
 });
+
+// The branch is typed a letter at a time: ask once it stops, for the tunables of a tune and for its Bench line.
+const check = ref<{ result?: BranchCheck; failed?: string } | null>(null);
+const fixBench = ref(false);
 let typing: ReturnType<typeof setTimeout> | undefined;
+let asked = 0;
 watch([kind, branch], () => {
   clearTimeout(typing);
-  if (kind.value !== "tune" || !branch.value) return;
-  // The branch is typed a letter at a time: ask once it stops.
+  check.value = null;
+  fixBench.value = false;
+  const name = branch.value.trim();
+  if (kind.value === "net" || !name) return;
   typing = setTimeout(async () => {
+    const mine = ++asked;
+    if (kind.value === "tune") {
+      try {
+        available.value = await ideas.tunables(name);
+      } catch {
+        available.value = [];
+      }
+    }
     try {
-      available.value = await ideas.tunables(branch.value);
-    } catch {
-      available.value = [];
+      const result = await ideas.checkBranch(name);
+      if (mine === asked) check.value = { result };
+    } catch (e) {
+      if (mine === asked) check.value = { failed: e instanceof Error ? e.message : String(e) };
     }
   }, 350);
 });
 
-const missing = computed(() => {
-  if (!title.value.trim()) return "Give it a title.";
-  if (kind.value !== "net" && !branch.value.trim()) return "Pick the branch that holds the change.";
-  if (kind.value !== "custom" && !hypothesis.value.trim()) return "Say what it should do and why.";
-  return "";
+/** What the branch check says, as a badge and a line: nothing until it has answered. */
+const benchLine = computed(() => {
+  const c = check.value;
+  if (!c) return null;
+  if (c.failed) return { tone: "loss" as const, word: "Cannot check", detail: c.failed, fixable: false };
+  const r = c.result!;
+  switch (r.status) {
+    case "ok":
+      return { tone: "win" as const, word: "Bench line OK", detail: r.detail, fixable: false };
+    case "missing":
+      return { tone: "loss" as const, word: "Missing Bench line", detail: r.detail, fixable: true };
+    case "stale":
+      return { tone: "warn" as const, word: "Stale Bench line", detail: r.detail, fixable: true };
+    default:
+      return { tone: "neutral" as const, word: "Not built yet", detail: r.detail, fixable: false };
+  }
 });
 
+const titleError = computed(() => (left.value.title && !title.value.trim() ? "Give it a title." : undefined));
+const hypothesisError = computed(() =>
+  left.value.hypothesis && kind.value !== "custom" && !hypothesis.value.trim()
+    ? "Say what it should do, and why."
+    : undefined,
+);
+const branchError = computed(() =>
+  left.value.branch && kind.value !== "net" && !branch.value.trim()
+    ? "Pick the branch that holds the change."
+    : undefined,
+);
+const missing = computed(
+  () =>
+    !title.value.trim() ||
+    (kind.value !== "net" && !branch.value.trim()) ||
+    (kind.value !== "custom" && !hypothesis.value.trim()),
+);
+
 async function create() {
+  if (missing.value) {
+    left.value = { title: true, hypothesis: true, branch: true };
+    return;
+  }
   const idea: NewIdeaRequest = {
     title: title.value.trim(),
     hypothesis: hypothesis.value.trim(),
@@ -233,6 +287,7 @@ async function create() {
       .map((t) => t.trim())
       .filter(Boolean),
     ...(hasLong.value && long.value ? { long: true } : {}),
+    ...(fixBench.value && kind.value !== "net" ? { fix_bench: true } : {}),
     ...(kind.value === "tune"
       ? {
           tune: tuneSpec({
@@ -281,22 +336,78 @@ async function create() {
 </script>
 
 <template>
-  <EDialog v-model:open="open" title="New idea" description="A change to try against the champion." size="lg">
-    <EStack gap="base">
-      <ESegmented v-model="kind" label="Kind" collapse :options="kindOptions" />
-      <p class="sec-note kind-text">{{ kindText }}</p>
+  <UiDialog
+    v-model:open="open"
+    title="New idea"
+    size="md"
+    confirm-label="Queue idea"
+    :busy="busy"
+    :confirm-disabled="missing"
+    @confirm="create"
+  >
+    <div class="stack">
+      <div class="kind">
+        <UiSeg v-model="kind" label="Kind" full :options="kindOptions" />
+        <p class="kind-text" role="status">{{ kindText }}</p>
+      </div>
 
-      <ETextField v-model="title" label="Title" placeholder="Deeper LMR at high depth" autocomplete="off" />
-      <ETextarea v-model="hypothesis" label="What it should do, and why" :optional="kind === 'custom'" :rows="3" />
-      <ECombobox
-        v-if="kind !== 'net'"
-        v-model="branch"
-        label="Branch"
-        freeform
-        :options="branches"
-        placeholder="Pick one, or type a branch of the fork"
-        hint="Commit the change on a branch with its Bench: line first."
-      />
+      <UiField v-slot="{ id, describedby, invalid }" label="Title" :error="titleError">
+        <ETextField
+          :id="id"
+          v-model="title"
+          label="Title"
+          hide-label
+          placeholder="Deeper LMR at high depth"
+          autocomplete="off"
+          :aria-describedby="describedby"
+          :aria-invalid="invalid || undefined"
+          @blur="left.title = true"
+        />
+      </UiField>
+      <UiField
+        v-slot="{ id, describedby, invalid }"
+        label="Hypothesis"
+        :optional="kind === 'custom'"
+        :error="hypothesisError"
+        hint="What it should do, and why."
+      >
+        <ETextarea
+          :id="id"
+          v-model="hypothesis"
+          label="Hypothesis"
+          hide-label
+          :rows="3"
+          :aria-describedby="describedby"
+          :aria-invalid="invalid || undefined"
+          @blur="left.hypothesis = true"
+        />
+      </UiField>
+
+      <template v-if="kind !== 'net'">
+        <UiField v-slot="{ id }" label="Branch" :error="branchError">
+          <ECombobox
+            :id="id"
+            v-model="branch"
+            label="Branch"
+            hide-label
+            freeform
+            :options="branches"
+            placeholder="Pick one, or type a branch of the fork"
+            @blur="left.branch = true"
+          />
+        </UiField>
+        <div v-if="benchLine" class="bench" role="status">
+          <UiBadge :tone="benchLine.tone">{{ benchLine.word }}</UiBadge>
+          <span class="bench-detail">{{ benchLine.detail }}</span>
+          <ESwitch
+            v-if="benchLine.fixable"
+            v-model="fixBench"
+            class="bench-fix"
+            label="Write the Bench line for me"
+            description="Builds the tip and rewords its commit here, on this machine."
+          />
+        </div>
+      </template>
 
       <template v-if="kind === 'tune'">
         <ECombobox
@@ -307,8 +418,8 @@ async function create() {
           :placeholder="available.length ? `All ${available.length} on the branch` : 'Pick the branch first'"
           hint="Leave empty to tune every constant the branch declares."
         />
-        <ENumberField v-model="iterations" label="Iterations" :min="100" :max="20000" :step="100" />
-        <p class="sec-note">
+        <ENumberField v-model="iterations" label="Iterations" :min="100" :max="20000" :step="100" class="narrow" />
+        <p class="note">
           Each iteration plays {{ pairs }} game pairs. {{ tuneCostText(cost) }} The result still has to pass a
           <Term k="sprt" text="confirmation" /> before it is kept.
         </p>
@@ -327,76 +438,109 @@ async function create() {
           hint="Leave empty to train on all the data that is in the engine's own units."
         />
         <ESelect v-model="parent" label="Start from" :options="parentOptions" />
-        <ESegmented
-          v-model="preset"
-          label="Schedule"
-          :options="[...schedulePresets, ...(preset === 'custom' ? [{ value: 'custom', label: 'Custom' }] : [])]"
-        />
-        <p class="sec-note">{{ trainCostSentence }}</p>
+        <UiField group label="Schedule">
+          <UiSeg
+            v-model="preset"
+            label="Schedule"
+            full
+            :options="[...schedulePresets, ...(preset === 'custom' ? [{ value: 'custom', label: 'Custom' }] : [])]"
+          />
+        </UiField>
+        <p class="note">{{ trainCostSentence }}</p>
         <EDisclosure title="Advanced" title-style="text">
-          <EStack gap="base">
-            <div class="pair">
-              <ENumberField v-model="superbatches" label="Superbatches" :min="1" :step="5" />
-              <ENumberField v-model="batchesEach" label="Batches each" :min="1" :step="100" />
-              <ENumberField v-model="batchSize" label="Batch size" :min="256" :step="1024" />
-              <ESelect v-model="rateFalls" label="Learning rate falls" :options="lrSchedules" />
-              <ENumberField v-model="learningRate" label="Learning rate" :step="0.00001" />
-              <ENumberField v-model="finalRate" label="Ends at" :step="0.000001" />
-              <ENumberField v-model="resultWeight" label="Weight on the result" :min="0" :max="1" :step="0.1" />
-            </div>
-          </EStack>
+          <div class="pair">
+            <ENumberField v-model="superbatches" label="Superbatches" :min="1" :step="5" />
+            <ENumberField v-model="batchesEach" label="Batches each" :min="1" :step="100" />
+            <ENumberField v-model="batchSize" label="Batch size" :min="256" :step="1024" />
+            <ESelect v-model="rateFalls" label="Learning rate falls" :options="lrSchedules" />
+            <ENumberField v-model="learningRate" label="Learning rate" :step="0.00001" />
+            <ENumberField v-model="finalRate" label="Ends at" :step="0.000001" />
+            <ENumberField v-model="resultWeight" label="Weight on the result" :min="0" :max="1" :step="0.1" />
+          </div>
         </EDisclosure>
       </template>
 
       <template v-if="kind === 'custom'">
         <ESelect v-model="gamePreset" label="Games" :options="presets" />
-        <ESegmented
-          v-model="stop"
-          label="Stop"
-          :options="[
-            { value: 'sprt', label: 'When the evidence decides' },
-            { value: 'pairs', label: 'After a number of pairs' },
-          ]"
-        />
+        <UiField group label="Stop">
+          <UiSeg
+            v-model="stop"
+            label="Stop"
+            full
+            :options="[
+              { value: 'sprt', label: 'When the evidence decides' },
+              { value: 'pairs', label: 'After a number of pairs' },
+            ]"
+          />
+        </UiField>
         <div v-if="stop === 'sprt'" class="pair">
           <ENumberField v-model="lower" label="Lower bound" suffix="nElo" :step="0.25" />
           <ENumberField v-model="upper" label="Upper bound" suffix="nElo" :step="0.25" />
         </div>
-        <ENumberField v-else v-model="fixedPairs" label="Pairs" :min="10" :step="100" />
+        <ENumberField v-else v-model="fixedPairs" label="Pairs" :min="10" :step="100" class="narrow" />
       </template>
 
-      <ESwitch
+      <span
         v-if="hasLong"
-        v-model="long"
-        label="Also play long games"
-        description="Runs 40+0.4 after short games pass. Worth it for a gain under about 2 Elo."
-      />
-      <ETextField
-        v-model="tags"
-        label="Tags"
-        optional
-        hint="Words that group ideas, separated by commas."
-        autocomplete="off"
-      />
-    </EStack>
-    <template #actions>
-      <EButton :loading="busy" :disabled="!!missing" @click="create">Queue idea</EButton>
-      <EButton variant="outline" @click="open = false">Cancel</EButton>
-      <span v-if="missing" class="sec-note">{{ missing }}</span>
-    </template>
-  </EDialog>
+        class="long"
+        title="Runs 40+0.4 after short games pass. Worth it for a gain under about 2 Elo."
+      >
+        <ESwitch v-model="long" label="Also play long games" />
+      </span>
+
+      <UiField v-slot="{ id }" label="Tags" optional hint="Words that group ideas, separated by commas.">
+        <ETextField :id="id" v-model="tags" label="Tags" hide-label autocomplete="off" />
+      </UiField>
+    </div>
+  </UiDialog>
 </template>
 
 <style scoped>
 .pair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--e-gap-snug) var(--e-gap-base);
+  gap: var(--sp-3);
+  padding-block-start: var(--sp-3);
+}
+
+.narrow {
+  inline-size: 10rem;
 }
 
 /* The sentence under the kinds is two lines for the longest, so the form below does not jump as they are switched. */
+.kind {
+  display: grid;
+  gap: var(--sp-2);
+}
+
 .kind-text {
   min-block-size: 2lh;
+  margin: 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+}
+
+.note {
+  margin: 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+}
+
+.bench {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-2);
+  margin-block-start: calc(-1 * var(--sp-2));
+}
+
+.bench-detail {
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+}
+
+.bench-fix {
+  grid-column: 1 / -1;
 }
 
 @media (width < 30rem) {

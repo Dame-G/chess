@@ -23,18 +23,25 @@ function list(words: string[]): string {
   return `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
 }
 
-/** Seconds as the shortest honest clock length: `30 s`, `1 minute`, `30 minutes`. */
+/** Seconds as the shortest honest clock length: `30 s`, `1 min`, `30 min`. */
 function span(seconds: number): string {
   if (seconds < 60) return `${seconds} s`;
   const m = seconds / 60;
-  return `${Number.isInteger(m) ? m : m.toFixed(1)} ${m === 1 ? "minute" : "minutes"}`;
+  return `${Number.isInteger(m) ? m : m.toFixed(1)} min`;
+}
+
+/** One row of the rules: what it is and what is set. `tone` marks a setting that needs attention. */
+export interface Rule {
+  label: string;
+  value: string;
+  tone?: "warn";
 }
 
 /**
- * What the bot takes, in a sentence: "Rated and casual Bullet, Blitz and Rapid games, from 1 to 30 minutes with up to
- * 30 s added a move, from people and bots, one at a time. Plays the champion."
+ * What the bot takes, as rows: the version that plays, the speeds, the challenges it accepts, the clocks and how many
+ * games at once. A bot with no version is said to have none, never to play the champion.
  */
-export function rulesSummary(s: BotSettings): string {
+export function rulesItems(s: BotSettings): Rule[] {
   const kinds =
     s.accept_rated && s.accept_casual
       ? "Rated and casual"
@@ -43,7 +50,6 @@ export function rulesSummary(s: BotSettings): string {
         : s.accept_casual
           ? "Casual"
           : "No";
-  const speeds = list(s.speeds.map((x: Speed) => speedName[x]));
   const who =
     s.accept_people && s.accept_bots
       ? "people and bots"
@@ -53,9 +59,14 @@ export function rulesSummary(s: BotSettings): string {
           ? "bots only"
           : "nobody";
   const added = s.max_increment === 0 ? "no added time" : `up to ${span(s.max_increment)} added a move`;
-  const at = s.max_games === 1 ? "one at a time" : `${s.max_games} at a time`;
-  const plays = !s.version
-    ? "No version is chosen."
-    : `Plays ${s.version === "champion" ? "the champion" : s.version}.`;
-  return `${kinds} ${speeds || "no"} games, from ${span(s.min_initial)} to ${span(s.max_initial)} with ${added}, from ${who}, ${at}. ${plays}`;
+  const plays: Rule = !s.version
+    ? { label: "Plays", value: "No version chosen", tone: "warn" }
+    : { label: "Plays", value: s.version === "champion" ? "The champion, as of each game" : s.version };
+  return [
+    plays,
+    { label: "Speeds", value: list(s.speeds.map((x: Speed) => speedName[x])) || "None" },
+    { label: "Takes", value: `${kinds} games from ${who}` },
+    { label: "Clock", value: `${span(s.min_initial)} to ${span(s.max_initial)}, ${added}` },
+    { label: "At once", value: String(s.max_games) },
+  ];
 }

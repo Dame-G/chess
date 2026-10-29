@@ -1044,6 +1044,24 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
         followTune(id, state);
         return reply("/api/ideas/{id}/tune", "get", structuredClone(state));
       }
+      if (path === "/api/ideas/check-branch") {
+        // A branch called `wip…` or `…missing` has no Bench line, `…stale` has an old one, anything else is fine.
+        const branch = url.searchParams.get("branch") ?? "";
+        const status = /wip|missing/.test(branch) ? "missing" : /stale/.test(branch) ? "stale" : "ok";
+        return reply("/api/ideas/check-branch", "get", {
+          branch,
+          commit: "9f3c1a7e5b2d4c6a8e0f1b3d5a7c9e2f4b6d8a01",
+          status,
+          bench_line: status === "missing" ? null : 2_418_332,
+          measured: status === "stale" ? 2_418_990 : status === "ok" ? 2_418_332 : null,
+          detail:
+            status === "ok"
+              ? "The tip's Bench line matches its build."
+              : status === "missing"
+                ? "The tip's commit message has no Bench line."
+                : "The tip's Bench line is older than its build.",
+        });
+      }
       if (path === "/api/connections") return undefined;
       if (path === "/api/diagnostics")
         return reply("/api/diagnostics", "get", {

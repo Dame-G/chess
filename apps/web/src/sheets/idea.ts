@@ -1,10 +1,18 @@
-import type { Idea, IdeaKind, IdeaStatus, Preset, Stage, Trial, TrialStatus, TrialSummary } from "../api/types";
+import type {
+  Estimate,
+  Idea,
+  IdeaKind,
+  IdeaStatus,
+  Preset,
+  Stage,
+  Trial,
+  TrialStatus,
+  TrialSummary,
+} from "../api/types";
 import { plusMinus, trialClock } from "../format";
 import { stageLabel } from "../rail/rail";
 
-export type Tone = "neutral" | "info" | "success" | "warning" | "danger";
-
-/** An idea's verdict as the stamp on it says it. */
+/** An idea's status as its badge says it (the badge's tone is `ideaTone` in `ui/badge.ts`). */
 export const STATUS_WORD: Record<IdeaStatus, string> = {
   kept: "Kept",
   dropped: "Dropped",
@@ -14,16 +22,7 @@ export const STATUS_WORD: Record<IdeaStatus, string> = {
   failed: "Failed",
 };
 
-export const STATUS_TONE: Record<IdeaStatus, Tone> = {
-  queued: "neutral",
-  running: "info",
-  kept: "success",
-  dropped: "neutral",
-  stopped: "neutral",
-  failed: "danger",
-};
-
-/** A trial's state as its stamp says it, written like an idea's. */
+/** A trial's state as its badge says it, written like an idea's (`trialTone`). */
 export const TRIAL_WORD: Record<TrialStatus, string> = {
   waiting: "Waiting",
   running: "Running",
@@ -31,15 +30,6 @@ export const TRIAL_WORD: Record<TrialStatus, string> = {
   failed: "Failed",
   stopped: "Stopped",
   skipped: "Skipped",
-};
-
-export const TRIAL_TONE: Record<TrialStatus, Tone> = {
-  waiting: "neutral",
-  running: "info",
-  passed: "success",
-  failed: "danger",
-  stopped: "neutral",
-  skipped: "neutral",
 };
 
 export const KIND_WORD: Record<IdeaKind, string> = {
@@ -93,6 +83,30 @@ export function progressWord(idea: Pick<Idea, "status" | "trials">): string {
   const live = idea.trials.find((t) => t.status === "running");
   return live ? STAGE_WORD[live.stage] : "Starting";
 }
+
+const pairsWord = (n: number): string => `${n.toLocaleString("en-GB")} ${n === 1 ? "pair" : "pairs"}`;
+
+/**
+ * One line of evidence for an idea in a list: the running trial's Elo and pairs ("+0.7 ± 5.9 Elo after 412 pairs"),
+ * else its pairs, else the trial's own words, else what the idea waits for. Empty when there is nothing to say yet.
+ */
+export function evidenceLine(idea: Pick<Idea, "status" | "trials">): string {
+  const t = idea.trials.find((x) => x.status === "running") ?? decidingTrial(idea);
+  if (!t) return "";
+  // A queued idea's trial only says it waits, which the row already says.
+  if (idea.status === "queued" && !t.elo && !t.pairs) return "";
+  if (t.elo) return `${plusMinus(t.elo)} Elo${t.pairs ? ` after ${pairsWord(t.pairs)}` : ""}`;
+  if (t.pairs) return pairsWord(t.pairs);
+  return t.detail ?? "";
+}
+
+/** The running trial a list row draws a gauge for, when its evidence has started. */
+export function gaugeTrial(idea: Pick<Idea, "trials">): TrialSummary | undefined {
+  return idea.trials.find((t) => t.status === "running" && t.llr);
+}
+
+/** An estimate for a stat (`+0.8 ± 2.1`), its spaces fixed so a narrow column never breaks it across two lines. */
+export const eloFigure = (e: Estimate): string => plusMinus(e).replaceAll(" ", " ");
 
 /** A funnel's pairs played, from a trial's pentanomial counts. */
 export const pairsOf = (penta: readonly number[]): number => penta.reduce((a, b) => a + b, 0);
