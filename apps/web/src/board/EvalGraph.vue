@@ -18,7 +18,6 @@ const props = defineProps<{
   marks?: (string | null)[];
   /** What to say about each position while the pointer is over it, such as `17. Rd8#  +8.60`. */
   tips?: string[];
-  height?: number;
 }>();
 const emit = defineEmits<{ select: [index: number] }>();
 
@@ -44,11 +43,13 @@ function data(): uPlot.AlignedData {
   return [x, y];
 }
 
+/** The plot is as tall as the slot the stage holds for it. */
+const slot = () => el.value?.clientHeight || 56;
+
 function options(width: number): uPlot.Options {
-  const h = props.height ?? 56;
   return {
     width,
-    height: h,
+    height: slot(),
     padding: [2, 0, 2, 0],
     legend: { show: false },
     cursor: { x: false, y: false, points: { show: false }, drag: { x: false, y: false } },
@@ -58,32 +59,33 @@ function options(width: number): uPlot.Options {
     series: [
       {},
       {
-        stroke: css("--e-muted", "#888"),
+        stroke: css("--graph-line", "#888"),
         width: 1.25,
         spanGaps: true,
         points: { show: false },
-        fill: css("--graph-white", "#fffaf3"),
-        fillTo: -1,
       },
     ],
     hooks: {
-      drawClear: [
-        (u) => {
-          // Black's ground under the line, then White's area as the series' fill from the bottom.
-          const ctx = u.ctx;
-          ctx.save();
-          ctx.fillStyle = css("--graph-black", "#2a2420");
-          ctx.fillRect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
-          ctx.restore();
-        },
-      ],
       draw: [
         (u) => {
           const ctx = u.ctx;
           const { left, top, width, height } = u.bbox;
           const mid = Math.round(u.valToPos(0, "y", true)) + 0.5;
           ctx.save();
-          ctx.strokeStyle = css("--graph-mid", "rgba(200,120,60,0.8)");
+          // The edge as an area between the line and the middle: White's above it, Black's below, one tint.
+          const known = props.values.flatMap((v, i) =>
+            v == null ? [] : [[u.valToPos(i, "x", true), u.valToPos(v, "y", true)] as const],
+          );
+          if (known.length > 1) {
+            ctx.fillStyle = css("--graph-fill", "rgba(0,0,0,0.14)");
+            ctx.beginPath();
+            ctx.moveTo(known[0]![0], mid);
+            for (const [x, y] of known) ctx.lineTo(x, y);
+            ctx.lineTo(known[known.length - 1]![0], mid);
+            ctx.closePath();
+            ctx.fill();
+          }
+          ctx.strokeStyle = css("--graph-mid", "#999");
           ctx.lineWidth = 1;
           ctx.beginPath();
           ctx.moveTo(left, mid);
@@ -98,7 +100,7 @@ function options(width: number): uPlot.Options {
             ctx.fill();
           }
           const x = Math.round(u.valToPos(props.cursor, "x", true));
-          ctx.strokeStyle = css("--e-primary", "#b5652a");
+          ctx.strokeStyle = css("--graph-cursor", "#b5652a");
           ctx.lineWidth = 2 * devicePixelRatio;
           ctx.beginPath();
           ctx.moveTo(x, top);
@@ -149,7 +151,7 @@ function build() {
 onMounted(() => {
   build();
   observer = new ResizeObserver(() => {
-    if (el.value?.clientWidth) plot?.setSize({ width: el.value.clientWidth, height: props.height ?? 56 });
+    if (el.value?.clientWidth) plot?.setSize({ width: el.value.clientWidth, height: slot() });
   });
   observer.observe(el.value!);
 });
@@ -192,45 +194,56 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* The graph is neutral: a line and a tint in the ink, with no black and white halves. Its colours are tokens a canvas
+   reads when it draws (see css() above). */
 .graph {
-  --graph-white: #fffaf3;
-  --graph-black: #2a2420;
-  --graph-mid: rgb(200 120 60 / 80%);
+  --graph-line: var(--c-ink-2);
+  --graph-fill: color-mix(in oklab, var(--e-ink) 14%, transparent);
+  --graph-mid: var(--e-border);
+  --graph-cursor: var(--e-primary);
 
   position: relative;
+  box-sizing: border-box;
+  height: 100%;
   margin: 0;
   min-width: 0;
   overflow: hidden;
-  border-radius: var(--e-radius-sm);
-  box-shadow: 0 0 0 1px var(--e-border-strong, var(--e-border));
+  border-radius: var(--r-1);
+  background: var(--c-pane);
+  box-shadow: 0 0 0 var(--e-stroke-hair) var(--c-line);
 }
 
 /* The hover line follows the pointer; the readout hangs from the top edge beside it. */
 .graph-line {
   position: absolute;
   inset-block: 0;
-  width: 1px;
-  background: var(--e-muted);
+  width: var(--e-stroke-hair);
+  background: var(--c-ink-2);
   opacity: 0.8;
   pointer-events: none;
 }
 
 .graph-tip {
   position: absolute;
-  top: 0.125rem;
-  padding: 0.125rem 0.375rem;
-  border-radius: var(--e-radius-sm);
-  background: var(--e-ink);
-  color: var(--e-surface);
-  font: 600 0.6875rem/1.2 var(--e-font-mono);
-  margin-inline-start: 0.375rem;
+  top: var(--sp-1);
+  margin-inline-start: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-1);
+  background: var(--c-ink);
+  color: var(--c-pane);
+  font: var(--t-meta);
+  font-family: var(--e-font-mono);
   pointer-events: none;
   white-space: nowrap;
 }
 
 .graph-tip--left {
   margin-inline-start: 0;
-  transform: translateX(calc(-100% - 0.375rem));
+  transform: translateX(calc(-100% - var(--sp-2)));
+}
+
+.graph-plot {
+  height: 100%;
 }
 
 .graph-plot :deep(.u-over) {

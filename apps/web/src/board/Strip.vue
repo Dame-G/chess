@@ -1,26 +1,31 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import type { Seat } from "../api/types";
-import { clock } from "../format";
+import type { Score, Side } from "../api/types";
+import { clock, formatNumber } from "../format";
+import type { PlayerRef } from "../ui/player";
+import UiPlayer from "../ui/UiPlayer.vue";
+import UiScore from "../ui/UiScore.vue";
 
-/** A seat beside the board: who sits there, their rating, their clock, and the result once it is over. */
+/**
+ * A seat beside the board, one line of fixed height: who sits there (the side they play as, their name and rating),
+ * the material they are ahead by, and the clock. The side to move says so when no clock runs to say it for them, and
+ * the engine's score rides at the end where the eval bar is too thin to carry one.
+ */
 const props = defineProps<{
-  seat: Seat;
-  /** The seat's name as shown: "You", "Dameless v14", a Lichess name. */
-  name: string;
+  /** Who sits here: a name, and what to show beside it. A side without a game is just "White" or "Black". */
+  player: PlayerRef;
+  side: Side;
   /** The clock in ms: what it holds now (live) or after the move on the board. `null` for a game without a clock. */
   ms: number | null;
   /** The clock is running: it counts down from `ms`, set at `since` (`Date.now()`). */
   running?: boolean;
   since?: number;
-  /** Whether this side is to move. */
-  active?: boolean;
-  /** 1, ½ or 0 once the game is over. */
-  result?: string | null;
-  /** The engine's score, on the strip of the side it favours: shown only where the eval bar is too thin to carry it. */
-  score?: string | null;
-  /** Which side's colours the score wears. */
-  scoreSide?: "white" | "black";
+  /** This side is to move, and the position is one a move is waiting in. */
+  toMove?: boolean;
+  /** How many pawns of material this side is ahead by (0 or less shows nothing). */
+  material?: number;
+  /** The engine's score on the board, shown at the end of the strip when asked for. */
+  score?: { score: Score; turn: Side } | null;
 }>();
 
 const now = ref(Date.now());
@@ -43,31 +48,26 @@ const low = computed(() => left.value !== null && left.value < 20_000);
 </script>
 
 <template>
-  <div class="strip" :class="{ 'strip--active': active }">
-    <span class="who">
-      <span v-if="seat.title" class="title">{{ seat.title }}</span>
-      <span class="name">{{ name }}</span>
-      <span v-if="seat.rating" class="rating num">{{ seat.rating }}</span>
+  <div class="strip">
+    <UiPlayer :seat="player" :colour="side" class="who" />
+    <span
+      v-if="material && material > 0"
+      class="material num"
+      :title="`${formatNumber(material)} pawns of material ahead`"
+      >+{{ material }}</span
+    >
+    <span v-if="toMove && !running" class="turn">to move</span>
+    <span class="end">
+      <UiScore v-if="score" :score="score.score" :turn="score.turn" size="sm" />
+      <span
+        v-if="left !== null"
+        class="clock num"
+        :class="{ 'clock--run': running, 'clock--low': low && running }"
+        role="timer"
+        :aria-label="`${player.name}'s clock`"
+        >{{ clock(left) }}</span
+      >
     </span>
-    <span
-      v-if="score"
-      class="score num"
-      :class="`score--${scoreSide ?? 'white'}`"
-      :title="`Engine score: ${score}`"
-      :aria-label="`Engine score ${score}`"
-      >{{ score }}</span
-    >
-    <span v-if="result" class="result num" :title="`Scored ${result}`" :aria-label="`Scored ${result}`">{{
-      result
-    }}</span>
-    <span
-      v-if="left !== null"
-      class="clock num"
-      :class="{ 'clock--run': running, 'clock--low': low }"
-      role="timer"
-      :aria-label="`${name}'s clock`"
-      >{{ clock(left) }}</span
-    >
   </div>
 </template>
 
@@ -75,95 +75,65 @@ const low = computed(() => left.value !== null && left.value < 20_000);
 .strip {
   display: flex;
   align-items: center;
-  gap: var(--e-gap-snug);
+  gap: var(--sp-2);
   min-width: 0;
   height: 100%;
 }
 
 .who {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: baseline;
-  gap: var(--e-gap-tight);
-  min-width: 0;
+  flex: 0 1 auto;
 }
 
-.name {
-  overflow: hidden;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.title {
-  color: var(--e-accent-ink, var(--e-primary));
-  font: 700 0.75rem/1 var(--e-font-sans);
-}
-
-.rating {
-  color: var(--e-muted);
-  font: var(--e-type-small);
-  font-family: var(--e-font-mono);
-}
-
-.result {
-  font: 700 0.9375rem/1 var(--e-font-mono);
-}
-
-/* The eval bar's figure, where the bar is a thin line (stacked): a small chip in the favoured side's colours. */
-.score {
-  display: none;
+.material {
   flex: none;
-  padding: 0.125rem 0.375rem;
-  border-radius: var(--e-radius-sm);
-  font: 700 0.75rem/1.1 var(--e-font-mono);
-  font-variant-numeric: tabular-nums;
+  color: var(--c-ink-2);
+  font: var(--t-fig);
 }
 
-.score--white {
-  background: #fffaf3;
-  color: #2a2420;
-  box-shadow: 0 0 0 1px var(--e-border-strong, var(--e-border));
+.turn {
+  flex: none;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
 }
 
-.score--black {
-  background: #2a2420;
-  color: #fffaf3;
+.end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-inline-start: auto;
 }
 
-@media (width < 75rem) {
-  .score {
-    display: inline-block;
-  }
-}
-
-/* The clock: a flat plate, lit in the place colour while it runs, red when time is short. */
+/* The clock: a quiet figure while it waits; on a wash with the action colour's bar under it while it runs. */
 .clock {
+  position: relative;
   min-inline-size: 5.5ch;
-  padding: 0.25rem 0.5rem;
-  border-radius: var(--e-radius-sm);
-  background: color-mix(in oklab, var(--e-ink) 8%, transparent);
-  font: 600 1.0625rem/1.1 var(--e-font-mono);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-1);
+  color: var(--c-ink-2);
+  font: var(--t-clock);
   text-align: end;
 }
 
 .clock--run {
-  background: var(--e-primary);
-  color: var(--e-on-primary);
+  background: var(--c-sunk);
+  color: var(--c-ink);
 }
 
-.clock--low.clock--run {
-  background: var(--e-danger);
-  color: var(--e-on-danger, #fff);
-}
-
-.strip--active .name::before {
-  display: inline-block;
-  width: 0.5rem;
-  height: 0.5rem;
-  margin-inline-end: 0.375rem;
-  border-radius: 50%;
-  background: var(--e-primary);
+.clock--run::after {
   content: "";
+  position: absolute;
+  inset: auto var(--sp-2) 0;
+  height: var(--e-stroke-focus);
+  background: var(--c-act);
+}
+
+.clock--low {
+  background: var(--c-loss-wash);
+  color: var(--c-loss);
+}
+
+.clock--low::after {
+  background: var(--c-loss);
 }
 </style>

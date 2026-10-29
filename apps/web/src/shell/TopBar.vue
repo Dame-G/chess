@@ -1,41 +1,61 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { RouterLink, useRoute } from "vue-router";
-import { PhGearSix, PhMagnifyingGlass, PhPlus } from "@phosphor-icons/vue";
+import { PhGearSix, PhListBullets, PhMagnifyingGlass, PhPlus } from "@phosphor-icons/vue";
 import { EAppHeader } from "@eos-ui/vue/components/EAppHeader";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
 import { EKbd } from "@eos-ui/vue/components/EKbd";
-import { EStatLink } from "@eos-ui/vue/components/EStatLink";
 import { formatShortcut } from "@eos-ui/vue";
 import { isLive } from "../board/modes";
-import { useMedia } from "../media";
+import { down, up, useMedia } from "../media";
 import { useConnections } from "../stores/connections";
 import { useGames } from "../stores/games";
 import { useVersions } from "../stores/versions";
+import UiPlayer from "../ui/UiPlayer.vue";
 import Logo from "./Logo.vue";
-import StatusLine from "./StatusLine.vue";
+import LiveGame from "./LiveGame.vue";
 import { useUi } from "./ui";
+import WorkIndicator from "./WorkIndicator.vue";
 
-/** The header: the wordmark, the command bar, You and Dameless as links to their sheets, New game, settings. */
+/**
+ * The header: the wordmark, the command bar, New game, You and Dameless as two chips of one shape that open their
+ * sheets, the background work, settings. On a tablet the Games rail is a button here; on a phone the chips live in the
+ * tab bar and the header keeps the icons.
+ */
 const ui = useUi();
 const route = useRoute();
 const connections = useConnections();
 const versions = useVersions();
 const games = useGames();
 
-/** New game is the header's one filled button, while You have no game running. */
+/** New game is the header's one filled button, until a game you sit in is running: then it is an outline, still there. */
 const playing = computed(() => games.list.some((g) => g.you && isLive(g)));
 const keys = formatShortcut("mod+k");
 
-/** On a phone the links keep their names and drop their figures (rating, version); the sheets show them. */
-const tight = useMedia("(width < 30rem)");
+const phone = useMedia(down("md"));
+const wide = useMedia(up("lg"));
+
+const you = computed(() => ({ name: "You", key: "you", rating: connections.youRating }));
+const dameless = computed(() => ({ name: "Dameless", key: "dameless" }));
+const onYou = computed(() => route.path === "/you");
+const onDameless = computed(() => route.path.startsWith("/dameless"));
 </script>
 
 <template>
-  <EAppHeader class="top" brand-to="/" brand-label="Dameless, the board" :link-component="RouterLink">
+  <EAppHeader class="top" brand-to="/" brand-label="Dameless, the board" :link-component="RouterLink" :sticky="phone">
     <template #brand><Logo /></template>
     <template #logo>
+      <EIconButton
+        v-if="!wide && !phone"
+        :icon="PhListBullets"
+        label="Games"
+        tooltip
+        size="sm"
+        class="rail-toggle"
+        :aria-expanded="ui.railOpen"
+        @click="ui.railOpen = !ui.railOpen"
+      />
       <EButton
         variant="outline"
         size="sm"
@@ -51,24 +71,30 @@ const tight = useMedia("(width < 30rem)");
       </EButton>
     </template>
     <template #actions>
-      <EButton v-if="!playing" size="sm" :icon="PhPlus" class="new" aria-label="New game" @click="ui.startNewGame()">
-        <template #default><span class="new-label">New game</span></template>
+      <LiveGame />
+      <EButton
+        size="sm"
+        :variant="playing ? 'outline' : undefined"
+        :icon="PhPlus"
+        class="new"
+        aria-label="New game"
+        @click="ui.startNewGame()"
+      >
+        <span class="new-label">New game</span>
       </EButton>
-      <StatusLine compact class="work-compact" />
-      <EStatLink
-        label="You"
-        :value="tight ? undefined : connections.youRating || undefined"
-        to="/you"
-        :link-component="RouterLink"
-        :current="route.path === '/you'"
-      />
-      <EStatLink
-        label="Dameless"
-        :value="tight ? undefined : versions.current?.name"
-        to="/dameless"
-        :link-component="RouterLink"
-        :current="route.path.startsWith('/dameless')"
-      />
+      <template v-if="!phone">
+        <UiPlayer :seat="you" size="md" link :current="onYou" title="Your profile" class="chip" />
+        <UiPlayer
+          :seat="dameless"
+          :rating="versions.current?.name ?? null"
+          size="md"
+          link
+          :current="onDameless"
+          title="Dameless: ideas, strength, the bot"
+          class="chip"
+        />
+      </template>
+      <WorkIndicator />
       <EIconButton
         :icon="PhGearSix"
         label="Settings"
@@ -83,33 +109,35 @@ const tight = useMedia("(width < 30rem)");
 </template>
 
 <style scoped>
-.top {
-  --e-control-height: 2.25rem;
-  --e-tap: 2.25rem;
-}
-
 .top,
 .top :deep(.e-appheader-bar) {
   min-inline-size: 0;
 }
 
 .top :deep(.e-appheader-bar) {
-  min-block-size: 3rem;
-  gap: var(--e-gap-base);
+  min-block-size: var(--h-header);
+  gap: var(--sp-3);
 }
 
 /* The wordmark stays at the left edge; the command bar centres in the room between it and the actions. */
 .top :deep(.e-appheader-logo) {
+  display: flex;
   flex: 1 1 0;
+  align-items: center;
   justify-content: flex-start;
+  gap: var(--sp-2);
   min-inline-size: 0;
+}
+
+.top :deep(.e-appheader-actions) {
+  gap: var(--sp-2);
 }
 
 .bar {
   justify-content: flex-start;
   margin-inline: auto;
   inline-size: min(100%, 26rem);
-  color: var(--e-muted);
+  color: var(--c-ink-2);
   font-weight: 400;
 }
 
@@ -123,17 +151,16 @@ const tight = useMedia("(width < 30rem)");
 
 .bar-keys {
   display: inline-flex;
-  gap: 0.125rem;
+  gap: var(--sp-1);
 }
 
-/* Stacked (below 75rem) the work indicator moves up here from the status line at the foot. */
-@media (width >= 75rem) {
-  .top .work-compact {
-    display: none;
-  }
+/* The two chips are one shape: the page you are on has the wash, never a different outline. */
+.chip {
+  flex: none;
 }
 
-@media (width < 56rem) {
+/* A tablet: the command bar is its icon, which leaves room for the chips. */
+@media (width < 75rem) {
   .bar-label,
   .bar-keys {
     display: none;
@@ -143,17 +170,21 @@ const tight = useMedia("(width < 30rem)");
     inline-size: auto;
     margin-inline: 0;
   }
+}
 
+/* A phone: the wordmark is its tile, the actions are icons. */
+@media (width < 48rem) {
   .top :deep(.e-appheader-bar) {
-    gap: var(--e-gap-snug);
+    gap: var(--sp-2);
   }
 
   .top :deep(.e-appheader-actions) {
-    gap: 0;
+    gap: var(--sp-1);
   }
 }
 
-@media (width < 40rem) {
+/* On a phone the button is its plus. */
+@media (width < 48rem) {
   .new-label {
     display: none;
   }

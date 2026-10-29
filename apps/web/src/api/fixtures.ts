@@ -1474,7 +1474,7 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
   if (path === "/api/events") return streamResponse(url, init?.signal);
   await new Promise((r) => setTimeout(r, 40 + Math.random() * 80));
 
-  const variant = await shellVariant(method, path, () => [...games.values()].map((s) => clone(s.game.summary)));
+  const variant = await shellVariant(method, path, url, () => [...games.values()].map((s) => clone(s.game.summary)));
   if (variant) return variant;
   const varied = variantResponse(method, path);
   if (varied) return varied;

@@ -1,15 +1,4 @@
-import type {
-  Ending,
-  Estimate,
-  GameSummary,
-  Outcome,
-  Progress,
-  Score,
-  Seat,
-  Side,
-  Speed,
-  TimeControl,
-} from "./api/types";
+import type { Ending, Estimate, Outcome, Progress, Score, Seat, Side, Speed, TimeControl } from "./api/types";
 
 /** `+1.23`, `−0.50` or `0.00`: a figure that rounds to zero has no sign. */
 export function signed(n: number, digits = 2): string {
@@ -115,20 +104,6 @@ export function resultText(outcome: Outcome | null | undefined): string {
   if (outcome === "black_wins") return "0-1";
   if (outcome === "draw") return "½-½";
   return "*";
-}
-
-/** A side's score in a finished game: 1, ½ or 0. */
-export function sideResult(outcome: Outcome | null | undefined, side: Side): "1" | "½" | "0" | null {
-  if (!outcome) return null;
-  if (outcome === "draw") return "½";
-  return (outcome === "white_wins") === (side === "white") ? "1" : "0";
-}
-
-/** How You did in a game: won, drew or lost; `null` when You did not play or it is not over. */
-export function yourResult(g: GameSummary): "won" | "drew" | "lost" | null {
-  if (!g.you || !g.outcome) return null;
-  const r = sideResult(g.outcome, g.you);
-  return r === "1" ? "won" : r === "½" ? "drew" : "lost";
 }
 
 /** Dameless at a level of its ladder (the server names it by its rating, `Dameless 1650`). */

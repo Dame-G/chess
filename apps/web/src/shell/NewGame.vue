@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import { useToast } from "@eos-ui/vue";
-import { EButton } from "@eos-ui/vue/components/EButton";
-import { EDialog } from "@eos-ui/vue/components/EDialog";
-import { ESegmented } from "@eos-ui/vue/components/ESegmented";
+import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
+import { ENumberField } from "@eos-ui/vue/components/ENumberField";
 import { ESelect } from "@eos-ui/vue/components/ESelect";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
-import { EStack } from "@eos-ui/vue/components/EStack";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import type { Color, Side, TimeControl } from "../api/types";
 import { useConnections } from "../stores/connections";
@@ -16,12 +14,17 @@ import { useGames } from "../stores/games";
 import { useVersions } from "../stores/versions";
 import { stored } from "../stored";
 import { strengthOptions as optionsOf, suggestedStrength } from "../sheets/levels";
+import UiBadge from "../ui/UiBadge.vue";
+import UiDialog from "../ui/UiDialog.vue";
+import UiField from "../ui/UiField.vue";
+import UiSeg from "../ui/UiSeg.vue";
 import { readClock } from "./commands";
 import { useUi } from "./ui";
 
 /**
  * New game: the opponent (Dameless at a version, Lichess, Stockfish N), the time control, the colour, rated. One
- * dialog, showing only the choices that apply to the opponent. From a position ("Play from here"), against Dameless.
+ * dialog, showing only the choices that apply to the opponent, and a Start button that says what it will start. From a
+ * position ("Play from here"), against Dameless.
  */
 const ui = useUi();
 const router = useRouter();
@@ -32,10 +35,14 @@ const versions = useVersions();
 const dameless = useDameless();
 
 type Opponent = "dameless" | "stockfish" | "lichess";
-/** The clock choice for a game without a clock. */
+/** The clock choices that are not a preset. */
 const UNTIMED = "untimed";
+const CUSTOM = "custom";
 const opponent = stored<Opponent>("new.opponent", "dameless");
 const clock = stored("new.clock", "5+3");
+/** The custom clock: minutes, and seconds added each move. */
+const customMinutes = stored<number | null>("new.custom.minutes", 5);
+const customIncrement = stored<number | null>("new.custom.increment", 3);
 const color = stored<Color>("new.color", "random");
 const rated = stored("new.rated", true);
 const level = stored("new.level", "5");
@@ -82,31 +89,55 @@ watch(
   },
 );
 
-const opponents = computed(() =>
-  fromPosition.value
-    ? [{ value: "dameless" as const, label: "Dameless" }]
-    : [
-        { value: "dameless" as const, label: "Dameless" },
-        { value: "lichess" as const, label: "Lichess", disabled: !connections.you.configured },
-        { value: "stockfish" as const, label: "Stockfish", disabled: !connections.you.configured },
-      ],
-);
+const linked = computed(() => connections.you.configured);
+const opponents = computed(() => [
+  { value: "dameless" as const, label: "Dameless" },
+  { value: "lichess" as const, label: "Lichess", disabled: !linked.value },
+  { value: "stockfish" as const, label: "Stockfish", disabled: !linked.value },
+]);
+
 /**
  * Lichess's Board API plays no bullet; a seek must be rapid or slower (initial + 40 × increment ≥ 8 min). Against
  * Dameless a game can have no clock (the engine takes a second a move), and only such a game allows takebacks.
  */
-const clocks = computed(() =>
-  opponent.value === "lichess" && lichessHow.value === "seek"
-    ? ["10+0", "10+5", "15+10", "30+0"]
-    : opponent.value === "dameless"
-      ? [{ value: UNTIMED, label: "No clock" }, "3+2", "5+3", "10+5", "15+10"]
-      : ["3+2", "5+3", "10+5", "15+10"],
-);
-const clockValues = computed(() => clocks.value.map((c) => (typeof c === "string" ? c : c.value)));
-watch(clockValues, (c) => {
-  if (!c.includes(clock.value)) clock.value = c.includes("5+3") ? "5+3" : c[1]!;
+const seeking = computed(() => opponent.value === "lichess" && lichessHow.value === "seek");
+const clocks = computed(() => {
+  const presets = (seeking.value ? ["10+0", "10+5", "15+10", "30+0"] : ["3+2", "5+3", "10+5", "15+10"]).map((c) => ({
+    value: c,
+    label: c,
+  }));
+  if (seeking.value) return presets;
+  return [
+    ...(opponent.value === "dameless" ? [{ value: UNTIMED, label: "No clock" }] : []),
+    ...presets,
+    { value: CUSTOM, label: "Custom" },
+  ];
+});
+watch(clocks, (options) => {
+  if (!options.some((o) => o.value === clock.value))
+    clock.value = options.some((o) => o.value === "5+3") ? "5+3" : options[1]!.value;
 });
 const strengthOptions = computed(() => optionsOf(dameless.levels));
+
+/** The clock the game is played on. */
+const time = computed<TimeControl>(() => {
+  if (clock.value === UNTIMED) return { type: "movetime", ms: 1000 };
+  if (clock.value === CUSTOM) {
+    return {
+      type: "clock",
+      initial_ms: Math.round((customMinutes.value ?? 5) * 60_000),
+      increment_ms: Math.round((customIncrement.value ?? 0) * 1000),
+    };
+  }
+  return readClock(clock.value) ?? { type: "clock", initial_ms: 300_000, increment_ms: 3000 };
+});
+const customOk = computed(() => clock.value !== CUSTOM || (customMinutes.value ?? 0) > 0);
+/** The clock as the button says it: "5+3", or nothing for a game without one. */
+const clockText = computed(() => {
+  if (clock.value === UNTIMED) return "";
+  if (clock.value === CUSTOM) return `${customMinutes.value ?? 5}+${customIncrement.value ?? 0}`;
+  return clock.value;
+});
 
 /** Dameless's seat: `dameless`, at a version (`:#<id>`) and a level (`@<n>`) when chosen. */
 function damelessSeat(): string {
@@ -120,11 +151,26 @@ const versionOptions = computed(() =>
     .map((v) => ({ value: String(v.id), label: v.id === versions.current?.id ? `${v.name} (champion)` : v.name })),
 );
 
+/** What Start will start, in the button's own words. */
+const confirmLabel = computed(() => {
+  if (opponent.value === "stockfish") return `Start vs Stockfish ${level.value}`;
+  if (opponent.value === "lichess") {
+    return lichessHow.value === "seek" ? "Find a game" : `Challenge ${username.value.trim() || "someone"}`;
+  }
+  return `Start ${clockText.value ? `${clockText.value} ` : ""}vs Dameless`;
+});
+const blocked = computed(
+  () => !customOk.value || (opponent.value === "lichess" && lichessHow.value === "challenge" && !username.value.trim()),
+);
+const hint = computed(() => {
+  if (!customOk.value) return "Give the clock some minutes.";
+  if (opponent.value === "lichess" && lichessHow.value === "challenge" && !username.value.trim()) {
+    return "Who do you want to challenge?";
+  }
+  return "";
+});
+
 async function start() {
-  const time: TimeControl =
-    clock.value === UNTIMED
-      ? { type: "movetime", ms: 1000 }
-      : (readClock(clock.value) ?? { type: "clock", initial_ms: 300_000, increment_ms: 3000 });
   busy.value = true;
   try {
     if (opponent.value === "dameless") {
@@ -134,7 +180,7 @@ async function start() {
       const s = await games.start({
         white: you === "white" ? "you" : seat,
         black: you === "white" ? seat : "you",
-        time,
+        time: time.value,
         ...(from
           ? { from: { type: "position" as const, fen: from.fen, moves: from.moves } }
           : book.value
@@ -142,13 +188,19 @@ async function start() {
             : {}),
       });
       ui.newGame = false;
+      ui.railOpen = false;
       await router.push({ path: "/", query: { game: String(s.id) } });
     } else if (opponent.value === "stockfish") {
-      await connections.challenge("you", { ai_level: Number(level.value), time, rated: false, color: color.value });
+      await connections.challenge("you", {
+        ai_level: Number(level.value),
+        time: time.value,
+        rated: false,
+        color: color.value,
+      });
       ui.newGame = false;
       toast.show({ title: `Starting a game against Stockfish level ${level.value}`, tone: "info" });
     } else if (lichessHow.value === "seek") {
-      await connections.seek({ time, rated: rated.value, color: color.value });
+      await connections.seek({ time: time.value, rated: rated.value, color: color.value });
       ui.newGame = false;
       toast.show({
         title: "Looking for a game on Lichess",
@@ -158,7 +210,7 @@ async function start() {
     } else {
       await connections.challenge("you", {
         username: username.value.trim(),
-        time,
+        time: time.value,
         rated: rated.value,
         color: color.value,
       });
@@ -178,84 +230,148 @@ async function start() {
 </script>
 
 <template>
-  <EDialog
+  <UiDialog
     v-model:open="ui.newGame"
     :title="fromPosition ? 'Play from this position' : 'New game'"
-    :description="fromPosition ? 'Against Dameless, from the position on the board.' : undefined"
-    size="md"
+    :confirm-label="confirmLabel"
+    :confirm-disabled="blocked"
+    :busy="busy"
+    @confirm="start"
   >
-    <EStack gap="base">
-      <ESegmented
-        v-model="opponent"
-        label="Opponent"
-        :options="opponents"
-        :hint="
-          !fromPosition && !connections.you.configured
-            ? 'Lichess and Stockfish need your Lichess account: link it on the You page.'
-            : undefined
-        "
-        stretch
-      />
+    <div class="form">
+      <UiField v-if="!fromPosition" label="Opponent" group>
+        <UiSeg v-model="opponent" label="Opponent" :options="opponents" full />
+        <p v-if="!linked" class="login">
+          <UiBadge>Log in first</UiBadge>
+          Lichess and Stockfish need your Lichess account.
+          <RouterLink to="/settings" @click="ui.newGame = false">Open Settings</RouterLink>
+        </p>
+      </UiField>
+
       <template v-if="opponent === 'dameless'">
-        <EStack gap="base" wrap-below="26rem">
-          <ESelect v-if="versionOptions.length" v-model="version" label="Version" :options="versionOptions" />
+        <div class="pair">
+          <ESelect v-if="versionOptions.length > 1" v-model="version" label="Version" :options="versionOptions" />
+          <p v-else-if="versionOptions[0]" class="version">
+            <span class="version-label">Version</span>
+            <span class="version-name">{{ versionOptions[0].label }}</span>
+          </p>
           <ESelect v-model="strength" label="Strength" :options="strengthOptions" />
-        </EStack>
+        </div>
+      </template>
+      <ESelect
+        v-else-if="opponent === 'stockfish'"
+        v-model="level"
+        label="Level"
+        :options="['1', '2', '3', '4', '5', '6', '7', '8']"
+      />
+      <template v-else-if="opponent === 'lichess'">
+        <UiField label="How" group>
+          <UiSeg
+            v-model="lichessHow"
+            label="How"
+            :options="[
+              { value: 'seek', label: 'Find a game' },
+              { value: 'challenge', label: 'Challenge someone' },
+            ]"
+            full
+          />
+        </UiField>
+        <ETextField v-if="lichessHow === 'challenge'" v-model="username" label="Lichess username" autocomplete="off" />
+      </template>
+
+      <UiField label="Time control" group>
+        <UiSeg v-model="clock" label="Time control" :options="clocks" full />
+        <div v-if="clock === 'custom'" class="pair custom">
+          <ENumberField v-model="customMinutes" label="Minutes" :min="0.25" :step="1" suffix="min" />
+          <ENumberField v-model="customIncrement" label="Added each move" :min="0" :max="180" :step="1" suffix="s" />
+        </div>
+      </UiField>
+
+      <UiField label="You play" group>
+        <UiSeg
+          v-model="color"
+          label="You play"
+          :options="[
+            { value: 'white', label: 'White' },
+            { value: 'random', label: 'Random' },
+            { value: 'black', label: 'Black' },
+          ]"
+          full
+        />
+      </UiField>
+
+      <ESwitch v-if="opponent === 'lichess'" v-model="rated" label="Rated" />
+
+      <EDisclosure v-if="opponent === 'dameless' && !fromPosition" title="Options" title-style="text">
         <ESwitch
-          v-if="!fromPosition"
           v-model="book"
           label="Start from a book line"
           :disabled="noBook"
-          :description="
-            noBook
-              ? 'The opening book is not installed yet: Settings › Health says how.'
-              : 'A random opening from the book trials use, so games differ.'
-          "
+          :description="noBook ? 'The opening book is not installed yet: Settings › Health says how.' : undefined"
         />
-      </template>
-      <template v-else-if="opponent === 'stockfish'">
-        <ESelect v-model="level" label="Level" :options="['1', '2', '3', '4', '5', '6', '7', '8']" />
-      </template>
-      <template v-else>
-        <ESegmented
-          v-model="lichessHow"
-          label="How"
-          :options="[
-            { value: 'seek', label: 'Find a game' },
-            { value: 'challenge', label: 'Challenge someone' },
-          ]"
-          stretch
-        />
-        <ETextField v-if="lichessHow === 'challenge'" v-model="username" label="Lichess username" autocomplete="off" />
-      </template>
-      <ESegmented
-        v-model="clock"
-        label="Time control"
-        :options="clocks"
-        hint="Minutes + seconds added each move."
-        stretch
-      />
-      <ESegmented
-        v-model="color"
-        label="You play"
-        :options="[
-          { value: 'white', label: 'White' },
-          { value: 'random', label: 'Either' },
-          { value: 'black', label: 'Black' },
-        ]"
-        stretch
-      />
-      <ESwitch v-if="opponent === 'lichess'" v-model="rated" label="Rated" />
-    </EStack>
-    <template #actions>
-      <EButton
-        :loading="busy"
-        :disabled="opponent === 'lichess' && lichessHow === 'challenge' && !username.trim()"
-        @click="start"
-      >
-        {{ opponent === "lichess" && lichessHow === "seek" ? "Find a game" : "Start" }}
-      </EButton>
-      <EButton variant="outline" @click="ui.newGame = false">Cancel</EButton>
-    </template>
-  </EDialog>
+      </EDisclosure>
+    </div>
+    <template #footer-start>{{ hint }}</template>
+  </UiDialog>
 </template>
+
+<style scoped>
+.form {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+
+.custom {
+  margin-block-start: var(--sp-2);
+}
+
+@media (width < 26rem) {
+  .pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.login {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+}
+
+.login a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--c-line-strong);
+  text-underline-offset: 0.2em;
+}
+
+.version {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  align-content: end;
+}
+
+.version-label {
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+  font-weight: 500;
+}
+
+.version-name {
+  display: flex;
+  align-items: center;
+  min-height: var(--h-control);
+  font: var(--t-body-strong);
+}
+</style>
