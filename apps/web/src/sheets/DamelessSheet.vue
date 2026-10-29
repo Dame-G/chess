@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { ESheet } from "@eos-ui/vue/components/ESheet";
 import { EButton } from "@eos-ui/vue/components/EButton";
@@ -45,10 +45,17 @@ async function read() {
     failed.value = e instanceof Error ? e.message : String(e);
   }
 }
+/** Settings links to `/dameless#bot`: scroll to the bot once the sections above it have their height. */
+async function toBot() {
+  if (route.hash !== "#bot") return;
+  await nextTick();
+  document.getElementById("d-bot")?.scrollIntoView({ block: "start" });
+}
 onMounted(() => {
-  void progress.load().catch(() => {});
-  void read();
+  void Promise.allSettled([progress.load(), read()]).then(toBot);
+  void toBot();
 });
+watch(() => route.hash, toBot);
 
 const overview = computed(() => dameless.overview);
 const champion = computed(() => overview.value?.champion ?? versions.current);

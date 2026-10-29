@@ -36,6 +36,7 @@ watch(open, (isOpen) => {
   if (!isOpen) return;
   draft.value = { ...props.settings, speeds: [...props.settings.speeds] };
   seekText.value = props.settings.seek_clocks.join(", ");
+  versionError.value = undefined;
 });
 
 const speedOptions: { value: Speed; label: string }[] = (["bullet", "blitz", "rapid", "classical"] as const).map(
@@ -49,10 +50,13 @@ const versionOptions = computed(() => [
   ...[...versions.line].reverse().map((v) => ({ value: v.name, label: v.name })),
 ]);
 
+/** The version shown is the one saved or one just chosen: with none saved, the select is empty. */
 const version = computed({
-  get: () => draft.value.version ?? "champion",
-  set: (v: string | undefined) => (draft.value.version = v || "champion"),
+  get: () => draft.value.version ?? undefined,
+  set: (v: string | undefined) => (draft.value.version = v || null),
 });
+const versionError = ref<string>();
+watch(version, () => (versionError.value = undefined));
 
 /** Minutes in the field, seconds in the settings. */
 const minutes = (key: "min_initial" | "max_initial") =>
@@ -85,6 +89,10 @@ const clocksError = computed(() =>
 const blocked = computed(() => !!(speedsError.value || longestError.value || largestError.value || clocksError.value));
 
 async function save() {
+  if (!draft.value.version) {
+    versionError.value = "Choose the version that plays.";
+    return;
+  }
   if (blocked.value) return;
   busy.value = true;
   try {
@@ -112,7 +120,14 @@ async function save() {
     initial-focus="#bot-rules button, #bot-rules input"
   >
     <EForm id="bot-rules" @submit.prevent="save">
-      <ESelect v-model="version" label="Version that plays" :options="versionOptions" />
+      <ESelect
+        v-model="version"
+        label="Version that plays"
+        placeholder="Choose a version"
+        required
+        :options="versionOptions"
+        :error="versionError"
+      />
       <ECheckboxGroup
         v-model="draft.speeds"
         label="Speeds"

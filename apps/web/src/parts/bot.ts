@@ -54,6 +54,8 @@ export function rulesSummary(s: BotSettings): string {
           : "nobody";
   const added = s.max_increment === 0 ? "no added time" : `up to ${span(s.max_increment)} added a move`;
   const at = s.max_games === 1 ? "one at a time" : `${s.max_games} at a time`;
-  const plays = !s.version || s.version === "champion" ? "the champion" : s.version;
-  return `${kinds} ${speeds || "no"} games, from ${span(s.min_initial)} to ${span(s.max_initial)} with ${added}, from ${who}, ${at}. Plays ${plays}.`;
+  const plays = !s.version
+    ? "No version is chosen."
+    : `Plays ${s.version === "champion" ? "the champion" : s.version}.`;
+  return `${kinds} ${speeds || "no"} games, from ${span(s.min_initial)} to ${span(s.max_initial)} with ${added}, from ${who}, ${at}. ${plays}`;
 }

@@ -289,6 +289,12 @@ describe("the bot's rules in a sentence", () => {
     );
   });
 
+  it("says no version is chosen rather than naming the champion", () => {
+    const text = rulesSummary({ ...settings, version: null });
+    expect(text).toMatch(/No version is chosen\.$/);
+    expect(text).not.toMatch(/champion/);
+  });
+
   it("follows the settings", () => {
     const text = rulesSummary({
       ...settings,
