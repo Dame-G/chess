@@ -16,3 +16,4 @@ test-results
 # Scratch builds and data of the screens agent.
 /run-feat
 /.data-feat
+/docs/ui-audit
