@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import { RouterLink } from "vue-router";
 import { useToast } from "@eos-ui/vue";
 import { ESheet } from "@eos-ui/vue/components/ESheet";
 import { EButton } from "@eos-ui/vue/components/EButton";
+import { ELink } from "@eos-ui/vue/components/ELink";
 import { ECopyButton } from "@eos-ui/vue/components/ECopyButton";
 import { EDescriptionList } from "@eos-ui/vue/components/EDescriptionList";
 import { EForm } from "@eos-ui/vue/components/EForm";
@@ -312,9 +314,15 @@ function pair() {
             <EButton type="submit" :loading="savingToken" :disabled="botToken.trim().length < 8">Connect</EButton>
           </div>
         </EForm>
-        <div v-else class="sheet-actions">
-          <EButton variant="outline" @click="leaving = 'bot'">Disconnect</EButton>
-        </div>
+        <template v-else>
+          <p class="sec-note">
+            Going online, looking for games and the rules it plays by are on the
+            <ELink :link-component="RouterLink" :to="{ path: '/dameless', hash: '#bot' }">Bot controls</ELink>.
+          </p>
+          <div class="sheet-actions">
+            <EButton variant="outline" @click="leaving = 'bot'">Disconnect</EButton>
+          </div>
+        </template>
       </template>
     </section>
 

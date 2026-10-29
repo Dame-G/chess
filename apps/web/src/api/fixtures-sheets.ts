@@ -59,6 +59,7 @@ export interface SheetContext {
   /** The position after the first `plies` moves of a game written in SAN, as a FEN. */
   fenAfter: (san: string, plies: number) => string;
   lines: { italian: string; sicilian: string; qgd: string; london: string; caro: string };
+  /** `botnoversion`, `botversion`: the bot is offline, with no version chosen, or with the champion chosen. */
   /** `unlinked`: You has not logged in to Lichess yet. */
   mode: string | null;
 }
@@ -913,6 +914,15 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       bot: null,
     };
   }
+  // `botnoversion` and `botversion`: the bot is linked and offline, with no version chosen / with the champion chosen.
+  if ((ctx.mode === "botnoversion" || ctx.mode === "botversion") && ctx.connections.bot.bot) {
+    const b = ctx.connections.bot;
+    b.state = "off";
+    b.playing = [];
+    b.bot!.online = false;
+    b.bot!.seek = { mode: "off", pending: null, note: null };
+    b.bot!.settings.version = ctx.mode === "botversion" ? "champion" : null;
+  }
   const connectionsEmit = (c: ConnectionStatus) => {
     emit("connection.upserted", `connection:${c.key}`, structuredClone(c));
     return reply("/api/connections/bot/online", "post", structuredClone(c));
@@ -1176,6 +1186,8 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       }
       if (path === "/api/connections/bot/online") {
         const b = bot();
+        if (body["online"] === true && b.bot && !b.bot.settings.version)
+          return error(409, "conflict", "Choose the version the bot plays first: champion, or a version such as v14");
         if (b.bot) b.bot.online = body["online"] === true;
         b.state = body["online"] === true ? "online" : "off";
         if (b.bot && body["online"] !== true) b.bot.seek = { mode: "off", pending: null, note: null };

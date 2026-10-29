@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { RouterLink } from "vue-router";
-import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ELink } from "@eos-ui/vue/components/ELink";
+import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ESegmented } from "@eos-ui/vue/components/ESegmented";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import type { SeekMode } from "../api/types";
@@ -18,20 +18,24 @@ import BotSettingsDialog from "./BotSettingsDialog.vue";
  * just calls its route; the person clicking is the one deciding.
  */
 const connections = useConnections();
-const toast = useToast();
 
 const conn = computed(() => connections.bot);
 const bot = computed(() => conn.value.bot);
 const online = computed(() => bot.value?.online === true);
 const editing = ref(false);
 const busy = ref(false);
+/** Why the last control did not work, said under the controls until the next try. */
+const failure = ref<string | null>(null);
+/** No version is saved: the server refuses to take the bot online until one is chosen. */
+const noVersion = computed(() => !bot.value?.settings.version);
 
 async function run(action: () => Promise<unknown>) {
   busy.value = true;
+  failure.value = null;
   try {
     await action();
   } catch (e) {
-    toast.show({ title: "That did not work", message: e instanceof Error ? e.message : String(e), tone: "warning" });
+    failure.value = e instanceof Error ? e.message : String(e);
   } finally {
     busy.value = false;
   }
@@ -47,6 +51,7 @@ const seekMode = computed({
 const state = computed(() => {
   const c = conn.value;
   if (!c.configured) return "No token yet";
+  if (noVersion.value && !online.value) return "Choose the version it plays first";
   if (c.state === "error") return c.error ?? "Cannot reach Lichess";
   if (!online.value) return "Offline";
   if (c.state === "connecting") return "Connecting…";
@@ -87,7 +92,7 @@ const answered = (e: (typeof recent.value)[number]) => {
 </script>
 
 <template>
-  <section class="world" aria-labelledby="w-title">
+  <section id="d-bot" class="world" aria-labelledby="w-title">
     <div class="sec-head">
       <h2 id="w-title" class="part-title">Out in the world</h2>
       <p class="sec-note">
@@ -111,10 +116,12 @@ const answered = (e: (typeof recent.value)[number]) => {
           :model-value="online"
           label="Play on Lichess"
           :description="state"
-          :disabled="busy"
+          :disabled="busy || (noVersion && !online)"
           @update:model-value="run(() => connections.setBotOnline($event))"
         />
       </div>
+
+      <ENotice v-if="failure" tone="warning" title="That did not work" role="alert">{{ failure }}</ENotice>
 
       <div class="line">
         <ESegmented
@@ -133,8 +140,14 @@ const answered = (e: (typeof recent.value)[number]) => {
       </div>
 
       <div class="rules">
-        <p class="rules-text">{{ rulesSummary(bot.settings) }}</p>
-        <EButton variant="outline" size="sm" @click="editing = true">Edit rules</EButton>
+        <p v-if="noVersion" class="rules-text" role="status">
+          No version chosen: the bot won't play. Choose the version that plays in its rules.
+        </p>
+        <p v-else class="rules-text">{{ rulesSummary(bot.settings) }}</p>
+        <EButton :variant="noVersion ? 'primary' : 'outline'" size="sm" @click="editing = true">
+          <template v-if="noVersion">Choose a version</template>
+          <template v-else>Edit rules</template>
+        </EButton>
       </div>
 
       <div v-if="conn.challenges.length || recent.length" class="recent">
