@@ -13,7 +13,7 @@ import { ESkeleton } from "@eos-ui/vue/components/ESkeleton";
 import { ETable } from "@eos-ui/vue/components/ETable";
 import { EVisuallyHidden } from "@eos-ui/vue/components/EVisuallyHidden";
 import type { Speed } from "../api/types";
-import { speedName } from "../format";
+import { speedName, windowName } from "../format";
 import AddPlayer from "../parts/AddPlayer.vue";
 import Term from "../parts/Term.vue";
 import TopPlayers from "../parts/TopPlayers.vue";
@@ -75,7 +75,7 @@ const limit = computed({
 });
 
 const speedOptions = SPEEDS.map((s) => ({ value: s, label: speedName[s] }));
-const limitOptions = LIMITS.map((n) => ({ value: String(n), label: `${n} games` }));
+const limitOptions = LIMITS.map((n) => ({ value: String(n), label: windowName(n) }));
 
 const profiles = computed(() => comparison.value?.profiles ?? []);
 const groups = computed(() => compareGroups(profiles.value));
@@ -115,7 +115,7 @@ const stale = computed(
             { value: 'casual', label: 'Casual' },
           ]"
         />
-        <ESelect v-model="limit" label="Newest games" size="sm" :options="limitOptions" />
+        <ESelect v-model="limit" label="Games" size="sm" :options="limitOptions" />
       </div>
     </section>
 

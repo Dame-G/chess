@@ -104,6 +104,8 @@ async fn a_players_newest_unreviewed_games_are_found() {
     let all = all.await.unwrap();
     assert_eq!((all.priority, all.title.as_str()), (Priority::Background, "Reviewing all 2 of your games"));
     assert_eq!(serde_json::from_value::<ReviewSpec>(all.spec).unwrap().games, [draw, mate]);
+    // The review bar's count is that same query, whatever a profile's window holds.
+    assert_eq!(reviews.unreviewed_count(&PlayerKey::You).await.unwrap(), 2);
 
     let req = ReviewRequest { player: Some(PlayerKey::You), concurrency: Some(3), ..Default::default() };
     let (work, spec) = queue(&h, &reviews, req.clone()).await;
@@ -115,6 +117,7 @@ async fn a_players_newest_unreviewed_games_are_found() {
     // Both games open the same way: the start position is searched once.
     let result = run(&h, &reviews, &work, spec).await;
     assert_eq!((result.reviewed, result.positions_searched, result.positions_cached), (2, 15, 1));
+    assert_eq!(reviews.unreviewed_count(&PlayerKey::You).await.unwrap(), 0);
 
     let (_, spec) = queue(&h, &reviews, req).await;
     assert!(serde_json::from_value::<ReviewSpec>(spec).unwrap().games.is_empty());

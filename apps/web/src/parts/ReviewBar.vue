@@ -19,7 +19,10 @@ const props = defineProps<{
   playerKey: string;
   name: string;
   games: number;
+  /** Not reviewed in the profile's window; stands in until the server says how many of all their games are not. */
   pending: number;
+  /** All their games not reviewed yet, whatever the window: what "Review all" reviews. */
+  total?: number | null;
   mine?: boolean;
   /** Another action on the screen is the filled one. */
   quiet?: boolean;
@@ -42,8 +45,10 @@ const underway = computed(() =>
       (w.kind === "import" || w.kind === "review") && w.subject.type === "player" && w.subject.key === props.playerKey,
   ),
 );
+/** How many games "Review all" reviews: every one not reviewed, not only those in the profile's window. */
+const todo = computed(() => props.total ?? props.pending);
 const next = computed<"import" | "review" | null>(() =>
-  props.games === 0 && !props.mine ? "import" : props.pending > 0 ? "review" : null,
+  props.games === 0 && !props.mine ? "import" : todo.value > 0 ? "review" : null,
 );
 const fraction = computed(() => {
   const p = underway.value?.progress;
@@ -107,17 +112,17 @@ async function stop() {
           None of {{ name }}'s games are here yet. Reading the last {{ IMPORT }} from Lichess takes a moment.
         </template>
         <template v-else>
-          {{ plural(pending, "game") }} not reviewed yet
-          <span class="cost">— {{ reviewCost(pending) }} in the background, newest first</span>
+          {{ plural(todo, "game") }} not reviewed yet
+          <span class="cost">— {{ reviewCost(todo) }} in the background, newest first</span>
         </template>
       </p>
       <EButton :variant="quiet ? 'outline' : 'primary'" :loading="busy" :disabled="!policy.allowed" @click="go">
         {{
           next === "import"
             ? `Import their last ${IMPORT} games`
-            : pending === 1
+            : todo === 1
               ? "Review it"
-              : `Review all ${pending.toLocaleString("en-GB")}`
+              : `Review all ${todo.toLocaleString("en-GB")}`
         }}
       </EButton>
       <p v-if="!policy.allowed" class="sec-note why" role="status">

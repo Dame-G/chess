@@ -74,12 +74,13 @@ const compare = () => router.push({ path: "/compare", query: { players: `you,${k
     <template v-else>
       <ProfileHead :player="profile.player" hide-name />
       <section class="sec" aria-label="Games and review">
-        <ProfileFilters v-if="profile.games" v-model="filter" />
+        <ProfileFilters v-if="profile.games" v-model="filter" :games="profile.games" />
         <ReviewBar
           :player-key="key"
           :name="profile.player.name"
           :games="profile.games"
           :pending="profile.pending_review"
+          :total="profile.unreviewed_total"
         />
       </section>
       <ProfileView :profile="profile" />

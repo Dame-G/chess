@@ -3211,7 +3211,7 @@
           {
             "name": "limit",
             "in": "query",
-            "description": "The newest games, at most (default 200).",
+            "description": "The newest games, at most (default 200); a number above how many there are means all of them.",
             "required": false,
             "schema": {
               "type": "integer",
@@ -9065,6 +9065,15 @@
             "items": {
               "$ref": "#/components/schemas/TrendPoint"
             }
+          },
+          "unreviewed_total": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "All the player's games not yet reviewed at the default version and budget, whatever the filter: what\n\"Review all\" does. Only a single profile fills it; `None` when unknown (no champion yet).",
+            "minimum": 0
           },
           "weak_spots": {
             "type": "array",

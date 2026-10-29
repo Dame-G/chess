@@ -1,11 +1,11 @@
 import type { Comparison, LeaderRow, Profile, Speed } from "../api/types";
-import { speedName } from "../format";
+import { ALL_LIMIT, speedName, WINDOWS } from "../format";
 import type { TermKey } from "../parts/glossary";
 
 /** The players a comparison starts with. */
 const DEFAULT_PLAYERS = ["you", "dameless"];
 const DEFAULT_LIMIT = 200;
-export const LIMITS = [50, 100, 200, 500];
+export const LIMITS = [50, ...WINDOWS];
 /** The speeds a profile can be filtered by. */
 export const SPEEDS: Speed[] = ["bullet", "blitz", "rapid", "classical"];
 const MAX_PLAYERS = 5;
@@ -41,7 +41,7 @@ export function parseAddress(query: Query): CompareAddress {
     players: (players.length ? players : DEFAULT_PLAYERS).slice(0, MAX_PLAYERS),
     speeds: SPEEDS.filter((s) => speeds.includes(s)),
     rated: rated === "true" ? true : rated === "false" ? false : null,
-    limit: Number.isInteger(limit) && limit > 0 ? Math.min(limit, 1000) : DEFAULT_LIMIT,
+    limit: Number.isInteger(limit) && limit > 0 ? Math.min(limit, ALL_LIMIT) : DEFAULT_LIMIT,
   };
 }
 
