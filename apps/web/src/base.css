@@ -1,5 +1,129 @@
-/* The page itself. eos styles its components; the document around them is the app's. The shell fills the window, so
-   the footer sits at the bottom of a short page. */
+/* The page itself, and the app's scales (docs/ui-brief.md, section 2). eos styles its components; the tokens below are
+   what the app's own parts (src/ui) are built from, and theme.ts maps eos's gaps, text and control heights onto them.
+   The shell fills the window, so the footer sits at the bottom of a short page. */
+
+:root {
+  /* ---- Spacing: a 4 px grid. eos's gap and space tokens are aliased onto it in theme.ts. */
+  --sp-1: 0.25rem; /*  4  hairline gaps: icon to text, chip internals, a label over its value */
+  --sp-2: 0.5rem; /*  8  inside a control group, between inline items, row padding-block */
+  --sp-3: 0.75rem; /* 12  panel and sheet padding, between fields, cell padding-inline */
+  --sp-4: 1rem; /* 16  between blocks inside a section, dialog padding, the sheet gutter on desktop */
+  --sp-5: 1.5rem; /* 24  between sections */
+  --sp-6: 2rem; /* 32  page-level breathing: empty states, the top of a sheet */
+
+  /* ---- Type: nine steps. Figures are mono; names and labels are sans. */
+  --t-title: 600 1.25rem/1.3 var(--e-font-sans);
+  --t-head: 600 1rem/1.35 var(--e-font-sans);
+  --t-body: 400 0.875rem/1.45 var(--e-font-sans);
+  --t-body-strong: 600 0.875rem/1.45 var(--e-font-sans);
+  --t-meta: 400 0.75rem/1.35 var(--e-font-sans);
+  --t-fig: 500 0.875rem/1.3 var(--e-font-mono);
+  --t-fig-lg: 600 1.25rem/1.2 var(--e-font-mono);
+  --t-fig-xl: 600 1.75rem/1.1 var(--e-font-mono);
+  --t-clock: 600 1.125rem/1 var(--e-font-mono);
+
+  /* ---- Colour roles. Components choose a role, never a hue. */
+  --c-page: var(--e-background); /* behind the board */
+  --c-pane: var(--e-surface); /* rail, panel, sheet, dialog */
+  --c-raise: color-mix(in oklab, var(--e-ink) 4%, var(--e-surface)); /* table head, inset, hover */
+  --c-sunk: color-mix(in oklab, var(--e-ink) 8%, var(--e-surface)); /* selected row, segmented track */
+  --c-ink: var(--e-ink);
+  --c-ink-2: var(--e-muted); /* labels and meta; meets 4.5:1 on every pane */
+  --c-ink-3: color-mix(
+    in oklab,
+    var(--e-muted) 62%,
+    var(--e-surface)
+  ); /* disabled, ticks, placeholders: never information */
+
+  --c-line: color-mix(in oklab, var(--e-border) 40%, transparent); /* hairlines between regions and rows */
+  --c-line-strong: var(--e-border); /* control borders, a scrolling table's frame */
+  --c-act: var(--e-primary); /* the one primary button, the selected marker, the live dot, focus */
+  --c-act-ink: var(--e-on-primary);
+  --c-act-wash: var(--e-primary-soft);
+  --c-win: var(--e-success);
+  --c-loss: var(--e-danger);
+  --c-draw: var(--e-muted);
+  --c-warn: var(--e-warning);
+  --c-info: var(--e-info);
+  --c-win-wash: color-mix(in oklab, var(--c-win) 13%, var(--e-surface));
+  --c-loss-wash: color-mix(in oklab, var(--c-loss) 13%, var(--e-surface));
+  --c-warn-wash: color-mix(in oklab, var(--c-warn) 15%, var(--e-surface));
+  --c-info-wash: color-mix(in oklab, var(--c-info) 13%, var(--e-surface));
+  --c-neutral-wash: color-mix(in oklab, var(--e-ink) 8%, var(--e-surface));
+  --c-pip-white: #fffaf3; /* the side marks beside a player and a score; the board's own colours stay in board.css */
+  --c-pip-black: #2a2420;
+
+  /* ---- Radii: two, plus the pill for the live dot and bars' ends. */
+  --r-0: 0;
+  --r-1: var(--e-radius-md);
+  --r-pill: var(--e-radius-pill);
+
+  /* ---- Heights (fine pointer; the coarse ones are below). */
+  --h-control: 2rem; /* button, input, select, segmented option, icon button */
+  --h-row: 2rem; /* a one-line list row */
+  --h-row-2: 3rem; /* a two-line list row */
+  --h-rail-row: 3rem;
+  --h-table-row: 1.75rem;
+  --h-table-head: 1.5rem;
+  --h-move: 1.75rem;
+  --h-tab: 2.25rem;
+  --h-header: 3rem;
+  --h-badge: 1.125rem;
+
+  /* ---- Icons (Phosphor, regular). Use with `font-size` or the component's `size`. */
+  --i-sm: 0.875rem; /* 14: beside --t-meta */
+  --i-md: 1rem; /* 16: buttons and rows */
+  --i-lg: 1.25rem; /* 20: header and tab bar */
+  --i-xl: 1.75rem; /* 28: empty states */
+
+  /* ---- Motion. eos is snappy; nothing here is slower. */
+  --m-fast: var(--e-duration-fade);
+  --m-move: var(--e-duration-move);
+  --m-ease: var(--e-easing-out);
+  --focus-ring: var(--e-stroke-focus) solid var(--e-focus-ring);
+
+  /* ---- Layout. A sheet docks beside the board; the host's third column is one of these. */
+  --w-rail: clamp(16rem, 18vw, 20rem);
+  --w-panel: clamp(22rem, 24vw, 28rem);
+  --w-sheet: clamp(32rem, 34vw, 44rem);
+  --w-sheet-wide: clamp(40rem, 52vw, 64rem);
+  --w-measure: 62ch;
+
+  /* A sheet that covers the window (below `lg`) stops short of what the host keeps visible: a header above it, the
+     tab bar below it. The host sets these; they are 0 when nothing is kept. */
+  --sheet-inset-top: 0px;
+  --sheet-inset-bottom: 0px;
+}
+
+@media (pointer: coarse) {
+  :root {
+    --h-control: 2.75rem;
+    --h-row: 2.75rem;
+    --h-row-2: 3.5rem;
+    --h-rail-row: 3.5rem;
+    --h-table-row: 2.5rem;
+    --h-table-head: 2rem;
+    --h-move: 2.5rem;
+    --h-tab: 2.75rem;
+  }
+}
+
+/* Breakpoints (src/media.ts is the list; a custom property cannot sit in a media query, so the numbers are written):
+   sm 30rem, md 48rem, lg 75rem, xl 100rem. */
+
+/* Dark: the same names. Only what eos's derived values would not hold: lines are lighter against a dark pane. */
+:root[data-scheme="dark"] {
+  --c-line: color-mix(in oklab, var(--e-border) 30%, transparent);
+  --c-sunk: color-mix(in oklab, var(--e-ink) 10%, var(--e-surface));
+  --c-raise: color-mix(in oklab, var(--e-ink) 5%, var(--e-surface));
+  --c-ink-3: color-mix(in oklab, var(--e-muted) 66%, var(--e-surface));
+  --c-win-wash: color-mix(in oklab, var(--c-win) 16%, var(--e-surface));
+  --c-loss-wash: color-mix(in oklab, var(--c-loss) 16%, var(--e-surface));
+  --c-warn-wash: color-mix(in oklab, var(--c-warn) 17%, var(--e-surface));
+  --c-info-wash: color-mix(in oklab, var(--c-info) 16%, var(--e-surface));
+  --c-pip-black: #0c0907;
+}
+
 html {
   height: 100%;
   text-size-adjust: 100%;
@@ -8,9 +132,9 @@ html {
 body {
   height: 100%;
   margin: 0;
-  background: var(--e-background);
-  color: var(--e-ink);
-  font: var(--e-type-body);
+  background: var(--c-page);
+  color: var(--c-ink);
+  font: var(--t-body);
 }
 
 #app {
@@ -20,10 +144,148 @@ body {
 /* Stacking is eos's own scale and the app adds no z-index of its own: header 4, dialogs and sheets 40, popovers 45,
    toasts 50, tooltips 55. A pane that needs to sit over a neighbour uses `var(--e-z-raised)`, never a bare number. */
 
+/* ---- Utilities. */
+
 /* Figures that change as they update (evals, counts) keep their width. */
 .num {
   font-variant-numeric: tabular-nums;
 }
+
+.mono {
+  font-family: var(--e-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Blocks one gap apart, and items in a wrapping line. */
+.stack {
+  display: grid;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.muted {
+  color: var(--c-ink-2);
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A skeleton block: the shape of what is coming. It shows after 150 ms, so a fast answer never flashes one. */
+.skel {
+  display: block;
+  min-height: 1em;
+  border-radius: var(--r-1);
+  background: linear-gradient(90deg, var(--c-raise) 30%, var(--c-sunk) 50%, var(--c-raise) 70%) 0 0 / 300% 100%;
+  animation:
+    ui-appear 1ms linear 150ms backwards,
+    ui-shimmer 1.4s linear infinite;
+}
+
+@keyframes ui-appear {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes ui-shimmer {
+  to {
+    background-position: -150% 0;
+  }
+}
+
+/* The live dot pulses once per move, not for ever. */
+@keyframes ui-pulse-once {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in oklab, currentcolor 55%, transparent);
+  }
+
+  to {
+    box-shadow: 0 0 0 0.5rem transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skel {
+    animation: none;
+  }
+}
+
+/* Panes scroll on their own, so their bars should be quiet. */
+* {
+  scrollbar-color: color-mix(in oklab, var(--e-muted) 45%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+/* eos draws its own focus ring on its controls. Anything else that can take focus gets the same one. */
+:where(a, [tabindex]):focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--e-stroke-focus);
+}
+
+::selection {
+  background: color-mix(in oklab, var(--e-primary) 28%, transparent);
+}
+
+/* Links are ink with a quiet underline, not cognac: cognac is the action and the selection. Glossary terms (Term.vue)
+   are dotted and carry no colour at all. */
+.e-link,
+a.ui-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--c-line-strong);
+  text-underline-offset: 0.2em;
+}
+
+.e-link:hover,
+a.ui-link:hover {
+  text-decoration-color: currentcolor;
+}
+
+/* Glossary terms (parts/Term.vue) read as the text around them: dotted, no colour, because a term is not an action. */
+.e-toggletip-term {
+  color: inherit;
+  font-weight: inherit;
+  text-decoration-color: var(--c-ink-3);
+  text-underline-offset: 0.2em;
+}
+
+.e-toggletip-term:hover {
+  text-decoration-color: var(--c-ink-2);
+}
+
+/* A label over a field: the field's name in sentence case, not a mono kicker. */
+.e-field-label {
+  color: var(--c-ink-2);
+  font: 500 var(--e-text-xs) / 1.35 var(--e-font-sans);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ---- Legacy shims: the parts the screens still style themselves with, until each moves to src/ui and the cohesion
+   pass deletes them (UiSection, UiStats, UiTable, UiEmpty replace them). */
 
 /* The small uppercase title of a part of a pane: Doing now, Plays, Recent challenges. */
 .part-title {
@@ -35,29 +297,13 @@ body {
   text-transform: uppercase;
 }
 
-/* Panes scroll on their own, so their bars should be quiet. */
-* {
-  scrollbar-color: color-mix(in oklab, var(--e-muted) 45%, transparent) transparent;
-  scrollbar-width: thin;
-}
-
-/* eos draws its own focus ring on its controls. Anything else that can take focus gets the same one. */
-:where(a, [tabindex]):focus-visible {
-  outline: var(--e-stroke-focus) solid var(--e-focus-ring);
-  outline-offset: var(--e-stroke-focus);
-}
-
-::selection {
-  background: color-mix(in oklab, var(--e-primary) 28%, transparent);
-}
-
 /* Buttons a toast carries side by side (Accept · Decline). */
 .toast-actions {
   display: inline-flex;
   gap: var(--e-gap-snug);
 }
 
-/* ---- Sheets: sections divided by hairlines, key figures, plain lists. */
+/* Sheets: sections divided by hairlines, key figures, plain lists. */
 .sec {
   display: grid;
   gap: var(--e-gap-snug);
@@ -126,11 +372,6 @@ body {
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-.mono {
-  font-family: var(--e-font-mono);
-  font-variant-numeric: tabular-nums;
 }
 
 .sheet-actions {

@@ -26,12 +26,16 @@ if (fixtureMode()) {
 // Both schemes ship as CSS, chosen by data-scheme on <html>; index.html sets it before the first paint.
 startScheme(themeCss);
 
-const app = createApp(App)
+// `/?fixtures&kit` is the UI kit page (src/ui/kit): its own root, loaded only here, so it is not in the app's main path.
+const kit = fixtureMode() !== null && new URLSearchParams(location.search).has("kit");
+const root = kit ? (await import("./ui/kit/KitPage.vue")).default : App;
+
+const app = createApp(root)
   .use(createEos({ locale: "en-US", theme: saddleLight, applyTheme: false }))
   .use(createPinia())
   .use(router);
 
-void startStores();
+if (!kit) void startStores();
 await router.isReady();
 app.mount("#app");
-prefetchSheets();
+if (!kit) prefetchSheets();

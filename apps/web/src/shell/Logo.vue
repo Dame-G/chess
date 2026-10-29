@@ -13,7 +13,7 @@ import { PhHorse } from "@phosphor-icons/vue";
 .logo {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--sp-2);
 }
 
 /* A squared tile on a two-by-two chequer: the board, reduced to its pattern. */
@@ -22,7 +22,7 @@ import { PhHorse } from "@phosphor-icons/vue";
   place-items: center;
   width: 1.5rem;
   height: 1.5rem;
-  border-radius: 2px;
+  border-radius: var(--r-1);
   background: conic-gradient(
       var(--e-primary) 25%,
       color-mix(in oklab, var(--e-primary) 72%, black) 0 50%,
@@ -30,20 +30,20 @@ import { PhHorse } from "@phosphor-icons/vue";
       color-mix(in oklab, var(--e-primary) 72%, black) 0
     )
     0 0 / 50% 50%;
-  color: #fff8ee;
-  font-size: 1rem;
+  color: var(--c-pip-white);
+  font-size: var(--i-md);
 }
 
 .logo-word {
   font:
-    600 var(--e-text-md) / 1 "Fraunces Variable",
+    600 var(--e-text-lg) / 1 "Fraunces Variable",
     Georgia,
     serif;
   letter-spacing: -0.015em;
   white-space: nowrap;
 }
 
-@media (width < 36rem) {
+@media (width < 30rem) {
   .logo-word {
     display: none;
   }
