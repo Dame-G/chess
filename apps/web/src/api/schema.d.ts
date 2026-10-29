@@ -3259,6 +3259,12 @@ export interface components {
             reviewed: number;
             time: components["schemas"]["TimeStats"];
             trend: components["schemas"]["TrendPoint"][];
+            /**
+             * Format: int32
+             * @description All the player's games not yet reviewed at the default version and budget, whatever the filter: what
+             *     "Review all" does. Only a single profile fills it; `None` when unknown (no champion yet).
+             */
+            unreviewed_total?: number | null;
             /** @description Positions from the player's mistakes, recurring themes first; filled for You only. */
             weak_spots: components["schemas"]["WeakSpot"][];
         };
@@ -6600,7 +6606,7 @@ export interface operations {
                 rated?: boolean;
                 /** @description Only games from this time on (ISO-8601, or a date). */
                 since?: string;
-                /** @description The newest games, at most (default 200). */
+                /** @description The newest games, at most (default 200); a number above how many there are means all of them. */
                 limit?: number;
             };
             header?: never;

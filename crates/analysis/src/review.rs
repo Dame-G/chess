@@ -187,6 +187,13 @@ impl Reviews {
         })
     }
 
+    /// How many of the player's games a background review (`background` with no `limit`, the default version and
+    /// budget) would review now: the same query that picks its games, so the count and the work agree.
+    pub async fn unreviewed_count(&self, player: &PlayerKey) -> Result<u32, Error> {
+        let version = self.eval.binaries().resolve(&VersionRef::Champion).await?;
+        Ok(self.unreviewed(player, &[], None, version.id, review::DEFAULT_NODES, u32::MAX).await?.len() as u32)
+    }
+
     /// Prepares a review and queues it: what `POST /api/reviews` does.
     pub async fn submit(&self, scheduler: &Scheduler, req: ReviewRequest) -> Result<Work, Error> {
         scheduler.submit(self.prepare(req).await?).await

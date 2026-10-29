@@ -469,6 +469,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       games,
       reviewed,
       pending_review: games - reviewed,
+      unreviewed_total: r.games - r.reviewed,
       first_game: games ? minutesAgo(span * 60 * 30 + 600) : null,
       last_game: games ? minutesAgo(30) : null,
       rating: games ? rating : null,

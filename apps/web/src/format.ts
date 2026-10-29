@@ -214,6 +214,22 @@ export function progressText(progress: Progress | null | undefined): string | nu
     : `${done} ${progress.unit}`;
 }
 
+/** The `limit` that means every game: the server takes the newest N, and no one has this many. */
+export const ALL_LIMIT = 1_000_000;
+
+/** The windows a profile can add up, newest games first; the last is every game. */
+export const WINDOWS = [100, 200, 500, ALL_LIMIT];
+
+/** A window as a choice: "Last 200 games", "All games". */
+export const windowName = (limit: number): string => (limit >= ALL_LIMIT ? "All games" : `Last ${limit} games`);
+
+/** What a profile's figures cover, as a sentence tail: "your last 200 games", "all 3,708 games". */
+export function coverage(limit: number, games: number, whose = "their"): string {
+  return limit >= ALL_LIMIT || games < limit
+    ? `all ${games.toLocaleString("en-GB")} games`
+    : `${whose} last ${limit} games`;
+}
+
 /** `1 game`, `3 games`. */
 export const plural = (n: number, one: string, many = `${one}s`): string =>
   `${n.toLocaleString("en-GB")} ${n === 1 ? one : many}`;

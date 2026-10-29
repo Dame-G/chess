@@ -152,7 +152,7 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
     </EEmptyState>
     <template v-else>
       <section class="sec" aria-label="Games and review">
-        <ProfileFilters v-model="filter" />
+        <ProfileFilters v-model="filter" :games="profile.games" whose="your" />
         <ReviewBar
           player-key="you"
           name="You"
@@ -160,6 +160,7 @@ const compare = () => router.push({ path: "/compare", query: { players: "you,dam
           :quiet="!linked"
           :games="profile.games"
           :pending="profile.pending_review"
+          :total="profile.unreviewed_total"
         />
         <p v-if="profile.games === 0" class="sec-note">No games match these filters.</p>
         <div v-if="linked && !importWork" class="sheet-actions">

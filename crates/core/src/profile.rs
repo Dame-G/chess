@@ -265,6 +265,10 @@ pub struct Profile {
     pub games: u32,
     pub reviewed: u32,
     pub pending_review: u32,
+    /// All the player's games not yet reviewed at the default version and budget, whatever the filter: what
+    /// "Review all" does. Only a single profile fills it; `None` when unknown (no champion yet).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unreviewed_total: Option<u32>,
     pub first_game: Option<Timestamp>,
     pub last_game: Option<Timestamp>,
     /// The rating in the newest game considered.
@@ -482,6 +486,7 @@ pub fn profile(player: Player, filter: ProfileFilter, games: &[ProfileGame], wea
         games: total,
         reviewed,
         pending_review: total - reviewed,
+        unreviewed_total: None,
         first_game: mine.last().map(|(g, _)| g.summary.started_at.clone()),
         last_game: newest.map(|(g, _)| g.summary.started_at.clone()),
         results,

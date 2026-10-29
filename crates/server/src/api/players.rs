@@ -42,7 +42,7 @@ pub struct FilterQuery {
     pub rated: Option<bool>,
     /// Only games from this time on (ISO-8601, or a date).
     pub since: Option<String>,
-    /// The newest games, at most (default 200).
+    /// The newest games, at most (default 200); a number above how many there are means all of them.
     pub limit: Option<u32>,
 }
 
@@ -73,7 +73,9 @@ pub async fn get_profile(
     Query(q): Query<FilterQuery>,
 ) -> ApiResult<Json<Profile>> {
     let key = parse::<PlayerKey>("a player", &p.key)?;
-    Ok(Json(app.profiles.profile(key, q.filter()?).await?))
+    let mut profile = app.profiles.profile(key.clone(), q.filter()?).await?;
+    profile.unreviewed_total = app.reviews.unreviewed_count(&key).await.ok();
+    Ok(Json(profile))
 }
 
 #[derive(Deserialize, IntoParams)]
