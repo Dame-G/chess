@@ -150,6 +150,29 @@ async fn runs_by_priority_then_age_one_at_a_time_per_lane() {
 }
 
 #[tokio::test]
+async fn a_background_review_yields_to_trials_and_never_holds_up_a_review() {
+    let (hub, _dir) = bare_hub(4);
+    let s = Scheduler::new(hub);
+    let reviews = Fake::new(WorkKind::Review);
+    let trials = Fake::new(WorkKind::Trial);
+    s.register(reviews.clone());
+    s.register(trials.clone());
+    s.start().await.unwrap();
+    // Reviewing everything takes every core for each unit, hands them back and asks again at once.
+    let all = s.submit(new(WorkKind::Review, Priority::Background, forever())).await.unwrap();
+    eventually("the background review going", || async { reviews.units.load(Ordering::SeqCst) > 0 }).await;
+    // A trial starts beside it and is served first.
+    let t = s.submit(new(WorkKind::Trial, Priority::Idea, forever())).await.unwrap();
+    eventually("the trial playing", || async { trials.units.load(Ordering::SeqCst) > 2 }).await;
+    // A review asked for now runs at once in its own lane, and ends, while the background one waits its turn.
+    let one = s.submit(new(WorkKind::Review, Priority::Review, units(1))).await.unwrap();
+    assert_eq!(s.wait(one.id).await.unwrap().status, WorkStatus::Done);
+    assert!(s.is_running(all.id) && s.is_running(t.id));
+    s.stop(t.id).await.unwrap();
+    s.stop(all.id).await.unwrap();
+}
+
+#[tokio::test]
 async fn imports_run_at_once_and_builds_do_not_wait_for_trials() {
     let (hub, _dir) = bare_hub(4);
     let s = Scheduler::new(hub);

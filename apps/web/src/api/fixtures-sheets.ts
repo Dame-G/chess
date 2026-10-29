@@ -25,6 +25,7 @@ import type {
   Phase,
   Player,
   PlayerKey,
+  Priority,
   Profile,
   ProfileFilter,
   Speed,
@@ -507,13 +508,20 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
 
   // ---- Background work for players
 
-  function startWork(title: string, kind: "import" | "review", key: string, total: number, then: () => void) {
+  function startWork(
+    title: string,
+    kind: "import" | "review",
+    key: string,
+    total: number,
+    then: () => void,
+    priority: Priority = kind === "review" ? "review" : "interactive",
+  ) {
     const id = Math.max(...ctx.work.map((w) => w.id)) + 1;
     const w: Work = {
       id,
       kind,
       status: "running",
-      priority: kind === "review" ? "review" : "interactive",
+      priority,
       title,
       subject: { type: "player", key: key as PlayerKey },
       cores: 0,
@@ -528,6 +536,10 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
     emit("work.upserted", "work", { ...w });
     let step = 0;
     const timer = setInterval(() => {
+      if (w.status === "stopped") {
+        clearInterval(timer);
+        return;
+      }
       step++;
       w.progress = {
         done: Math.round((total * step) / 4),
@@ -1124,11 +1136,20 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
         const key = body["player"];
         const r = entry(key);
         if (!r) return error(404, "not_found", "No such player.");
-        const limit = Number(body["limit"] ?? 20);
+        const background = body["background"] === true;
+        const all = background && body["limit"] == null;
+        const limit = all ? Infinity : Number(body["limit"] ?? 20);
         const todo = Math.min(limit, r.games - r.reviewed);
-        const w = startWork(`Reviewing ${todo} games`, "review", key, todo, () => {
-          r.reviewed += todo;
-        });
+        const w = startWork(
+          all ? `Reviewing all ${todo} of ${key === "you" ? "your" : `${r.name}'s`} games` : `Reviewing ${todo} games`,
+          "review",
+          key,
+          todo,
+          () => {
+            r.reviewed += todo;
+          },
+          background ? "background" : "review",
+        );
         return reply("/api/reviews", "post", structuredClone(w), 202);
       }
       if ((m = path.match(/^\/api\/players\/([^/]+)\/import$/))) {
@@ -1136,9 +1157,12 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
         const key = decodeURIComponent(m[1]!);
         const r = entry(key);
         if (!r) return error(404, "not_found", "Lichess has no such player.");
-        const max = Math.min(Number(body["max"] ?? 50), 1000);
-        const w = startWork(`Importing ${r.name}'s games`, "import", key, max, () => {
-          r.games = max;
+        // Your history comes in whole when no `max` is given: about 3,700 games here.
+        const max =
+          body["max"] != null ? Math.min(Number(body["max"]), 1000) : key === "you" ? Math.max(r.games, 3708) : 50;
+        const title = key === "you" ? "Importing your Lichess games" : `Importing ${r.name}'s games`;
+        const w = startWork(title, "import", key, max, () => {
+          r.games = Math.max(r.games, max);
         });
         return reply("/api/players/{key}/import", "post", structuredClone(w), 202);
       }

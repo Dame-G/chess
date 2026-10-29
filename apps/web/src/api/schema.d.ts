@@ -2678,7 +2678,9 @@ export interface components {
             rated?: boolean | null;
             /**
              * Format: int64
-             * @description Games started at or after this time (ms since 1970). Your history: after the newest imported before.
+             * @description Games started at or after this time (ms since 1970). Your history, when none (and no `max`, `speeds` or
+             *     `rated`): the games newer than the newest imported before and, until your whole history is here, every older
+             *     one.
              */
             since?: number | null;
             speeds?: components["schemas"]["Speed"][];
@@ -3219,7 +3221,7 @@ export interface components {
          *     cores outside the queue; these order the work items.
          * @enum {string}
          */
-        Priority: "live" | "interactive" | "review" | "idea";
+        Priority: "live" | "interactive" | "review" | "idea" | "background";
         /** @description A player's games added up. */
         Profile: {
             accuracy: components["schemas"]["PhaseStats"];
@@ -3462,6 +3464,12 @@ export interface components {
         /** @description `POST /api/reviews`: some games, or a player's newest games not reviewed yet with this version and budget. */
         ReviewBody: {
             /**
+             * @description Review in the background: at the lowest priority (`background`, below ideas), so trials keep their cores, and
+             *     in a lane of its own, so a review asked for meanwhile runs at once. With `player` and no `limit`: every game of
+             *     theirs not reviewed yet, newest first.
+             */
+            background?: boolean;
+            /**
              * Format: int32
              * @description Engines at once; half the machine's cores when none.
              */
@@ -3470,7 +3478,7 @@ export interface components {
             games?: components["schemas"]["GameId"][];
             /**
              * Format: int32
-             * @description How many of the player's games; 20 when none.
+             * @description How many of the player's games; 20 when none, at most 1000. In the background: every one when none.
              */
             limit?: number | null;
             /**

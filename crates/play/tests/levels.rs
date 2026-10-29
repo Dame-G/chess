@@ -186,7 +186,7 @@ async fn calibration_plays_levels_against_each_other_and_fits_them() {
         .prepare_calibration(&binaries, CalibrateRequest { games_per_pair: Some(3), ..Default::default() })
         .await
         .unwrap();
-    assert_eq!((new.kind, new.priority), (WorkKind::Calibrate, Priority::Idea));
+    assert_eq!((new.kind, new.priority), (WorkKind::Calibrate, Priority::Background));
     let spec = new.spec.clone();
     let work = s.hub.store.insert_work(new).await.unwrap();
     let (cx, _cancel) = WorkContext::detached(s.hub.clone(), work.id, WorkKind::Calibrate, spec);

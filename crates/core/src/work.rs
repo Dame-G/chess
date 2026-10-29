@@ -60,8 +60,12 @@ impl WorkStatus {
 pub enum Priority {
     Live = 0,
     Interactive = 1,
+    /// Reviews asked for now: a game, or a few.
     Review = 2,
     Idea = 3,
+    /// Long work that takes what nothing else wants: reviewing all of a player's games, calibrating the levels. It
+    /// yields its cores to trials and to everything above them between units.
+    Background = 4,
 }
 
 impl Priority {
@@ -71,7 +75,9 @@ impl Priority {
     }
 
     pub fn from_rank(rank: u8) -> Option<Self> {
-        [Self::Live, Self::Interactive, Self::Review, Self::Idea].into_iter().find(|p| p.rank() == rank)
+        [Self::Live, Self::Interactive, Self::Review, Self::Idea, Self::Background]
+            .into_iter()
+            .find(|p| p.rank() == rank)
     }
 }
 

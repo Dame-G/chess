@@ -313,6 +313,12 @@ pub struct ReviewArgs {
     pub nodes: Option<u64>,
     #[arg(long)]
     pub concurrency: Option<u32>,
+    /// Review in the background: below ideas, so trials keep their cores.
+    #[arg(long)]
+    pub background: bool,
+    /// With `--player`: every game of theirs not reviewed yet, newest first, in the background.
+    #[arg(long, requires = "player", conflicts_with = "limit")]
+    pub all: bool,
     #[arg(long)]
     pub wait: bool,
 }
@@ -1459,6 +1465,7 @@ pub async fn run(c: Client, command: Command, json: bool) -> Result<()> {
             let body = json!({
                 "games": a.games, "player": a.player, "limit": a.limit, "speeds": a.speeds, "rated": a.rated,
                 "version": a.version, "nodes": a.nodes, "concurrency": a.concurrency,
+                "background": a.background || a.all,
             });
             let w = c.post("/api/reviews", body).await?;
             finish_work(&c, w, a.wait, json).await?;

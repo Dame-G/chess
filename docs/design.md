@@ -325,7 +325,7 @@ A **weak spot** is a position before one of your mistakes or blunders in a revie
 ```rust
 pub enum WorkKind { Build, Trial, Tune, Review, Import, Promote, Calibrate, Datagen, Train, DatasetImport, Upstream }
 pub enum WorkStatus { Queued, Running, Paused, Done, Failed, Stopped }
-pub enum Priority { Live = 0, Interactive = 1, Review = 2, Idea = 3 }   // lower runs first
+pub enum Priority { Live = 0, Interactive = 1, Review = 2, Idea = 3, Background = 4 }   // lower runs first
 
 pub struct Work {
     pub id: WorkId, pub kind: WorkKind, pub status: WorkStatus, pub priority: Priority,
@@ -393,8 +393,8 @@ pub enum Assist { Allowed, ExplorerOnly /* every live game is correspondence */,
 - **Cores:** `DAMELESS_CORES`, default physical cores − 1. A ledger in `hub` hands out cores.
 - **The GPU** (R4): `DAMELESS_GPUS`, default 1 when nvidia-smi finds one. The ledger grants it whole (`grant_gpu`, `cx.gpu()`) to one training run at a time, which also takes 2–4 cores for its data loader, so trials keep playing beside it. Datagen and training each have a lane; a dataset import is network work (no lane, no cores). Datasets share a disk cap (`DAMELESS_DATA_CAP_GB`), and nothing that writes much starts with less than 15 GB free. See the roadmap's R4 contract.
 - **Live first.** A local or Lichess game with a Dameless seat reserves its threads (1 per engine by default) for as long as it runs. Live evaluation on the board reserves 1 core (more if asked). These are reservations, not work items.
-- **Work** takes what is left, by priority (`Review` before `Idea`), oldest first within a priority. The ledger keeps that order for cores and the GPU too: a request it cannot grant waits in line (`Ledger::request_cores`, `request_gpu`; `cx.cores` and `cx.gpu` pass the item's priority), keyed by priority and then by when it began waiting, and nothing behind a waiter is granted, even when it would fit, so a trial that gives its cores back between rounds and asks again at once never starves a build or review waiting beside it. A waiter that is stopped leaves the line (the request is a guard); one asking for more cores than the machine has holds nobody up. Reservations never wait. A trial asks for `concurrency` cores (default: all that are free, at least 2) and plays in **rounds**: each round runs fastchess with the cores granted at the start of that round for about `12 × cores` game pairs, then the trial updates its statistics and checks SPRT; a round is wound down early, keeping its finished pairs, when the SPRT decides mid-round, a pause is asked, work of higher priority waits in the ledger's line, or the trial is stopped. Between rounds the scheduler may grant more or fewer cores, or pause the trial. Scaling is measured once at the trial's start with the planned concurrency and is part of the trial's record.
-- **Lanes:** the scheduler runs one item at a time per lane — builds; trials and tunes together; reviews; promotions — and starts an item only while a core is free or lower-priority work holds some (it hands them back at its next unit, and the ledger serves the new item first); cores themselves come from the ledger when the item asks (`cx.cores`). So a trial waiting for its build never blocks the build (builds are queued at `Interactive`), and an idea's trials run one after another.
+- **Work** takes what is left, by priority (`Review` before `Idea`, `Background` last: reviewing all of a player's games and calibrating the levels), oldest first within a priority. The ledger keeps that order for cores and the GPU too: a request it cannot grant waits in line (`Ledger::request_cores`, `request_gpu`; `cx.cores` and `cx.gpu` pass the item's priority), keyed by priority and then by when it began waiting, and nothing behind a waiter is granted, even when it would fit, so a trial that gives its cores back between rounds and asks again at once never starves a build or review waiting beside it. A waiter that is stopped leaves the line (the request is a guard); one asking for more cores than the machine has holds nobody up. Reservations never wait. A trial asks for `concurrency` cores (default: all that are free, at least 2) and plays in **rounds**: each round runs fastchess with the cores granted at the start of that round for about `12 × cores` game pairs, then the trial updates its statistics and checks SPRT; a round is wound down early, keeping its finished pairs, when the SPRT decides mid-round, a pause is asked, work of higher priority waits in the ledger's line, or the trial is stopped. Between rounds the scheduler may grant more or fewer cores, or pause the trial. Scaling is measured once at the trial's start with the planned concurrency and is part of the trial's record.
+- **Lanes:** the scheduler runs one item at a time per lane — builds; trials, tunes and calibration together; reviews; background reviews (so a review asked for now never waits days behind one); promotions — and starts an item only while a core is free or lower-priority work holds some (it hands them back at its next unit, and the ledger serves the new item first); cores themselves come from the ledger when the item asks (`cx.cores`). So a trial waiting for its build never blocks the build (builds are queued at `Interactive`), and an idea's trials run one after another.
 - **Preemption:** when live play's reservations oversubscribe the ledger, the lowest-priority running CPU work is paused (`paused_for: "A live game"`) at its next safe point, and resumed by the scheduler once at least two cores (or what it held, if less) are free; work a person paused stays paused. After a restart, work paused for live play is queued again.
 - **Network work** (imports) needs no cores and runs at once. Lichess allows one request at a time per token: the `lichess` client holds the token's slot for each plain request and while a stream opens, not for a stream's life, so a long export never holds up the moves of a live game.
 - **Pausing:** a review pauses on the fair-play policy; any CPU work can be paused and resumed (`POST /api/work/{id}/pause|resume`). A trial pauses between rounds; a tune between iterations; a review between positions.
@@ -514,13 +514,15 @@ GET    /api/explorer?db=lichess|masters|player&fen=&play=&speeds=&ratings=&modes
                                                      Lichess's answer, as is (needs the you connection: 409 without it)
 GET    /api/tablebase?fen=                           Lichess's answer, as is
 
-POST   /api/reviews                                  { games | player, limit?, speeds?, rated?, version?, nodes?, concurrency? } → 202 Work
+POST   /api/reviews                                  { games | player, limit?, background?, speeds?, rated?, version?, nodes?, concurrency? } → 202 Work
+                                                     (background: priority Background in its own lane; with player and no limit, every unreviewed game, newest first)
 GET    /api/players/top?speed=blitz&nb=10            [{ key, username, title, rating, progress }] (Lichess's leaderboard)
 GET    /api/players/{key}                            Player
 GET    /api/players/{key}/profile?speeds=&rated=&since=&limit=   Profile
 GET    /api/compare?players=…&speeds=&rated=&since=&limit=       Comparison
 POST   /api/players/{key}/import                     { max?, since?, speeds?, rated? } → 202 Work (lichess:<name>: their history,
-                                                     refused while you play; you: your history)
+                                                     refused while you play; you: your history, whole when nothing is capped or filtered:
+                                                     newer games, then older ones until meta lichess.you.import.complete)
 GET    /api/players/you/repertoire?side=&max_plies=&min_games=&limit=   Repertoire (409 fair_play while the explorer is not allowed)
 GET    /api/progress?window=10                       Progress
 
@@ -606,7 +608,7 @@ dameless play --white you --black dameless@5 --tc 5+3 | --nodes N | --movetime M
 dameless move <game> e4 [--no-wait] | draw <game> [--accept|--decline] | takeback <game> [--accept|--decline]
 dameless resign|abort|stop <game> | claim <game> [--draw]
 dameless import you | lichess:<name> [--max --since --speeds --rated --wait] | import --pgn <file|-> [--you white]
-dameless review <game>… | --player you [--limit --version --nodes --wait]
+dameless review <game>… | --player you [--limit --all --background --version --nodes --wait]
 dameless player <key> | profile <key> | compare <key>… [--speeds --rated --since --limit] | players top [speed] [--nb]
 dameless repertoire --side white | progress | levels [plan | calibrate] | drills [today | make | answer <id> <move> | delete <id> | trend]
 dameless eval [--fen --moves --version --depth|--nodes --multipv] (streams until done) | eval --list | eval --stop <session>

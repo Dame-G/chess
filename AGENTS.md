@@ -76,12 +76,12 @@ dameless import --pgn game.pgn [--you white]
 ## Reviews, players and comparison
 
 ```bash
-dameless review <game>… | --player you [--limit 20 --speeds blitz,rapid --rated true --version champion --nodes 200000 --concurrency N] [--wait]
-dameless import you | lichess:<name> [--max 50 --since <ms> --speeds --rated] [--wait]
+dameless review <game>… | --player you [--limit 20 | --all] [--background --speeds blitz,rapid --rated true --version champion --nodes 200000 --concurrency N] [--wait]
+dameless import you | lichess:<name> [--max 50 --since <ms> --speeds --rated] [--wait]   # you, with no flags: your whole history, then only new games
 dameless player <key> | profile <key> [--speeds --rated --since --limit] | compare you lichess:<name> dameless | players top [blitz] [--nb 10]
 ```
 
-- A review is work (priority before ideas). It searches every position with a version (default: the champion, 200,000 nodes, MultiPV 2) through a position cache keyed by FEN without counters, commit, nodes and MultiPV. Reviewing again with the same version and budget skips the game.
+- A review is work (priority before ideas). `--all` (`background: true`, the profile's "Review all N") reviews every game not reviewed yet, newest first, at the lowest priority (`background`, below ideas, beside calibration) and in a lane of its own: trials keep their cores, a review asked for meanwhile runs at once, and profiles, drills and progress fill in as each game is done. It searches every position with a version (default: the champion, 200,000 nodes, MultiPV 2) through a position cache keyed by FEN without counters, commit, nodes and MultiPV. Reviewing again with the same version and budget skips the game.
 - The judge is the old harness's, ported as is (`crates/core/src/review/judge.rs` holds every formula and threshold, with lila's test values): Lichess's win % (`50 + 50 × (2 / (1 + e^(−0.00368208 × cp)) − 1)`, capped at ±1000 cp), move accuracy, game accuracy (volatility-weighted and harmonic means), ACPL, judgements (a drop of 5, 10, 15 win % points is an inaccuracy, mistake, blunder; mates by lila's rules), classifications (`brilliant`, `great`, `best`, `excellent`, `good`, `book`, `inaccuracy`, `mistake`, `blunder`, `miss`), phases (lila's Divider) and time-trouble blunders (a blunder with under a tenth of the starting clock). Scores are White's point of view; win % and accuracy are the mover's.
 - Player keys are `you`, `dameless`, `lichess:<name>`, `stockfish:<n>`. A profile adds up a player's games: results by colour, accuracy overall, per phase and by speed, ACPL, classifications per game, openings, time, the trend, moments, and for you **weak spots** (positions before your mistakes, recurring themes first). Results count every finished game; engine figures count reviewed games only (`pending_review` says how many wait).
 - `compare` returns the profiles side by side with `leaders` per row (ties lead together). Other players' imports use your token when you are logged in, else none; never the bot's.
@@ -219,7 +219,7 @@ dameless work [--recent 20] | work show <id> | work log <id> | work wait <id> | 
 ```
 
 - Live play comes first: a game with a Dameless seat reserves its threads, and live evaluation one core. When they oversubscribe the cores, the lowest-priority running work pauses (`paused_for: "A live game"`) at its next safe point and resumes when cores free up.
-- Priorities, lower first: live, interactive (builds), review, idea. Lanes run one item at a time each (builds; trials, tunes and calibration; reviews; promotions and upstream syncs; datagen; training on the GPU). Network work (imports) needs no cores and runs at once.
+- Priorities, lower first: live, interactive (builds), review, idea, background (reviewing all of a player's games, calibration). Lanes run one item at a time each (builds; trials, tunes and calibration; reviews; background reviews; promotions and upstream syncs; datagen; training on the GPU). Network work (imports) needs no cores and runs at once.
 
 ## Events
 

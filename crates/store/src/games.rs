@@ -486,6 +486,20 @@ impl Store {
         .await
     }
 
+    /// How many games of `owner`'s imported history are stored, and when the oldest of them began: where an import that
+    /// goes back further carries on from.
+    pub async fn imported_history(&self, owner: PlayerKey) -> Result<(u32, Option<Timestamp>), Error> {
+        let owner = owner.to_string();
+        self.read(move |conn| {
+            Ok(conn.query_row(
+                "SELECT count(*), min(started_at) FROM games WHERE source_kind = 'import' AND source_owner = ?1",
+                [owner],
+                |r| Ok((r.get(0)?, r.get::<_, Option<String>>(1)?.map(Timestamp))),
+            )?)
+        })
+        .await
+    }
+
     /// How many of a trial's games are stored.
     pub async fn count_trial_games(&self, trial: TrialId) -> Result<u32, Error> {
         self.read(move |conn| {

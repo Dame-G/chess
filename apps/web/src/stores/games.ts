@@ -133,6 +133,11 @@ export const useGames = defineStore("games", () => {
     await ok(client.POST("/api/reviews", { body: { player, limit } }));
   }
 
+  /** Reviews every game of the player's not reviewed yet, newest first, in the background (below ideas). */
+  async function reviewAll(player: PlayerKey) {
+    await ok(client.POST("/api/reviews", { body: { player, background: true } }));
+  }
+
   /** Starts a local game (`POST /api/games`) and answers its summary, already in the list. */
   async function start(request: NewGameRequest): Promise<GameSummary> {
     const game = await ok(client.POST("/api/games", { body: request }));
@@ -219,6 +224,7 @@ export const useGames = defineStore("games", () => {
     act,
     requestReview,
     reviewPlayer,
+    reviewAll,
     start,
     startedHere,
     starts,

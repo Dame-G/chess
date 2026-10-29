@@ -4,7 +4,7 @@ import { client, ok } from "../api/client";
 import type { Priority, Work, WorkId } from "../api/types";
 import { listen, reloadOnReconnect } from "./listen";
 
-const RANK: Record<Priority, number> = { live: 0, interactive: 1, review: 2, idea: 3 };
+const RANK: Record<Priority, number> = { live: 0, interactive: 1, review: 2, idea: 3, background: 4 };
 
 /** Background work: running, queued (in the order the scheduler takes it) and recently ended. */
 export const useWork = defineStore("work", () => {

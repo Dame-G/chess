@@ -188,9 +188,14 @@ pub struct ReviewBody {
     /// This player's newest finished games not yet reviewed: `you`, `dameless`, `lichess:<name>`.
     #[serde(default)]
     pub player: Option<PlayerKey>,
-    /// How many of the player's games; 20 when none.
+    /// How many of the player's games; 20 when none, at most 1000. In the background: every one when none.
     #[serde(default)]
     pub limit: Option<u32>,
+    /// Review in the background: at the lowest priority (`background`, below ideas), so trials keep their cores, and
+    /// in a lane of its own, so a review asked for meanwhile runs at once. With `player` and no `limit`: every game of
+    /// theirs not reviewed yet, newest first.
+    #[serde(default)]
+    pub background: bool,
     #[serde(default)]
     pub speeds: Vec<Speed>,
     #[serde(default)]
@@ -217,6 +222,7 @@ pub async fn review_games(
         games: b.games,
         player: b.player,
         limit: b.limit,
+        background: b.background,
         speeds: b.speeds,
         rated: b.rated,
         version: b.version.as_deref().map(VersionRef::parse),

@@ -1,7 +1,9 @@
 //! Importing history from Lichess, as work (`WorkKind::Import`, network only): your finished games, or another
 //! player's. Each game becomes a finished game here (`Source::Import`, owned by whose history it is), stored once per
-//! owner, with its clocks, Lichess's evaluations where the game was analysed, and the opening. Your history carries on
-//! from the newest game imported before; another player's is assistance, so it waits while you play on Lichess.
+//! owner, with its clocks, Lichess's evaluations where the game was analysed, and the opening. Your history, asked for
+//! with nothing capped or filtered, comes in whole: the games newer than the newest imported before, then (until
+//! [`COMPLETE_KEY`] says it is all here) every game older than the oldest imported before. Another player's is
+//! assistance, so it waits while you play on Lichess.
 //!
 //! The export can be long and can break: the adapter reopens it below the oldest game read, and this saves a
 //! checkpoint after every batch, so a restarted import carries on where it stopped.
@@ -28,6 +30,10 @@ use crate::{clients::account_of, connections::Connections, error, lichess_game::
 /// Where your history's import carries on from: the newest game's start (ms since 1970).
 pub const SINCE_KEY: &str = "lichess.you.import.since";
 
+/// Whether your whole history is here: an import went back until Lichess had no older game. Later imports of your
+/// history then only fetch what is new.
+pub const COMPLETE_KEY: &str = "lichess.you.import.complete";
+
 /// Games stored at once.
 const BATCH: usize = 100;
 
@@ -39,14 +45,37 @@ pub struct ImportSpec {
     /// At most this many games, newest first. All when absent.
     #[serde(default)]
     pub max: Option<u32>,
-    /// Games started at or after this time (ms since 1970). Your history: when absent, after the newest game imported
-    /// before.
+    /// Games started at or after this time (ms since 1970). Your history: when absent (with no `max`, `speeds` or
+    /// `rated`), the games newer than the newest imported before and, until your whole history is here, every game
+    /// older than the oldest imported before.
     #[serde(default)]
     pub since: Option<i64>,
     #[serde(default)]
     pub speeds: Vec<Speed>,
     #[serde(default)]
     pub rated: Option<bool>,
+}
+
+impl ImportSpec {
+    /// Whether this import brings in your whole history: your games, nothing filtered or capped.
+    fn whole_history(&self) -> bool {
+        self.player == PlayerKey::You
+            && self.max.is_none()
+            && self.since.is_none()
+            && self.speeds.is_empty()
+            && self.rated.is_none()
+    }
+}
+
+/// Which part of your history an import is reading.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Phase {
+    /// Games newer than the newest imported before (all of them the first time).
+    #[default]
+    New,
+    /// Games older than the oldest imported before, until Lichess has none.
+    Older,
 }
 
 /// Where an import stands, saved after each batch.
@@ -59,6 +88,23 @@ struct Checkpoint {
     /// The oldest game read (ms): a restart asks for games before it.
     oldest: Option<i64>,
     newest: Option<i64>,
+    #[serde(default)]
+    phase: Phase,
+    /// While reading older games: the oldest game stored when that began (ms), which they are all older than.
+    #[serde(default)]
+    older_than: Option<i64>,
+    /// Your games stored when the import began, and how many games your Lichess account has (when Lichess said): what
+    /// the progress counts against while your whole history comes in.
+    #[serde(default)]
+    had: u32,
+    #[serde(default)]
+    total: Option<u32>,
+}
+
+/// How a run of the export ended.
+enum Read {
+    Done,
+    Stopped,
 }
 
 /// Runs imports.
@@ -70,6 +116,15 @@ impl ImportExecutor {
     pub fn new(connections: Connections) -> Self {
         Self { connections }
     }
+}
+
+/// What one import reads from: the client, whose history and whether reading it is assistance.
+struct Reading<'a> {
+    client: &'a dameless_lichess::Lichess,
+    username: &'a str,
+    owner_id: String,
+    lichess_url: String,
+    assist: Option<AssistKind>,
 }
 
 #[async_trait]
@@ -100,99 +155,160 @@ impl Executor for ImportExecutor {
         if !cx.safe_point(assist).await {
             return Err(cx.stopped());
         }
+        let store = &cx.hub.store;
+        let whole = spec.whole_history();
+        let complete = whole && store.meta::<bool>(COMPLETE_KEY).await?.unwrap_or(false);
+        let fresh = cx.checkpoint::<Checkpoint>().is_none();
         let mut cp: Checkpoint = cx.checkpoint().unwrap_or_default();
-        let since = match (spec.since, &spec.player) {
-            (Some(s), _) => Some(s),
-            (None, PlayerKey::You) => cx.hub.store.meta::<i64>(SINCE_KEY).await?.map(|s| s + 1),
-            (None, _) => None,
+        if whole && !complete && fresh {
+            // What the progress counts against: one request, and none of it matters if Lichess does not answer.
+            cp.had = store.imported_history(PlayerKey::You).await?.0;
+            cp.total = client.account().await.ok().and_then(|a| a.count).map(|c| c.all).filter(|&n| n > 0);
+        }
+        let source = Reading {
+            client: &client,
+            username: &username,
+            owner_id: username.to_lowercase(),
+            lichess_url: self.connections.lichess_url().to_owned(),
+            assist,
         };
-        let remaining = spec.max.map(|m| m.saturating_sub(cp.read));
-        let query = ExportQuery {
-            since,
-            until: cp.oldest.map(|o| o - 1),
-            max: remaining,
-            perf_type: spec.speeds.iter().map(|s| s.lichess_key().to_owned()).collect(),
-            rated: spec.rated,
-        };
-        cx.log(format!(
-            "Importing {username}'s games{}.",
-            since.map(|s| format!(" since {}", Timestamp::from_unix_ms(s))).unwrap_or_default()
-        ));
-        let lichess_url = self.connections.lichess_url().to_owned();
-        let owner_id = username.to_lowercase();
-        let mut batch: Vec<NewGame> = Vec::new();
-        if remaining != Some(0) {
-            let (tx, mut breaks) = tokio::sync::mpsc::unbounded_channel::<String>();
-            let mut export = client.export_games(&username, query).on_break(move |b| {
-                let _ = tx.send(format!("{} games read; the export broke ({}), going on.", b.read, b.error));
-            });
-            loop {
-                let next = tokio::select! {
-                    _ = cx.cancel.cancelled() => {
-                        self.flush(&cx, &mut batch, &mut cp).await?;
-                        return Err(cx.stopped());
+
+        if cp.phase == Phase::New {
+            let since = match (spec.since, &spec.player) {
+                (Some(s), _) => Some(s),
+                (None, PlayerKey::You) => store.meta::<i64>(SINCE_KEY).await?.map(|s| s + 1),
+                (None, _) => None,
+            };
+            let remaining = spec.max.map(|m| m.saturating_sub(cp.read));
+            let query = ExportQuery {
+                since,
+                until: cp.oldest.map(|o| o - 1),
+                max: remaining,
+                perf_type: spec.speeds.iter().map(|s| s.lichess_key().to_owned()).collect(),
+                rated: spec.rated,
+            };
+            cx.log(format!(
+                "Importing {username}'s games{}.",
+                since.map(|s| format!(" since {}", Timestamp::from_unix_ms(s))).unwrap_or_default()
+            ));
+            if remaining != Some(0)
+                && let Read::Stopped = self.read(&cx, &source, &spec, query, &mut cp).await?
+            {
+                return Err(cx.stopped());
+            }
+            if spec.player == PlayerKey::You
+                && let Some(newest) = cp.newest
+            {
+                let before = store.meta::<i64>(SINCE_KEY).await?.unwrap_or(0);
+                store.put_meta(SINCE_KEY, &newest.max(before)).await?;
+            }
+            if whole && !complete {
+                // Read from the start with nothing stored before: that was the whole history already.
+                let oldest = store.imported_history(PlayerKey::You).await?.1.and_then(|t| t.unix_ms());
+                match (since, oldest) {
+                    (Some(_), Some(oldest)) => {
+                        cp.phase = Phase::Older;
+                        cp.older_than = Some(oldest);
+                        cx.save_checkpoint(&cp).await?;
                     }
-                    next = export.next() => next,
-                };
-                while let Ok(line) = breaks.try_recv() {
-                    cx.log(line);
-                }
-                match next {
-                    Ok(Some(g)) => {
-                        cp.read += 1;
-                        cp.oldest = Some(cp.oldest.map_or(g.created_at, |o| o.min(g.created_at)));
-                        cp.newest = Some(cp.newest.map_or(g.created_at, |n| n.max(g.created_at)));
-                        match to_game(&g, &spec.player, &owner_id, &lichess_url) {
-                            Ok(Some(game)) => batch.push(game),
-                            Ok(None) => cp.other += 1,
-                            Err(why) => {
-                                cx.log(format!("Skipped {}: {why}", g.id));
-                                cp.other += 1;
-                            }
-                        }
-                    }
-                    Ok(None) => break,
-                    Err(LichessError::Unexpected(why)) => {
-                        cx.log(format!("Skipped a game that does not read: {why}"));
-                        cp.other += 1;
-                    }
-                    Err(e) => {
-                        self.flush(&cx, &mut batch, &mut cp).await?;
-                        return Err(error::lichess(e));
-                    }
-                }
-                if batch.len() >= BATCH {
-                    self.flush(&cx, &mut batch, &mut cp).await?;
-                    cx.progress_now(progress(&cp, spec.max)).await?;
-                    if !cx.safe_point(assist).await {
-                        return Err(cx.stopped());
-                    }
+                    _ => store.put_meta(COMPLETE_KEY, &true).await?,
                 }
             }
         }
-        self.flush(&cx, &mut batch, &mut cp).await?;
-        cx.progress_now(progress(&cp, spec.max)).await?;
-        if spec.player == PlayerKey::You
-            && let Some(newest) = cp.newest
+
+        if cp.phase == Phase::Older
+            && let Some(older_than) = cp.older_than
         {
-            let before = cx.hub.store.meta::<i64>(SINCE_KEY).await?.unwrap_or(0);
-            cx.hub.store.put_meta(SINCE_KEY, &newest.max(before)).await?;
+            let until = cp.oldest.map_or(older_than, |o| o.min(older_than)) - 1;
+            cx.log(format!("Going back for older games, before {}.", Timestamp::from_unix_ms(until + 1)));
+            let query = ExportQuery { until: Some(until), ..ExportQuery::default() };
+            if let Read::Stopped = self.read(&cx, &source, &spec, query, &mut cp).await? {
+                return Err(cx.stopped());
+            }
+            store.put_meta(COMPLETE_KEY, &true).await?;
+            cx.log("Your whole history is here: later imports fetch only new games.");
         }
+
         cx.log(format!(
             "Done: {} new, {} already here, {} not standard chess or unreadable.",
             cp.imported, cp.skipped, cp.other
         ));
+        let complete = spec.player == PlayerKey::You && store.meta::<bool>(COMPLETE_KEY).await?.unwrap_or(false);
         Ok(serde_json::json!({
             "player": spec.player,
             "imported": cp.imported,
             "skipped": cp.skipped,
             "other": cp.other,
             "newest": cp.newest.map(Timestamp::from_unix_ms),
+            "complete": complete,
         }))
     }
 }
 
 impl ImportExecutor {
+    /// Reads one export to its end, storing the games in batches and saving the checkpoint after each. A Lichess
+    /// error is stored up to, then returned; the checkpoint lets a restart carry on below the oldest game read.
+    async fn read(
+        &self,
+        cx: &WorkContext,
+        source: &Reading<'_>,
+        spec: &ImportSpec,
+        query: ExportQuery,
+        cp: &mut Checkpoint,
+    ) -> Result<Read, Error> {
+        let mut batch: Vec<NewGame> = Vec::new();
+        let (tx, mut breaks) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let mut export = source.client.export_games(source.username, query).on_break(move |b| {
+            let _ = tx.send(format!("{} games read; the export broke ({}), going on.", b.read, b.error));
+        });
+        loop {
+            let next = tokio::select! {
+                _ = cx.cancel.cancelled() => {
+                    self.flush(cx, &mut batch, cp).await?;
+                    return Ok(Read::Stopped);
+                }
+                next = export.next() => next,
+            };
+            while let Ok(line) = breaks.try_recv() {
+                cx.log(line);
+            }
+            match next {
+                Ok(Some(g)) => {
+                    cp.read += 1;
+                    cp.oldest = Some(cp.oldest.map_or(g.created_at, |o| o.min(g.created_at)));
+                    cp.newest = Some(cp.newest.map_or(g.created_at, |n| n.max(g.created_at)));
+                    match to_game(&g, &spec.player, &source.owner_id, &source.lichess_url) {
+                        Ok(Some(game)) => batch.push(game),
+                        Ok(None) => cp.other += 1,
+                        Err(why) => {
+                            cx.log(format!("Skipped {}: {why}", g.id));
+                            cp.other += 1;
+                        }
+                    }
+                }
+                Ok(None) => break,
+                Err(LichessError::Unexpected(why)) => {
+                    cx.log(format!("Skipped a game that does not read: {why}"));
+                    cp.other += 1;
+                }
+                Err(e) => {
+                    self.flush(cx, &mut batch, cp).await?;
+                    return Err(error::lichess(e));
+                }
+            }
+            if batch.len() >= BATCH {
+                self.flush(cx, &mut batch, cp).await?;
+                cx.progress_now(progress(cp, spec.max)).await?;
+                if !cx.safe_point(source.assist).await {
+                    return Ok(Read::Stopped);
+                }
+            }
+        }
+        self.flush(cx, &mut batch, cp).await?;
+        cx.progress_now(progress(cp, spec.max)).await?;
+        Ok(Read::Done)
+    }
+
     /// Stores the games read that are not here yet, and saves where the import stands.
     async fn flush(&self, cx: &WorkContext, batch: &mut Vec<NewGame>, cp: &mut Checkpoint) -> Result<(), Error> {
         let mut fresh: Vec<NewGame> = Vec::new();
@@ -214,13 +330,42 @@ impl ImportExecutor {
     }
 }
 
+/// `3,708`.
+fn thousands(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// How far an import is. Your whole history counts the games of yours here (stored before, and read since) against
+/// how many your account has; anything else counts the games read, against `max` when there is one.
 fn progress(cp: &Checkpoint, max: Option<u32>) -> Progress {
-    Progress {
-        done: u64::from(cp.read),
-        total: max.map(u64::from),
-        unit: "games".into(),
-        eta_seconds: None,
-        text: Some(format!("{} games read, {} new", cp.read, cp.imported)),
+    let new = thousands(u64::from(cp.imported));
+    match (max, cp.total) {
+        (None, Some(total)) => {
+            let done = u64::from(cp.had) + u64::from(cp.read);
+            let total = u64::from(total).max(done);
+            Progress {
+                done,
+                total: Some(total),
+                unit: "games".into(),
+                eta_seconds: None,
+                text: Some(format!("{} of about {} games, {new} new", thousands(done), thousands(total))),
+            }
+        }
+        _ => Progress {
+            done: u64::from(cp.read),
+            total: max.map(u64::from),
+            unit: "games".into(),
+            eta_seconds: None,
+            text: Some(format!("{} games read, {new} new", thousands(u64::from(cp.read)))),
+        },
     }
 }
 

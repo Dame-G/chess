@@ -156,7 +156,9 @@ pub struct ImportBody {
     /// At most this many games, newest first; all when none.
     #[serde(default)]
     pub max: Option<u32>,
-    /// Games started at or after this time (ms since 1970). Your history: after the newest imported before.
+    /// Games started at or after this time (ms since 1970). Your history, when none (and no `max`, `speeds` or
+    /// `rated`): the games newer than the newest imported before and, until your whole history is here, every older
+    /// one.
     #[serde(default)]
     pub since: Option<i64>,
     #[serde(default)]
