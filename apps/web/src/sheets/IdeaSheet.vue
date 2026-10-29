@@ -248,7 +248,7 @@ const openGame = (row: GameRow) => void router.push({ path: "/", query: { game: 
             <p v-else-if="trial.detail" class="verdict">{{ trial.detail }}</p>
           </div>
           <p v-if="idea.kind === 'speed'" class="meta">
-            A speed change must leave the <Term k="bench" /> exactly as it was; then the two builds race and no games
+            A speed change must leave the <Term k="bench" /> exactly as it was; then the two versions race and no games
             are played.
           </p>
         </template>

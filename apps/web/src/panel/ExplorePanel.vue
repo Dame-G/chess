@@ -115,6 +115,7 @@ function onEnter(e: KeyboardEvent) {
                 type="button"
                 class="pvm"
                 :aria-label="`Play ${m}`"
+                :tabindex="k === 0 ? 0 : -1"
                 @click="playLine(l.pv, k)"
               >
                 {{ m }}

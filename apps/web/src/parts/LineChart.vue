@@ -242,7 +242,7 @@ onBeforeUnmount(() => {
 <template>
   <figure class="chart" role="img" :aria-label="label">
     <div ref="el" class="chart-plot" :style="{ minHeight: `${height}px` }" @pointerleave="emit('point', null)"></div>
-    <figcaption class="chart-caption"><slot /></figcaption>
+    <figcaption v-if="$slots.default" class="chart-caption"><slot /></figcaption>
   </figure>
 </template>
 
@@ -263,12 +263,9 @@ onBeforeUnmount(() => {
   touch-action: pan-y;
 }
 
-/* The numbers a screen reader would want are given by the caller in the caption; sighted readers have the hover. */
-.chart-caption:empty {
-  display: none;
-}
-
+/* A caption holds the hover readout: its line is kept even while nothing is hovered, so a chart never jumps. */
 .chart-caption {
+  min-block-size: 1lh;
   margin-block-start: var(--sp-1);
   color: var(--c-ink-2);
   font: var(--t-meta);

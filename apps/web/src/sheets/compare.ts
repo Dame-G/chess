@@ -1,5 +1,5 @@
 import type { Comparison, LeaderRow, Profile, Speed } from "../api/types";
-import { ALL_LIMIT, speedName, WINDOWS } from "../format";
+import { ALL_LIMIT, formatNumber, speedName, WINDOWS } from "../format";
 import type { TermKey } from "../parts/glossary";
 
 /** The players a comparison starts with. */
@@ -95,7 +95,7 @@ export interface GroupSpec {
 
 const one = (v: number) => v.toFixed(1);
 const two = (v: number) => v.toFixed(2);
-const whole = (v: number) => String(Math.round(v));
+const whole = (v: number) => formatNumber(v, 0);
 const percent = (v: number) => `${v.toFixed(1)}%`;
 const seconds = (v: number) => `${(v / 1000).toFixed(1)} s`;
 

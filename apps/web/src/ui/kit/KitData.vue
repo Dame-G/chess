@@ -4,7 +4,6 @@ import { EButton } from "@eos-ui/vue/components/EButton";
 import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
 import { EKbd } from "@eos-ui/vue/components/EKbd";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
-import { ESelect } from "@eos-ui/vue/components/ESelect";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETabs } from "@eos-ui/vue/components/ETabs";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
@@ -22,6 +21,7 @@ import UiSeg from "../UiSeg.vue";
 import UiTable from "../UiTable.vue";
 import UiToolbar from "../UiToolbar.vue";
 import { botSeat, levelColumns, levelRows, type LevelRow } from "./data";
+import UiSelect from "../../ui/UiSelect.vue";
 
 const open = ref(true);
 const selected = ref("3");
@@ -281,18 +281,14 @@ const doubled = [...levelRows, ...levelRows].map((r, id) => ({ ...r, id }));
           ]"
         />
       </UiField>
-      <UiField v-slot="{ id }" label="Version">
-        <ESelect
-          :id="id"
-          v-model="engine"
-          label="Version"
-          hide-label
-          :options="[
-            { value: 'v14', label: 'v14 champion' },
-            { value: 'v13', label: 'v13' },
-          ]"
-        />
-      </UiField>
+      <UiSelect
+        v-model="engine"
+        label="Version"
+        :options="[
+          { value: 'v14', label: 'v14 champion' },
+          { value: 'v13', label: 'v13' },
+        ]"
+      />
       <UiField v-slot="{ id }" label="Hash" hint="In megabytes.">
         <ENumberField :id="id" v-model="hash" label="Hash" hide-label :min="1" />
       </UiField>

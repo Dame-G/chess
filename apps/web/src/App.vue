@@ -109,9 +109,6 @@ watchEffect(() => {
   --e-shell-width: 100%;
   --e-gutter: var(--sp-3);
 
-  /* What a sheet that covers the window leaves visible: the header above it and, on a phone, the tab bar below. */
-  --h-tabbar: 3.5rem;
-
   grid-template-columns: minmax(0, 1fr);
   height: 100dvh;
   min-height: 0;
@@ -129,10 +126,6 @@ watchEffect(() => {
 }
 
 .ws {
-  /* Until the panes and sheets that still read them use the kit's names (docs/ui-brief.md, 2.1 and 2.5). */
-  --ws-pad: var(--sp-3);
-  --line: var(--e-stroke-hair) solid var(--c-line);
-
   position: relative;
   display: grid;
   grid-template-columns: var(--w-rail) minmax(0, 1fr) var(--w-panel);
@@ -141,7 +134,7 @@ watchEffect(() => {
 }
 
 .ws-rail {
-  border-inline-end: var(--line);
+  border-inline-end: var(--e-stroke-hair) solid var(--c-line);
   background: var(--c-pane);
 }
 
@@ -152,7 +145,7 @@ watchEffect(() => {
 .ws-panel {
   min-height: 0;
   overflow: hidden auto;
-  border-inline-start: var(--line);
+  border-inline-start: var(--e-stroke-hair) solid var(--c-line);
   background: var(--c-pane);
 }
 
@@ -206,7 +199,7 @@ watchEffect(() => {
     inset-inline-start: 0;
     z-index: var(--e-z-focus);
     width: min(20rem, 86%);
-    border-inline-end: var(--line);
+    border-inline-end: var(--e-stroke-hair) solid var(--c-line);
     box-shadow: var(--e-shadow-float);
     transform: translateX(-101%);
     visibility: hidden;
@@ -268,7 +261,7 @@ watchEffect(() => {
   .ws-panel {
     grid-column: 1;
     order: 2;
-    border-block-start: var(--line);
+    border-block-start: var(--e-stroke-hair) solid var(--c-line);
     border-inline-start: 0;
   }
 

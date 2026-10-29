@@ -133,7 +133,7 @@ followCurrent(box, () => props.cursor, reveal);
     >
       <MoveRow v-bind="rowProps(item)" />
     </EVirtualList>
-    <div v-else-if="rows.length" ref="plain" class="plain">
+    <div v-else-if="rows.length" ref="plain" class="plain-list">
       <MoveRow v-for="r in rows" :key="r.number" v-bind="rowProps(r)" />
     </div>
     <div v-else-if="loading" class="wait" aria-label="Loading moves">
@@ -153,12 +153,12 @@ followCurrent(box, () => props.cursor, reveal);
 }
 
 .scroll,
-.plain {
+.plain-list {
   flex: 1 1 auto;
   min-height: 0;
 }
 
-.plain {
+.plain-list {
   overflow-y: auto;
   overscroll-behavior: contain;
 }

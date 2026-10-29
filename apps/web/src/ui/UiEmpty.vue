@@ -47,6 +47,7 @@ withDefaults(
 <style scoped>
 .ui-empty {
   display: grid;
+  align-content: center;
   justify-items: center;
   gap: var(--sp-2);
   padding: var(--sp-6) var(--sp-4);

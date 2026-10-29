@@ -4,6 +4,7 @@ import type { GameSummary } from "../api/types";
 import type { Mode } from "../board/modes";
 import { endingText, resultOf, timeControl } from "../format";
 import UiKeyValue, { type KvItem } from "./UiKeyValue.vue";
+import { sideRef } from "./player";
 import UiPlayer from "./UiPlayer.vue";
 import UiResult from "./UiResult.vue";
 
@@ -42,13 +43,10 @@ const ended = computed(() =>
 <template>
   <header v-if="game" class="ui-head" :data-mode="mode">
     <div class="ui-head-players">
-      <UiPlayer :seat="game.white" colour="white" class="ui-head-side" />
-      <UiResult
-        :result="resultOf(game.outcome) ?? (game.status === 'live' ? '*' : null)"
-        :you="game.you"
-        class="ui-head-result"
-      />
-      <UiPlayer :seat="game.black" colour="black" class="ui-head-side ui-head-side--black" />
+      <UiPlayer :seat="sideRef(game, 'white')" colour="white" class="ui-head-side" />
+      <span v-if="game.status === 'live'" class="ui-head-result ui-head-vs">vs</span>
+      <UiResult v-else :result="resultOf(game.outcome)" :you="game.you" class="ui-head-result" />
+      <UiPlayer :seat="sideRef(game, 'black')" colour="black" class="ui-head-side ui-head-side--black" />
     </div>
     <UiKeyValue inline :items="facts" />
     <div v-if="$slots['status'] || $slots['actions'] || ended" class="ui-head-foot">
@@ -70,8 +68,9 @@ const ended = computed(() =>
 
 .ui-head-players {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, auto) auto minmax(0, auto);
   align-items: center;
+  justify-content: space-between;
   gap: var(--sp-2);
 }
 
@@ -82,6 +81,12 @@ const ended = computed(() =>
 .ui-head-result {
   min-width: 3rem;
   text-align: center;
+}
+
+/* A game being played has no result yet: the two names are only set against each other. */
+.ui-head-vs {
+  color: var(--c-ink-2);
+  font: var(--t-meta);
 }
 
 .ui-head-foot {

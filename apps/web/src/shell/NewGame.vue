@@ -4,7 +4,6 @@ import { RouterLink, useRouter } from "vue-router";
 import { useToast } from "@eos-ui/vue";
 import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
-import { ESelect } from "@eos-ui/vue/components/ESelect";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import type { Color, Side, TimeControl } from "../api/types";
@@ -20,6 +19,7 @@ import UiField from "../ui/UiField.vue";
 import UiSeg from "../ui/UiSeg.vue";
 import { readClock } from "./commands";
 import { useUi } from "./ui";
+import UiSelect from "../ui/UiSelect.vue";
 
 /**
  * New game: the opponent (Dameless at a version, Lichess, Stockfish N), the time control, the colour, rated. One
@@ -250,15 +250,15 @@ async function start() {
 
       <template v-if="opponent === 'dameless'">
         <div class="pair">
-          <ESelect v-if="versionOptions.length > 1" v-model="version" label="Version" :options="versionOptions" />
+          <UiSelect v-if="versionOptions.length > 1" v-model="version" label="Version" :options="versionOptions" />
           <p v-else-if="versionOptions[0]" class="version">
             <span class="version-label">Version</span>
             <span class="version-name">{{ versionOptions[0].label }}</span>
           </p>
-          <ESelect v-model="strength" label="Strength" :options="strengthOptions" />
+          <UiSelect v-model="strength" label="Strength" :options="strengthOptions" />
         </div>
       </template>
-      <ESelect
+      <UiSelect
         v-else-if="opponent === 'stockfish'"
         v-model="level"
         label="Level"

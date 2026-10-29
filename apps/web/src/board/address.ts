@@ -67,12 +67,14 @@ export function useBoardAddress() {
     },
     { immediate: true },
   );
-  // The first choice waits for the games list.
+  // The first choice waits for the games list. A sheet opened directly (/you) has no address for the board, so it gets
+  // the same first choice as the board itself: the board behind a sheet is never an empty start position.
   watch(
-    () => games.loaded,
-    (loaded) => {
-      if (loaded && !chosen && route.path === "/") void read(route.query).catch(() => {});
+    () => [games.loaded, route.path] as const,
+    ([loaded, path]) => {
+      if (loaded && !chosen) void read(path === "/" ? route.query : {}).catch(() => {});
     },
+    { immediate: true },
   );
   watch(address, (a) => {
     if (route.path === "/" && chosen && !same(route.query, a)) void router.replace({ path: "/", query: a });

@@ -75,20 +75,25 @@ const router = inject(routerKey, null);
 const route = inject(routeLocationKey, null);
 /** The address names a tab once the tabs exist (a sheet that is still loading has none yet): apply it, once. */
 let applied = false;
+/** The tab taken from the address that the owner's `v-model` has not handed back yet: the address is left alone until it does. */
+let pending: string | null = null;
 function fromAddress() {
   const asked = route?.query["tab"];
   if (applied || !props.sync || typeof asked !== "string" || !props.tabs?.some((t) => t.id === asked)) return;
   applied = true;
+  if (asked !== current.value) pending = asked;
   tab.value = asked;
 }
 onMounted(fromAddress);
 watch(() => props.tabs?.map((t) => t.id).join(), fromAddress, { flush: "sync" });
 watch(current, () => {
   const id = current.value;
+  if (pending !== null) {
+    // The tab the address asked for is on its way in: do not write the one shown meanwhile over it.
+    if (id !== pending) return;
+    pending = null;
+  }
   if (!props.sync || !router || !route || !tabbed.value || route.query["tab"] === id) return;
-  // The tab the address asked for is on its way in: do not write the first tab over it.
-  const asked = route.query["tab"];
-  if (!applied && typeof asked === "string" && props.tabs?.some((t) => t.id === asked)) return;
   void router.replace({ query: { ...route.query, tab: id } });
 });
 
@@ -96,6 +101,7 @@ const heading = useTemplateRef<HTMLElement>("heading");
 onMounted(() => void nextTick(() => heading.value?.focus({ preventScroll: true })));
 
 function choose(id: string) {
+  pending = null;
   tab.value = id;
 }
 

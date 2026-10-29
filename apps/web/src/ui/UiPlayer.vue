@@ -87,8 +87,8 @@ const rated = computed(() =>
 .ui-player-pip {
   flex: none;
   box-sizing: border-box;
-  width: 0.625rem;
-  height: 0.625rem;
+  width: var(--dot-lg);
+  height: var(--dot-lg);
   border: var(--e-stroke-hair) solid var(--c-line-strong);
   border-radius: var(--r-0);
 }

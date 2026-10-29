@@ -38,8 +38,8 @@ watch(
 .ui-live {
   display: inline-block;
   flex: none;
-  width: 0.5rem;
-  height: 0.5rem;
+  width: var(--dot);
+  height: var(--dot);
   border-radius: var(--r-pill);
   background: currentcolor;
   color: var(--c-act);

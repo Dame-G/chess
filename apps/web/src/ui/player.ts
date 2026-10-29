@@ -1,5 +1,5 @@
-import type { Seat } from "../api/types";
-import { seatName } from "../format";
+import type { Seat, Side } from "../api/types";
+import { isLevelSeat, seatName } from "../format";
 
 /** Someone who is not at a board: a name on a profile or in a list, with the key that opens their page. */
 export interface PlayerRef {
@@ -23,3 +23,14 @@ export const playerKey = (p: PlayerLike): string | undefined => (isSeat(p) ? p.p
 /** Where their page is: your profile, Dameless's, or a player's. */
 export const playerPath = (key: string): string =>
   key === "you" ? "/you" : key === "dameless" ? "/dameless" : `/players/${key}`;
+
+/** Who sits at a side of a game: you are "You", a level's name carries its rating, so it is shown once. */
+export function sideRef(game: { you?: Side | null; white: Seat; black: Seat }, side: Side): PlayerRef {
+  const seat = game[side];
+  return {
+    name: game.you === side ? "You" : seatName(seat),
+    key: seat.player,
+    title: seat.title,
+    rating: isLevelSeat(seat) ? null : seat.rating,
+  };
+}

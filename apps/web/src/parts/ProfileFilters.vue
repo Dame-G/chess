@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { ESelect } from "@eos-ui/vue/components/ESelect";
 import type { ProfileFilter, Speed } from "../api/types";
 import { coverage, speedName, WINDOWS, windowName } from "../format";
 import UiSeg from "../ui/UiSeg.vue";
 import UiToolbar from "../ui/UiToolbar.vue";
+import UiSelect from "../ui/UiSelect.vue";
 
 /**
  * Which games a profile adds up: the newest 100, 200, 500 or all of them, one speed or all, rated or casual or both.
@@ -42,11 +42,11 @@ const covers = computed(() =>
 </script>
 
 <template>
-  <div class="filters" :class="{ 'filters--tabs': tabs }">
+  <div class="filters sheet-bar" :class="{ 'filters--tabs': tabs }">
     <UiToolbar label="Which games to add up" class="bar">
       <UiSeg v-model="speed" label="Speed" size="sm" :options="speeds" />
       <UiSeg v-model="rated" label="Rated or casual" size="sm" :options="kinds" />
-      <ESelect v-model="span" label="Games" hide-label size="sm" :options="windows" class="span" />
+      <UiSelect v-model="span" label="Games" dense :options="windows" />
     </UiToolbar>
     <p v-if="covers" class="covers">{{ covers }}</p>
   </div>
@@ -81,9 +81,5 @@ const covers = computed(() =>
   margin: 0;
   color: var(--c-ink-2);
   font: var(--t-meta);
-}
-
-.span {
-  min-width: 10rem;
 }
 </style>

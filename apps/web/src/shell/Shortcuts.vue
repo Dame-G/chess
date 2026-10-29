@@ -48,7 +48,7 @@ const groups = [
 </script>
 
 <template>
-  <UiDialog v-model:open="ui.shortcuts" title="Keyboard shortcuts" size="lg" cancel-label="Close">
+  <UiDialog v-model:open="ui.shortcuts" title="Keyboard shortcuts" size="lg" plain>
     <div class="shortcuts" tabindex="-1" data-autofocus>
       <p class="touch">Shortcuts are for a keyboard. On a touch screen every one of these has a button.</p>
       <div class="groups">
