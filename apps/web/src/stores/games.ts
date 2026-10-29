@@ -17,6 +17,16 @@ import type {
 import { stored } from "../stored";
 import { listen, reloadOnReconnect } from "./listen";
 
+/** What `GET /api/games` is asked: a player, sources, states, one trial, the page after a game, and how many. */
+export interface GamesQuery {
+  player?: string;
+  source?: string;
+  status?: string;
+  trial?: number;
+  before?: number;
+  limit?: number;
+}
+
 /** Live games first (they are pinned), then newest first. */
 export function byRailOrder(a: GameSummary, b: GameSummary): number {
   const live = (g: GameSummary) => (g.status === "live" || g.status === "starting" ? 1 : 0);
@@ -51,11 +61,20 @@ export const useGames = defineStore("games", () => {
 
   const list = computed(() => Object.values(summaries.value).sort(byRailOrder));
 
+  /**
+   * The games the rest of the app reads from the held set (the board's first game, the command bar, a trial's evidence):
+   * the newest of everything, every game being played, and your newest. The rail pages the rest itself, by its filter.
+   */
   async function load() {
     try {
-      const games = await ok(client.GET("/api/games", { params: { query: { limit: 300 } } }));
-      const next: Record<GameId, GameSummary> = {};
-      for (const g of games) next[g.id] = g;
+      const [newest, playing, yours] = await Promise.all([
+        ok(client.GET("/api/games", { params: { query: { limit: 300 } } })),
+        ok(client.GET("/api/games", { params: { query: { status: "starting,live", limit: 100 } } })),
+        ok(client.GET("/api/games", { params: { query: { player: "you", limit: 50 } } })),
+      ]);
+      // What the rail paged in earlier stays: a reload (after the stream reconnects) only refreshes the newest.
+      const next: Record<GameId, GameSummary> = { ...summaries.value };
+      for (const g of [...newest, ...playing, ...yours]) next[g.id] = g;
       summaries.value = next;
       error.value = null;
     } catch (e) {
@@ -64,6 +83,13 @@ export const useGames = defineStore("games", () => {
       loaded.value = true;
     }
     if (wanted !== null) await openGame(wanted, true);
+  }
+
+  /** One page of games from the server, held with the rest and answered in the server's order (live first, then newest). */
+  async function page(query: GamesQuery): Promise<GameSummary[]> {
+    const games = await ok(client.GET("/api/games", { params: { query } }));
+    for (const g of games) summaries.value[g.id] = g;
+    return games;
   }
 
   async function fetchReview(id: GameId) {
@@ -219,6 +245,7 @@ export const useGames = defineStore("games", () => {
     review,
     reviewLoading,
     load,
+    page,
     openGame,
     closeGame,
     act,

@@ -1,49 +1,79 @@
-import type { GameSummary, Stage, TrialId } from "../api/types";
+import type { GameSummary, Stage } from "../api/types";
 import { byRailOrder } from "../stores/games";
 import { isLive } from "../board/modes";
 
-export type RailFilter = "all" | "you" | "dameless" | "lichess" | "tests";
+/** What the rail shows: every game that is yours or Dameless's, one group of them, or the trials (a row for each). */
+export type RailFilter = "all" | "you" | "dameless" | "lichess" | "trials";
 
 export const FILTERS: { value: RailFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "you", label: "You" },
   { value: "dameless", label: "Dameless" },
   { value: "lichess", label: "Lichess" },
-  { value: "tests", label: "Trials" },
+  { value: "trials", label: "Trials" },
 ];
 
-const hasDameless = (g: GameSummary) => g.white.player === "dameless" || g.black.player === "dameless";
+/** A filter the server answers with games, as opposed to Trials, which is a row for each trial (its games come when it opens). */
+export type GameFilter = Exclude<RailFilter, "trials">;
 
-/** Whether a game belongs under a filter. Tests are trial games; Dameless is its other games (here and on Lichess). */
-function matches(g: GameSummary, filter: RailFilter): boolean {
+/** The filter a remembered value names: the old `tests` is `trials` now. */
+export function readFilter(value: string): RailFilter {
+  if (value === "tests") return "trials";
+  return FILTERS.some((f) => f.value === value) ? (value as RailFilter) : "all";
+}
+
+/** The sources a person calls games: the ones they or Dameless played, here or on Lichess (trial games are the Trials'). */
+const GAME_SOURCES = "local,lichess,import";
+
+/** What the server is asked for a filter (`GET /api/games`): the same rule `matches` applies to a game already held. */
+export function queryOf(filter: GameFilter): { player?: string; source?: string } {
   switch (filter) {
     case "all":
-      return true;
+      return { source: GAME_SOURCES };
     case "you":
-      return g.you != null;
+      return { player: "you" };
     case "dameless":
-      return hasDameless(g) && g.source.type !== "trial";
+      return { player: "dameless", source: GAME_SOURCES };
     case "lichess":
-      return g.source.type === "lichess" || g.source.type === "import";
-    case "tests":
-      return g.source.type === "trial";
+      return { source: "lichess,import" };
   }
 }
 
-/** A row of the rail: one game, or a trial's games folded into one. */
-export type RailRow =
-  | { type: "game"; key: string; game: GameSummary }
-  | { type: "trial"; key: string; trial: TrialId; games: GameSummary[]; live: boolean; newest: string };
+const hasDameless = (g: GameSummary) => g.white.player === "dameless" || g.black.player === "dameless";
 
 /**
- * The rail's rows for a filter: live games pinned on top, then newest first, with each trial's games folded into one
- * row placed by its newest game.
+ * Whether a game held in the app belongs under a filter, by the rule `queryOf` gives the server. A trial's game is
+ * under `all` only while it is being played (the rail folds those into the trial's one row).
  */
-export function railRows(games: readonly GameSummary[], filter: RailFilter): RailRow[] {
+export function matches(g: GameSummary, filter: GameFilter): boolean {
+  const trial = g.source.type === "trial";
+  switch (filter) {
+    case "all":
+      return !trial || isLive(g);
+    case "you":
+      return g.you != null;
+    case "dameless":
+      return hasDameless(g) && !trial;
+    case "lichess":
+      return g.source.type === "lichess" || g.source.type === "import";
+  }
+}
+
+/** A row of the rail: one game, or a running trial's games folded into one. */
+export type RailRow =
+  | { type: "game"; key: string; game: GameSummary }
+  | { type: "trial"; key: string; trial: number; games: GameSummary[]; live: boolean; newest: string };
+
+/**
+ * The games a filter shows from what the app holds: those that match and are newer than `floor` (the oldest game the
+ * pages loaded so far reach; `null` once the server has no more). Live games are always in, and come first.
+ */
+export function railRows(games: readonly GameSummary[], filter: GameFilter, floor: string | null): RailRow[] {
   const rows: RailRow[] = [];
-  const trials = new Map<TrialId, Extract<RailRow, { type: "trial" }>>();
+  const trials = new Map<number, Extract<RailRow, { type: "trial" }>>();
   for (const g of [...games].sort(byRailOrder)) {
     if (!matches(g, filter)) continue;
+    if (floor !== null && !isLive(g) && g.started_at < floor) continue;
     if (g.source.type === "trial") {
       const id = g.source.trial;
       let row = trials.get(id);
@@ -76,13 +106,13 @@ export function agoShort(iso: string, now = Date.now()): string {
   return `${Math.floor(days / 365)}y`;
 }
 
-/** What an empty rail says for each filter. */
-export const emptyNote: Record<RailFilter, string> = {
-  all: "Games you play, Dameless's games on Lichess and trial games all land here.",
-  you: "Games you play here or on Lichess land here.",
-  dameless: "Dameless's games against you and on Lichess land here.",
-  lichess: "Games from your Lichess account and imported players land here.",
-  tests: "Games from an idea's trials land here, one row for each trial.",
+/** What an empty rail says for each filter: the title, one sentence that teaches the next step, and what to offer. */
+export const emptyNote: Record<RailFilter, { title: string; body?: string }> = {
+  all: { title: "No games yet", body: "Play Dameless, or link your Lichess account to bring in your games." },
+  you: { title: "You haven't played here yet", body: "Games you play here or on Lichess show up here." },
+  dameless: { title: "Dameless hasn't played yet", body: "Its games against you and on Lichess show up here." },
+  lichess: { title: "No Lichess games", body: "Games from your account and players you imported show up here." },
+  trials: { title: "No trials yet", body: "Each trial an idea runs is one row here, with its games inside." },
 };
 
 export const stageLabel: Record<Stage, string> = {
@@ -93,6 +123,6 @@ export const stageLabel: Record<Stage, string> = {
   speed: "speed",
   tune: "tune",
   confirm: "confirmation",
-  custom: "custom trial",
+  custom: "single trial",
   train: "training",
 };

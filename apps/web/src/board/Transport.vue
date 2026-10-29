@@ -15,7 +15,11 @@ import { EIconButton } from "@eos-ui/vue/components/EIconButton";
 import { useBoard } from "./board";
 import { isLive } from "./modes";
 
-/** VLC's row under the board: step, play through, jump to the ends, flip; and back to the live move. */
+/**
+ * VLC's row under the board: step, play through, jump to the ends, flip; and back to the live move. It keeps its
+ * place when there is nothing to step through (a drill), where only the flip is left.
+ */
+defineProps<{ flipOnly?: boolean }>();
 const board = useBoard();
 
 const playing = ref(false);
@@ -42,65 +46,61 @@ const total = computed(() => (board.exploring ? board.tree.end(board.node).ply :
 
 <template>
   <div class="transport">
-    <EIconButton
-      :icon="PhSkipBack"
-      label="First move (Home)"
-      tooltip
-      size="sm"
-      :disabled="board.cursor === 0"
-      @click="board.go(0)"
-    />
-    <EIconButton
-      :icon="PhCaretLeft"
-      label="Back (Left arrow)"
-      tooltip
-      size="sm"
-      :disabled="board.cursor === 0"
-      @click="board.go(board.cursor - 1)"
-    />
-    <EIconButton
-      :icon="playing ? PhPause : PhPlay"
-      :label="playing ? 'Pause' : 'Play through the moves'"
-      tooltip
-      size="sm"
-      :disabled="live || total === 0"
-      @click="toggle"
-    />
-    <EIconButton
-      :icon="PhCaretRight"
-      label="Forward (Right arrow)"
-      tooltip
-      size="sm"
-      :disabled="board.atEnd"
-      @click="board.go(board.cursor + 1)"
-    />
-    <EIconButton
-      :icon="PhSkipForward"
-      label="Last move (End)"
-      tooltip
-      size="sm"
-      :disabled="board.atEnd"
-      @click="board.go(Infinity)"
-    />
-    <span class="counter num" aria-live="off">{{ board.cursor }} / {{ total }}</span>
-    <EButton
-      v-if="live && !board.following"
-      size="sm"
-      variant="outline"
-      :icon="PhBroadcast"
-      class="live"
-      @click="board.go(Infinity)"
-    >
-      Live
-    </EButton>
-    <EIconButton
-      :icon="PhArrowsDownUp"
-      label="Flip the board (F)"
-      tooltip
-      size="sm"
-      class="flip"
-      @click="board.flip()"
-    />
+    <template v-if="!flipOnly">
+      <EIconButton
+        :icon="PhSkipBack"
+        label="First move (Home)"
+        tooltip
+        size="sm"
+        :disabled="board.cursor === 0"
+        @click="board.go(0)"
+      />
+      <EIconButton
+        :icon="PhCaretLeft"
+        label="Back (Left arrow)"
+        tooltip
+        size="sm"
+        :disabled="board.cursor === 0"
+        @click="board.go(board.cursor - 1)"
+      />
+      <EIconButton
+        :icon="playing ? PhPause : PhPlay"
+        :label="playing ? 'Pause' : 'Play through the moves'"
+        tooltip
+        size="sm"
+        :disabled="live || total === 0"
+        @click="toggle"
+      />
+      <EIconButton
+        :icon="PhCaretRight"
+        label="Forward (Right arrow)"
+        tooltip
+        size="sm"
+        :disabled="board.atEnd"
+        @click="board.go(board.cursor + 1)"
+      />
+      <EIconButton
+        :icon="PhSkipForward"
+        label="Last move (End)"
+        tooltip
+        size="sm"
+        :disabled="board.atEnd"
+        @click="board.go(Infinity)"
+      />
+      <span class="counter num" aria-live="off">{{ board.cursor }} / {{ total }}</span>
+      <EButton
+        v-if="live && !board.following"
+        size="sm"
+        variant="outline"
+        :icon="PhBroadcast"
+        @click="board.go(Infinity)"
+      >
+        Live
+      </EButton>
+    </template>
+    <span class="tail">
+      <EIconButton :icon="PhArrowsDownUp" label="Flip the board (F)" tooltip size="sm" @click="board.flip()" />
+    </span>
   </div>
 </template>
 
@@ -108,44 +108,34 @@ const total = computed(() => (board.exploring ? board.tree.end(board.node).ply :
 .transport {
   display: flex;
   align-items: center;
-  gap: var(--e-gap-tight);
+  gap: var(--sp-1);
   min-width: 0;
+  height: 100%;
 }
 
 /* Tabular digits in a fixed width: stepping from move 9 to 10 moves nothing. */
 .counter {
   min-inline-size: 8ch;
-  margin-inline-start: var(--e-gap-snug);
-  color: var(--e-muted);
-  font: var(--e-type-small);
-  font-family: var(--e-font-mono);
-  font-variant-numeric: tabular-nums;
+  margin-inline-start: var(--sp-2);
+  color: var(--c-ink-2);
+  font: var(--t-fig);
   white-space: nowrap;
 }
 
-.live {
+/* The flip sits at the board's right edge (the tooltip wraps the button, so the margin goes on its own wrapper). */
+.tail {
+  display: inline-flex;
   margin-inline-start: auto;
 }
 
-.flip {
-  margin-inline-start: auto;
-}
-
-.live + .flip {
-  margin-inline-start: 0;
-}
-
-@media (width < 40rem) {
+/* A phone gives the row the board's whole width: the controls spread along it. */
+@media (width < 48rem) {
   .transport {
     gap: 0;
     justify-content: space-between;
   }
 
   .counter {
-    margin-inline-start: 0;
-  }
-
-  .flip {
     margin-inline-start: 0;
   }
 }

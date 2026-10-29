@@ -45,13 +45,12 @@ const places: CommandItem[] = [
 
 const policy = usePolicy();
 const verbs = computed<CommandItem[]>(() => [
-  { id: "do:new-game", label: "New game", description: "play", group: "Do", shortcut: "n", keywords: ["play"] },
+  { id: "do:new-game", label: "New game", group: "Do", shortcut: "n", keywords: ["play"] },
   ...(drills.available
     ? [
         {
           id: "do:drills",
           label: "Drills",
-          description: "drills",
           group: "Do",
           shortcut: "d",
           keywords: ["practice", "mistakes"],
@@ -63,7 +62,6 @@ const verbs = computed<CommandItem[]>(() => [
         {
           id: "do:review-20",
           label: "Review your last 20 games",
-          description: "review last 20",
           group: "Do",
           keywords: ["review", "accuracy"],
         },
@@ -71,7 +69,7 @@ const verbs = computed<CommandItem[]>(() => [
     : []),
   { id: "do:flip", label: "Flip the board", group: "Do", shortcut: "f" },
   { id: "do:shortcuts", label: "Keyboard shortcuts", group: "Do", shortcut: "?" },
-  { id: "do:new-idea", label: "New idea", description: "new idea", group: "Do", keywords: ["test", "experiment"] },
+  { id: "do:new-idea", label: "New idea", group: "Do", keywords: ["test", "experiment"] },
   {
     id: `do:theme-${shown.value === "dark" ? "light" : "dark"}`,
     label: shown.value === "dark" ? "Light theme" : "Dark theme",
@@ -112,7 +110,7 @@ const gameItems = computed<CommandItem[]>(() =>
     .slice(0, 40)
     .map((g) => ({
       id: `game:${g.id}`,
-      label: `${name(g, "white")} – ${name(g, "black")}`,
+      label: `${name(g, "white")} vs ${name(g, "black")}`,
       description: `${g.status === "live" ? "live" : resultText(g.outcome)} · ${timeControl(g.time)} · ${ago(g.started_at)}`,
       group: "Games",
       keywords: [g.opening?.name ?? "", g.white.name, g.black.name],
@@ -164,7 +162,7 @@ async function runVerb(v: Verb) {
     await games.reviewPlayer("you", v.last);
     toast.show({
       title: `Reviewing your last ${v.last} games`,
-      message: "The status line shows how it goes.",
+      message: "The work indicator in the header shows how it goes.",
       tone: "info",
     });
   } else if (v.verb === "compare") {

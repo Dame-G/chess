@@ -4,7 +4,8 @@ import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { useToast } from "@eos-ui/vue";
 import type { Side } from "../api/types";
-import { isLevelSeat, other, pawns, scoreText, seatName, sideResult, winChance } from "../format";
+import { isLevelSeat, other, pawns, scoreText, seatName, winChance } from "../format";
+import type { PlayerRef } from "../ui/player";
 import { answerArrow } from "./drill";
 import { useDrills } from "../stores/drills";
 import { useGames } from "../stores/games";
@@ -16,6 +17,7 @@ import EvalGraph from "./EvalGraph.vue";
 import Strip from "./Strip.vue";
 import Transport from "./Transport.vue";
 import { useBoard } from "./board";
+import { materialLead } from "./material";
 import { isLive, onLichessAsYou } from "./modes";
 import { hasBetter, markOf } from "./review";
 import { playMoveSound, soundOf } from "./sound";
@@ -66,22 +68,34 @@ function clockOf(side: Side): { ms: number | null; running: boolean } {
   return { ms: tc.initial_ms, running: false };
 }
 
-/** The eval bar's figure and the side it favours, for the strips to carry where the bar is a thin line. */
-const figure = ref<{ text: string; leader: Side } | null>(null);
+/** Who sits at a side: the seat in a game (you are "You"), else just the colour (a free position, a drill). */
+function player(side: Side): PlayerRef {
+  const sum = s.value;
+  if (!sum) return { name: side === "white" ? "White" : "Black" };
+  const seat = sum[side];
+  return {
+    name: sum.you === side ? "You" : seatName(seat),
+    key: seat.player,
+    title: seat.title,
+    // A level's name carries its rating ("Dameless 1650"), so the strip does not repeat it.
+    rating: isLevelSeat(seat) ? null : seat.rating,
+  };
+}
+
+/** A position with a move waiting in it: the side to move is told so, where no running clock tells it. */
+const turnShown = computed(() => drilling.value || board.exploring || (live.value && board.atEnd));
+const material = computed(() => materialLead(board.position.fen));
 
 function strip(side: Side) {
-  const seat = s.value![side];
-  const you = s.value!.you === side;
   return {
-    // A level's name carries its rating ("Dameless 1650"), so the strip does not repeat it.
-    seat: isLevelSeat(seat) ? { ...seat, rating: null } : seat,
-    name: you ? "You" : seatName(seat),
+    player: player(side),
+    side,
     ...clockOf(side),
     since: games.clocksAt,
-    score: evalShown.value && figure.value?.leader === side ? figure.value.text : null,
-    scoreSide: side,
-    active: live.value && board.atEnd && board.position.turn === side,
-    result: s.value!.status === "finished" ? sideResult(s.value!.outcome, side) : null,
+    toMove: turnShown.value && board.position.turn === side,
+    material: side === "white" ? material.value : -material.value,
+    // The engine's score rides at the end of the bottom strip: the bar is too thin to print it on.
+    score: side === bottom.value && evalShown.value ? board.shownScore : null,
   };
 }
 
@@ -205,35 +219,29 @@ watch(
 </script>
 
 <template>
-  <section
-    class="stage"
-    :class="{ 'stage--strips': !!s, 'stage--noeval': !evalShown, 'stage--nograph': !graphShown }"
-    aria-label="Board"
-  >
+  <section class="stage" aria-label="Board">
     <div class="col">
-      <div class="rig">
-        <Strip v-if="s" v-bind="strip(top)" class="strip-top" />
-        <Board
-          ref="boardRef"
-          :position="board.position"
-          :orientation="board.orientation"
-          :movable="movable"
-          :premove="premove"
-          :shapes="shapes"
-          class="rig-board"
-          @move="onMove"
-        />
+      <Strip :class="'strip-top'" v-bind="strip(top)" />
+      <div class="eval-slot">
         <EvalBar
           v-if="evalShown"
-          :pawns="board.shownEval?.pawns"
-          :text="board.shownEval?.text"
+          :score="board.shownScore?.score"
+          :turn="board.shownScore?.turn"
           :orientation="board.orientation"
-          class="rig-eval"
-          @figure="figure = $event"
         />
-        <Strip v-if="s" v-bind="strip(bottom)" class="strip-bottom" />
       </div>
-      <div class="foot">
+      <Board
+        ref="boardRef"
+        :position="board.position"
+        :orientation="board.orientation"
+        :movable="movable"
+        :premove="premove"
+        :shapes="shapes"
+        class="rig-board"
+        @move="onMove"
+      />
+      <Strip class="strip-bottom" v-bind="strip(bottom)" />
+      <div class="graph-slot">
         <EvalGraph
           v-if="graphShown"
           label="The evaluation through the game. Click or drag to go to a move."
@@ -241,32 +249,30 @@ watch(
           :marks="graph.marks"
           :tips="graph.tips"
           :cursor="board.ply"
-          class="graph"
           @select="board.go"
         />
-        <Transport v-if="!drilling" />
+        <div v-else class="graph-rest" aria-hidden="true"></div>
       </div>
+      <Transport class="transport" :flip-only="drilling" />
     </div>
   </section>
 </template>
 
 <style scoped>
-/* The board drives the layout and fills what it is given, always square, with no fixed size anywhere.
-   Side by side (75rem and up) its side is the largest square the stage allows, less the strips, the foot and the
-   padding, so it is limited by the width and by the height and never overflows the window; the stage is the size
-   container, so only the panel and the rail absorb slack. Stacked (below 75rem) it is the width of the column. */
+/* The board never changes size or place: the strips, the graph and the transport keep their heights whether or not
+   they have anything to show, and the eval bar keeps its column. Its side is the largest square the stage allows, less
+   that chrome and the padding; the stage is the size container, so only the panel and the rail absorb slack. */
 .stage {
-  --col: 1.75rem;
-  --egap: var(--e-gap-snug);
-  --pad: var(--e-gap-base);
+  --col: 1rem;
+  --egap: var(--sp-2);
+  --pad: var(--sp-3);
+  --gap: var(--sp-1);
   --strip: 2.25rem;
-  --strips: 0px;
   --graph: 3.5rem;
-  --foot: calc(var(--graph) + 2.75rem + var(--e-gap-tight) + var(--e-gap-snug));
-  --side: max(
-    10rem,
-    min(100cqh - var(--foot) - var(--strips) - 2 * var(--pad), 100cqw - var(--col) - var(--egap) - 2 * var(--pad))
-  );
+  --transport: 2rem;
+  --chrome: calc(2 * var(--strip) + var(--graph) + var(--transport) + 4 * var(--gap));
+  /* A container query unit is the container's content box, so the padding is already out of it. */
+  --side: max(10rem, min(100cqh - var(--chrome), 100cqw - var(--col) - var(--egap)));
 
   display: grid;
   place-content: center;
@@ -277,42 +283,25 @@ watch(
   container-type: size;
 }
 
-.stage--strips {
-  --strips: calc(2 * (var(--strip) + var(--e-gap-tight)));
-}
-
-.stage--noeval {
-  --col: 0px;
-  --egap: 0px;
-}
-
-.stage--nograph {
-  --graph: 0px;
-}
-
 .col {
   display: grid;
-  gap: var(--e-gap-snug);
-  width: calc(var(--col) + var(--egap) + var(--side));
-}
-
-.rig {
-  display: grid;
   grid-template:
-    "top top" auto
+    "top top" var(--strip)
     "eval board" var(--side)
-    "bottom bottom" auto / var(--col) var(--side);
-  gap: var(--e-gap-tight) var(--egap);
+    "bottom bottom" var(--strip)
+    "graph graph" var(--graph)
+    "transport transport" var(--transport) / var(--col) var(--side);
+  gap: var(--gap) var(--egap);
 }
 
 .strip-top {
   grid-area: top;
-  height: var(--strip);
   margin-inline-start: calc(var(--col) + var(--egap));
 }
 
-.rig-eval {
+.eval-slot {
   grid-area: eval;
+  min-height: 0;
 }
 
 .rig-board {
@@ -321,87 +310,69 @@ watch(
 
 .strip-bottom {
   grid-area: bottom;
-  height: var(--strip);
   margin-inline-start: calc(var(--col) + var(--egap));
 }
 
-.foot {
-  display: grid;
-  gap: var(--e-gap-tight);
+.graph-slot {
+  grid-area: graph;
+  margin-inline-start: calc(var(--col) + var(--egap));
+  min-width: 0;
+}
+
+/* The slot with nothing to draw: the graph's baseline, so the board does not move when a graph arrives. */
+.graph-rest {
+  position: relative;
+  height: 100%;
+}
+
+.graph-rest::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline: 0;
+  height: var(--e-stroke-hair);
+  background: var(--c-line);
+}
+
+.transport {
+  grid-area: transport;
   margin-inline-start: calc(var(--col) + var(--egap));
 }
 
-.graph {
-  height: var(--graph);
-}
-
-/* Stacked: the stage is as wide as the window and as tall as the board needs. The board is the column's width; from
-   40rem up the column is held to what the window's height leaves after the header, the strips and the foot (so the
-   board is whole on a short screen) and sits inside the gutter. */
-@media (width < 75rem) {
+/* A tablet (48rem to 75rem) is taller than it is wide: the board sits at the top of its column, under the header, where
+   the eye starts, instead of floating in the middle of the height. */
+@media (width >= 48rem) and (width < 75rem) {
   .stage {
-    --chrome: 5.5rem;
-    --bar: 0.4375rem;
-    --cap: max(100dvh - var(--chrome) - var(--foot) - var(--strips) - var(--bar), 20rem);
+    place-content: start center;
+  }
+}
+
+/* Below 48rem (a phone) the board runs edge to edge: the column is the window's width, with no eval bar and no
+   padding at either side, and the strips and the controls keep a gutter of their own. The page scrolls. */
+@media (width < 48rem) {
+  .stage {
     --col: 0px;
     --egap: 0px;
+    --pad: 0px;
+    --strip: 2rem;
+    --graph: 2.5rem;
+    --side: 100cqw;
 
     display: block;
-    padding: var(--e-gutter);
     container-type: inline-size;
   }
 
   .col {
-    width: min(100%, var(--cap));
-    margin-inline: auto;
-  }
-
-  .rig {
     grid-template:
-      "top" auto
-      "board" auto
-      "eval" auto
-      "bottom" auto / minmax(0, 1fr);
-    gap: 0;
+      "top" var(--strip)
+      "board" var(--side)
+      "bottom" var(--strip)
+      "graph" var(--graph)
+      "transport" var(--transport) / minmax(0, 1fr);
   }
 
-  .rig-board {
-    width: 100%;
-  }
-
-  /* The eval bar lies flush under the board: its corners are square where they meet. */
-  .stage:not(.stage--noeval) .rig-board {
-    border-end-start-radius: 0;
-    border-end-end-radius: 0;
-  }
-
-  .strip-top,
-  .strip-bottom {
-    margin-inline-start: 0;
-  }
-
-  .foot {
-    margin-inline-start: 0;
-  }
-}
-
-/* A tall window has height to spare for the board: it takes the whole column. */
-@media (width < 75rem) and (orientation: portrait) {
-  .stage {
-    --cap: 100%;
-  }
-}
-
-/* Phones: the board runs edge to edge, with no padding or gutter at either side. The strips, the graph and the
-   controls keep their own gutter. */
-@media (width < 40rem) {
-  .stage {
-    padding-inline: 0;
-    padding-block-start: 0;
-  }
-
-  .col {
-    width: 100%;
+  .eval-slot {
+    display: none;
   }
 
   .rig-board {
@@ -411,8 +382,9 @@ watch(
 
   .strip-top,
   .strip-bottom,
-  .foot {
-    padding-inline: var(--e-gutter);
+  .graph-slot,
+  .transport {
+    margin-inline: var(--sp-3);
   }
 }
 </style>

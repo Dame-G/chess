@@ -5,7 +5,6 @@ import { inspectPosition, INITIAL_FEN } from "../src/board/position";
 import { GameTree, rows } from "../src/board/tree";
 import { readVerb } from "../src/shell/commands";
 import { parseEvents } from "../src/api/stream";
-import { railRows } from "../src/rail/rail";
 import { clock, endingText, scoreText, timeControl } from "../src/format";
 
 describe("the game tree", () => {
@@ -105,24 +104,6 @@ describe("modes and what opens first", () => {
     expect(firstGame([trial])?.id).toBe(3);
     expect(firstGame([{ ...base, id: 5, you: null }, base])?.id).toBe(1);
     expect(firstGame([{ ...base, you: null }])).toBeUndefined();
-  });
-});
-
-describe("the rail", () => {
-  it("pins live games and folds a trial's games into one row", () => {
-    const t = (id: number, at: string) => ({
-      ...base,
-      id,
-      you: null,
-      started_at: at,
-      source: { type: "trial" as const, trial: 9, index: id },
-    });
-    const live = { ...base, id: 10, status: "live" as const, started_at: "2026-01-01T00:00:00Z" };
-    const r = railRows([t(1, "2026-10-01T00:00:00Z"), t(2, "2026-10-02T00:00:00Z"), base, live], "all");
-    expect(r.map((x) => x.key)).toEqual(["game-10", "trial-9", "game-1"]);
-    expect(r[1]?.type === "trial" && r[1].games.map((g) => g.id)).toEqual([2, 1]);
-    expect(railRows([t(1, "2026-10-01T00:00:00Z"), base], "you").map((x) => x.key)).toEqual(["game-1"]);
-    expect(railRows([t(1, "2026-10-01T00:00:00Z"), base], "tests").map((x) => x.key)).toEqual(["trial-9"]);
   });
 });
 
