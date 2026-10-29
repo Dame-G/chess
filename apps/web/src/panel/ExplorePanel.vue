@@ -210,6 +210,7 @@ function onEnter(e: KeyboardEvent) {
 }
 
 .pvm {
+  min-height: var(--h-table-row);
   margin: 0;
   padding: var(--sp-1);
   border: 0;

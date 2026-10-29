@@ -67,6 +67,8 @@ watch(() => route.hash, fromAddress);
 const overview = computed(() => dameless.overview);
 const champion = computed(() => overview.value?.champion ?? versions.current);
 const strength = computed(() => overview.value?.strength ?? []);
+/** Versions that have been measured against each other: a line that never leaves zero has nothing to say yet. */
+const measured = computed(() => strength.value.length > 1 && strength.value.some((p) => p.value !== 0));
 
 // The strength line: one step per champion version, with its margin around it.
 const x = computed(() => strength.value.map((_, i) => i + 1));
@@ -178,7 +180,7 @@ watch(creating, (open) => {
             </ELink>
           </template>
           <LineChart
-            v-if="strength.length > 1"
+            v-if="measured"
             label="Dameless's strength: cumulative Elo over each champion version"
             :x="x"
             :series="series"
@@ -189,7 +191,7 @@ watch(creating, (open) => {
           >
             <span v-if="hover != null" class="mono">{{ readout }}</span>
           </LineChart>
-          <UiEmpty v-else dense title="The line starts once a second version is promoted." />
+          <UiEmpty v-else dense title="The line starts once a promoted version has been measured against v1." />
         </UiSection>
 
         <UiSection v-if="fromUpstream.length || lastSync?.outcome === 'failed'" title="From upstream">

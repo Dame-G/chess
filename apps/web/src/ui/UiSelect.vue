@@ -1,5 +1,6 @@
 <script setup lang="ts" generic="T extends string">
 import { ESelect } from "@eos-ui/vue/components/ESelect";
+import { useMedia } from "../media";
 import UiField from "./UiField.vue";
 
 interface SelectOption<V> {
@@ -29,6 +30,8 @@ defineProps<{
 }>();
 
 const model = defineModel<T | "">();
+/** With a finger the button is as tall as any control: the shorter box is for a pointer. */
+const coarse = useMedia("(pointer: coarse)");
 </script>
 
 <template>
@@ -37,7 +40,7 @@ const model = defineModel<T | "">();
     v-model="model"
     :label="label"
     hide-label
-    size="sm"
+    :size="coarse ? 'md' : 'sm'"
     :options="options"
     :placeholder="placeholder"
     :disabled="disabled"
