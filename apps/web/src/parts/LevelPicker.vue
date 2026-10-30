@@ -3,13 +3,17 @@ import { computed, nextTick, onMounted, useTemplateRef, watch } from "vue";
 import type { LevelChoice } from "../sheets/levels";
 import UiBadge from "../ui/UiBadge.vue";
 
+/** A row of the picker: a level, or any choice shaped like one, under an optional heading, perhaps not to be chosen. */
+type Choice = LevelChoice & { group?: string; disabled?: boolean };
+
 /**
- * Which strength to play against: the levels of the ladder from weakest to strongest, each with the rating the app
- * has found for it. The level nearest your rating is marked, a rating still being calibrated is written with a ≈ and
- * its margin, and one that has not played yet is only the rating it was designed for. One radio group: the arrow keys
- * move and choose; the list scrolls to the chosen level.
+ * Which strength to play against: the levels of the ladder from weakest to strongest (and, in New game, the other
+ * engines), each with its rating. The level nearest your rating is marked, a rating still being calibrated is written
+ * with a ≈ and its margin, and one that has not played yet is only the rating it was designed for. Rows can sit under
+ * group headings, and a disabled row is shown but skipped. One radio group: the arrow keys move and choose; the list
+ * scrolls to the chosen row.
  */
-const props = defineProps<{ modelValue: string; choices: LevelChoice[]; label: string }>();
+const props = defineProps<{ modelValue: string; choices: Choice[]; label: string }>();
 const emit = defineEmits<{ "update:modelValue": [value: string] }>();
 
 const rows = useTemplateRef<HTMLButtonElement[]>("rows");
@@ -22,17 +26,22 @@ const tabbable = computed(() =>
   ),
 );
 
+/** The next row that can be chosen from `from` in `step`'s direction, or `from` when there is none. */
+function nextOpen(from: number, step: 1 | -1): number {
+  for (let i = from + step; i >= 0 && i < props.choices.length; i += step) if (!props.choices[i]!.disabled) return i;
+  return from;
+}
+
 function onKey(e: KeyboardEvent, from: number) {
-  const last = props.choices.length - 1;
   let to: number;
-  if (e.key === "ArrowDown" || e.key === "ArrowRight") to = Math.min(last, from + 1);
-  else if (e.key === "ArrowUp" || e.key === "ArrowLeft") to = Math.max(0, from - 1);
-  else if (e.key === "Home") to = 0;
-  else if (e.key === "End") to = last;
+  if (e.key === "ArrowDown" || e.key === "ArrowRight") to = nextOpen(from, 1);
+  else if (e.key === "ArrowUp" || e.key === "ArrowLeft") to = nextOpen(from, -1);
+  else if (e.key === "Home") to = nextOpen(-1, 1);
+  else if (e.key === "End") to = nextOpen(props.choices.length, -1);
   else return;
   e.preventDefault();
   const next = props.choices[to];
-  if (!next) return;
+  if (!next || next.disabled) return;
   emit("update:modelValue", next.value);
   void nextTick(() => rows.value?.[to]?.focus());
 }
@@ -47,34 +56,36 @@ watch(() => [props.modelValue, props.choices.length], reveal);
 
 <template>
   <div class="picker" role="radiogroup" :aria-label="label">
-    <button
-      v-for="(c, i) in choices"
-      :key="c.value"
-      ref="rows"
-      type="button"
-      class="row"
-      :class="{ 'is-on': c.value === modelValue, 'is-loose': c.standing !== 'found' }"
-      role="radio"
-      :aria-checked="c.value === modelValue"
-      :tabindex="i === tabbable ? 0 : -1"
-      @click="emit('update:modelValue', c.value)"
-      @keydown="onKey($event, i)"
-    >
-      <span class="dot" aria-hidden="true" />
-      <span class="name">{{ c.name }}</span>
-      <UiBadge v-if="c.near" tone="info">About your strength</UiBadge>
-      <span
-        class="rating num"
-        :title="
-          c.standing === 'estimate'
-            ? 'Not played yet: the rating it was designed for'
-            : c.standing === 'provisional'
-              ? 'Provisional: calibration is still narrowing it'
-              : undefined
-        "
-        >{{ c.text }}</span
+    <template v-for="(c, i) in choices" :key="c.value">
+      <span v-if="c.group && c.group !== choices[i - 1]?.group" class="group">{{ c.group }}</span>
+      <button
+        ref="rows"
+        type="button"
+        class="row"
+        :class="{ 'is-on': c.value === modelValue, 'is-loose': c.standing !== 'found' }"
+        role="radio"
+        :aria-checked="c.value === modelValue"
+        :disabled="c.disabled"
+        :tabindex="i === tabbable ? 0 : -1"
+        @click="emit('update:modelValue', c.value)"
+        @keydown="onKey($event, i)"
       >
-    </button>
+        <span class="dot" aria-hidden="true" />
+        <span class="name">{{ c.name }}</span>
+        <UiBadge v-if="c.near" tone="info">About your strength</UiBadge>
+        <span
+          class="rating num"
+          :title="
+            c.standing === 'estimate'
+              ? 'Not played yet: the rating it was designed for'
+              : c.standing === 'provisional'
+                ? 'Provisional: calibration is still narrowing it'
+                : undefined
+          "
+          >{{ c.text }}</span
+        >
+      </button>
+    </template>
   </div>
 </template>
 
@@ -108,7 +119,22 @@ watch(() => [props.modelValue, props.choices.length], reveal);
   border-block-end: 0;
 }
 
-.row:hover:not(.is-on) {
+.row:disabled {
+  color: var(--c-ink-2);
+  cursor: not-allowed;
+}
+
+/* A heading over a group of rows: quiet, in the meta size, on the raised ground. */
+.group {
+  padding: var(--sp-1) var(--sp-3);
+  border-block-end: var(--e-stroke-hair) solid var(--c-line);
+  background: var(--c-raise);
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+  font-weight: 600;
+}
+
+.row:hover:not(.is-on, :disabled) {
   background: var(--c-raise);
 }
 

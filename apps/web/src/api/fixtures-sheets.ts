@@ -171,9 +171,9 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
     draw: 0.08,
     seed: 101,
   });
-  roster.set("dameless", {
-    name: "Dameless",
-    title: "BOT",
+  roster.set("engine:stockfish", {
+    name: "Stockfish",
+    title: null,
     rating: { bullet: 2281, blitz: 2304, rapid: 2310 },
     games: 180,
     reviewed: 180,
@@ -280,7 +280,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       name: r.name,
       title: r.title,
       ratings,
-      lichess: key.startsWith("lichess:") ? r.name : key === "you" ? r.name : key === "dameless" ? "DamelessBot" : null,
+      lichess: key.startsWith("lichess:") ? r.name : key === "you" ? r.name : null,
     };
   }
 
@@ -394,7 +394,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
     const moments: Profile["moments"] = {
       best: has
         ? [
-            moment(3, 24, "Rxf7", "brilliant", 52.4, 71.8, "Dameless v13", 2),
+            moment(3, 24, "Rxf7", "brilliant", 52.4, 71.8, "Stockfish 1404", 2),
             moment(4, 31, "Qd6+", "great", 41.2, 59.3, "cutemouse83"),
           ]
         : [],
@@ -406,7 +406,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
           ]
         : [],
       most_accurate_game: has
-        ? { game: 3, accuracy: 94.1, opponent: "Dameless v13", outcome: "white_wins", played_at: minutesAgo(60 * 20) }
+        ? { game: 3, accuracy: 94.1, opponent: "Stockfish 1404", outcome: "white_wins", played_at: minutesAgo(60 * 20) }
         : null,
       least_accurate_game: has
         ? { game: 5, accuracy: 58.3, opponent: "Stockfish level 5", outcome: "draw", played_at: minutesAgo(60 * 48) }
@@ -579,7 +579,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
     key: string,
     total: number,
     then: () => void,
-    priority: Priority = kind === "review" ? "review" : "interactive",
+    priority: Priority = kind === "review" ? "review" : "background",
   ) {
     const id = Math.max(...ctx.work.map((w) => w.id)) + 1;
     const w: Work = {
@@ -684,7 +684,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
         return p ? reply("/api/players/{key}", "get", p) : error(404, "not_found", "Lichess has no such player.");
       }
       if (path === "/api/compare") {
-        const keys = (url.searchParams.get("players") ?? "you,dameless").split(",").filter(Boolean);
+        const keys = (url.searchParams.get("players") ?? "you,engine:stockfish").split(",").filter(Boolean);
         const filter = filterOf(url);
         if (keys.some((k) => profileQuirk(k) === "broken"))
           return error(500, "internal", "The comparison could not be added up. Try again.");
@@ -710,6 +710,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
               title: "Opening book",
               detail: "UHO_Lichess_4852_v1.epd is installed.",
             },
+            { key: "database", level: "ok", ok: true, title: "Database", detail: "dameless.db, 41 MB." },
             { key: "disk", level: "ok", ok: true, title: "Disk", detail: "212 GB free on the data drive." },
           ],
         });

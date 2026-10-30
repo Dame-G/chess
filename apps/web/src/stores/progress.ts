@@ -21,7 +21,6 @@ export const useProgress = defineStore("progress", () => {
     timer = setTimeout(() => void load().catch(() => {}), 1500);
   }
   listen("review.upserted", refresh);
-  listen("version.upserted", refresh);
   listen("drill.answered", refresh);
   listen("levels.updated", refresh);
   reloadOnReconnect(async () => {

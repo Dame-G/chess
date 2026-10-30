@@ -1,5 +1,6 @@
 import { stream } from "../api/stream";
 import { useConnections } from "./connections";
+import { useEngines } from "./engines";
 import { useGames } from "./games";
 import { usePolicy } from "./policy";
 import { useWork } from "./work";
@@ -12,7 +13,7 @@ import { useWork } from "./work";
  */
 export async function startStores() {
   const policy = usePolicy();
-  const stores = [useGames(), useWork(), useConnections()];
+  const stores = [useGames(), useWork(), useConnections(), useEngines()];
   const status = await policy.load().then(
     () => policy.status,
     () => null,

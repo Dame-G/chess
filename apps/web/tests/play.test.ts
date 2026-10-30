@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Game, LevelsOverview, Seat } from "../src/api/types";
+import type { Game, Seat } from "../src/api/types";
 import { rematchRequest, strengthOf } from "../src/board/rematch";
 
 const seat = (player: string, extra: Partial<Seat> = {}): Seat => ({
@@ -11,24 +11,13 @@ const seat = (player: string, extra: Partial<Seat> = {}): Seat => ({
 });
 
 describe("playing again one level up or down", () => {
-  const level = (id: number, nodes: number | null, nominal: number) => ({
-    level: { id, name: `Level ${id}`, nodes, multipv: 1, temperature: 0, nominal },
-    games: 40,
-    rating: { elo: nominal, low: nominal - 100, high: nominal + 100 },
-  });
-  const levels = {
-    levels: [level(5, 1500, 1600), level(6, 3000, 1800), level(12, null, 3000)],
-    suggested: 5,
-    you: null,
-    updated_at: null,
-  } as unknown as LevelsOverview;
   const game = (them: Partial<Seat>): Pick<Game, "summary" | "start_fen"> =>
     ({
       start_fen: null,
       summary: {
         id: 1,
         white: seat("you"),
-        black: seat("dameless", { name: "Dameless 1600", rating: 1600, level: 5, ...them }),
+        black: seat("engine:stockfish", { name: "Stockfish 1600", rating: 1600, level: 5, ...them }),
         source: { type: "local" },
         time: { type: "movetime", ms: 1000 },
         status: "finished",
@@ -36,21 +25,22 @@ describe("playing again one level up or down", () => {
         you: "white",
       },
     }) as never;
-  const cx = { levels };
+  const cx = { analysis: "stockfish" };
 
-  it("reads the level from the seat, and full strength when it has none", () => {
-    expect(strengthOf(game({}), levels)).toBe(5);
-    expect(strengthOf(game({ level: null, name: "v14", rating: null }), levels)).toBe("full");
+  it("reads the level from the seat, full strength when it has none, and no ladder for another engine", () => {
+    expect(strengthOf(game({}), cx)).toBe(5);
+    expect(strengthOf(game({ level: null, name: "Stockfish", rating: null }), cx)).toBe("full");
+    expect(strengthOf(game({ player: "engine:maia-1500", level: null }), cx)).toBeNull();
   });
 
   it("asks for the neighbouring level with the colours swapped and the same clock", () => {
     expect(rematchRequest(game({}), cx, 6)).toEqual({
-      white: "dameless@6",
+      white: "stockfish@6",
       black: "you",
       time: { type: "movetime", ms: 1000 },
     });
-    expect(rematchRequest(game({}), cx, "full")?.white).toBe("dameless");
-    expect(rematchRequest(game({}), cx)?.white).toBe("dameless@5");
+    expect(rematchRequest(game({}), cx, "full")?.white).toBe("stockfish");
+    expect(rematchRequest(game({}), cx)?.white).toBe("stockfish@5");
   });
 });
 

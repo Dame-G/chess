@@ -29,7 +29,6 @@ import { readVerb } from "../src/shell/commands";
 import { isLevelSeat, seatName } from "../src/format";
 import {
   calibrationCost,
-  levelOfRating,
   levelChoices,
   neighbour,
   ratingText,
@@ -481,17 +480,10 @@ describe("the levels", () => {
 
   it("practises at the level nearest your rating", () => {
     expect(suggestedStrength(overview)).toBe("3");
-    expect(playOutSeat(overview)).toBe("dameless@3");
-    expect(playOutSeat({ ...overview, suggested: 12 })).toBe("dameless");
-    expect(playOutSeat({ ...overview, suggested: null })).toBe("dameless");
-    expect(playOutSeat(null)).toBe("dameless");
-  });
-
-  it("finds the level a seat played at from the rating the server wrote on it", () => {
-    expect(levelOfRating(overview, 742)).toBe(1);
-    expect(levelOfRating(overview, 1000)).toBe(2);
-    expect(levelOfRating(overview, 2222)).toBeNull();
-    expect(levelOfRating(overview, null)).toBeNull();
+    expect(playOutSeat("stockfish", overview)).toBe("stockfish@3");
+    expect(playOutSeat("stockfish", { ...overview, suggested: 12 })).toBe("stockfish");
+    expect(playOutSeat("stockfish", { ...overview, suggested: null })).toBe("stockfish");
+    expect(playOutSeat("lc0", null)).toBe("lc0");
   });
 
   it("puts the cost of calibrating in words", () => {
@@ -507,20 +499,11 @@ describe("the levels", () => {
   });
 
   it("names a level seat by its rating", () => {
-    const seat = {
-      player: "dameless",
-      name: "Dameless 1650",
-      level: 5,
-      version: 14,
-      build: null,
-      rating: 1650,
-      title: null,
-    };
+    const seat = { player: "engine:stockfish", name: "Stockfish 1650", level: 5, rating: 1650, title: null };
     expect(isLevelSeat(seat)).toBe(true);
-    expect(seatName(seat)).toBe("Dameless 1650");
-    expect(seatName({ ...seat, name: "v14", level: null })).toBe("Dameless v14");
-    expect(seatName({ ...seat, name: "Dameless v14", level: null })).toBe("Dameless v14");
-    expect(isLevelSeat({ ...seat, player: "you", name: "Dameless 12" })).toBe(false);
+    expect(seatName(seat)).toBe("Stockfish 1650");
+    expect(isLevelSeat({ ...seat, level: null })).toBe(false);
+    expect(isLevelSeat({ ...seat, player: "you", name: "Stockfish 12" })).toBe(false);
   });
 });
 
@@ -579,9 +562,9 @@ describe("the progress chart", () => {
 
 // ---- Rematch
 
-const seat = (player: "you" | "dameless", extra: Partial<GameSummary["white"]> = {}) => ({
+const seat = (player: string, extra: Partial<GameSummary["white"]> = {}) => ({
   player,
-  name: player === "you" ? "You" : "Dameless",
+  name: player === "you" ? "You" : "Stockfish",
   rating: null,
   title: null,
   ...extra,
@@ -594,7 +577,7 @@ const gameOf = (
   summary: {
     id: 3,
     white: seat("you"),
-    black: seat("dameless"),
+    black: seat("engine:stockfish"),
     source: { type: "local" },
     time: { type: "clock", initial_ms: 300_000, increment_ms: 3000 },
     status: "finished",
@@ -612,34 +595,32 @@ const gameOf = (
 });
 
 describe("a rematch", () => {
-  const cx = { levels: overview };
+  const cx = { analysis: "stockfish" };
 
   it("swaps the colours and keeps the opponent and the clock", () => {
     expect(rematchRequest(gameOf(), cx)).toEqual({
-      white: "dameless",
+      white: "stockfish",
       black: "you",
       time: { type: "clock", initial_ms: 300_000, increment_ms: 3000 },
     });
-    const asBlack = gameOf({ you: "black", white: seat("dameless"), black: seat("you") });
-    expect(rematchRequest(asBlack, cx)).toMatchObject({ white: "you", black: "dameless" });
+    const asBlack = gameOf({ you: "black", white: seat("engine:stockfish"), black: seat("you") });
+    expect(rematchRequest(asBlack, cx)).toMatchObject({ white: "you", black: "stockfish" });
   });
 
-  it("asks for the same level", () => {
-    const atLevel = gameOf({ black: seat("dameless", { name: "Dameless 742", rating: 742 }) });
-    expect(rematchRequest(atLevel, cx)?.white).toBe("dameless@1");
-    // A rating that matches no level is full strength.
-    const unknown = gameOf({ black: seat("dameless", { name: "Dameless 1234", rating: 1234 }) });
-    expect(rematchRequest(unknown, cx)?.white).toBe("dameless");
+  it("asks for the same engine at the same level", () => {
+    const atLevel = gameOf({ black: seat("engine:stockfish", { name: "Stockfish 742", rating: 742, level: 1 }) });
+    expect(rematchRequest(atLevel, cx)?.white).toBe("stockfish@1");
+    const maia = gameOf({ black: seat("engine:maia-1500", { name: "Maia 1500", rating: 1500 }) });
+    expect(rematchRequest(maia, cx)?.white).toBe("maia-1500");
   });
 
-  it("starts from a new book line for a book start, and from the same position otherwise", () => {
+  it("starts from the same position", () => {
     const fen = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3";
-    expect(rematchRequest(gameOf({}, fen), { ...cx, started: { type: "book" } })?.from).toEqual({ type: "book" });
     expect(rematchRequest(gameOf({}, fen), cx)?.from).toEqual({ type: "position", fen, moves: [] });
     expect(rematchRequest(gameOf(), cx)?.from).toBeUndefined();
   });
 
-  it("is only for a finished local game of yours against Dameless", () => {
+  it("is only for a finished local game of yours against an engine", () => {
     expect(rematchRequest(gameOf({ status: "live" }), cx)).toBeNull();
     expect(rematchRequest(gameOf({ you: null }), cx)).toBeNull();
     expect(

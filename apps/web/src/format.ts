@@ -100,17 +100,14 @@ export function resultText(outcome: Outcome | null | undefined): string {
   return "*";
 }
 
-/** Dameless at a level of its ladder (the server names it by its rating, `Dameless 1650`). */
-export const isLevelSeat = (seat: Seat): boolean => seat.player === "dameless" && seat.level != null;
+/** The engine id in an engine's player key (`engine:stockfish` → `stockfish`), or `null` for anyone else. */
+export const engineOf = (player: string): string | null => (player.startsWith("engine:") ? player.slice(7) : null);
 
-/**
- * A seat as people say it: `Dameless v14`, `Dameless 1650` (at a level), `cutemouse83`, `Stockfish level 5`. The
- * server names every seat this way; a Dameless seat recorded by its bare version name (`v14`) gets the prefix here.
- */
-export function seatName(seat: Seat): string {
-  if (seat.player === "dameless" && !/^Dameless\b/.test(seat.name)) return `Dameless ${seat.name}`.trim();
-  return seat.name;
-}
+/** An engine at a level of its ladder (the server names it by its rating, `Stockfish 1650`). */
+export const isLevelSeat = (seat: Seat): boolean => engineOf(seat.player) !== null && seat.level != null;
+
+/** A seat as people say it: `Stockfish 1650` (at a level), `Maia 1500`, `cutemouse83`. The server names every seat. */
+export const seatName = (seat: Seat): string => seat.name;
 
 export const other = (side: Side): Side => (side === "white" ? "black" : "white");
 

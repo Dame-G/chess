@@ -24,9 +24,9 @@ let nextId = 1;
 const event = <K extends AppEvent["kind"]>(kind: K, data: Extract<AppEvent, { kind: K }>["data"]) =>
   dispatch({ id: nextId++, topic: "", kind, data } as AppEvent);
 
-const seat = (player: "you" | "dameless") => ({
+const seat = (player: "you" | "engine:stockfish") => ({
   player,
-  name: player === "you" ? "You" : "Dameless",
+  name: player === "you" ? "You" : "Stockfish",
   rating: null,
   title: null,
 });
@@ -35,7 +35,7 @@ function summary(id: number, patch: Partial<GameSummary> = {}): GameSummary {
   return {
     id,
     white: seat("you"),
-    black: seat("dameless"),
+    black: seat("engine:stockfish"),
     source: { type: "local" },
     time: { type: "clock", initial_ms: 300_000, increment_ms: 3000 },
     status: "live",

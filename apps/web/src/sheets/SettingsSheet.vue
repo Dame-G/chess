@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import { useRoute } from "vue-router";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ECopyButton } from "@eos-ui/vue/components/ECopyButton";
@@ -12,6 +13,7 @@ import { playMoveSound, soundOn, soundVolume } from "../board/sound";
 import { connect, connection } from "../api/client";
 import type { ConnectionStatus, HealthItem } from "../api/types";
 import { formatDate } from "../format";
+import EnginesSettings from "../parts/EnginesSettings.vue";
 import PathText from "../parts/PathText.vue";
 import { choice, type Choice } from "../scheme";
 import { useConnections } from "../stores/connections";
@@ -30,8 +32,8 @@ import UiSheetPage from "../ui/UiSheetPage.vue";
 import { useConfirm } from "../ui/useConfirm";
 
 /**
- * Settings: your Lichess login, the machine (cores and the data directory), its health (what the app needs and whether
- * it is there, failures first), and how the app looks, with the token the hosted app needs. Logging out asks first.
+ * Settings: your Lichess login, the engines (the list, the analysis engine, adding one, setup's downloads), the
+ * machine (cores and the data directory), its health (what the app needs and whether it is there, failures first), and how the app looks, with the token the hosted app needs. Logging out asks first.
  * What cannot be read says so, with a way to try again, rather than staying a placeholder.
  */
 const policy = usePolicy();
@@ -40,7 +42,10 @@ const machineStore = useMachine();
 const toast = useToast();
 const confirm = useConfirm();
 
-const tab = ref("accounts");
+/** The tab to open on: `?tab=engines` (New game links there for an engine not installed yet), else Accounts. */
+const TABS = ["accounts", "engines", "machine", "health", "appearance"];
+const asked = useRoute().query["tab"];
+const tab = ref(typeof asked === "string" && TABS.includes(asked) ? asked : "accounts");
 
 /** Sounds: three volumes (the control is the same as the theme's), each heard once when chosen. */
 const volumes = [
@@ -131,38 +136,16 @@ async function logout() {
 const machine = computed(() => machineStore.machine);
 // ---- Health
 
-/** What only developing an engine needed, which the app no longer does: left out of Health. */
-const RETIRED = ["builds", "harness", "engine", "clang", "pgo", "cargo-pgo", "llvm-profdata", "cuda", "gpu"];
 /** Health, failures first. */
 const ORDER = { fail: 0, warn: 1, info: 2, ok: 3 } as const;
 const healthItems = computed(() =>
-  (machineStore.health?.items ?? [])
-    .filter((i) => !RETIRED.includes(i.key))
-    .sort((a, b) => ORDER[a.level] - ORDER[b.level]),
+  (machineStore.health?.items ?? []).toSorted((a, b) => ORDER[a.level] - ORDER[b.level]),
 );
 const problems = computed(() => healthItems.value.filter((i) => i.level !== "ok").length);
 const isOk = (i: HealthItem) => i.level === "ok";
-/** The detail without the title it starts with: "fastchess 1.4.0 is installed." under "fastchess" says "1.4.0 is installed.". */
+/** The detail without the title it starts with: "Disk 212 GB free" under "Disk" says "212 GB free". */
 const detailOf = (i: HealthItem) =>
   i.detail.toLowerCase().startsWith(i.title.toLowerCase()) ? i.detail.slice(i.title.length).trim() : i.detail;
-/** fastchess or the book is missing: the one thing Install tools fixes. */
-const toolsMissing = computed(() =>
-  (machineStore.health?.items ?? []).some((i) => (i.key === "fastchess" || i.key === "book") && i.level === "fail"),
-);
-const installBusy = ref(false);
-async function installTools() {
-  const yes = await confirm({
-    title: "Install the tools?",
-    body: "Downloads fastchess (from its GitHub release, Disservin/fastchess) and the UHO opening book (official-stockfish/books), which calibrating the levels and starting from a book line need. Together a few tens of megabytes, into the tools folder in the data directory. This can take a minute.",
-    confirmLabel: "Install",
-  });
-  if (!yes) return;
-  installBusy.value = true;
-  const r = await attempt("The tools were not installed", () => machineStore.installTools());
-  installBusy.value = false;
-  if (r) toast.show({ title: "The tools are installed", tone: "success" });
-}
-
 // ---- This page and its server
 
 const example = "http://127.0.0.1:7979";
@@ -184,6 +167,7 @@ function pair() {
 
 const tabs = computed(() => [
   { id: "accounts", label: "Accounts" },
+  { id: "engines", label: "Engines" },
   { id: "machine", label: "This machine" },
   { id: "health", label: "Health", ...(problems.value ? { count: problems.value } : {}) },
   { id: "appearance", label: "Appearance" },
@@ -219,6 +203,10 @@ const tabs = computed(() => [
       </div>
     </template>
 
+    <template #tab-engines>
+      <EnginesSettings />
+    </template>
+
     <template #tab-machine>
       <div>
         <UiSection title="Cores and data">
@@ -239,9 +227,6 @@ const tabs = computed(() => [
     <template #tab-health>
       <div>
         <UiSection title="Checks">
-          <template v-if="toolsMissing" #aside>
-            <EButton variant="outline" size="sm" :loading="installBusy" @click="installTools">Install tools</EButton>
-          </template>
           <UiEmpty v-if="failed.health" dense title="The health check did not run.">
             <template #actions><EButton variant="quiet" size="sm" @click="load('health')">Try again</EButton></template>
           </UiEmpty>

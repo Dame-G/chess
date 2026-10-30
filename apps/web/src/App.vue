@@ -25,7 +25,7 @@ import { useUi } from "./shell/ui";
  * The app is the board plus a panel, with the Games rail beside them; profiles and settings are sheets in the
  * panel's place beside the board, never instead of it. Below 75rem the rail is a drawer from the header and a sheet
  * covers the window; on a phone the board and its panel are one page and a bar at the foot moves between Board,
- * Games, You and Dameless (docs/ui-brief.md, 4.1 and 4.5).
+ * Games and You (docs/ui-brief.md, 4.1 and 4.5).
  */
 const route = useRoute();
 const board = useBoard();

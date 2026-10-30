@@ -5,7 +5,7 @@ export interface SegOption<V> {
   value: V;
   label: string;
   icon?: Component;
-  /** A figure after the label, muted and mono: `Dameless 12`. */
+  /** A figure after the label, muted and mono: `Stockfish 12`. */
   count?: number | string;
   disabled?: boolean;
 }

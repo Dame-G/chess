@@ -15,7 +15,7 @@ function game(id: number, patch: Partial<GameSummary> = {}): GameSummary {
   return {
     id,
     white: seat("you", "You"),
-    black: seat("dameless", "Dameless"),
+    black: seat("engine:stockfish", "Stockfish"),
     source: { type: "local" },
     time: { type: "clock", initial_ms: 300_000, increment_ms: 3000 },
     status: "finished",
@@ -78,7 +78,7 @@ describe("a filter asks the server what the client would match", () => {
     game(1),
     imported(2),
     lichessOthers(3),
-    game(6, { white: seat("dameless"), black: seat("stockfish:5"), you: null }),
+    game(6, { white: seat("engine:stockfish"), black: seat("engine:maia-1500"), you: null }),
   ];
   for (const filter of FILTERS) {
     it(`for ${filter}`, () => {

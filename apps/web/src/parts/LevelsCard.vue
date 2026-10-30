@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { calibrationTime, isCalibrated, ladder } from "../sheets/levels";
+import { useEngines } from "../stores/engines";
 import { useLevels } from "../stores/levels";
 import { usePolicy } from "../stores/policy";
 import { useWork } from "../stores/work";
@@ -13,11 +14,12 @@ import UiTable from "../ui/UiTable.vue";
 import Term from "./Term.vue";
 
 /**
- * Levels: the ladder Dameless can play at, weakest to strongest, each with the rating the app has found for it by
+ * Levels: the ladder the analysis engine can play at, weakest to strongest, each with the rating the app has found for it by
  * playing (or the one it was designed for, drawn quieter), the games behind it, and You where your rating falls.
  * Calibrate levels queues the games that teach the most, in the background.
  */
 const ladderStore = useLevels();
+const engines = useEngines();
 const policy = usePolicy();
 const work = useWork();
 const toast = useToast();
@@ -102,14 +104,22 @@ async function calibrate() {
       </EButton>
     </template>
     <template #note>
-      Dameless at a strength you choose, rated by <Term k="calibration" text="calibration" />.
+      {{ engines.analysis?.name ?? "The analysis engine" }} at a strength you choose, rated by
+      <Term k="calibration" text="calibration" />.
       <template v-if="calibrating">{{ calibrating.title }} is running.</template>
       <template v-else-if="time">{{ time }} in the background.</template>
     </template>
     <UiEmpty v-if="failed" tone="error" title="Levels did not load" :body="failed">
       <template #actions><EButton variant="outline" @click="read">Try again</EButton></template>
     </UiEmpty>
-    <UiTable v-else label="The levels of Dameless" :columns="columns" :rows="rungs" row-key="id" :loading="!overview">
+    <UiTable
+      v-else
+      :label="`The levels of ${engines.analysis?.name ?? 'the analysis engine'}`"
+      :columns="columns"
+      :rows="rungs"
+      row-key="id"
+      :loading="!overview"
+    >
       <template #head-bar><span class="sr-only">Place on the ladder</span></template>
       <template #cell-name="{ row }">
         <span class="name" :class="{ 'is-you': row.kind === 'you' }">{{ row.name }}</span>

@@ -18,7 +18,7 @@ import UiTable from "../ui/UiTable.vue";
  * Where your games went wrong: every mistake and blunder in your reviewed games sorted by what it was about (hanging
  * pieces, missed tactics, time trouble, and so on), the costliest first, with how often it happens and what it costs per
  * game. A row opens to what the rule saw, the causes named most often, the costliest examples (each opens its game, or
- * is played out against Dameless) and a way to drill that theme. A mistake that no rule explains is "Other".
+ * is played out against an engine) and a way to drill that theme. A mistake that no rule explains is "Other".
  */
 const props = defineProps<{ profile: Profile }>();
 

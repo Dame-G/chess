@@ -13,7 +13,7 @@ const OWN_ARROWS =
 
 /**
  * The app's keys, as docs/design.md lists them: ←/→, Home/End, F, Space (Explore's engine), X and Shift X (Review's
- * mistakes), T or ⌘Z (take back, in a game against Dameless), R (play the finished game again), N, D (today's drills),
+ * mistakes), T or ⌘Z (take back, in a game against an engine), R (play the finished game again), N, D (today's drills),
  * G Y / G S and `?`. ⌘K belongs to the command bar. Call once, in the app's root.
  */
 export function useKeys() {

@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import type { SeatAction, Side } from "../api/types";
-import { other, seatName } from "../format";
+import { engineOf, other, seatName } from "../format";
 import { useBoard } from "../board/board";
 import { useGames } from "../stores/games";
 import UiDialog from "../ui/UiDialog.vue";
@@ -78,9 +78,7 @@ const status = computed(() => {
   if (!s.value) return "";
   if (s.value.status === "starting") return "Starting the game";
   if (turn.value === yourSide.value) return "Your move";
-  return opponentSeat.value?.player.startsWith("dameless")
-    ? `${opponent.value} is thinking`
-    : `Waiting for ${opponent.value}`;
+  return engineOf(opponentSeat.value?.player ?? "") ? `${opponent.value} is thinking` : `Waiting for ${opponent.value}`;
 });
 </script>
 

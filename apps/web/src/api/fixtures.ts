@@ -20,6 +20,8 @@ import type {
   Classification,
   ClassCounts,
   Connections,
+  Engine,
+  EnginesOverview,
   EvalInfo,
   EventKind,
   EventPayloads,
@@ -35,6 +37,7 @@ import type {
   Score,
   Seat,
   SeatAction,
+  SetupPlan,
   Side,
   SideReview,
   Source,
@@ -66,24 +69,24 @@ const clockTc = (minutes: number, inc: number): TimeControl => ({
 });
 
 const you = (rating: number | null = 1840): Seat => ({ player: "you", name: "dame_g", rating, title: null });
-const dameless = (rating: number | null = null): Seat => ({
-  player: "dameless",
-  name: "Dameless",
+/** An engine's seat: `engine:<id>`, named as the server names it ("Stockfish 1404" at a level, else the engine's name). */
+const engine = (id: string, name: string, level: number | null = null, rating: number | null = null): Seat => ({
+  player: `engine:${id}`,
+  name,
+  engine: id === "stockfish" ? "Stockfish 17.1" : name,
+  level,
   rating,
   title: null,
 });
+const sf = () => engine("stockfish", "Stockfish 17.1");
 const lichess = (name: string, rating: number, title: string | null = null): Seat => ({
   player: `lichess:${name.toLowerCase()}`,
   name,
   rating,
   title,
 });
-const stockfish = (level: number): Seat => ({
-  player: `stockfish:${level}`,
-  name: `Stockfish level ${level}`,
-  rating: null,
-  title: null,
-});
+/** Lichess's AI: Stockfish at one of its eight levels, played on Lichess. */
+const lichessAi = (level: number): Seat => engine("stockfish", `Stockfish level ${level}`, level);
 
 /** The moves of a game: SAN as far as it is legal, then (to `plies`) a seeded walk that likes captures and checks. */
 function moves(san: string, plies: number, seed: number): string[] {
@@ -214,7 +217,7 @@ function add(s: GameSummary, ms: Move[], extra: Partial<Game> = {}) {
 
 const fairplay = fixtureMode() === "fairplay";
 
-// Your live game: against Dameless here, or (fair-play mode) on Lichess.
+// Your live game: against Stockfish here, or (fair-play mode) on Lichess.
 {
   const tc = clockTc(5, 3);
   const ms = record(moves(ITALIAN, 18, 11), { tc, engine: fairplay ? [] : ["black"], seed: 11 });
@@ -225,7 +228,7 @@ const fairplay = fixtureMode() === "fairplay";
     summary({
       id: 1,
       white: you(),
-      black: fairplay ? lichess("cutemouse83", 1871) : dameless(),
+      black: fairplay ? lichess("cutemouse83", 1871) : engine("maia-1500", "Maia 1500", null, 1500),
       source,
       time: tc,
       status: "live",
@@ -249,7 +252,7 @@ const finished: [
     {
       id: 3,
       white: you(),
-      black: dameless(),
+      black: sf(),
       source: { type: "local" },
       time: clockTc(10, 5),
       outcome: "white_wins",
@@ -285,7 +288,7 @@ const finished: [
   [
     {
       id: 5,
-      white: stockfish(5),
+      white: lichessAi(5),
       black: you(1846),
       source: { type: "lichess", connection: "you", id: "s7FiSh55", rated: false, speed: "rapid" },
       time: clockTc(15, 10),
@@ -321,10 +324,10 @@ const finished: [
     7,
   ],
   [
-    // A game against Dameless at a level, not reviewed yet: what the game's end card offers.
+    // A game against Stockfish at a level, not reviewed yet: what the game's end card offers.
     {
       id: 8,
-      white: { ...dameless(1404), name: "Dameless 1404", level: 4 },
+      white: engine("stockfish", "Stockfish 1404", 4, 1404),
       black: you(1846),
       source: { type: "local" },
       time: clockTc(10, 5),
@@ -342,8 +345,9 @@ const finished: [
 ];
 for (const [s, san, plies, seed] of finished) {
   const engine: Side[] = [];
-  if (s.white.player === "dameless") engine.push("white");
-  if (s.black.player === "dameless") engine.push("black");
+  const isEngine = (seat: Seat) => seat.player.startsWith("engine:") && s.source.type === "local";
+  if (isEngine(s.white)) engine.push("white");
+  if (isEngine(s.black)) engine.push("black");
   add(
     summary(s),
     record(moves(san, plies, seed), {
@@ -463,10 +467,10 @@ function synthReview(stored: Stored): Review {
   return {
     id: id + 1000,
     game: id,
-    version: 14,
+    engine: "Stockfish 17.1",
     nodes: 200_000,
     summary: {
-      version: 14,
+      engine: "Stockfish 17.1",
       nodes: 200_000,
       white: sides.white,
       black: sides.black,
@@ -487,6 +491,131 @@ function reviewGame(id: GameId) {
 }
 for (const id of [3, 4]) reviewGame(id);
 
+// ---- Engines
+
+const builtin = (e: Partial<Engine> & Pick<Engine, "id" | "name">): Engine => ({
+  kind: "builtin",
+  args: [],
+  options: {},
+  installed: true,
+  analysis: false,
+  levels: false,
+  ...e,
+});
+/** The engines list: Stockfish analyses, two Maias are installed and the rest are not, and one engine you added. */
+const engines: EnginesOverview = {
+  analysis: "stockfish",
+  engines: [
+    builtin({
+      id: "stockfish",
+      name: "Stockfish",
+      path: "C:\\Users\\you\\AppData\\Local\\dameless\\tools\\stockfish\\stockfish.exe",
+      id_name: "Stockfish 17.1",
+      analysis: true,
+      levels: true,
+    }),
+    ...[1100, 1300, 1500, 1700, 1900].map((rating) =>
+      builtin({
+        id: `maia-${rating}`,
+        name: `Maia ${rating}`,
+        installed: rating === 1500 || rating === 1700,
+        nodes: 1,
+        rating,
+        ...(rating === 1500 || rating === 1700 ? { id_name: "Lc0 v0.31.2", path: "tools\\lc0\\lc0.exe" } : {}),
+      }),
+    ),
+    {
+      id: "berserk",
+      name: "Berserk",
+      kind: "custom",
+      path: "C:\\engines\\berserk-13.exe",
+      args: [],
+      options: { Threads: "2", Hash: "128" },
+      id_name: "Berserk 13",
+      installed: true,
+      analysis: false,
+      levels: false,
+      created_at: minutesAgo(60 * 24 * 3),
+    },
+  ],
+};
+const overviewOf = (): EnginesOverview => {
+  for (const e of engines.engines) {
+    e.analysis = e.id === engines.analysis;
+    e.levels = e.analysis;
+  }
+  return clone(engines);
+};
+const enginesChanged = () => {
+  const o = overviewOf();
+  emit("engines.changed", "engines", o);
+  return o;
+};
+
+/** What setup would download: the Maia nets not here yet and lc0 to play them (Stockfish is installed). */
+function setupPlan(): SetupPlan {
+  const missing = engines.engines.filter((e) => e.kind === "builtin" && !e.installed);
+  const downloads: SetupPlan["downloads"] = missing.length
+    ? [
+        ...missing.map((e) => ({
+          package: "maia" as const,
+          name: `${e.name} net`,
+          url: `https://github.com/CSSLab/maia-chess/releases/download/v1.0/${e.id}.pb.gz`,
+          bytes: 1_300_000,
+        })),
+      ]
+    : [];
+  return {
+    downloads,
+    bytes: downloads.reduce((n, d) => n + (d.bytes ?? 0), 0),
+    installed: ["stockfish", ...(missing.length < 5 ? ["maia" as const] : [])] as SetupPlan["installed"],
+    notes: missing.length ? ["Maia plays through lc0, which is already installed."] : [],
+  };
+}
+
+/** Downloads what setup lists, as work; the engines arrive installed when it is done. */
+function runSetup(): Work {
+  const id = Math.max(...work.map((w) => w.id)) + 1;
+  const total = setupPlan().bytes;
+  const w: Work = {
+    id,
+    kind: "setup",
+    status: "running",
+    priority: "background",
+    title: "Downloading the engines",
+    subject: { type: "engines" },
+    cores: 0,
+    progress: { done: 0, total, unit: "bytes", eta_seconds: 8, text: null },
+    paused_for: null,
+    error: null,
+    created_at: new Date().toISOString(),
+    started_at: new Date().toISOString(),
+    ended_at: null,
+  };
+  work.push(w);
+  emit("work.upserted", "work", { ...w });
+  let step = 0;
+  const timer = setInterval(() => {
+    step++;
+    w.progress = {
+      done: Math.round((total * step) / 4),
+      total,
+      unit: "bytes",
+      eta_seconds: (4 - step) * 2,
+      text: null,
+    };
+    if (step >= 4) {
+      clearInterval(timer);
+      for (const e of engines.engines) e.installed = true;
+      enginesChanged();
+      w.status = "done";
+      w.ended_at = new Date().toISOString();
+    }
+    emit("work.upserted", "work", { ...w });
+  }, 2000);
+  return { ...w };
+}
+
 // ---- Work, connections, policy
 
 const work: Work[] = [
@@ -494,7 +623,7 @@ const work: Work[] = [
     id: 2,
     kind: "import",
     status: "queued",
-    priority: "interactive",
+    priority: "background",
     title: "Importing cutemouse83's games",
     subject: { type: "player", key: "lichess:cutemouse83" },
     cores: 0,
@@ -522,33 +651,7 @@ const work: Work[] = [
   },
 ];
 
-/**
- * What the server still answers about the app's old engine work, until its API drops it: the bot's connection (off),
- * the engine checkout and its builds, and the GPU. Spread into answers so they keep the server's shape either way.
- */
-const RETIRED = {
-  connections: {
-    bot: {
-      key: "bot" as const,
-      configured: false,
-      account: null,
-      state: "off" as const,
-      error: null,
-      playing: [] as GameId[],
-      challenges: [],
-      you: null,
-    },
-  },
-  machine: {
-    engine: { dir: "", found: false, branch: null, commit: null, dirty: false },
-    builds: { count: 0, bytes: 0 },
-  },
-  ledger: { gpus: 0, gpu_grants: [] as number[] },
-  eval: { version: 0 },
-};
-
 const connections: Connections = {
-  ...RETIRED.connections,
   you: {
     key: "you",
     configured: true,
@@ -615,11 +718,9 @@ const status: Status = {
     physical_cores: 8,
     logical_cores: 16,
     memory_bytes: 34_359_738_368,
-    ...RETIRED.machine,
     data_dir: "C:\\Users\\you\\AppData\\Local\\dameless",
   },
   ledger: {
-    ...RETIRED.ledger,
     total: 15,
     granted: 0,
     reserved: 0,
@@ -893,7 +994,7 @@ function act(g: Game, action: SeatAction, body: { uci?: string }): Response | un
     if (pos.turn !== yourSide) return error(409, "conflict", "It is not your turn.");
     if (!body.uci || !playMove(g, body.uci, 4000, null)) return error(400, "bad_request", "That move is not legal.");
     if (g.summary.status === "live") {
-      const engine = g.summary.white.player === "dameless" || g.summary.black.player === "dameless";
+      const engine = g.summary.source.type === "local";
       think(g, pos.turn === "white" ? "black" : "white", engine ? 1600 : 2600, () => {
         const pick = choices(g);
         const r = rng(g.moves.length);
@@ -929,6 +1030,18 @@ function act(g: Game, action: SeatAction, body: { uci?: string }): Response | un
   return undefined;
 }
 
+/** The seat a new game's request names (`stockfish@5`, `maia-1500`, `stockfish`), as the server would write it. */
+function seatOf(request: string): Seat {
+  const [id = "stockfish", at] = request.split("@");
+  const known = engines.engines.find((e) => e.id === id);
+  const name = known?.name ?? id;
+  if (at) {
+    const rating = 800 + Number(at) * 150;
+    return engine(id, `${name} ${rating}`, Number(at), rating);
+  }
+  return engine(id, name, null, known?.rating ?? null);
+}
+
 let nextGameId = 500;
 function newGame(body: NewGameRequest): Game {
   const tc = body.time;
@@ -944,8 +1057,8 @@ function newGame(body: NewGameRequest): Game {
   const id = nextGameId++;
   const s = summary({
     id,
-    white: side === "white" ? you() : dameless(),
-    black: side === "white" ? dameless() : you(),
+    white: side === "white" ? you() : seatOf(body.white),
+    black: side === "white" ? seatOf(body.black) : you(),
     source: { type: "local" },
     time: tc,
     status: "live",
@@ -991,6 +1104,8 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
 
   let m: RegExpMatchArray | null;
   if (method === "GET") {
+    if (path === "/api/engines") return reply("/api/engines", "get", overviewOf());
+    if (path === "/api/setup") return reply("/api/setup", "get", setupPlan());
     if (path === "/api/health") return reply("/api/health", "get", { ok: true, version: status.version });
     if (path === "/api/status") return reply("/api/status", "get", clone(status));
     if (path === "/api/games")
@@ -1020,6 +1135,32 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
     if (path === "/api/connections") return reply("/api/connections", "get", clone(connections));
   }
   if (method === "POST") {
+    if (path === "/api/setup") return reply("/api/setup", "post", runSetup(), 201);
+    if (path === "/api/engines") {
+      const name = String(body["name"] ?? "").trim();
+      const file = String(body["path"] ?? "").trim();
+      if (!name || !file) return error(400, "bad_request", "An engine needs a name and a program.");
+      if (!/\.(exe|bin)$|\/[^/.]+$/i.test(file))
+        return error(400, "bad_request", `${file} did not answer as a UCI engine.`);
+      const id = String(body["id"] ?? "") || name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      if (engines.engines.some((e) => e.id === id)) return error(409, "conflict", `There is already an engine ${id}.`);
+      const made: Engine = {
+        id,
+        name,
+        kind: "custom",
+        path: file,
+        args: [],
+        options: (body["options"] as Record<string, string>) ?? {},
+        id_name: name,
+        installed: true,
+        analysis: false,
+        levels: false,
+        created_at: new Date().toISOString(),
+      };
+      engines.engines.push(made);
+      enginesChanged();
+      return reply("/api/engines", "post", clone(made), 201);
+    }
     if (path === "/api/games") return reply("/api/games", "post", newGame(body as unknown as NewGameRequest), 201);
     if ((m = path.match(/^\/api\/games\/(\d+)\/actions\/(\w+)$/))) {
       const s = games.get(Number(m[1]));
@@ -1036,7 +1177,7 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
     if (path === "/api/eval") {
       if (status.policy.assist !== "allowed") return error(409, "fair_play", status.policy.reason ?? "");
       const at = body as { fen: string; moves: string[] };
-      return reply("/api/eval", "post", { ...RETIRED.eval, session: startEval(at), fen: at.fen });
+      return reply("/api/eval", "post", { engine: "Stockfish 17.1", session: startEval(at), fen: at.fen });
     }
     if ((m = path.match(/^\/api\/work\/(\d+)\/(stop|pause|resume)$/))) {
       const w = work.find((x) => x.id === Number(m![1]));
@@ -1047,6 +1188,20 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
       emit("work.upserted", "work", { ...w });
       return reply("/api/work/{id}/stop", "post", clone(w));
     }
+  }
+  if (method === "PUT" && path === "/api/engines/analysis") {
+    const id = String(body["engine"] ?? "");
+    const e = engines.engines.find((x) => x.id === id);
+    if (!e?.installed) return error(409, "conflict", "Only an installed engine can analyse.");
+    engines.analysis = id;
+    return reply("/api/engines/analysis", "put", enginesChanged());
+  }
+  if (method === "DELETE" && (m = path.match(/^\/api\/engines\/([^/]+)$/))) {
+    const id = decodeURIComponent(m[1]!);
+    if (!engines.engines.some((e) => e.id === id)) return error(404, "not_found", "No such engine.");
+    engines.engines = engines.engines.filter((e) => e.id !== id);
+    if (engines.analysis === id) engines.analysis = "stockfish";
+    return reply("/api/engines/{id}", "delete", enginesChanged());
   }
   if (method === "DELETE" && (m = path.match(/^\/api\/eval\/(\w+)$/))) {
     clearInterval(sessions.get(m[1]!));

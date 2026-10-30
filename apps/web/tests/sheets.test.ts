@@ -60,30 +60,30 @@ function profile(patch: Partial<Profile> & { score?: number | null; acpl?: numbe
 describe("the compare address", () => {
   it("reads players, speeds, rated and limit, and ignores the rest", () => {
     const a = parseAddress({
-      players: "you,Dameless,lichess:CuteMouse83,nonsense,you",
+      players: "you,engine:Stockfish,lichess:CuteMouse83,nonsense,you",
       speeds: "blitz,bogus,rapid",
       rated: "true",
       limit: "50",
     });
     expect(a).toEqual({
-      players: ["you", "dameless", "lichess:cutemouse83"],
+      players: ["you", "engine:stockfish", "lichess:cutemouse83"],
       speeds: ["blitz", "rapid"],
       rated: true,
       limit: 50,
     });
   });
 
-  it("starts with You and Dameless when nobody valid is named, and caps the count at five", () => {
-    expect(parseAddress({}).players).toEqual(["you", "dameless"]);
-    expect(parseAddress({ players: "?!" }).players).toEqual(["you", "dameless"]);
-    expect(parseAddress({ players: "you,dameless,lichess:aa,lichess:bb,lichess:cc,lichess:dd" }).players).toHaveLength(
+  it("starts with You and the analysis engine when nobody valid is named, and caps the count at five", () => {
+    expect(parseAddress({}).players).toEqual(["you", "engine:stockfish"]);
+    expect(parseAddress({ players: "?!" }, "lc0").players).toEqual(["you", "engine:lc0"]);
+    expect(parseAddress({ players: "you,engine:a,lichess:aa,lichess:bb,lichess:cc,lichess:dd" }).players).toHaveLength(
       5,
     );
   });
 
   it("writes only what differs from the defaults", () => {
-    expect(addressQuery({ players: ["you", "dameless"], speeds: [], rated: null, limit: 200 })).toEqual({
-      players: "you,dameless",
+    expect(addressQuery({ players: ["you", "engine:stockfish"], speeds: [], rated: null, limit: 200 })).toEqual({
+      players: "you,engine:stockfish",
     });
     expect(addressQuery({ players: ["you"], speeds: ["blitz"], rated: false, limit: 100 })).toEqual({
       players: "you",
@@ -99,7 +99,8 @@ describe("the compare address", () => {
     expect(playerFromInput("https://lichess.org/@/CuteMouse83")).toBe("lichess:cutemouse83");
     expect(playerFromInput("lichess.org/@/some_one-1/")).toBe("lichess:some_one-1");
     expect(playerFromInput("lichess:x_y")).toBe("lichess:x_y");
-    expect(playerFromInput("Dameless")).toBe("dameless");
+    expect(playerFromInput("engine:Maia-1500")).toBe("engine:maia-1500");
+    expect(playerFromInput("You")).toBe("you");
     expect(playerFromInput("")).toBeNull();
     expect(playerFromInput("a")).toBeNull();
     expect(playerFromInput("has space")).toBeNull();

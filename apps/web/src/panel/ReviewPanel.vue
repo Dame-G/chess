@@ -6,7 +6,7 @@ import { EButton } from "@eos-ui/vue/components/EButton";
 import { EProgress } from "@eos-ui/vue/components/EProgress";
 import "../board/review.css";
 import type { Classification, Side } from "../api/types";
-import { progressText, reviewCost, seatName } from "../format";
+import { formatNumber, progressText, reviewCost, seatName } from "../format";
 import { useBoard } from "../board/board";
 import Glyph from "../board/Glyph.vue";
 import { sanLine } from "../board/position";
@@ -74,7 +74,7 @@ function jump(side: Side, c: Classification) {
   if (ply !== undefined) board.go(ply);
 }
 
-/** A local game against Dameless from the position on the board. */
+/** A local game against an engine from the position on the board. */
 function playFromHere() {
   const g = board.game;
   if (!g) return;
@@ -174,6 +174,7 @@ const fmt = (n: number | null | undefined) => (n == null ? null : n.toFixed(1));
           </ul>
         </div>
       </section>
+      <p class="by">Reviewed by {{ review.engine }} at {{ formatNumber(review.nodes) }} nodes a move</p>
 
       <section
         class="move"
@@ -266,6 +267,13 @@ const fmt = (n: number | null | undefined) => (n == null ? null : n.toFixed(1));
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sp-3);
+}
+
+/* What reviewed the game: the engine as it calls itself, and its budget. */
+.by {
+  margin: 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
 }
 
 .col {

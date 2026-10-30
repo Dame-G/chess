@@ -4,7 +4,7 @@ import { client, ok } from "../api/client";
 import type { LevelsOverview, PlannedMatch } from "../api/types";
 import { listen } from "./listen";
 
-/** The strength ladder (`dameless@<level>` seats) with each level's rating, and the level suggested for You. */
+/** The analysis engine's strength ladder (`stockfish@<level>` seats) with each level's rating, and the level suggested for You. */
 export const useLevels = defineStore("levels", () => {
   const levels = ref<LevelsOverview | null>(null);
   /** The calibration matches that would teach the most now, with how many games each plays. */

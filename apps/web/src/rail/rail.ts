@@ -79,7 +79,7 @@ export function monthOf(iso: string, now = Date.now()): string | null {
 
 /** What an empty rail says for each filter: the title, and one sentence that teaches the next step. */
 export const emptyNote: Record<RailFilter, { title: string; body?: string }> = {
-  all: { title: "No games yet", body: "Play Dameless, or link your Lichess account to bring in your games." },
+  all: { title: "No games yet", body: "Play an engine, or link your Lichess account to bring in your games." },
   you: { title: "You haven't played here yet", body: "Games you play here or on Lichess show up here." },
   lichess: { title: "No Lichess games", body: "Games from your account and players you imported show up here." },
 };

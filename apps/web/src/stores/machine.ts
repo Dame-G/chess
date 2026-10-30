@@ -7,7 +7,7 @@ import type { Health, MachineInfo } from "../api/types";
 export const useMachine = defineStore("machine", () => {
   const machine = ref<MachineInfo | null>(null);
   const token = ref<string | null>(null);
-  /** What the machine has and lacks: the opening book, the engine, the disk… */
+  /** What the machine has and lacks: the analysis engine, the Maia nets, the disk, the database. */
   const health = ref<Health | null>(null);
 
   async function loadMachine() {
@@ -18,16 +18,9 @@ export const useMachine = defineStore("machine", () => {
     health.value = await ok(client.GET("/api/diagnostics"));
   }
 
-  /** Downloads the tools and the opening book (answers when done), then reads the health again. */
-  async function installTools() {
-    const report = await ok(client.POST("/api/setup"));
-    await loadHealth();
-    return report;
-  }
-
   async function loadToken() {
     token.value = (await ok(client.GET("/api/token"))).token;
   }
 
-  return { machine, token, health, loadMachine, loadHealth, installTools, loadToken };
+  return { machine, token, health, loadMachine, loadHealth, loadToken };
 });

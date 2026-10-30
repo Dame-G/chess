@@ -18,7 +18,7 @@ export const GLOSSARY = {
   },
   calibration: {
     term: "Calibration",
-    text: "Dameless's levels play each other, and you, in the background. The results fix what each level is really worth, instead of trusting the first guess of its rating.",
+    text: "The analysis engine's levels play each other, and you, in the background. The results fix what each level is really worth, instead of trusting the first guess of its rating.",
   },
 } as const;
 

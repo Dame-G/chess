@@ -92,20 +92,13 @@ export function suggestedStrength(o: LevelsOverview | null): string {
   return !l || l.level.nodes == null ? "full" : String(id);
 }
 
-/** The Dameless seat for "Play this out": the level nearest your rating, as the seat string the server reads. */
-export function playOutSeat(o: LevelsOverview | null): string {
-  const s = suggestedStrength(o);
-  return s === "full" ? "dameless" : `dameless@${s}`;
-}
+/** The seat string the server reads for the analysis engine at a strength: `stockfish@5`, or `stockfish` at full. */
+export const levelSeat = (engine: string, strength: number | "full" | string): string =>
+  strength === "full" ? engine : `${engine}@${strength}`;
 
-/**
- * The level a finished game's Dameless seat played at, read back from the rating the server wrote on the seat (it
- * names a level seat by its rating). `null` for full strength or a seat that matches no level.
- */
-export function levelOfRating(o: LevelsOverview | null, rating: number | null | undefined): number | null {
-  if (rating == null) return null;
-  const hit = (o?.levels ?? []).find((l) => l.level.nodes != null && levelElo(l) === rating);
-  return hit?.level.id ?? null;
+/** The seat for "Play this out": the analysis engine at the level nearest your rating. */
+export function playOutSeat(engine: string, o: LevelsOverview | null): string {
+  return levelSeat(engine, suggestedStrength(o));
 }
 
 /** Seconds a game of a calibration match takes, by the nodes it plays: about sixty plies, measured on this machine. */

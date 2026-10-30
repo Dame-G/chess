@@ -56,8 +56,8 @@ describe("reading a pasted position", () => {
 
 const base: GameSummary = {
   id: 1,
-  white: { player: "you", name: "You", version: null, build: null, rating: null, title: null },
-  black: { player: "dameless", name: "Dameless", rating: null, title: null },
+  white: { player: "you", name: "You", rating: null, title: null },
+  black: { player: "engine:stockfish", name: "Stockfish", rating: null, title: null },
   source: { type: "local" },
   time: { type: "clock", initial_ms: 180_000, increment_ms: 2000 },
   status: "finished",
@@ -92,11 +92,15 @@ describe("modes and what opens first", () => {
 
 describe("the command bar's verbs", () => {
   it("reads the CLI's words", () => {
-    expect(readVerb("play 5+3 dameless")).toEqual({
+    expect(readVerb("play 5+3 stockfish")).toEqual({
       verb: "play",
-      opponent: "dameless",
+      opponent: "stockfish",
       time: { type: "clock", initial_ms: 300_000, increment_ms: 3000 },
     });
+    expect(readVerb("play sf@5")).toEqual({ verb: "play", opponent: "stockfish", level: 5, time: null });
+    expect(readVerb("play maia-1500 3+2")).toMatchObject({ opponent: "maia-1500" });
+    expect(readVerb("play")).toEqual({ verb: "play", opponent: null, time: null });
+    expect(readVerb("play lichess")).toMatchObject({ opponent: "lichess" });
     expect(readVerb("review last 20")).toEqual({ verb: "review", last: 20 });
     expect(readVerb("compare cutemouse83")).toEqual({ verb: "compare", players: ["cutemouse83"] });
     expect(readVerb("new idea")).toBeUndefined();

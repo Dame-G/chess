@@ -124,7 +124,7 @@ const tabs: SheetTab[] = [
     <UiDialog v-model:open="wide" size="lg" title="Bot rules" confirm-label="Save">
       <UiKeyValue
         :items="[
-          { label: 'Version', value: 'Champion' },
+          { label: 'Analysis', value: 'Stockfish 17.1' },
           { label: 'Takes', value: 'Rated and casual' },
           { label: 'Speeds', value: 'Bullet, blitz, rapid' },
         ]"

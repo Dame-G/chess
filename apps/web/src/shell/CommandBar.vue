@@ -6,7 +6,9 @@ import { ECommandPalette, type CommandItem } from "@eos-ui/vue/components/EComma
 import type { GameSummary, Side } from "../api/types";
 import { ago, resultText, seatName, timeControl } from "../format";
 import { useBoard } from "../board/board";
+import { levelSeat } from "../sheets/levels";
 import { useDrills } from "../stores/drills";
+import { useEngines } from "../stores/engines";
 import { useGames } from "../stores/games";
 import { usePolicy } from "../stores/policy";
 import { choice, shown } from "../scheme";
@@ -14,13 +16,14 @@ import { readVerb, type Verb } from "./commands";
 import { useStartDrills } from "./drillFlow";
 import { useUi } from "./ui";
 
-/** The command bar: places, games, and verbs in the CLI's words (`play 5+3 dameless`). */
+/** The command bar: places, games, and verbs in the CLI's words (`play 5+3 stockfish`). */
 const ui = useUi();
 const router = useRouter();
 const board = useBoard();
 const games = useGames();
 const toast = useToast();
 const drills = useDrills();
+const engines = useEngines();
 const startDrills = useStartDrills();
 
 const query = ref("");
@@ -79,7 +82,7 @@ const typed = computed<CommandItem[]>(() => {
 function describe(v: Verb): string {
   switch (v.verb) {
     case "play":
-      return `Play ${v.time ? timeControl(v.time) + " " : ""}against ${v.opponent === "stockfish" ? `Stockfish level ${v.level}` : v.opponent === "lichess" ? "someone on Lichess" : "Dameless"}`;
+      return `Play ${v.time ? timeControl(v.time) + " " : ""}against ${opponentName(v)}`;
     case "review":
       return `Review your last ${v.last} games`;
     case "compare":
@@ -101,16 +104,26 @@ const gameItems = computed<CommandItem[]>(() =>
 );
 const items = computed(() => [...typed.value, ...places, ...verbs.value, ...gameItems.value]);
 
+/** Who a typed `play` is against, in words: "someone on Lichess", "Stockfish level 5", "Maia 1500". */
+function opponentName(v: Extract<Verb, { verb: "play" }>): string {
+  if (v.opponent === "lichess") return "someone on Lichess";
+  const id = v.opponent ?? engines.analysisId;
+  const name = engines.byId(id)?.name ?? id;
+  return v.level != null ? `${name} level ${v.level}` : name;
+}
+
 async function runVerb(v: Verb) {
   if (v.verb === "play") {
-    if (v.opponent !== "dameless") {
+    if (v.opponent === "lichess") {
       ui.startNewGame();
       return;
     }
+    const id = v.opponent ?? engines.analysisId;
+    const seat = v.level != null && id === engines.analysisId ? levelSeat(id, v.level) : id;
     const youWhite = Math.random() < 0.5;
     const s = await games.start({
-      white: youWhite ? "you" : "dameless",
-      black: youWhite ? "dameless" : "you",
+      white: youWhite ? "you" : seat,
+      black: youWhite ? seat : "you",
       time: v.time ?? { type: "clock", initial_ms: 300_000, increment_ms: 3000 },
     });
     await router.push({ path: "/", query: { game: String(s.id) } });
@@ -161,7 +174,7 @@ async function select(item: CommandItem) {
     v-model:query="query"
     :items="items"
     label="Command bar"
-    placeholder="Go to, find a game, or type: play 5+3 dameless"
+    placeholder="Go to, find a game, or type: play 5+3 stockfish"
     @select="select"
   />
 </template>

@@ -2,8 +2,8 @@ import type { Comparison, LeaderRow, Profile, Speed } from "../api/types";
 import { ALL_LIMIT, formatNumber, speedName, WINDOWS } from "../format";
 import type { TermKey } from "../parts/glossary";
 
-/** The players a comparison starts with. */
-const DEFAULT_PLAYERS = ["you", "dameless"];
+/** The players a comparison starts with: you and the analysis engine. */
+const defaultPlayers = (analysis: string) => ["you", `engine:${analysis}`];
 const DEFAULT_LIMIT = 200;
 export const LIMITS = [50, ...WINDOWS];
 /** The speeds a profile can be filtered by. */
@@ -22,13 +22,16 @@ type Query = Record<string, string | (string | null)[] | null | undefined>;
 const first = (v: string | (string | null)[] | null | undefined): string =>
   Array.isArray(v) ? (v[0] ?? "") : (v ?? "");
 
-/** Whether a string is a player key the server knows how to answer: you, dameless, lichess:<name>, stockfish:<1-8>. */
+/** Whether a string is a player key the server knows how to answer: you, engine:<id>, lichess:<name>. */
 export function isPlayerKey(key: string): boolean {
-  return /^(you|dameless|lichess:[a-z0-9][a-z0-9_-]{0,28}[a-z0-9]|stockfish:[1-8])$/.test(key);
+  return /^(you|engine:[a-z0-9][a-z0-9._-]{0,62}|lichess:[a-z0-9][a-z0-9_-]{0,28}[a-z0-9])$/.test(key);
 }
 
-/** Reads `?players=you,dameless,lichess:x&speeds=blitz&rated=true&limit=100`, ignoring what it cannot use. */
-export function parseAddress(query: Query): CompareAddress {
+/**
+ * Reads `?players=you,engine:stockfish,lichess:x&speeds=blitz&rated=true&limit=100`, ignoring what it cannot use. With
+ * nobody valid named, it starts with you and `analysis`, the analysis engine.
+ */
+export function parseAddress(query: Query, analysis = "stockfish"): CompareAddress {
   const players: string[] = [];
   for (const raw of first(query["players"]).split(",")) {
     const key = raw.trim().toLowerCase();
@@ -38,7 +41,7 @@ export function parseAddress(query: Query): CompareAddress {
   const rated = first(query["rated"]);
   const limit = Number(first(query["limit"]));
   return {
-    players: (players.length ? players : DEFAULT_PLAYERS).slice(0, MAX_PLAYERS),
+    players: (players.length ? players : defaultPlayers(analysis)).slice(0, MAX_PLAYERS),
     speeds: SPEEDS.filter((s) => speeds.includes(s)),
     rated: rated === "true" ? true : rated === "false" ? false : null,
     limit: Number.isInteger(limit) && limit > 0 ? Math.min(limit, ALL_LIMIT) : DEFAULT_LIMIT,
@@ -55,13 +58,13 @@ export function addressQuery(a: CompareAddress): Record<string, string> {
 }
 
 /**
- * A player key from what people type or paste: a Lichess name, `@name`, `lichess:name`, or a link to a profile
- * (`https://lichess.org/@/name`). `null` when it cannot be a Lichess name.
+ * A player key from what people type or paste: `you`, an engine's key (`engine:stockfish`), a Lichess name, `@name`,
+ * `lichess:name`, or a link to a profile (`https://lichess.org/@/name`). `null` when it cannot be any of them.
  */
 export function playerFromInput(text: string): string | null {
   let t = text.trim();
   if (!t) return null;
-  if (/^(you|dameless)$/i.test(t)) return t.toLowerCase();
+  if (/^(you|engine:.+)$/i.test(t)) return isPlayerKey(t.toLowerCase()) ? t.toLowerCase() : null;
   const link = t.match(/lichess\.org\/@\/([^/?#\s]+)/i);
   if (link) t = link[1]!;
   t = t.replace(/^lichess:/i, "").replace(/^@/, "");
@@ -69,8 +72,8 @@ export function playerFromInput(text: string): string | null {
   return isPlayerKey(key) ? key : null;
 }
 
-/** The Lichess name inside a key, else the key. */
-export const nameOfKey = (key: string): string => key.replace(/^lichess:/, "");
+/** The Lichess name or engine id inside a key, else the key. */
+export const nameOfKey = (key: string): string => key.replace(/^(lichess|engine):/, "");
 
 // ---- Rows
 
