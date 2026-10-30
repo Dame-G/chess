@@ -33,6 +33,13 @@ const groups = [
     ],
   },
   {
+    title: "Playing",
+    rows: [
+      { keys: [["T"], formatShortcut("mod+z")], does: "Take back your move, in a game with no clock" },
+      { keys: [["R"]], does: "Rematch, when your game against Dameless is over" },
+    ],
+  },
+  {
     title: "Review",
     rows: [{ keys: [["X"], ["Shift", "X"]], does: "Next and previous mistake" }],
   },

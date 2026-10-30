@@ -12,6 +12,7 @@ import { useConnections } from "../stores/connections";
 import { useVersions } from "../stores/versions";
 import UiPlayer from "../ui/UiPlayer.vue";
 import Logo from "./Logo.vue";
+import BotLive from "./BotLive.vue";
 import LiveGame from "./LiveGame.vue";
 import { useUi } from "./ui";
 import WorkIndicator from "./WorkIndicator.vue";
@@ -67,6 +68,7 @@ const onDameless = computed(() => route.path.startsWith("/dameless"));
     </template>
     <template #actions>
       <LiveGame />
+      <BotLive />
       <EButton size="sm" variant="outline" :icon="PhPlus" class="new" aria-label="New game" @click="ui.startNewGame()">
         <span class="new-label">New game</span>
       </EButton>

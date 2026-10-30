@@ -36,14 +36,25 @@ onMounted(read);
 const overview = computed(() => dameless.levels);
 const levels = computed(() => overview.value?.levels ?? []);
 const rungs = computed(() => (overview.value ? ladder(overview.value) : []));
-/** The bars span the ladder: the weakest rung keeps a stub, the strongest fills the cell. */
+/** One scale for every row: from the lowest end of any interval to the highest, so a wide interval is seen as wide. */
 const span = computed(() => {
-  const elos = rungs.value.map((r) => r.elo);
-  const high = Math.max(...elos);
-  const low = Math.min(...elos) - (high - Math.min(...elos)) * 0.12;
+  const ends = rungs.value.flatMap((r) => [r.low ?? r.elo, r.high ?? r.elo]);
+  const low = Math.min(...ends);
+  const high = Math.max(...ends);
   return { low, width: Math.max(1, high - low) };
 });
-const share = (elo: number) => `${Math.max(2, ((elo - span.value.low) / span.value.width) * 100)}%`;
+const at = (elo: number) => `${Math.min(100, Math.max(0, ((elo - span.value.low) / span.value.width) * 100))}%`;
+/** An interval as a bar from its low end to its high end. */
+const whisker = (r: { low: number | null; high: number | null }) =>
+  r.low == null || r.high == null
+    ? undefined
+    : { insetInlineStart: at(r.low), inlineSize: `${Math.max(0.5, ((r.high - r.low) / span.value.width) * 100)}%` };
+const standingNote = {
+  found: undefined,
+  provisional: "Provisional: few games so far, or a wide margin. Calibration is still narrowing it.",
+  estimate: "Not played yet: the rating it was designed for",
+} as const;
+const provisional = computed(() => rungs.value.some((r) => r.kind === "level" && r.standing !== "found"));
 
 /** Calibration work in the queue or running: one at a time is enough. */
 const calibrating = computed(() => [...work.running, ...work.queued].find((w) => w.kind === "calibrate"));
@@ -103,25 +114,35 @@ async function calibrate() {
       <template #cell-name="{ row }">
         <span class="name" :class="{ 'is-you': row.kind === 'you' }">{{ row.name }}</span>
         <UiBadge v-if="row.near" tone="info">Near you</UiBadge>
+        <UiBadge v-if="row.standing === 'provisional'" :title="standingNote.provisional">Provisional</UiBadge>
+        <UiBadge v-else-if="row.standing === 'estimate'" :title="standingNote.estimate">Estimate</UiBadge>
       </template>
       <template #cell-bar="{ row }">
         <span class="track" aria-hidden="true">
           <span
-            class="bar"
-            :class="{ 'is-you': row.kind === 'you', 'is-guess': !row.found }"
-            :style="{ inlineSize: share(row.elo) }"
+            v-if="whisker(row)"
+            class="range"
+            :class="{ 'is-you': row.kind === 'you', 'is-loose': row.standing !== 'found' }"
+            :style="whisker(row)"
+          ></span>
+          <span
+            class="dot"
+            :class="{ 'is-you': row.kind === 'you', 'is-loose': row.standing !== 'found' }"
+            :style="{ insetInlineStart: at(row.elo) }"
           ></span>
         </span>
       </template>
       <template #cell-text="{ row }">
-        <span
-          :class="{ guess: !row.found }"
-          :title="row.found ? undefined : 'Not played yet: the rating it was designed for'"
-        >
+        <span :class="{ guess: row.standing !== 'found' }" :title="standingNote[row.standing]">
           {{ row.text }}
         </span>
       </template>
+      <template #cell-games="{ row }">{{ row.games || "–" }}</template>
     </UiTable>
+    <p v-if="provisional && !failed" class="hint">
+      Each bar is the rating's 95 % interval and the dot its best estimate; a hollow dot and a ≈ mean the level is still
+      being calibrated, so its rating may move.
+    </p>
     <p v-if="overview && !any && !calibrating" class="hint">
       No level has played yet, so these are the ratings each was designed for. Play a few games against a level, or
       calibrate.
@@ -139,26 +160,57 @@ async function calibrate() {
 }
 
 .track {
+  position: relative;
   display: block;
   inline-size: 100%;
-  block-size: var(--sp-2);
-  border-radius: var(--r-pill);
-  background: var(--c-sunk);
+  block-size: var(--sp-4);
 }
 
-.bar {
-  display: block;
-  block-size: 100%;
+/* The rail the interval and the dot sit on: one hairline through the middle. */
+.track::before {
+  content: "";
+  position: absolute;
+  inset: calc(50% - 0.5px) 0 auto;
+  block-size: var(--e-stroke-hair);
+  background: var(--c-line-strong);
+}
+
+/* The 95 % interval: a bar from its low end to its high end, lighter when the rating is still being found. */
+.range {
+  position: absolute;
+  inset-block: calc(50% - var(--sp-1) / 2) auto;
+  block-size: var(--sp-1);
   border-radius: var(--r-pill);
   background: var(--c-ink-2);
 }
 
-.bar.is-guess {
-  background: color-mix(in oklab, var(--c-ink-2) 40%, var(--c-sunk));
+.range.is-loose {
+  background: color-mix(in oklab, var(--c-ink-2) 35%, var(--c-sunk));
 }
 
-.bar.is-you {
+.range.is-you {
   background: var(--c-act);
+}
+
+/* The best estimate: filled when found by playing, a ring while provisional or only designed for. */
+.dot {
+  position: absolute;
+  inset-block-start: 50%;
+  box-sizing: border-box;
+  inline-size: var(--sp-2);
+  block-size: var(--sp-2);
+  translate: -50% -50%;
+  border-radius: var(--r-pill);
+  background: var(--c-ink);
+}
+
+.dot.is-you {
+  background: var(--c-act);
+}
+
+.dot.is-loose {
+  border: var(--e-stroke-focus) solid var(--c-ink-2);
+  background: var(--c-pane);
 }
 
 .guess {

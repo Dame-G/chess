@@ -672,6 +672,25 @@ const finished: [
     72,
     7,
   ],
+  [
+    // A game against Dameless at a level, not reviewed yet: what the game's end card offers.
+    {
+      id: 8,
+      white: { ...dameless(14, 1404), name: "Dameless 1404", level: 4, title: null },
+      black: you(1846),
+      source: { type: "local" },
+      time: clockTc(10, 5),
+      outcome: "black_wins",
+      ending: "resignation",
+      opening: { eco: "C50", name: "Italian Game", ply: 5 },
+      started_at: minutesAgo(30),
+      ended_at: minutesAgo(12),
+      you: "black",
+    },
+    ITALIAN,
+    44,
+    8,
+  ],
 ];
 for (const [s, san, plies, seed] of finished) {
   const engine: Side[] = [];
@@ -686,6 +705,45 @@ for (const [s, san, plies, seed] of finished) {
       drift: s.outcome === "white_wins" ? 6 : s.outcome === "black_wins" ? -6 : 0,
     }),
   );
+}
+
+// More of the bot's games on Lichess, for its recent results and its rating trend (its rating going in is on its seat).
+{
+  const run: [string, number, Side, "white_wins" | "black_wins" | "draw", number, number][] = [
+    ["Beta-Bot", 2230, "white", "white_wins", 2304, 70],
+    ["Gamma-Bot", 2275, "black", "draw", 2298, 120],
+    ["knightowl", 1802, "white", "white_wins", 2291, 60 * 5],
+    ["Alpha-Bot", 2251, "black", "black_wins", 2283, 60 * 9],
+    ["Delta-Bot", 2340, "white", "black_wins", 2290, 60 * 14],
+    ["cutemouse83", 1871, "black", "white_wins", 2299, 60 * 26],
+    ["Beta-Bot", 2230, "white", "white_wins", 2288, 60 * 30],
+  ];
+  const openings = [LONDON, CARO, SICILIAN, ITALIAN, QGD];
+  for (const [i, [name, rating, botSide, outcome, own, ago]] of run.entries()) {
+    const botSeat = dameless(14, own);
+    const theirs = lichess(name, rating, name.endsWith("-Bot") ? "BOT" : null);
+    const id = 20 + i;
+    add(
+      summary({
+        id,
+        white: botSide === "white" ? botSeat : theirs,
+        black: botSide === "white" ? theirs : botSeat,
+        source: { type: "lichess", connection: "bot", id: `bT${id}xYz1`, rated: true, speed: "blitz" },
+        time: clockTc(3, 2),
+        outcome,
+        ending: outcome === "draw" ? "repetition" : "resignation",
+        opening: null,
+        started_at: minutesAgo(ago),
+        ended_at: minutesAgo(ago - 6),
+        url: `https://lichess.org/bT${id}xYz1`,
+      }),
+      record(moves(openings[i % openings.length]!, 50 + i * 3, 300 + i), {
+        tc: clockTc(3, 2),
+        engine: [botSide],
+        seed: 300 + i,
+      }),
+    );
+  }
 }
 
 // A trial's games: the version under test against the champion, colours alternating by pair.

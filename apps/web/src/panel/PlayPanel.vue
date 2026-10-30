@@ -128,7 +128,14 @@ const status = computed(() => {
       <EButton v-if="can('offer_draw')" variant="outline" :loading="busy === 'offer_draw'" @click="act('offer_draw')">
         Offer draw
       </EButton>
-      <EButton v-if="can('takeback')" variant="outline" :loading="busy === 'takeback'" @click="act('takeback')">
+      <EButton
+        v-if="can('takeback')"
+        variant="outline"
+        :loading="busy === 'takeback'"
+        :title="person ? undefined : 'Take back your last move and the reply (T)'"
+        :aria-keyshortcuts="person ? undefined : 'T'"
+        @click="act('takeback')"
+      >
         {{ person ? "Ask for takeback" : "Take back" }}
       </EButton>
       <EButton v-if="can('abort')" variant="outline" @click="act('abort')">Abort</EButton>

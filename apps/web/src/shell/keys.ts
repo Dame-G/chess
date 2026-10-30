@@ -1,7 +1,8 @@
 import { useRouter } from "vue-router";
-import { useShortcuts } from "@eos-ui/vue";
+import { useShortcuts, useToast } from "@eos-ui/vue";
 import { useBoard } from "../board/board";
 import { findPly, walksSide } from "../board/review";
+import { useRematch } from "../panel/useRematch";
 import { useGames } from "../stores/games";
 import { useStartDrills } from "./drillFlow";
 import { useUi } from "./ui";
@@ -12,7 +13,8 @@ const OWN_ARROWS =
 
 /**
  * The app's keys, as docs/design.md lists them: ←/→, Home/End, F, Space (Explore's engine), X and Shift X (Review's
- * mistakes), N, D (today's drills), G Y / G D / G S and `?`. ⌘K belongs to the command bar. Call once, in the app's root.
+ * mistakes), T or ⌘Z (take back, in a game against Dameless), R (play the finished game again), N, D (today's drills),
+ * G Y / G D / G S and `?`. ⌘K belongs to the command bar. Call once, in the app's root.
  */
 export function useKeys() {
   const board = useBoard();
@@ -20,6 +22,23 @@ export function useKeys() {
   const ui = useUi();
   const router = useRouter();
   const startDrills = useStartDrills();
+  const rematch = useRematch();
+  const toast = useToast();
+
+  /** Takes back your last move and the reply, in a local game that allows it (one with no clock). */
+  async function takeBack() {
+    const game = games.open;
+    if (board.mode !== "play" || game?.summary.source.type !== "local" || !game.actions.includes("takeback")) return;
+    try {
+      await games.act("takeback");
+    } catch (e) {
+      toast.show({
+        title: "That did not go through",
+        message: e instanceof Error ? e.message : String(e),
+        tone: "warning",
+      });
+    }
+  }
 
   const arrows = (step: () => void) => (e: KeyboardEvent) => {
     const target = e.target as Element | null;
@@ -57,6 +76,11 @@ export function useKeys() {
     x: () => mistake(false),
     "shift+x": () => mistake(true),
     n: () => ui.startNewGame(),
+    t: () => void takeBack(),
+    "mod+z": () => void takeBack(),
+    r: () => {
+      if (board.mode === "review" && rematch.can.value) void rematch.start();
+    },
     g: () => (g = Date.now()),
     y: after("/you"),
     d: drillsOrDameless,

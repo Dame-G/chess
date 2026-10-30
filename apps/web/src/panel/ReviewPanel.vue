@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { useRouter } from "vue-router";
 import { PhCaretDown } from "@phosphor-icons/vue";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import type { EMenuItem } from "@eos-ui/vue/components/EMenu";
 import { EProgress } from "@eos-ui/vue/components/EProgress";
 import "../board/review.css";
 import type { Classification, Side } from "../api/types";
@@ -13,19 +11,18 @@ import { useBoard } from "../board/board";
 import Glyph from "../board/Glyph.vue";
 import { sanLine } from "../board/position";
 import { findPly, hasBetter, hint, markOf, markTip, SUMMARY_MARKS } from "../board/review";
-import { rematchRequest } from "../board/rematch";
-import { useDameless } from "../stores/dameless";
 import { useGames } from "../stores/games";
 import { usePolicy } from "../stores/policy";
-import { useVersions } from "../stores/versions";
 import { useWork } from "../stores/work";
 import { useUi } from "../shell/ui";
 import UiEmpty from "../ui/UiEmpty.vue";
 import UiScore from "../ui/UiScore.vue";
 import UiStat from "../ui/UiStat.vue";
 import UiToolbar from "../ui/UiToolbar.vue";
+import GameEnd from "./GameEnd.vue";
 import PanelLock from "./PanelLock.vue";
 import PanelMenu from "./PanelMenu.vue";
+import { useRematch } from "./useRematch";
 
 /**
  * Review: a finished game read by the engine. Per side its accuracy, its average loss and the judgements it earned
@@ -35,12 +32,10 @@ import PanelMenu from "./PanelMenu.vue";
 const board = useBoard();
 const games = useGames();
 const policy = usePolicy();
-const versions = useVersions();
 const work = useWork();
 const ui = useUi();
 const toast = useToast();
-const dameless = useDameless();
-const router = useRouter();
+const { can: ending } = useRematch();
 
 const s = computed(() => board.summary);
 const review = computed(() => games.review);
@@ -85,40 +80,6 @@ function playFromHere() {
   if (!g) return;
   ui.startNewGame({ fen: board.plies[0]?.fen ?? "", moves: g.moves.slice(0, board.ply).map((m) => m.uci) });
 }
-
-/** A rematch: the same opponent and clock with the colours swapped, from a new book line if the game began from one. */
-const starting = ref(false);
-const canRematch = computed(() => {
-  const g = board.game;
-  return !!g && rematchRequest(g, { champion: versions.current?.id, levels: dameless.levels }) !== null;
-});
-async function rematch() {
-  const g = board.game;
-  if (!g) return;
-  starting.value = true;
-  try {
-    if (!dameless.levels) await dameless.loadLevels().catch(() => {});
-    const request = rematchRequest(g, {
-      champion: versions.current?.id,
-      levels: dameless.levels,
-      started: games.starts[String(g.summary.id)] ?? null,
-    });
-    if (!request) return;
-    const made = await games.start(request);
-    await router.push({ path: "/", query: { game: String(made.id) } });
-  } catch (e) {
-    toast.show({
-      title: "The rematch did not start",
-      message: e instanceof Error ? e.message : String(e),
-      tone: "warning",
-    });
-  } finally {
-    starting.value = false;
-  }
-}
-const extra = computed<EMenuItem[]>(() =>
-  canRematch.value ? [{ label: "Rematch", disabled: starting.value, onClick: () => void rematch() }] : [],
-);
 
 const asking = ref(false);
 const asked = ref(false);
@@ -165,6 +126,10 @@ async function run(f: (id: number) => Promise<unknown>, id: number) {
     });
   }
 }
+/** Where this game's review stands, for the end card: it offers one until it has been asked for. */
+const reviewState = computed<"none" | "asking" | "reading" | "done">(() =>
+  review.value ? "done" : asking.value ? "asking" : reading.value || asked.value ? "reading" : "none",
+);
 const empty = computed(() => (board.game?.moves.length ?? 0) === 0 && !games.openLoading);
 
 const fmt = (n: number | null | undefined) => (n == null ? null : n.toFixed(1));
@@ -172,6 +137,8 @@ const fmt = (n: number | null | undefined) => (n == null ? null : n.toFixed(1));
 
 <template>
   <div class="review">
+    <GameEnd v-if="ending && policy.allowed" :review="reviewState" @review="requestReview" />
+
     <PanelLock v-if="!policy.allowed" />
 
     <div v-else-if="games.reviewLoading && !review" class="wait" role="status" aria-label="Loading the review">
@@ -245,14 +212,14 @@ const fmt = (n: number | null | undefined) => (n == null ? null : n.toFixed(1));
 
       <UiToolbar align="between" label="Review actions">
         <EButton variant="outline" @click="playFromHere">Play from here</EButton>
-        <template #end><PanelMenu :extra="extra" /></template>
+        <template #end><PanelMenu /></template>
       </UiToolbar>
     </template>
 
     <template v-else-if="empty">
       <UiEmpty dense title="No moves were played." body="There is nothing to review." />
       <UiToolbar align="between" label="Game">
-        <template #end><PanelMenu :extra="extra" /></template>
+        <template #end><PanelMenu /></template>
       </UiToolbar>
     </template>
 
@@ -276,12 +243,12 @@ const fmt = (n: number | null | undefined) => (n == null ? null : n.toFixed(1));
 
     <template v-else>
       <UiEmpty dense title="This game hasn't been reviewed." :body="`Takes ${reviewCost(1)}, in the background.`">
-        <template #actions>
+        <template v-if="!ending" #actions>
           <EButton variant="primary" :loading="asking" @click="requestReview">Review it</EButton>
         </template>
       </UiEmpty>
       <UiToolbar align="between" label="Game">
-        <template #end><PanelMenu :extra="extra" /></template>
+        <template #end><PanelMenu /></template>
       </UiToolbar>
     </template>
   </div>
