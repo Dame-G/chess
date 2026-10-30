@@ -67,6 +67,7 @@ async fn profiles_add_up_games_and_reviews() {
     assert_eq!(profiles.profile(bob.clone(), only_blitz).await.unwrap().games, 1);
     let only_rapid = ProfileFilter { speeds: vec![Speed::Rapid], ..Default::default() };
     assert_eq!(profiles.profile(bob.clone(), only_rapid).await.unwrap().games, 0);
+    // An engine no longer on the list (Maia, once built in) is named from its id.
     assert_eq!(profiles.player(&PlayerKey::Engine("maia-1500".into())).await.unwrap().name, "Maia 1500");
     assert_eq!(profiles.player(&PlayerKey::Engine("reckless".into())).await.unwrap().name, "Reckless");
 

@@ -1,5 +1,5 @@
-//! Calibration: the levels play each other in the background (`WorkKind::Calibrate`, priority Background), and the
-//! ladder is refitted after each match.
+//! Calibration: an engine's levels play each other in the background (`WorkKind::Calibrate`, priority Background),
+//! and that engine's ladder is refitted after each match.
 //!
 //! The work is queued by [`Levels::prepare_calibration`] with its matches resolved (planned by `core::levels::plan`
 //! when the request names none). Each game is played here, outside the live games: two engine seats at their levels
@@ -101,7 +101,7 @@ async fn play(games: &Games, binary: &EngineBinary, p: Pairing, cancel: &Cancell
             .at_level(level.clone(), Some(level.calibration_nodes()), seat_seed(p.seed, index))
             .await?;
         seats.push(Box::new(engine));
-        let (name, rating) = games.levels().seat_name(level, &binary.engine.name).await;
+        let (name, rating) = games.levels().seat_name(level, &binary.engine).await;
         names.push(Seat {
             engine: Some(binary.engine.label().to_owned()),
             rating: Some(rating),
@@ -122,7 +122,9 @@ async fn play(games: &Games, binary: &EngineBinary, p: Pairing, cancel: &Cancell
     new.status = GameStatus::Live;
     new.start_fen = p.start_fen.clone();
     let id = hub.store.insert_game(new).await?;
-    hub.store.record_level_game(id, Entrant::Level(p.white.id), Entrant::Level(p.black.id), true).await?;
+    hub.store
+        .record_level_game(id, &binary.engine.id, Entrant::Level(p.white.id), Entrant::Level(p.black.id), true)
+        .await?;
 
     let end = loop {
         if let Some(end) = referee.ending() {
@@ -277,7 +279,7 @@ impl Executor for Calibrate {
                 .await?;
             }
             if played_any {
-                let fit = levels.refit().await?;
+                let fit = levels.refit(&binary.engine.id).await?;
                 let show = |id: u32| {
                     fit.ratings.iter().find(|r| r.entrant == Entrant::Level(id)).map_or_else(
                         || "-".to_owned(),

@@ -168,8 +168,8 @@ async fn evaluations_are_cached_by_position_engine_nodes_and_multipv() {
     let other = h.eval.evaluate_positions(&[one(&after_e4)], &h.engine, 20_000, 2, 1).await.unwrap();
     assert_eq!((other.searched, other.cached), (1, 0));
     // An engine with a fixed budget cannot analyse.
-    let maia = chess_analysis::EvalRequest { engine: Some("maia-1500".into()), ..request("tab-9", &[]) };
-    assert_eq!(h.eval.start_session(maia).await.unwrap_err().status(), 400);
+    let fixed = chess_analysis::EvalRequest { engine: Some("fixed".into()), ..request("tab-9", &[]) };
+    assert_eq!(h.eval.start_session(fixed).await.unwrap_err().status(), 400);
 
     // Many at once: the cached one is read, a repeated one searched once, the finished one not at all.
     let start = Position::start().fen();

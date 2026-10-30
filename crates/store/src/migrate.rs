@@ -20,6 +20,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0005_error_rates.sql"),
     include_str!("../migrations/0006_drill_themes.sql"),
     include_str!("../migrations/0007_engines.sql"),
+    include_str!("../migrations/0008_engine_levels.sql"),
 ];
 
 /// Applies the migrations the database has not seen, each in its own transaction.
@@ -118,6 +119,59 @@ mod tests {
         assert!(conn.pragma_query_value(None, "foreign_keys", |r| r.get::<_, bool>(0)).unwrap());
         apply(&mut conn).unwrap();
         assert_eq!(version(&conn), MIGRATIONS.len() as i64);
+    }
+
+    /// Migration 8: Maia's built-ins leave the list, level games name their engine (from the seat at a level) and the
+    /// one fit there was becomes Stockfish's.
+    #[test]
+    fn the_engine_levels_migration_drops_maia_and_keys_levels_by_engine() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        apply_to(&mut conn, 7).unwrap();
+        let t = "2026-01-01T00:00:00.000Z";
+        let seat = |player: &str| format!(r#"{{"player":"{player}","name":"x"}}"#);
+        conn.execute_batch(&format!(
+            r#"
+            INSERT INTO engines (id, name, kind, path, args, options, created_at) VALUES
+                ('maia-1500', 'Maia 1500', 'builtin', '/lc0', '[]', '{{}}', '{t}'),
+                ('maia-mine', 'Maia mine', 'custom', '/mine', '[]', '{{}}', '{t}'),
+                ('stockfish', 'Stockfish', 'builtin', '/sf', '[]', '{{}}', '{t}');
+            INSERT INTO level_ratings (entrant, elo, low, high, games, updated_at) VALUES ('level:1', 900, 800, 1000, 3, '{t}');
+            "#
+        ))
+        .unwrap();
+        for (id, white, black) in
+            [(1, "you", "engine:mine"), (2, "engine:maia-1500", "you"), (3, "you", "engine:stockfish")]
+        {
+            conn.execute(
+                &format!(
+                    "INSERT INTO games (id, source_kind, source, white, black, white_key, black_key, time, rated, \
+                     status, live, plies, moves, started_at) \
+                     VALUES (?1, 'local', '{{\"type\":\"local\"}}', ?2, ?3, ?4, ?5, '{{}}', 0, 'finished', 0, 0, x'', '{t}')"
+                ),
+                rusqlite::params![id, seat(white), seat(black), white, black],
+            )
+            .unwrap();
+        }
+        conn.execute_batch(
+            "INSERT INTO level_games (game, white, black, calibration) VALUES (1, 'you', 'level:3', 0), \
+             (3, 'you', 'you', 0);",
+        )
+        .unwrap();
+
+        apply(&mut conn).unwrap();
+        let one = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, String>(0)).unwrap();
+        assert_eq!(
+            one("SELECT group_concat(id, ',') FROM (SELECT id FROM engines ORDER BY id)"),
+            "maia-mine,stockfish"
+        );
+        assert_eq!(one("SELECT json_extract(white, '$.player') FROM games WHERE id = 2"), "engine:maia-1500");
+        assert_eq!(one("SELECT engine FROM level_games WHERE game = 1"), "mine");
+        assert_eq!(one("SELECT engine FROM level_games WHERE game = 3"), "stockfish");
+        assert_eq!(one("SELECT engine || ' ' || entrant FROM level_ratings"), "stockfish level:1");
+        let multipv: Option<bool> =
+            conn.query_row("SELECT multipv FROM engines WHERE id = 'stockfish'", [], |r| r.get(0)).unwrap();
+        assert_eq!(multipv, None);
     }
 
     #[test]

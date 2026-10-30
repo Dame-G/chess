@@ -1,17 +1,17 @@
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useToast } from "@eos-ui/vue";
 import { useBoard } from "../board/board";
-import { rematchRequest, strengthOf, type Strength } from "../board/rematch";
+import { opponentEngine, rematchRequest, strengthOf, type Strength } from "../board/rematch";
 import { neighbour } from "../sheets/levels";
 import { useEngines } from "../stores/engines";
 import { useLevels } from "../stores/levels";
 import { useGames } from "../stores/games";
 
 /**
- * Playing the game on the board again: the same opponent and clock with the colours swapped, or one level harder or
- * easier (against the analysis engine, the one with levels). Only a finished game of yours against an engine played
- * here can be played again.
+ * Playing the game on the board again: the same opponent and clock with the colours swapped, or one level of that
+ * engine's ladder harder or easier (every engine on the clock has levels). Only a finished game of yours against an
+ * engine played here can be played again.
  */
 export function useRematch() {
   const board = useBoard();
@@ -21,14 +21,23 @@ export function useRematch() {
   const router = useRouter();
   const toast = useToast();
 
-  const context = () => ({ analysis: engines.analysisId });
+  /** An engine has levels unless it plays a fixed budget; one not in the list (yet) is taken to have them. */
+  const context = () => ({ hasLevels: (id: string) => engines.byId(id)?.nodes == null });
   const can = computed(() => !!board.game && rematchRequest(board.game, context()) !== null);
-  /** The strength the analysis engine played at in the game on the board; `null` against any other engine. */
-  const strength = computed<Strength | null>(() => (board.game ? strengthOf(board.game, context()) : null));
-  const harder = computed(() => (strength.value === null ? null : neighbour(ladderStore.levels, strength.value, true)));
-  const easier = computed(() =>
-    strength.value === null ? null : neighbour(ladderStore.levels, strength.value, false),
+  /** The engine you played in the game on the board, and its ladder once read. */
+  const engine = computed(() => (board.game ? opponentEngine(board.game) : null));
+  const overview = computed(() => (engine.value ? ladderStore.of(engine.value) : null));
+  watch(
+    engine,
+    (id) => {
+      if (id && !ladderStore.of(id) && context().hasLevels(id)) void ladderStore.loadLevels(id).catch(() => {});
+    },
+    { immediate: true },
   );
+  /** The strength the engine played at in the game on the board; `null` against one without levels. */
+  const strength = computed<Strength | null>(() => (board.game ? strengthOf(board.game, context()) : null));
+  const harder = computed(() => (strength.value === null ? null : neighbour(overview.value, strength.value, true)));
+  const easier = computed(() => (strength.value === null ? null : neighbour(overview.value, strength.value, false)));
 
   const starting = ref(false);
   /** Starts the game; `to` plays one level up or down (a level's id, or `full`) instead of the same strength. */
@@ -37,7 +46,6 @@ export function useRematch() {
     if (!g || starting.value) return;
     starting.value = true;
     try {
-      if (!ladderStore.levels) await ladderStore.loadLevels().catch(() => {});
       const request = rematchRequest(g, context(), to);
       if (!request) return;
       const made = await games.start(request);
@@ -53,5 +61,5 @@ export function useRematch() {
     }
   }
 
-  return { can, strength, harder, easier, starting, start };
+  return { can, engine, overview, strength, harder, easier, starting, start };
 }

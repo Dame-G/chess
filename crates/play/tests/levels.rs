@@ -1,5 +1,5 @@
-//! Levels: games at a level choose among the engine's lines from a seeded RNG, are recorded for the fit, and the
-//! ladder is calibrated by games between levels.
+//! Levels: games at a level choose among the engine's lines from a seeded RNG, are recorded for that engine's fit, and
+//! each engine's ladder is calibrated by games between its levels.
 
 mod common;
 
@@ -141,8 +141,8 @@ async fn your_games_against_a_level_refit_the_ladder() {
     s.games.act(id, SeatAction::Resign, None).await.unwrap();
     s.games.wait_finished(id, Duration::from_secs(5)).await.unwrap();
 
-    until_async!("the refit", s.hub.store.level_ratings().await.unwrap().1.is_some());
-    let (ratings, _) = s.hub.store.level_ratings().await.unwrap();
+    until_async!("the refit", s.hub.store.level_ratings("fake").await.unwrap().1.is_some());
+    let (ratings, _) = s.hub.store.level_ratings("fake").await.unwrap();
     let you = ratings.iter().find(|r| r.entrant == Entrant::You).unwrap();
     assert_eq!(you.games, 1);
     let two = ratings.iter().find(|r| r.entrant == Entrant::Level(2)).unwrap();
@@ -154,9 +154,10 @@ async fn your_games_against_a_level_refit_the_ladder() {
         !updated.is_empty()
     });
     assert_eq!(updated.len(), 1);
-    assert_eq!(updated[0].ratings, ratings);
+    assert_eq!((updated[0].engine.as_str(), &updated[0].ratings), ("fake", &ratings));
 
-    let overview = s.games.levels().overview().await.unwrap();
+    let overview = s.games.levels().overview("fake").await.unwrap();
+    assert_eq!(overview.engine, "fake");
     assert_eq!(overview.levels.len(), 2);
     assert_eq!(overview.levels[1].games, 1);
     assert!(overview.levels[0].rating.is_none(), "level 1 has no games yet");
@@ -164,6 +165,24 @@ async fn your_games_against_a_level_refit_the_ladder() {
     assert_eq!(overview.suggested, Some(1), "your rating is nearer level 1's");
     assert!(overview.updated_at.is_some());
     let _ = Side::White;
+
+    // Another engine has the same ladder with its own ratings: a game at its levels refits it alone.
+    let fresh = s.games.levels().overview("other").await.unwrap();
+    assert!(fresh.levels.iter().all(|l| l.games == 0 && l.rating.is_none()) && fresh.you.is_none());
+    let g = s.games.start(request("you", "other@1", TimeControl::Movetime { ms: 50 }, None)).await.unwrap();
+    assert_eq!(g.summary.black.name, "Other 800");
+    s.games.act(g.summary.id, SeatAction::Move, Some("e4".into())).await.unwrap();
+    until_async!("other's reply", s.games.game(g.summary.id).await.unwrap().moves.len() == 2);
+    s.games.act(g.summary.id, SeatAction::Resign, None).await.unwrap();
+    s.games.wait_finished(g.summary.id, Duration::from_secs(5)).await.unwrap();
+    until_async!("the other refit", s.hub.store.level_ratings("other").await.unwrap().1.is_some());
+    assert_eq!(s.games.levels().overview("other").await.unwrap().levels[0].games, 1);
+    assert_eq!(s.games.levels().overview("fake").await.unwrap().levels[0].games, 0);
+    // A game between two engines' levels belongs to neither ladder; an engine with a fixed budget has none.
+    let mixed = s.games.start(request("fake@1", "other@2", TimeControl::Nodes { nodes: 1000 }, None)).await.unwrap();
+    assert_eq!(s.hub.store.level_seats(mixed.summary.id).await.unwrap(), None);
+    let fixed = s.games.start(request("you", "fixed@2", TimeControl::Movetime { ms: 50 }, None)).await;
+    assert_eq!(fixed.unwrap_err().status(), 400);
 }
 
 #[tokio::test]
@@ -171,11 +190,16 @@ async fn calibration_plays_levels_against_each_other_and_fits_them() {
     let s = level_setup();
     let mut events = player_events(&s.hub);
     let levels = s.games.levels().clone();
-    let plan = levels.plan(3).await.unwrap();
+    let plan = levels.plan("fake", 3).await.unwrap();
     assert_eq!(plan.len(), 1, "two levels make one pair");
     let engines = engines();
     let bad = CalibrateRequest { games_per_pair: Some(0), ..Default::default() };
     assert_eq!(levels.prepare_calibration(engines.as_ref(), bad).await.unwrap_err().status(), 400);
+    let fixed = CalibrateRequest { engine: Some("fixed".into()), ..Default::default() };
+    assert_eq!(levels.prepare_calibration(engines.as_ref(), fixed).await.unwrap_err().status(), 400);
+    let other = CalibrateRequest { engine: Some("other".into()), ..Default::default() };
+    let other = levels.prepare_calibration(engines.as_ref(), other).await.unwrap();
+    assert_eq!(other.spec["engine"], "other");
     let new = levels
         .prepare_calibration(engines.as_ref(), CalibrateRequest { games_per_pair: Some(3), ..Default::default() })
         .await
@@ -189,10 +213,11 @@ async fn calibration_plays_levels_against_each_other_and_fits_them() {
     let result: CalibrateResult = serde_json::from_value(calibrate.run(cx).await.unwrap()).unwrap();
     assert_eq!((result.games, result.failed), (3, 0));
 
-    let games = s.hub.store.level_games().await.unwrap();
+    let games = s.hub.store.level_games("fake").await.unwrap();
     assert_eq!(games.len(), 3);
     assert_eq!(games.iter().filter(|g| g.white == Entrant::Level(1)).count(), 2, "colours alternate");
-    let (ratings, updated_at) = s.hub.store.level_ratings().await.unwrap();
+    assert!(s.hub.store.level_games("other").await.unwrap().is_empty());
+    let (ratings, updated_at) = s.hub.store.level_ratings("fake").await.unwrap();
     assert!(updated_at.is_some());
     assert!(ratings.iter().all(|r| r.games == 3));
     assert_eq!(levels_updated(&mut events).len(), 1, "one refit after the match");

@@ -23,6 +23,8 @@ pub struct EngineRecord {
     pub id_name: Option<String>,
     pub nodes: Option<u64>,
     pub rating: Option<u32>,
+    /// Whether it declares UCI's MultiPV; `None` when not known (read as yes).
+    pub multipv: Option<bool>,
     pub created_at: Timestamp,
 }
 
@@ -39,12 +41,14 @@ impl EngineRecord {
             id_name: None,
             nodes: None,
             rating: None,
+            multipv: None,
             created_at: now(),
         }
     }
 }
 
-const ENGINE: &str = "SELECT id, name, kind, path, args, options, id_name, nodes, rating, created_at FROM engines";
+const ENGINE: &str =
+    "SELECT id, name, kind, path, args, options, id_name, nodes, rating, created_at, multipv FROM engines";
 
 fn from_row(row: &Row<'_>) -> DbResult<EngineRecord> {
     Ok(EngineRecord {
@@ -58,6 +62,7 @@ fn from_row(row: &Row<'_>) -> DbResult<EngineRecord> {
         nodes: row.get::<_, Option<i64>>(7)?.map(|n| n as u64),
         rating: row.get::<_, Option<i64>>(8)?.map(|n| n as u32),
         created_at: Timestamp(row.get(9)?),
+        multipv: row.get(10)?,
     })
 }
 
@@ -89,11 +94,11 @@ impl Store {
     pub async fn put_engine(&self, e: EngineRecord) -> Result<(), Error> {
         self.write(move |tx| {
             tx.execute(
-                "INSERT INTO engines (id, name, kind, path, args, options, id_name, nodes, rating, created_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+                "INSERT INTO engines (id, name, kind, path, args, options, id_name, nodes, rating, created_at, multipv) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
                  ON CONFLICT (id) DO UPDATE SET name = excluded.name, kind = excluded.kind, path = excluded.path, \
                  args = excluded.args, options = excluded.options, id_name = excluded.id_name, nodes = excluded.nodes, \
-                 rating = excluded.rating",
+                 rating = excluded.rating, multipv = excluded.multipv",
                 params![
                     e.id,
                     e.name,
@@ -105,6 +110,7 @@ impl Store {
                     e.nodes.map(|n| n as i64),
                     e.rating.map(i64::from),
                     e.created_at.as_str(),
+                    e.multipv,
                 ],
             )?;
             Ok(())
@@ -177,18 +183,18 @@ mod tests {
         let db = dir.path().join("chess.db");
         {
             let store = Store::open(&db).unwrap();
-            let mut maia = EngineRecord::new("maia-1500", "Maia 1500", EngineKind::Builtin, "/old/tools/lc0/lc0");
-            maia.options.insert("WeightsFile".into(), "/old/tools/maia/maia-1500.pb.gz".into());
-            maia.options.insert("Threads".into(), "1".into());
-            store.put_engine(maia).await.unwrap();
+            let mut sf = EngineRecord::new("stockfish", "Stockfish", EngineKind::Builtin, "/old/tools/stockfish/sf");
+            sf.options.insert("EvalFile".into(), "/old/tools/stockfish/nn.nnue".into());
+            sf.options.insert("Threads".into(), "1".into());
+            store.put_engine(sf).await.unwrap();
             store.put_engine(EngineRecord::new("mine", "Mine", EngineKind::Custom, "/bin/mine")).await.unwrap();
         }
         assert_eq!(rebase_engine_paths(&db, "/old/tools", "/new/tools").unwrap(), 1);
         let store = Store::open(&db).unwrap();
-        let maia = store.engine("maia-1500").await.unwrap().unwrap();
-        assert_eq!(maia.path, "/new/tools/lc0/lc0");
-        assert_eq!(maia.options["WeightsFile"], "/new/tools/maia/maia-1500.pb.gz");
-        assert_eq!(maia.options["Threads"], "1");
+        let sf = store.engine("stockfish").await.unwrap().unwrap();
+        assert_eq!(sf.path, "/new/tools/stockfish/sf");
+        assert_eq!(sf.options["EvalFile"], "/new/tools/stockfish/nn.nnue");
+        assert_eq!(sf.options["Threads"], "1");
         assert_eq!(store.engine("mine").await.unwrap().unwrap().path, "/bin/mine");
 
         let bare = dir.path().join("bare.db");
@@ -203,19 +209,20 @@ mod tests {
         let mut sf = EngineRecord::new("stockfish", "Stockfish", EngineKind::Builtin, "/tools/stockfish/sf");
         sf.id_name = Some("Stockfish 19".into());
         store.put_engine(sf.clone()).await.unwrap();
-        let mut maia = EngineRecord::new("maia-1500", "Maia 1500", EngineKind::Builtin, "/tools/lc0/lc0");
-        maia.args = vec!["--weights=/tools/maia/maia-1500.pb.gz".into()];
-        maia.options.insert("Threads".into(), "1".into());
-        maia.nodes = Some(1);
-        maia.rating = Some(1500);
-        store.put_engine(maia.clone()).await.unwrap();
-        assert_eq!(store.engines().await.unwrap(), [maia.clone(), sf.clone()]);
+        let mut mine = EngineRecord::new("mine", "Mine", EngineKind::Custom, "/bin/mine");
+        mine.args = vec!["--weights=/nets/mine.pb.gz".into()];
+        mine.options.insert("Threads".into(), "1".into());
+        mine.nodes = Some(1);
+        mine.rating = Some(1500);
+        mine.multipv = Some(false);
+        store.put_engine(mine.clone()).await.unwrap();
+        assert_eq!(store.engines().await.unwrap(), [mine.clone(), sf.clone()]);
 
         let newer = EngineRecord { id_name: Some("Stockfish 20".into()), ..sf.clone() };
         store.put_engine(newer.clone()).await.unwrap();
         assert_eq!(store.engine("stockfish").await.unwrap(), Some(newer));
-        assert!(store.delete_engine("maia-1500").await.unwrap());
-        assert!(!store.delete_engine("maia-1500").await.unwrap());
-        assert_eq!(store.engine("maia-1500").await.unwrap(), None);
+        assert!(store.delete_engine("mine").await.unwrap());
+        assert!(!store.delete_engine("mine").await.unwrap());
+        assert_eq!(store.engine("mine").await.unwrap(), None);
     }
 }

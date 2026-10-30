@@ -2,7 +2,7 @@
 
 **Play, review, analyze.** A chess app for one person, with any UCI engine as an opponent or the analysis engine.
 
-- **Play** an engine at any strength (Stockfish's levels from about 800, Maia's human-like nets from 1100 to 1900, or any engine you add), or play on Lichess from the same board.
+- **Play** an engine at any strength (Stockfish, Reckless or any engine you add, each with levels from about 800 to full strength), or play on Lichess from the same board.
 - **Review** every game move by move: accuracy, the mistakes and the better moves; your mistakes come back as drills.
 - **Analyze**: your openings, accuracy and rating add up into a profile you can compare with anyone's; free analysis, the Lichess explorer and the tablebase on any position.
 - **Claude** drives the same app through its MCP endpoint or CLI: every action in the UI is a route and a command with the same name.
@@ -15,7 +15,7 @@ Everything runs on your machine. The app serves its own UI; https://chess.dame.g
 corepack pnpm install && corepack pnpm build    # the web UI, into apps/web/dist
 cargo build --release -p chess
 target/release/chess serve                   # http://127.0.0.1:7979
-target/release/chess setup                   # Stockfish 19, lc0 and Maia's nets (shows the sizes, asks first)
+target/release/chess setup                   # Stockfish 19 and Reckless 0.9.0 (shows the sizes, asks first)
 ```
 
 Then open http://127.0.0.1:7979. To let Claude Code drive it:
@@ -33,4 +33,4 @@ claude mcp add --transport http chess http://127.0.0.1:7979/mcp --header "Author
 
 ## License
 
-[GPL-3.0-or-later](LICENSE). The board (chessground) and chess logic (chessops, shakmaty) are GPL; Stockfish is GPL and lc0 GPL, downloaded as their own binaries.
+[GPL-3.0-or-later](LICENSE). The board (chessground) and chess logic (chessops, shakmaty) are GPL; Stockfish and Reckless are GPL, downloaded as their own binaries.

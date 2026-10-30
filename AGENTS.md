@@ -1,19 +1,19 @@
 # Chess
 
-**Play, review, analyze.** Chess is an app for one person: you play games (against an engine here, or on Lichess), the app reads them (reviews, the eval graph, the better move) and adds them up (your profile, comparisons, drills from your mistakes, your repertoire, your progress). Any UCI engine can be an opponent or the analysis engine: Stockfish and Maia are built in, and you can add your own.
+**Play, review, analyze.** Chess is an app for one person: you play games (against an engine here, or on Lichess), the app reads them (reviews, the eval graph, the better move) and adds them up (your profile, comparisons, drills from your mistakes, your repertoire, your progress). Any UCI engine can be an opponent or the analysis engine: Stockfish and Reckless are built in, and you can add your own. Every engine plays at full strength or at a level of its own ladder.
 
 `docs/design.md` is the contract for every crate, route, event, table and screen; `docs/roadmap.md` says what comes in what order. This file is how an agent drives the app and works on it. The `chess` skill (`skill/chess/`) is the short version for Claude sessions that drive the app.
 
 ## Words
 
-One vocabulary everywhere (code, routes, CLI, UI, docs): **you**, **engine** (a UCI engine of the engines list: `stockfish`, `maia-1500`, one you added), **analysis engine** (the engine reviews, live evaluation, drills and the levels run on; Stockfish by default), **level** (the analysis engine at a node budget, from about 800 to full strength), **game**, **player**, **work** (anything running in the background), **review**, **connection** (your Lichess account linked to the app). In the UI, never: build, match, experiment, test, batch, job, runner, human.
+One vocabulary everywhere (code, routes, CLI, UI, docs): **you**, **engine** (a UCI engine of the engines list: `stockfish`, `reckless`, one you added), **analysis engine** (the engine reviews, live evaluation and drills run on; Stockfish by default), **level** (an engine at a node budget, from about 800 to full strength; every engine has its own ladder and ratings), **game**, **player**, **work** (anything running in the background), **review**, **connection** (your Lichess account linked to the app). In the UI, never: build, match, experiment, test, batch, job, runner, human.
 
 ## Running it
 
 ```bash
 cargo build --release -p chess          # target/release/chess; put it on PATH, or use `cargo run -p chess --`
 chess serve                             # http://127.0.0.1:7979: the API, the event stream, /mcp and the web UI
-chess setup                             # downloads Stockfish 19, lc0 and Maia's nets (shows the sizes, asks first)
+chess setup                             # downloads Stockfish 19 and Reckless 0.9.0 (shows the sizes, asks first)
 chess status                            # any other subcommand is a client of the running app
 ```
 
@@ -29,7 +29,7 @@ The web UI is `apps/web/dist` (`corepack pnpm build`), read from disk in debug b
 
 The app was called Dameless. On the first start with the default data folder, when `chess` does not exist and the old `dameless` folder does, `chess serve` copies `dameless.db` (with `-wal` and `-shm`, renamed `chess.db`), `token`, `secrets/lichess-you`, `games/` and `logs/` into it, points engines that were in the old `tools/` at the new one, and logs what it copied (`crates/hub/src/legacy.rs`). Nothing else comes over (run `chess setup` again for the built-ins), and the old folder is left as it was, as the backup.
 
-`chess diagnostics` lists the machine's health: the analysis engine, the Maia engines, disk and the database, each with what to do when it fails.
+`chess diagnostics` lists the machine's health: the analysis engine, Reckless (installed or not), disk and the database, each with what to do when it fails.
 
 ## Driving it: the CLI and MCP
 
@@ -55,15 +55,16 @@ Every action is a route, a CLI command and an MCP tool with the same name. `ches
 
 ```bash
 chess engines                                     # the list: built-ins (installed or not) and yours, and the analysis engine
-chess setup [--only stockfish,maia] [--yes] [--wait]   # downloads the built-ins: shows each file's size and asks first
-chess engines add --name "Reckless dev" --path ./reckless [--option Threads=2 --arg … --nodes N --rating R --id x]
+chess setup [--only stockfish,reckless] [--yes] [--wait]   # downloads the built-ins: shows each file's size and asks first
+chess engines add --name "Berserk" --path ./berserk [--option Threads=2 --arg … --nodes N --rating R --id x]
 chess engines remove <id>
 chess engines analysis <id>                       # the analysis engine
 ```
 
-- **The list.** An engine has an `id` (a slug), a `name`, a `path` with `args`, UCI `options` (set after the handshake, before the app's own `Threads`, `Hash`, `MultiPV`; options an engine does not declare are not sent), and `id_name`: what it calls itself (UCI `id name`, read when it is added or installed, such as `Stockfish 19`). An engine with `nodes` plays that many nodes a move whatever the clock; `rating` is a rating it plays at by design.
-- **Built-ins.** `stockfish`: Stockfish 19, the release build for this platform (picked from the release's asset list; on Windows `stockfish-windows-x86-64-universal.zip`), in `tools/stockfish/`. `maia-1100` … `maia-1900`: lc0 v0.32.1 (CPU build, `lc0-v0.32.1-windows-cpu-dnnl.zip`; lc0 publishes Windows builds only, so elsewhere an `lc0` on the PATH is used) with Maia's nets in `tools/maia/`, played at one node a move, which is how Maia plays like people at its rating. `GET /api/setup` lists the downloads with the sizes GitHub gives; `POST /api/setup` queues the `setup` work (network work: no cores). A built-in that is not installed is listed with `installed: false`; starting a game or a review with it is a 409 that says to run setup.
-- **The analysis engine** (`PUT /api/engines/analysis`, default `stockfish`): reviews, live evaluation, drills and the levels run on it. One with a fixed budget (Maia) cannot be it. Removing it from the list makes Stockfish the analysis engine again.
+- **The list.** An engine has an `id` (a slug), a `name`, a `path` with `args`, UCI `options` (set after the handshake, before the app's own `Threads`, `Hash`, `MultiPV`; options an engine does not declare are not sent), and `id_name`: what it calls itself (UCI `id name`, read when it is added or installed, such as `Stockfish 19`), and `multipv`: whether it declares UCI's `MultiPV` (read at the same time). An engine added with `nodes` plays that many nodes a move whatever the clock and has no levels; `rating` is a rating it plays at by design. Every other engine has `levels: true` once installed.
+- **Built-ins.** `stockfish`: Stockfish 19, the release build for this platform (picked from the release's asset list; on Windows `stockfish-windows-x86-64-universal.zip`), in `tools/stockfish/`. `reckless`: Reckless 0.9.0 from codedeliveryservice/Reckless's releases, in `tools/reckless/`. Its assets are bare executables, one per CPU family (`reckless-windows-avx2.exe`, `-avx512`, `-generic`, the same for Linux, and `reckless-macos`); setup takes the AVX2 build when the CPU has AVX2, else the generic one (`work::setup::pick_reckless`). It plays at full strength on the clock, has levels and can analyse (it has MultiPV). Old games against `engine:reckless` (from before the engines list) are this engine's games. Each built-in is its own package (`stockfish`, `reckless`; about 75 and 65 MB): `GET /api/setup` lists the downloads with the sizes GitHub gives; `POST /api/setup` queues the `setup` work (network work: no cores). A built-in that is not installed is listed with `installed: false`; starting a game or a review with it is a 409 that says to run setup.
+- **The analysis engine** (`PUT /api/engines/analysis`, default `stockfish`): reviews, live evaluation and drills run on it, and it is the engine `chess levels` means when none is named. One with a fixed budget cannot be it. Removing it from the list makes Stockfish the analysis engine again.
+- **Maia** was a built-in (lc0 with nine nets) until migration 8, which removed its engines from the list. Games against `engine:maia-<n>` keep their seats and names.
 
 ## Games
 
@@ -79,7 +80,7 @@ chess stop <id>                         # a game you sit in is resigned (aborted
 chess import --pgn game.pgn [--you white]
 ```
 
-- Seats are `you`, an engine's id (`stockfish`, `maia-1500`, one you added) at full strength (or its fixed budget), and `<engine id>@<level>` for a level of the analysis engine (`stockfish@5`). Clocks are written minutes+seconds (`5+3`).
+- Seats are `you`, an engine's id (`stockfish`, `reckless`, one you added) at full strength (or its fixed budget), and `<engine id>@<level>` for a level of that engine's ladder (`stockfish@5`, `reckless@3`; an engine with a fixed budget has none: 400). Clocks are written minutes+seconds (`5+3`).
 - Local games are refereed by the app: clocks charged with measured think time on a monotonic clock, the increment added after each move, 250 ms grace; endings by checkmate, stalemate, repetition, fifty moves, insufficient material, time, engine failure or an illegal move; with `adjudicate`, engine games end early when decided. Engines get Hash 16, Threads 1 and MoveOverhead 0 unless asked otherwise.
 - Seat actions are one set for every game: `move`, `offer_draw`, `accept_draw`, `decline_draw`, `takeback`, `accept_takeback`, `decline_takeback`, `resign`, `abort`, `claim_victory`, `claim_draw` (`POST /api/games/{id}/actions/{action}`). `Game.actions` lists what you may do now; anything else is 409, an illegal move 400. An engine accepts a draw from ply 20 when its own last score is at most +0.10.
 - Games left live when the app stops: local ones are recorded aborted at the next start; Lichess ones are taken up again by the connection.
@@ -101,12 +102,12 @@ chess player <key> | profile <key> [--speeds --rated --since --limit] | compare 
 ## The player side: levels, drills, repertoire, progress
 
 ```bash
-chess levels | levels plan [--count 3] | levels calibrate [--count --games-per-pair] [--wait]
+chess levels [--engine reckless] | levels plan [--engine --count 3] | levels calibrate [--engine --count --games-per-pair] [--wait]
 chess drills | drills today [--new-per-day --limit --theme hanging_piece --games 4,9 --max-ply 24] | drills hint <id> | drills make [--limit 20] | drills answer <id> <move> | drills delete <id> | drills trend
 chess repertoire --side white [--max-plies 20 --min-games 2 --limit] | prep --side white | progress [--window 10]
 ```
 
-- **Levels**: the analysis engine from about 800 to full strength. Strength comes from a node budget (300 to 400,000 nodes a move), with a MultiPV softmax at a temperature for levels 1 to 6, so the moves are the engine's own, never random blunders. Level 12 is full strength on the clock. Ratings are calibrated by the app: levels play each other in the background at the lowest priority (from four random plies), and a Bradley–Terry fit under priors is anchored on your Lichess rating and your games against levels. Until calibration has played, a level shows its nominal rating as an estimate. The Maia engines play at their nominal rating and sit beside the levels in the opponent picker.
+- **Levels**: every engine that plays on the clock (Stockfish, Reckless, one you added) from about 800 to full strength, on the same ladder. Strength comes from a node budget (300 to 400,000 nodes a move), with a MultiPV softmax at a temperature for levels 1 to 6, so the moves are the engine's own, never random blunders; an engine without `MultiPV` plays each level's node budget alone (its best move at that budget), and Settings says so. Level 12 is full strength on the clock. Ratings are per engine (`level_ratings` and `level_games` are keyed by engine; `GET /api/levels?engine=reckless`, default the analysis engine), each starting from the nominal estimates. Calibration is per engine too (`levels calibrate --engine`, default the analysis engine): that engine's levels play each other in the background at the lowest priority (from four random plies), and a Bradley–Terry fit under priors is anchored on your Lichess rating and your games against that engine's levels. A game counts for an engine's ladder when every seat is you or one of its levels (a game between two engines' levels counts for neither). Until calibration has played, a level shows its nominal rating as an estimate.
 - **Drills**: your mistakes as exercises, on SM-2 (a miss returns in a day; passes in 1, 6, then interval × ease days). Every line within 5 win % of the best counts as right. `drills today` hides the answers; `drills answer` returns them. Reviews of your games make drills. Each has a theme (`crates/core/src/themes.rs`: time trouble, king safety, hanging piece, missed tactic, opening error, endgame technique, else other), found from the position and the engine's line; profiles group weak spots by theme with cost per game. `drills hint` gives the kind of move, then the piece; a right answer after a hint is half a miss (back tomorrow, half credit). `--theme` or `--games` makes a session on a theme or opening line.
 - **Repertoire**: your lines as White or Black from your games, how you score, and where you leave theory. It is assistance: refused while you play on Lichess. `prep` lists the named opening lines you play with score and early mistakes, flagged when you score badly or go wrong in the first twelve moves; same refusal.
 - **Progress**: your rating, accuracy (rolling 10 games) and drill hit rate.
@@ -140,7 +141,7 @@ chess work [--recent 20] | work show <id> | work log <id> | work wait <id> | wor
 
 ## Events
 
-One server-sent event stream: `GET /api/events?since=<id>&topics=<t,…>` (`Last-Event-ID` resumes; `?token=` for `EventSource`), or `chess events --topics games,work`. Each event is `{ id, topic, kind, data }`. Topics: `game:<id>`, `games`, `work`, `player:<key>`, `connection:you`, `engines`, `policy`, `eval:<session>`; no `topics` means all but `eval:*` and game detail. Kinds: `game.upserted`, `game.moved`, `game.undone`, `game.changed`, `game.thinking`, `work.upserted`, `work.log`, `review.upserted`, `connection.upserted`, `challenge`, `policy.changed`, `eval.info`, `drill.upserted`, `drill.answered`, `drill.deleted`, `levels.updated`, `engines.changed` (both on topic `engines`); payloads are typed in the OpenAPI document. When events after `since` are no longer kept, a `reload` event tells the client to refetch. Scores everywhere are White's point of view.
+One server-sent event stream: `GET /api/events?since=<id>&topics=<t,…>` (`Last-Event-ID` resumes; `?token=` for `EventSource`), or `chess events --topics games,work`. Each event is `{ id, topic, kind, data }`. Topics: `game:<id>`, `games`, `work`, `player:<key>`, `connection:you`, `engines`, `policy`, `eval:<session>`; no `topics` means all but `eval:*` and game detail. Kinds: `game.upserted`, `game.moved`, `game.undone`, `game.changed`, `game.thinking`, `work.upserted`, `work.log`, `review.upserted`, `connection.upserted`, `challenge`, `policy.changed`, `eval.info`, `drill.upserted`, `drill.answered`, `drill.deleted`, `levels.updated` (naming its engine), `engines.changed` (both on topic `engines`); payloads are typed in the OpenAPI document. When events after `since` are no longer kept, a `reload` event tells the client to refetch. Scores everywhere are White's point of view.
 
 ## Working on Chess itself
 

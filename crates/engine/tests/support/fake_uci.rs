@@ -5,6 +5,8 @@
 //! - `fake newgames`: prints `info string newgames <n>`, how many `ucinewgame` it has had.
 //! - `fake option <name>`: prints `info string option <name> <value>`.
 //! - `fake exit`: exits at once, as a crashing engine would.
+//!
+//! Started with `--no-multipv`, it declares no `MultiPV` option, as some engines do not.
 
 use std::{
     collections::HashMap,
@@ -24,6 +26,7 @@ fn main() {
         }
     });
 
+    let multipv = !std::env::args().any(|a| a == "--no-multipv");
     let mut out = std::io::stdout().lock();
     let mut options: HashMap<String, String> = HashMap::new();
     let mut new_games = 0u32;
@@ -36,7 +39,9 @@ fn main() {
                 writeln!(out, "id author The tests").unwrap();
                 writeln!(out, "option name Hash type spin default 16 min 1 max 1024").unwrap();
                 writeln!(out, "option name Threads type spin default 1 min 1 max 64").unwrap();
-                writeln!(out, "option name MultiPV type spin default 1 min 1 max 16").unwrap();
+                if multipv {
+                    writeln!(out, "option name MultiPV type spin default 1 min 1 max 16").unwrap();
+                }
                 writeln!(out, "option name Minimal type check default false").unwrap();
                 writeln!(out, "option name MoveOverhead type spin default 0 min 0 max 5000").unwrap();
                 writeln!(out, "option name Clear Hash type button").unwrap();

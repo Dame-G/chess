@@ -1,4 +1,4 @@
-//! Levels: the ladder engine (the analysis engine, Stockfish by default) at a strength you choose, from about 800 to
+//! Levels: an engine (Stockfish, Reckless, one you added) at a strength you choose, from about 800 to
 //! full strength, and the maths that calibrates them.
 //!
 //! A level keeps the engine's own play. Its strength comes from a node budget, and at the lowest levels from a softmax
@@ -6,6 +6,10 @@
 //! a random blunder. Every level's rating is **measured**, not assumed: levels play each other (and full strength) in
 //! the background, you play them, and [`fit`] turns all those results into an Elo per level with a 95 % interval,
 //! anchored to your Lichess rating. [`plan`] says which pairs of levels to play next.
+//!
+//! Every engine that plays on the clock has this ladder: the same budgets and temperatures, its own ratings (each
+//! starting from the nominal ones), its own calibration. An engine without UCI's `MultiPV` plays each budget alone: its
+//! best move at that budget.
 //!
 //! The ladder ([`ladder`]) and the reasoning behind its node budgets are in `docs/roadmap.md` (R3, "Levels").
 

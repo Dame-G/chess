@@ -532,7 +532,7 @@
         "tags": [
           "engines"
         ],
-        "summary": "The machine's health for Settings: the analysis engine, the Maia engines, the disk and the database, each with\nwhat to do about it.",
+        "summary": "The machine's health for Settings: the analysis engine, the disk and the database, each with what to do about it.",
         "operationId": "diagnostics",
         "responses": {
           "200": {
@@ -916,7 +916,7 @@
         "tags": [
           "engines"
         ],
-        "summary": "Chooses the analysis engine: reviews, live evaluation, drills and the levels run on it. It must be installed and\nplay on the clock (Maia's fixed node cannot analyse: 400).",
+        "summary": "Chooses the analysis engine: reviews, live evaluation and drills run on it, and it is the engine `levels` and\n`calibrate_levels` mean when none is named. It must be installed and play on the clock (an engine with a fixed node\nbudget cannot analyse: 400).",
         "operationId": "set_analysis_engine",
         "requestBody": {
           "content": {
@@ -979,7 +979,7 @@
           {
             "name": "id",
             "in": "path",
-            "description": "The engine's id: `stockfish`, `maia-1500`, `my-engine`.",
+            "description": "The engine's id: `stockfish`, `reckless`, `my-engine`.",
             "required": true,
             "schema": {
               "type": "string"
@@ -1825,14 +1825,43 @@
         "tags": [
           "levels"
         ],
-        "summary": "The ladder of levels with their calibrated ratings, your rating on it and the level suggested for you.",
+        "summary": "An engine's ladder of levels (every engine that plays on the clock has one) with their calibrated ratings, your\nrating on it and the level suggested for you.",
         "operationId": "list_levels",
+        "parameters": [
+          {
+            "name": "engine",
+            "in": "query",
+            "description": "The engine whose ladder (its id); the analysis engine when none.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LevelsOverview"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -1845,7 +1874,7 @@
         "tags": [
           "levels"
         ],
-        "summary": "Queues calibration (background work at the lowest priority): levels play each other at fixed nodes, and the\nladder is refitted after each match.",
+        "summary": "Queues calibration of an engine's levels (the analysis engine's when none is named; background work at the lowest\npriority): its levels play each other at fixed nodes, and its ladder is refitted after each match.",
         "operationId": "calibrate_levels",
         "requestBody": {
           "content": {
@@ -1890,9 +1919,18 @@
         "tags": [
           "levels"
         ],
-        "summary": "The calibration matches that would teach the most now: neighbouring levels, the widest and most even first.",
+        "summary": "The calibration matches of an engine's levels that would teach the most now: neighbouring levels, the widest and\nmost even first.",
         "operationId": "plan_levels",
         "parameters": [
+          {
+            "name": "engine",
+            "in": "query",
+            "description": "The engine whose levels (its id); the analysis engine when none.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "name": "count",
             "in": "query",
@@ -1913,6 +1951,24 @@
                   "items": {
                     "$ref": "#/components/schemas/PlannedMatch"
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -2385,7 +2441,7 @@
         "tags": [
           "engines"
         ],
-        "summary": "What setup would download (Stockfish 19, lc0 and Maia's nets) with the sizes GitHub gives, and what is installed\nalready. Downloads nothing.",
+        "summary": "What setup would download (Stockfish 19 and Reckless 0.9.0, each its own package) with the sizes GitHub gives, and\nwhat is installed already. Downloads nothing.",
         "operationId": "setup_plan",
         "responses": {
           "200": {
@@ -2403,7 +2459,7 @@
         "tags": [
           "engines"
         ],
-        "summary": "Downloads the built-in engines into the data directory's `tools/` and adds them to the list, as work. Only on this\nexplicit request (the CLI shows the sizes and asks first).",
+        "summary": "Downloads the built-in engines (the packages named, else both) into the data directory's `tools/` and adds them to\nthe list, as work. Only on this explicit request (the CLI shows the sizes and asks first).",
         "operationId": "setup",
         "requestBody": {
           "content": {
@@ -2915,6 +2971,13 @@
             ],
             "description": "How many planned matches, when `matches` is not given. Default 3.",
             "minimum": 0
+          },
+          "engine": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The engine whose levels play (its id); the analysis engine when none."
           },
           "games_per_pair": {
             "type": [
@@ -3775,6 +3838,7 @@
           "kind",
           "args",
           "options",
+          "multipv",
           "installed",
           "analysis",
           "levels"
@@ -3789,7 +3853,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Arguments it is started with (lc0's `--weights=…` for Maia)."
+            "description": "Arguments it is started with."
           },
           "created_at": {
             "oneOf": [
@@ -3803,7 +3867,7 @@
           },
           "id": {
             "type": "string",
-            "description": "The slug seats and player keys name it by: `stockfish`, `maia-1500`."
+            "description": "The slug seats and player keys name it by: `stockfish`, `reckless`, `my-engine`."
           },
           "id_name": {
             "type": [
@@ -3821,11 +3885,15 @@
           },
           "levels": {
             "type": "boolean",
-            "description": "Whether the ladder of levels runs on it (the analysis engine, when it plays on the clock)."
+            "description": "Whether it has a ladder of levels: installed, and plays on the clock (no fixed node budget)."
+          },
+          "multipv": {
+            "type": "boolean",
+            "description": "Whether it declares UCI's `MultiPV` (read when it was added or installed). Without it, levels 1 to 6 play\ntheir node budget only, the engine's best move at that budget, rather than choosing among its lines."
           },
           "name": {
             "type": "string",
-            "description": "As shown: `Stockfish`, `Maia 1500`."
+            "description": "As shown: `Stockfish`, `Reckless`."
           },
           "nodes": {
             "type": [
@@ -3833,7 +3901,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Nodes it searches a move whatever the clock: Maia's 1. None plays on the clock.",
+            "description": "Nodes it searches a move whatever the clock (set when you add it). None plays on the clock.",
             "minimum": 0
           },
           "options": {
@@ -3859,7 +3927,7 @@
               "null"
             ],
             "format": "int32",
-            "description": "The rating it plays at, when it has one by design (Maia's nominal rating).",
+            "description": "The rating it plays at, when you gave it one (an engine made to play at a rating).",
             "minimum": 0
           }
         }
@@ -4942,7 +5010,7 @@
           },
           "key": {
             "type": "string",
-            "description": "`analysis`, `maia`, `disk`, `database`."
+            "description": "`analysis`, `reckless`, `disk`, `database`."
           },
           "level": {
             "$ref": "#/components/schemas/HealthLevel"
@@ -5299,11 +5367,16 @@
       },
       "LevelsOverview": {
         "type": "object",
-        "description": "`GET /api/levels`.",
+        "description": "`GET /api/levels`: one engine's ladder.",
         "required": [
+          "engine",
           "levels"
         ],
         "properties": {
+          "engine": {
+            "type": "string",
+            "description": "The engine whose ladder it is: `stockfish`, `reckless`."
+          },
           "levels": {
             "type": "array",
             "items": {
@@ -5345,12 +5418,17 @@
       },
       "LevelsUpdated": {
         "type": "object",
-        "description": "`levels.updated`: the levels were refitted.",
+        "description": "`levels.updated`: an engine's levels were refitted.",
         "required": [
+          "engine",
           "ratings",
           "updated_at"
         ],
         "properties": {
+          "engine": {
+            "type": "string",
+            "description": "The engine whose ladder it is."
+          },
           "ratings": {
             "type": "array",
             "items": {
@@ -5680,7 +5758,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Nodes it searches a move whatever the clock (Maia-like engines); none plays on the clock.",
+            "description": "Nodes it searches a move whatever the clock (an engine made to play that way); none plays on the clock.",
             "minimum": 0
           },
           "options": {
@@ -7221,7 +7299,7 @@
               "string",
               "null"
             ],
-            "description": "What an engine seat's engine called itself (its UCI `id name`): `Stockfish 19`, `Lc0 v0.32.1`."
+            "description": "What an engine seat's engine called itself (its UCI `id name`): `Stockfish 19`, `Reckless 0.9.0`."
           },
           "level": {
             "type": [
@@ -7274,12 +7352,12 @@
       },
       "SeatRequest": {
         "type": "string",
-        "description": "`you`, an engine's id (`stockfish`, `maia-1500`), or `<engine id>@<level>` for a level of the analysis engine's ladder (`stockfish@5`). The object `{ player, level? }` reads too.",
+        "description": "`you`, an engine's id (`stockfish`, `reckless`), or `<engine id>@<level>` for a level of that engine's ladder (`stockfish@5`, `reckless@3`). The object `{ player, level? }` reads too.",
         "examples": [
           "you",
           "stockfish",
           "stockfish@5",
-          "maia-1500"
+          "reckless@3"
         ]
       },
       "SeekRequestBody": {
@@ -7333,7 +7411,7 @@
       },
       "SetupDownload": {
         "type": "object",
-        "description": "One download of the plan.",
+        "description": "One download of the plan: a package's file.",
         "required": [
           "package",
           "name",
@@ -7351,7 +7429,7 @@
           },
           "name": {
             "type": "string",
-            "description": "For people: `Stockfish 19`, `lc0 v0.32.1`, `Maia 1500's net`."
+            "description": "For people: `Stockfish 19`, `Reckless 0.9.0`."
           },
           "package": {
             "$ref": "#/components/schemas/SetupPackage"
@@ -7363,10 +7441,10 @@
       },
       "SetupPackage": {
         "type": "string",
-        "description": "What setup installs: `stockfish`, `maia`.",
+        "description": "What setup installs: `stockfish`, `reckless`.",
         "enum": [
           "stockfish",
-          "maia"
+          "reckless"
         ]
       },
       "SetupPlan": {
@@ -7403,7 +7481,7 @@
             "items": {
               "type": "string"
             },
-            "description": "What cannot be installed here, for people: \"lc0 publishes no build for this platform: put lc0 on the PATH\"."
+            "description": "What cannot be installed here, for people: \"Reckless 0.9.0 has no release build for this platform\"."
           }
         }
       },

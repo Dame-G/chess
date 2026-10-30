@@ -1,5 +1,5 @@
 //! Health: what Settings shows about the machine, one item per thing that has to be right for the app to work: the
-//! analysis engine, the Maia engines, free disk and the database.
+//! analysis engine, Reckless (installed or not), free disk and the database.
 //!
 //! Probing the disk goes through [`Probes`], so tests inject what they need and never depend on the machine they run
 //! on.
@@ -60,7 +60,7 @@ impl Probes for SystemProbes {
 #[serde(rename_all = "snake_case")]
 pub enum HealthLevel {
     Ok,
-    /// For your information: not needed for what the app does now (the Maia engines).
+    /// For your information: not needed for what the app does now (Reckless, not installed).
     Info,
     /// Works, but needs attention soon (low disk).
     Warn,
@@ -78,7 +78,7 @@ pub struct HealthAction {
 /// One thing Settings shows.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HealthItem {
-    /// `analysis`, `maia`, `disk`, `database`.
+    /// `analysis`, `reckless`, `disk`, `database`.
     pub key: String,
     /// Not failing (a warning or a note is still ok).
     pub ok: bool,
@@ -143,14 +143,14 @@ impl Diagnostics {
                 "analysis",
                 HealthLevel::Ok,
                 "Analysis engine",
-                format!("{}: reviews, evaluation and the levels run on it", e.label()),
+                format!("{}: reviews, evaluation and drills run on it", e.label()),
                 None,
             ),
             Some(e) => item(
                 "analysis",
                 HealthLevel::Fail,
                 "Analysis engine",
-                format!("{} is not installed: reviews, evaluation and the levels cannot run", e.name),
+                format!("{} is not installed: reviews, evaluation and drills cannot run", e.name),
                 setup,
             ),
             None => item(
@@ -161,18 +161,18 @@ impl Diagnostics {
                 None,
             ),
         });
-        let maias: Vec<_> = overview.engines.iter().filter(|e| e.id.starts_with("maia-")).collect();
-        let ready = maias.iter().filter(|e| e.installed).count();
-        items.push(if ready == maias.len() && ready > 0 {
-            item("maia", HealthLevel::Ok, "Maia", format!("{ready} Maia engines installed"), None)
-        } else {
-            item(
-                "maia",
+        let reckless = overview.engines.iter().find(|e| e.id == "reckless");
+        items.push(match reckless {
+            Some(e) if e.installed => {
+                item("reckless", HealthLevel::Ok, "Reckless", format!("{} installed", e.label()), None)
+            }
+            _ => item(
+                "reckless",
                 HealthLevel::Info,
-                "Maia",
-                format!("{ready} of {} Maia engines installed: they play like people at their rating", maias.len()),
-                setup,
-            )
+                "Reckless",
+                "Reckless is not installed: another engine to play, with its own levels, and to analyse with".into(),
+                Some(("Install", "chess setup --only reckless")),
+            ),
         });
         items.push(match self.probes.disk(&hub.config.data_dir) {
             Some(d) => {

@@ -25,12 +25,15 @@ describe("playing again one level up or down", () => {
         you: "white",
       },
     }) as never;
-  const cx = { analysis: "stockfish" };
+  const cx = { hasLevels: (id: string) => id !== "fixed" };
 
-  it("reads the level from the seat, full strength when it has none, and no ladder for another engine", () => {
+  it("reads the level from the seat, full strength when it has none, and no ladder for an engine without levels", () => {
     expect(strengthOf(game({}), cx)).toBe(5);
     expect(strengthOf(game({ level: null, name: "Stockfish", rating: null }), cx)).toBe("full");
-    expect(strengthOf(game({ player: "engine:maia-1500", level: null }), cx)).toBeNull();
+    // Every engine on the clock has levels, not only the analysis engine.
+    expect(strengthOf(game({ player: "engine:reckless", level: 3 }), cx)).toBe(3);
+    expect(rematchRequest(game({ player: "engine:reckless", level: 3 }), cx, 4)?.white).toBe("reckless@4");
+    expect(strengthOf(game({ player: "engine:fixed", level: null }), cx)).toBeNull();
   });
 
   it("asks for the neighbouring level with the colours swapped and the same clock", () => {

@@ -23,32 +23,62 @@ use utoipa::IntoParams;
 use super::error::{ApiResult, Json, Path, Query};
 use crate::App;
 
-/// The ladder of levels with their calibrated ratings, your rating on it and the level suggested for you.
-#[utoipa::path(get, path = "/api/levels", operation_id = "list_levels", tag = "levels",
-    responses((status = 200, body = LevelsOverview)))]
-pub async fn list_levels(State(app): State<Arc<App>>) -> ApiResult<Json<LevelsOverview>> {
-    Ok(Json(app.games.levels().overview().await?))
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct LevelsQuery {
+    /// The engine whose ladder (its id); the analysis engine when none.
+    pub engine: Option<String>,
+}
+
+/// The engine named, else the analysis engine: 404 for no such engine, 400 for one with a fixed budget (no levels).
+async fn ladder_engine(app: &App, engine: Option<String>) -> ApiResult<String> {
+    let id = match engine {
+        Some(id) => id,
+        None => app.engines.analysis_id().await?,
+    };
+    let engine = app.engines.get(&id).await?;
+    if engine.nodes.is_some() {
+        return Err(
+            chess_core::Error::bad_request(format!("{} plays a fixed budget: it has no levels", engine.name)).into()
+        );
+    }
+    Ok(engine.id)
+}
+
+/// An engine's ladder of levels (every engine that plays on the clock has one) with their calibrated ratings, your
+/// rating on it and the level suggested for you.
+#[utoipa::path(get, path = "/api/levels", operation_id = "list_levels", tag = "levels", params(LevelsQuery),
+    responses((status = 200, body = LevelsOverview), (status = 400, body = chess_core::error::ErrorBody),
+        (status = 404, body = chess_core::error::ErrorBody)))]
+pub async fn list_levels(State(app): State<Arc<App>>, Query(q): Query<LevelsQuery>) -> ApiResult<Json<LevelsOverview>> {
+    let engine = ladder_engine(&app, q.engine).await?;
+    Ok(Json(app.games.levels().overview(&engine).await?))
 }
 
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct PlanQuery {
+    /// The engine whose levels (its id); the analysis engine when none.
+    pub engine: Option<String>,
     /// How many matches (default 3).
     pub count: Option<usize>,
 }
 
-/// The calibration matches that would teach the most now: neighbouring levels, the widest and most even first.
+/// The calibration matches of an engine's levels that would teach the most now: neighbouring levels, the widest and
+/// most even first.
 #[utoipa::path(get, path = "/api/levels/plan", operation_id = "plan_levels", tag = "levels", params(PlanQuery),
-    responses((status = 200, body = Vec<PlannedMatch>)))]
+    responses((status = 200, body = Vec<PlannedMatch>), (status = 400, body = chess_core::error::ErrorBody),
+        (status = 404, body = chess_core::error::ErrorBody)))]
 pub async fn plan_levels(
     State(app): State<Arc<App>>,
     Query(q): Query<PlanQuery>,
 ) -> ApiResult<Json<Vec<PlannedMatch>>> {
-    Ok(Json(app.games.levels().plan(q.count.unwrap_or(3)).await?))
+    let engine = ladder_engine(&app, q.engine).await?;
+    Ok(Json(app.games.levels().plan(&engine, q.count.unwrap_or(3)).await?))
 }
 
-/// Queues calibration (background work at the lowest priority): levels play each other at fixed nodes, and the
-/// ladder is refitted after each match.
+/// Queues calibration of an engine's levels (the analysis engine's when none is named; background work at the lowest
+/// priority): its levels play each other at fixed nodes, and its ladder is refitted after each match.
 #[utoipa::path(post, path = "/api/levels/calibrate", operation_id = "calibrate_levels", tag = "levels",
     request_body(content = Option<CalibrateRequest>),
     responses((status = 202, body = Work), (status = 400, body = chess_core::error::ErrorBody)))]

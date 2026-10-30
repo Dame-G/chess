@@ -43,7 +43,7 @@ use crate::{
 // ---------------------------------------------------------------------------------------------------------------------
 
 /// Who sits at a side of a local game: you, or an engine of the engines list, at full strength (or its fixed budget)
-/// or at a level of the ladder. Written as a string: `you`, `<engine id>` (`stockfish`, `maia-1500`), and
+/// or at a level of its ladder. Written as a string: `you`, `<engine id>` (`stockfish`, `reckless`), and
 /// `<engine id>@<level>` (`stockfish@5`) for a level. The object form `{ "player": "stockfish", "level": 5 }` reads
 /// too.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,10 +137,10 @@ impl PartialSchema for SeatRequest {
         ObjectBuilder::new()
             .schema_type(Type::String)
             .description(Some(
-                "`you`, an engine's id (`stockfish`, `maia-1500`), or `<engine id>@<level>` for a level of the \
-                 analysis engine's ladder (`stockfish@5`). The object `{ player, level? }` reads too.",
+                "`you`, an engine's id (`stockfish`, `reckless`), or `<engine id>@<level>` for a level of that \
+                 engine's ladder (`stockfish@5`, `reckless@3`). The object `{ player, level? }` reads too.",
             ))
-            .examples(["you", "stockfish", "stockfish@5", "maia-1500"])
+            .examples(["you", "stockfish", "stockfish@5", "reckless@3"])
             .into()
     }
 }
@@ -462,7 +462,7 @@ impl Games {
                     let binary = self.inner.engines.ready(Some(id)).await?;
                     if levels[index].is_some() && !binary.engine.levels {
                         return Err(Error::bad_request(format!(
-                            "{} has no levels: the ladder is the analysis engine's (as in stockfish@5)",
+                            "{} plays a fixed node budget: it has no levels",
                             binary.engine.name
                         )));
                     }
@@ -482,7 +482,7 @@ impl Games {
                     };
                     let engine = match &levels[index] {
                         Some(level) => {
-                            let (name, rating) = self.inner.levels.seat_name(level, &binary.engine.name).await;
+                            let (name, rating) = self.inner.levels.seat_name(level, &binary.engine).await;
                             seat.name = name;
                             seat.level = Some(level.id);
                             seat.rating = Some(rating);
@@ -510,23 +510,14 @@ impl Games {
         let mut new = NewGame::starting(white, black, Source::Local, req.time, now());
         new.start_fen = start_fen.clone();
         let record = Record::create(&self.inner.hub, new, referee.turn()).await?;
-        // A game at a level counts for the levels' fit when every seat is a level or you.
-        let entrants: Vec<Option<Entrant>> = [&req.white, &req.black]
-            .iter()
-            .map(|r| match r {
-                SeatRequest::You => Some(Entrant::You),
-                SeatRequest::Engine { level, .. } => level.map(Entrant::Level),
-            })
-            .collect();
-        let at_level = levels.iter().any(Option::is_some);
-        let refit = at_level
-            && match entrants[..] {
-                [Some(w), Some(b)] => {
-                    self.inner.hub.store.record_level_game(record.id, w, b, false).await?;
-                    true
-                }
-                _ => false,
-            };
+        // A game at an engine's levels counts for that engine's fit when every seat is one of its levels or you.
+        let refit = match level_entrants(&req.white, &req.black) {
+            Some((engine, w, b)) => {
+                self.inner.hub.store.record_level_game(record.id, &engine, w, b, false).await?;
+                Some(engine)
+            }
+            None => None,
+        };
         let (commands_tx, commands) = mpsc::unbounded_channel();
         let cancel = CancellationToken::new();
         self.register(
@@ -591,6 +582,24 @@ pub(crate) fn random_u64() -> u64 {
     u64::from_le_bytes(bytes)
 }
 
+/// The engine whose ladder a game is played on, and its two entrants, when every seat is you or a level of one engine
+/// (and at least one is a level). A game between two engines' levels belongs to neither ladder.
+fn level_entrants(white: &SeatRequest, black: &SeatRequest) -> Option<(String, Entrant, Entrant)> {
+    fn entrant(seat: &SeatRequest) -> Option<(Option<&str>, Entrant)> {
+        match seat {
+            SeatRequest::You => Some((None, Entrant::You)),
+            SeatRequest::Engine { level: None, .. } => None,
+            SeatRequest::Engine { id, level: Some(l) } => Some((Some(id.as_str()), Entrant::Level(*l))),
+        }
+    }
+    let ((we, w), (be, b)) = (entrant(white)?, entrant(black)?);
+    let engine = match (we, be) {
+        (Some(x), Some(y)) if x != y => return None,
+        (x, y) => x.or(y)?,
+    };
+    Some((engine.to_owned(), w, b))
+}
+
 /// Each seat's own seed from the game's, so the two sides of a game between levels do not choose alike.
 pub(crate) fn seat_seed(seed: u64, index: usize) -> u64 {
     seed ^ (index as u64 + 1).wrapping_mul(0xD1B5_4A32_D192_ED03)
@@ -611,11 +620,27 @@ mod tests {
             serde_json::from_value(serde_json::json!({ "player": "stockfish", "level": 3 })).unwrap();
         assert_eq!(object, SeatRequest::at_level("stockfish", 3));
         let req: NewGameRequest = serde_json::from_value(serde_json::json!({
-            "white": "you", "black": "maia-1500", "time": { "type": "clock", "initial_ms": 300000, "increment_ms": 3000 },
+            "white": "you", "black": "reckless", "time": { "type": "clock", "initial_ms": 300000, "increment_ms": 3000 },
             "from": { "type": "position", "fen": "startpos", "moves": ["e4"] }
         }))
         .unwrap();
-        assert_eq!(req.black.to_string(), "maia-1500");
+        assert_eq!(req.black.to_string(), "reckless");
         assert!(!req.adjudicate);
+    }
+
+    #[test]
+    fn a_game_belongs_to_one_engines_ladder() {
+        let (you, sf, sf5, sf3, rk2) = (
+            SeatRequest::You,
+            SeatRequest::engine("stockfish"),
+            SeatRequest::at_level("stockfish", 5),
+            SeatRequest::at_level("stockfish", 3),
+            SeatRequest::at_level("reckless", 2),
+        );
+        assert_eq!(level_entrants(&you, &rk2), Some(("reckless".into(), Entrant::You, Entrant::Level(2))));
+        assert_eq!(level_entrants(&sf5, &sf3), Some(("stockfish".into(), Entrant::Level(5), Entrant::Level(3))));
+        assert_eq!(level_entrants(&sf5, &rk2), None, "two engines' levels");
+        assert_eq!(level_entrants(&you, &sf), None, "full strength on the clock is no level");
+        assert_eq!(level_entrants(&you, &you), None);
     }
 }

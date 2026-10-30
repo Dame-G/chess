@@ -57,7 +57,7 @@ pub async fn harness(cores: u32) -> Harness {
     let config = Config::new(dir.path().join("data"), "127.0.0.1:0".parse().unwrap(), cores);
     let hub = Hub::open(config).unwrap();
     let path = PathBuf::from(env!("CARGO_BIN_EXE_fake-eval"));
-    let fixed = FixedEngines::new().with("fake", &path, &[]).with_engine("maia-1500", &path, &[], Some(1), Some(1500));
+    let fixed = FixedEngines::new().with("fake", &path, &[]).with_engine("fixed", &path, &[], Some(1), Some(1500));
     let engines = Arc::new(FakeEngines { engines: fixed, calls: AtomicUsize::new(0) });
     let engine = engines.engines.ready(None).await.unwrap();
     let eval = Eval::new(hub.clone(), engines.clone());

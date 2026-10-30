@@ -1,11 +1,12 @@
 //! Setup: downloading the built-in engines into the data directory's `tools/` and adding them to the engines list.
 //!
 //! - **Stockfish 19**, the release build for this platform (`tools/stockfish/`), picked from the release's asset list.
-//! - **Maia** 1100 to 1900: lc0 v0.32.1 (`tools/lc0/`; lc0 publishes Windows builds only, so elsewhere an `lc0` on the
-//!   PATH is used) with Maia's nine nets (`tools/maia/maia-<n>.pb.gz`), each played at one node a move.
+//! - **Reckless 0.9.0**, the release build for this platform (`tools/reckless/`): its assets are bare executables, one
+//!   per CPU family, and setup takes the AVX2 build when the CPU has AVX2, else the generic one.
 //!
-//! Nothing downloads until asked: `GET /api/setup` says what would be fetched and how big it is (read from GitHub),
-//! `POST /api/setup` queues the `setup` work that fetches it.
+//! Each is its own package: setup installs both unless asked for one. Nothing downloads until asked: `GET /api/setup`
+//! says what would be fetched and how big it is (read from GitHub), `POST /api/setup` queues the `setup` work that
+//! fetches it.
 
 use std::{
     path::{Path, PathBuf},
@@ -15,16 +16,12 @@ use std::{
 use async_trait::async_trait;
 use chess_core::{
     Error,
-    engines::{Builtin, MAIA_RATINGS, Package, builtin},
+    engines::EngineKind,
     work::{Priority, Progress, Subject, WorkKind},
 };
-use chess_engine::{
-    proc,
-    tools::{self, ReleaseAsset},
-};
+use chess_engine::tools::{self, ReleaseAsset};
 use chess_hub::{Executor, WorkContext};
 use chess_store::{EngineRecord, NewWork};
-use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -36,28 +33,23 @@ pub const STOCKFISH_TAG: &str = "sf_19";
 /// The Windows build, when the release's asset list cannot be read.
 pub const STOCKFISH_WINDOWS: &str =
     "https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-windows-x86-64-universal.zip";
-/// lc0's repository, the release, and its CPU build for Windows (the only platform it publishes binaries for).
-pub const LC0_REPO: &str = "LeelaChessZero/lc0";
-pub const LC0_TAG: &str = "v0.32.1";
-pub const LC0_WINDOWS_ASSET: &str = "lc0-v0.32.1-windows-cpu-dnnl.zip";
-/// Maia's nets, by rating.
-pub fn maia_url(rating: u32) -> String {
-    format!("https://github.com/CSSLab/maia-chess/raw/master/maia_weights/maia-{rating}.pb.gz")
-}
+/// Reckless's repository and the release the app installs.
+pub const RECKLESS_REPO: &str = "codedeliveryservice/Reckless";
+pub const RECKLESS_TAG: &str = "v0.9.0";
 
-/// What setup installs: `stockfish`, `maia`.
+/// What setup installs: `stockfish`, `reckless`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SetupPackage {
     Stockfish,
-    Maia,
+    Reckless,
 }
 
-/// One download of the plan.
+/// One download of the plan: a package's file.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct SetupDownload {
     pub package: SetupPackage,
-    /// For people: `Stockfish 19`, `lc0 v0.32.1`, `Maia 1500's net`.
+    /// For people: `Stockfish 19`, `Reckless 0.9.0`.
     pub name: String,
     pub url: String,
     /// Its size, when GitHub said.
@@ -72,7 +64,7 @@ pub struct SetupPlan {
     pub bytes: u64,
     /// The packages installed already (they are skipped).
     pub installed: Vec<SetupPackage>,
-    /// What cannot be installed here, for people: "lc0 publishes no build for this platform: put lc0 on the PATH".
+    /// What cannot be installed here, for people: "Reckless 0.9.0 has no release build for this platform".
     pub notes: Vec<String>,
 }
 
@@ -113,19 +105,50 @@ pub fn pick_stockfish<'a>(assets: &'a [ReleaseAsset], os: &str, arch: &str) -> O
         .find_map(|suffix| candidates.iter().copied().find(|a| stem(a).ends_with(suffix)))
 }
 
+/// The names of Reckless's builds for a platform, best first (its assets are bare executables:
+/// `reckless-windows-avx2.exe`, `reckless-linux-generic`, `reckless-macos`): on x86-64 the AVX2 build when the CPU
+/// has AVX2, then the generic one; on macOS its one build. Empty where Reckless publishes none.
+fn reckless_names(os: &str, arch: &str, avx2: bool) -> Vec<String> {
+    match (os, arch) {
+        ("macos", _) => vec!["reckless-macos".into()],
+        ("windows" | "linux", "x86_64") => {
+            let ext = if os == "windows" { ".exe" } else { "" };
+            let mut names = Vec::new();
+            if avx2 {
+                names.push(format!("reckless-{os}-avx2{ext}"));
+            }
+            names.push(format!("reckless-{os}-generic{ext}"));
+            names
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// The Reckless build for a platform among a release's assets, by [`reckless_names`].
+pub fn pick_reckless<'a>(assets: &'a [ReleaseAsset], os: &str, arch: &str, avx2: bool) -> Option<&'a ReleaseAsset> {
+    reckless_names(os, arch, avx2).iter().find_map(|n| assets.iter().find(|a| &a.name == n))
+}
+
+/// Whether this CPU has AVX2, which Reckless's fast x86-64 build needs.
+fn has_avx2() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        std::arch::is_x86_feature_detected!("avx2")
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
+    }
+}
+
 /// Where setup puts things, under the tools directory.
-fn dirs(tools: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
-    (tools.join("stockfish"), tools.join("lc0"), tools.join("maia"), tools.join("downloads"))
+fn dirs(tools: &Path) -> (PathBuf, PathBuf, PathBuf) {
+    (tools.join("stockfish"), tools.join("reckless"), tools.join("downloads"))
 }
 
 /// The Stockfish binary in its unpacked release.
 fn stockfish_binary(dir: &Path) -> Option<PathBuf> {
     tools::find_binary(dir, |n| n.starts_with("stockfish") && (!cfg!(windows) || n.ends_with(".exe")))
-}
-
-/// lc0: the one setup unpacked, else one on the PATH.
-fn lc0_binary(dir: &Path) -> Option<PathBuf> {
-    tools::find_binary(dir, |n| n == chess_engine::exe("lc0")).or_else(|| proc::which("lc0"))
 }
 
 /// Setup: the plan and the `setup` work. Cheap to clone.
@@ -176,45 +199,29 @@ impl Setup {
                 None => plan.notes.push("Stockfish 19 has no release build for this platform found".into()),
             }
         }
-        let maias: Vec<&Builtin> = MAIA_RATINGS.iter().filter_map(|r| builtin(&format!("maia-{r}"))).collect();
-        let mut missing = Vec::new();
-        for m in &maias {
-            if !self.installed(m.id).await {
-                missing.push(*m);
-            }
-        }
-        if missing.is_empty() {
-            plan.installed.push(SetupPackage::Maia);
+        if self.installed("reckless").await {
+            plan.installed.push(SetupPackage::Reckless);
         } else {
-            let (_, lc0_dir, _, _) = dirs(&self.tools());
-            if lc0_binary(&lc0_dir).is_none() {
-                if cfg!(windows) {
-                    let assets = tools::release_assets(&api, LC0_REPO, LC0_TAG).await.unwrap_or_default();
-                    let asset = assets.iter().find(|a| a.name == LC0_WINDOWS_ASSET);
-                    plan.downloads.push(SetupDownload {
-                        package: SetupPackage::Maia,
-                        name: format!("lc0 {LC0_TAG}"),
-                        url: asset.map(|a| a.url.clone()).unwrap_or_else(|| {
-                            format!("https://github.com/{LC0_REPO}/releases/download/{LC0_TAG}/{LC0_WINDOWS_ASSET}")
-                        }),
-                        bytes: asset.map(|a| a.size),
-                    });
-                } else {
-                    plan.notes.push("lc0 publishes no build for this platform: put lc0 on the PATH for Maia".into());
-                }
-            }
-            let sizes = join_all(missing.iter().map(|m| {
-                let url = maia_url(rating(m));
-                async move { tools::content_length(&url).await }
-            }))
-            .await;
-            for (m, bytes) in missing.iter().zip(sizes) {
-                plan.downloads.push(SetupDownload {
-                    package: SetupPackage::Maia,
-                    name: format!("{}'s net", m.name),
-                    url: maia_url(rating(m)),
-                    bytes,
-                });
+            let assets = tools::release_assets(&api, RECKLESS_REPO, RECKLESS_TAG).await.unwrap_or_default();
+            let name = format!("Reckless {}", RECKLESS_TAG.trim_start_matches('v'));
+            let (os, arch) = (std::env::consts::OS, std::env::consts::ARCH);
+            match pick_reckless(&assets, os, arch, has_avx2()) {
+                Some(a) => plan.downloads.push(SetupDownload {
+                    package: SetupPackage::Reckless,
+                    name,
+                    url: a.url.clone(),
+                    bytes: Some(a.size),
+                }),
+                // GitHub did not answer: the build's name is known, its size is not.
+                None => match reckless_names(os, arch, has_avx2()).first() {
+                    Some(file) if assets.is_empty() => plan.downloads.push(SetupDownload {
+                        package: SetupPackage::Reckless,
+                        name,
+                        url: format!("https://github.com/{RECKLESS_REPO}/releases/download/{RECKLESS_TAG}/{file}"),
+                        bytes: None,
+                    }),
+                    _ => plan.notes.push(format!("{name} has no release build for this platform found")),
+                },
             }
         }
         plan.bytes = plan.downloads.iter().filter_map(|d| d.bytes).sum();
@@ -259,13 +266,6 @@ impl Setup {
     }
 }
 
-fn rating(b: &Builtin) -> u32 {
-    match b.package {
-        Package::Maia(r) => r,
-        Package::Stockfish => 0,
-    }
-}
-
 #[async_trait]
 impl Executor for Setup {
     fn kind(&self) -> WorkKind {
@@ -278,71 +278,35 @@ impl Executor for Setup {
         for note in &plan.notes {
             cx.log(note);
         }
-        let (sf_dir, lc0_dir, maia_dir, downloads) = dirs(&self.tools());
+        let (sf_dir, reckless_dir, downloads) = dirs(&self.tools());
         let mut done = 0u64;
-        let total = plan.bytes;
+        let total = plan.downloads.iter().filter(|d| req.wants(d.package)).filter_map(|d| d.bytes).sum();
         let mut installed = Vec::new();
         for d in plan.downloads.iter().filter(|d| req.wants(d.package)) {
             if !cx.safe_point(None).await {
                 return Err(cx.stopped());
             }
             let file_name = d.url.rsplit('/').next().unwrap_or("download").to_owned();
-            match d.package {
+            let record = match d.package {
                 SetupPackage::Stockfish => {
                     let archive = downloads.join(&file_name);
                     self.download(&cx, d, &archive, total, &mut done).await?;
                     tools::unpack(&archive, &sf_dir).await.map_err(|e| Error::internal(format!("{e:#}")))?;
                     let bin = stockfish_binary(&sf_dir)
                         .ok_or_else(|| Error::internal("the Stockfish release holds no stockfish binary"))?;
-                    let engine = self
-                        .engines
-                        .install(EngineRecord::new(
-                            "stockfish",
-                            "Stockfish",
-                            chess_core::engines::EngineKind::Builtin,
-                            bin.display().to_string(),
-                        ))
-                        .await?;
-                    cx.log(format!("Installed {}", engine.label()));
-                    installed.push(engine.id);
+                    EngineRecord::new("stockfish", "Stockfish", EngineKind::Builtin, bin.display().to_string())
                 }
-                SetupPackage::Maia if file_name.starts_with("lc0") => {
-                    let archive = downloads.join(&file_name);
-                    self.download(&cx, d, &archive, total, &mut done).await?;
-                    tools::unpack(&archive, &lc0_dir).await.map_err(|e| Error::internal(format!("{e:#}")))?;
-                    cx.log(format!("Unpacked lc0 into {}", lc0_dir.display()));
+                SetupPackage::Reckless => {
+                    // The release's assets are the executables themselves: nothing to unpack.
+                    let bin = reckless_dir.join(&file_name);
+                    self.download(&cx, d, &bin, total, &mut done).await?;
+                    tools::make_executable(&bin).map_err(|e| Error::internal(format!("{e:#}")))?;
+                    EngineRecord::new("reckless", "Reckless", EngineKind::Builtin, bin.display().to_string())
                 }
-                SetupPackage::Maia => {
-                    self.download(&cx, d, &maia_dir.join(&file_name), total, &mut done).await?;
-                }
-            }
-        }
-        if req.wants(SetupPackage::Maia) {
-            match lc0_binary(&lc0_dir) {
-                Some(lc0) => {
-                    for r in MAIA_RATINGS {
-                        let net = maia_dir.join(format!("maia-{r}.pb.gz"));
-                        let id = format!("maia-{r}");
-                        if !net.is_file() || self.installed(&id).await {
-                            continue;
-                        }
-                        let b = builtin(&id).expect("every Maia rating is a built-in");
-                        let mut record = EngineRecord::new(
-                            &id,
-                            b.name,
-                            chess_core::engines::EngineKind::Builtin,
-                            lc0.display().to_string(),
-                        );
-                        record.options.insert("WeightsFile".into(), net.display().to_string());
-                        record.nodes = b.nodes();
-                        record.rating = b.rating();
-                        let engine = self.engines.install(record).await?;
-                        cx.log(format!("Installed {} ({})", engine.name, engine.label()));
-                        installed.push(engine.id);
-                    }
-                }
-                None => cx.log("No lc0: the Maia engines are not installed"),
-            }
+            };
+            let engine = self.engines.install(record).await?;
+            cx.log(format!("Installed {}", engine.label()));
+            installed.push(engine.id);
         }
         let _ = std::fs::remove_dir(&downloads);
         Ok(serde_json::json!({ "installed": installed }))
@@ -380,10 +344,36 @@ mod tests {
     }
 
     #[test]
+    fn picks_the_reckless_build_for_the_cpu() {
+        let assets: Vec<ReleaseAsset> = [
+            "reckless-windows-avx2.exe",
+            "reckless-windows-avx512.exe",
+            "reckless-windows-generic.exe",
+            "reckless-linux-avx2",
+            "reckless-linux-avx512",
+            "reckless-linux-generic",
+            "reckless-macos",
+        ]
+        .into_iter()
+        .map(asset)
+        .collect();
+        let pick = |os, arch, avx2| pick_reckless(&assets, os, arch, avx2).map(|a| a.name.as_str());
+        assert_eq!(pick("windows", "x86_64", true), Some("reckless-windows-avx2.exe"));
+        assert_eq!(pick("windows", "x86_64", false), Some("reckless-windows-generic.exe"));
+        assert_eq!(pick("linux", "x86_64", true), Some("reckless-linux-avx2"));
+        assert_eq!(pick("linux", "x86_64", false), Some("reckless-linux-generic"));
+        assert_eq!(pick("macos", "aarch64", false), Some("reckless-macos"));
+        assert_eq!(pick("linux", "aarch64", true), None);
+        assert_eq!(pick("freebsd", "x86_64", true), None);
+        // Without an AVX2 build in the release, the generic one.
+        let generic = [asset("reckless-windows-generic.exe")];
+        assert_eq!(pick_reckless(&generic, "windows", "x86_64", true).unwrap().name, "reckless-windows-generic.exe");
+    }
+
+    #[test]
     fn setup_takes_everything_unless_told() {
-        assert!(SetupRequest::default().wants(SetupPackage::Maia));
+        assert!(SetupRequest::default().wants(SetupPackage::Reckless));
         let only = SetupRequest { packages: vec![SetupPackage::Stockfish] };
-        assert!(only.wants(SetupPackage::Stockfish) && !only.wants(SetupPackage::Maia));
-        assert!(maia_url(1500).ends_with("/maia_weights/maia-1500.pb.gz"));
+        assert!(only.wants(SetupPackage::Stockfish) && !only.wants(SetupPackage::Reckless));
     }
 }

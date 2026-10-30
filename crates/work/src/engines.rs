@@ -1,5 +1,5 @@
-//! The engines list as a service: the built-ins (installed or not) and the engines you added, which one analyses, and
-//! turning an engine's id into something a seat or a review can start.
+//! The engines list as a service: the built-ins (Stockfish and Reckless, installed or not) and the engines you added,
+//! which one analyses, and turning an engine's id into something a seat or a review can start.
 //!
 //! `play` and `analysis` ask through [`EngineSource`]: the server hands them [`Engines`], and tests a [`FixedEngines`]
 //! that points at a fake engine.
@@ -67,7 +67,7 @@ pub struct NewEngineRequest {
     /// UCI options set after the handshake.
     #[serde(default)]
     pub options: BTreeMap<String, String>,
-    /// Nodes it searches a move whatever the clock (Maia-like engines); none plays on the clock.
+    /// Nodes it searches a move whatever the clock (an engine made to play that way); none plays on the clock.
     #[serde(default)]
     pub nodes: Option<u64>,
     /// The rating it plays at by design, when it has one.
@@ -111,8 +111,9 @@ impl Engines {
                     args: Vec::new(),
                     options: BTreeMap::new(),
                     id_name: None,
-                    nodes: b.nodes(),
-                    rating: b.rating(),
+                    nodes: None,
+                    rating: None,
+                    multipv: true,
                     installed: false,
                     analysis: b.id == analysis,
                     levels: false,
@@ -153,11 +154,12 @@ impl Engines {
         if !path.is_file() {
             return Err(Error::bad_request(format!("{} is not a file", path.display())));
         }
-        let id_name = probe(&path, &req.args).await?;
+        let probed = probe(&path, &req.args).await?;
         let mut record = EngineRecord::new(&id, &name, EngineKind::Custom, path.display().to_string());
         record.args = req.args;
         record.options = req.options;
-        record.id_name = Some(id_name);
+        record.id_name = Some(probed.name);
+        record.multipv = Some(probed.multipv);
         record.nodes = req.nodes.filter(|n| *n > 0);
         record.rating = req.rating;
         self.hub.store.put_engine(record).await?;
@@ -169,7 +171,9 @@ impl Engines {
     pub async fn install(&self, mut record: EngineRecord) -> Result<Engine, Error> {
         let path = PathBuf::from(&record.path);
         let args: Vec<String> = record.args.clone();
-        record.id_name = Some(probe(&path, &args).await?);
+        let probed = probe(&path, &args).await?;
+        record.id_name = Some(probed.name);
+        record.multipv = Some(probed.multipv);
         if let Some(old) = self.hub.store.engine(&record.id).await? {
             record.created_at = old.created_at;
         }
@@ -192,7 +196,7 @@ impl Engines {
         self.overview().await
     }
 
-    /// Makes an installed engine the analysis engine. One with a fixed budget (Maia) cannot analyse.
+    /// Makes an installed engine the analysis engine. One with a fixed node budget cannot analyse.
     pub async fn set_analysis(&self, id: &str) -> Result<EnginesOverview, Error> {
         let engine = self.get(id).await?;
         if engine.nodes.is_some() {
@@ -263,26 +267,38 @@ fn engine(r: &EngineRecord, analysis: &str) -> Engine {
         id_name: r.id_name.clone(),
         nodes: r.nodes,
         rating: r.rating,
+        multipv: r.multipv.unwrap_or(true),
         installed,
         analysis: is_analysis,
-        levels: is_analysis && r.nodes.is_none() && installed,
+        levels: r.nodes.is_none() && installed,
         created_at: Some(r.created_at.clone()),
     }
 }
 
-/// Starts an engine, waits for its handshake and returns what it calls itself (`id name`).
-pub async fn probe(path: &Path, args: &[String]) -> Result<String, Error> {
+/// What an engine says of itself in UCI's handshake.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Probed {
+    /// What it calls itself (`id name`), else its file's name.
+    pub name: String,
+    /// Whether it declares the `MultiPV` option, which the low levels choose among.
+    pub multipv: bool,
+}
+
+/// Starts an engine, waits for its handshake and returns what it calls itself and whether it has MultiPV.
+pub async fn probe(path: &Path, args: &[String]) -> Result<Probed, Error> {
     let command = proc::Command::new(path).args(args);
     let engine = uci::Engine::start_command(&command, PROBE_TIMEOUT)
         .await
         .map_err(|e| Error::bad_request(format!("{} is not a UCI engine: {e:#}", path.display())))?;
     let name = engine.name.trim().to_owned();
+    let multipv = engine.options.iter().any(|o| o.name.eq_ignore_ascii_case("MultiPV"));
     engine.quit().await;
-    Ok(if name.is_empty() {
+    let name = if name.is_empty() {
         path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
     } else {
         name
-    })
+    };
+    Ok(Probed { name, multipv })
 }
 
 /// Engines for tests and for running without the app's list: each id points at a binary, with arguments; the first
@@ -302,7 +318,7 @@ impl FixedEngines {
         self.with_engine(id, path, args, None, None)
     }
 
-    /// Adds an engine with a fixed node budget and a rating, as Maia is.
+    /// Adds an engine with a fixed node budget and a rating.
     pub fn with_engine(
         mut self,
         id: &str,
@@ -324,9 +340,10 @@ impl FixedEngines {
             id_name: Some(format!("{name} 1.0")),
             nodes,
             rating,
+            multipv: true,
             installed: true,
             analysis,
-            levels: analysis && nodes.is_none(),
+            levels: nodes.is_none(),
             created_at: Some(now()),
         };
         self.engines.push(EngineBinary { args: engine.args.clone(), engine, path, options: Vec::new() });

@@ -34,4 +34,4 @@ Drills are the user's own mistakes as exercises: find the move they missed, on a
 ## Repertoire and levels
 
 - `get_repertoire` (`side: "white" | "black"`): the lines the user plays, how they score in each, and where they leave theory (`departures`). Useful for "what should I study": the departures with poor scores.
-- Levels are the analysis engine at a chosen strength (`list_levels`: about 800 to full, calibrated by the app). A local game at a level: `start_game` with a seat such as `stockfish@5`; a human-like opponent at a rating: `maia-1500`; from a weak spot, `from: { type: "position", fen, moves }`. Local games against an engine are practice, not Lichess, so fair play does not limit them.
+- Levels are an engine at a chosen strength (`list_levels` with `engine`, default the analysis engine: about 800 to full, calibrated by the app for each engine). A local game at a level: `start_game` with a seat such as `stockfish@5` or `reckless@3`; from a weak spot, `from: { type: "position", fen, moves }`. Local games against an engine are practice, not Lichess, so fair play does not limit them.

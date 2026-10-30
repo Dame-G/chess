@@ -18,15 +18,15 @@ The app runs on Windows today, live from `C:\dev\chess-live` (a release build of
 ## Setting up on Linux
 
 1. **Clone** `Dame-G/chess`.
-2. **Toolchain:** Rust (rustup) and Node 24 with corepack (pnpm). For Maia, an `lc0` on the PATH (lc0 publishes Windows builds only).
+2. **Toolchain:** Rust (rustup) and Node 24 with corepack (pnpm).
 3. **Build:** `corepack pnpm install`, `corepack pnpm build`, `cargo build --release -p chess`.
-4. **Run:** `chess serve` (http://127.0.0.1:7979), then `chess setup` (Stockfish 19, and Maia's nets when lc0 is found). Keep the data directory outside the repo.
+4. **Run:** `chess serve` (http://127.0.0.1:7979), then `chess setup` (Stockfish 19 and Reckless 0.9.0, each its own package). Keep the data directory outside the repo.
 5. **Check:** `cargo test --workspace` (CI already runs on Linux and passes), then `chess diagnostics`.
 6. **Reconnect Lichess.** The user logs in with their account. Then do the first real use with the user: one game of theirs played from the app (moves, offers, abort, the fair-play lock lifting) and an import.
 
 ## Open items, in order
 
-See `docs/roadmap.md` › Next: the rename to "Chess", the web design pass, calibrating the Stockfish ladder, Maia beyond Windows, and the eos patterns.
+See `docs/roadmap.md` › Next: the rename to "Chess", the web design pass, calibrating the ladders (Stockfish's and Reckless's), and the eos patterns.
 
 ## Working on the repo
 

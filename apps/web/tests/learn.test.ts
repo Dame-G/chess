@@ -435,6 +435,7 @@ const level = (id: number, nominal: number, nodes: number | null, games = 0, elo
   rating: elo == null ? null : { elo, low: elo - 40, high: elo + 40 },
 });
 const overview: LevelsOverview = {
+  engine: "stockfish",
   levels: [level(1, 800, 300, 12, 742), level(2, 1000, 300), level(3, 1200, 500, 0), level(12, 3000, null)],
   suggested: 3,
   you: null,
@@ -595,7 +596,7 @@ const gameOf = (
 });
 
 describe("a rematch", () => {
-  const cx = { analysis: "stockfish" };
+  const cx = { hasLevels: (id: string) => id !== "fixed" };
 
   it("swaps the colours and keeps the opponent and the clock", () => {
     expect(rematchRequest(gameOf(), cx)).toEqual({
@@ -610,8 +611,10 @@ describe("a rematch", () => {
   it("asks for the same engine at the same level", () => {
     const atLevel = gameOf({ black: seat("engine:stockfish", { name: "Stockfish 742", rating: 742, level: 1 }) });
     expect(rematchRequest(atLevel, cx)?.white).toBe("stockfish@1");
-    const maia = gameOf({ black: seat("engine:maia-1500", { name: "Maia 1500", rating: 1500 }) });
-    expect(rematchRequest(maia, cx)?.white).toBe("maia-1500");
+    const reckless = gameOf({ black: seat("engine:reckless", { name: "Reckless 1400", rating: 1400, level: 4 }) });
+    expect(rematchRequest(reckless, cx)?.white).toBe("reckless@4");
+    const fixed = gameOf({ black: seat("engine:fixed", { name: "Fixed", rating: 1500 }) });
+    expect(rematchRequest(fixed, cx)?.white).toBe("fixed");
   });
 
   it("starts from the same position", () => {

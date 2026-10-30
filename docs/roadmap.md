@@ -6,18 +6,17 @@
 
 The app plays, reviews and analyzes, with any UCI engine:
 
-- **Play:** local games against an engine at full strength, at a level of the analysis engine (about 800 to full, calibrated by the app), or against Maia at 1100 to 1900; your Lichess games played from the same board through the Board API.
+- **Play:** local games against an engine at full strength or at a level of its own ladder (about 800 to full, calibrated by the app per engine); your Lichess games played from the same board through the Board API.
 - **Review and analyze:** reviews on the analysis engine with Lichess's judgements, profiles and comparisons, weak spots and drills (SM-2, themes, hints), your repertoire and opening prep, your progress, free analysis with the explorer and the tablebase, imports of your history and anyone's.
-- **Engines:** the engines list (Stockfish 19 and Maia on lc0 as built-ins that `chess setup` downloads, and any engine added by path), the analysis engine as a setting, reviews and the position cache keyed by the engine and what it calls itself.
+- **Engines:** the engines list (Stockfish 19 and Reckless 0.9.0 as built-ins that `chess setup` downloads, each its own package, and any engine added by path), the analysis engine as a setting, reviews and the position cache keyed by the engine and what it calls itself.
 - **Claude in the loop:** `/mcp` serves every route as a tool, generated from the OpenAPI document, with the fair-play and real-account rules in its instructions; the `chess` skill documents driving the app.
 
 ## Next
 
 1. **The name.** The app becomes "Chess": the crates, the binary, the environment variables and the data directory are renamed in one change, with the old data directory picked up once.
-2. **The design pass on the web app.** The opponent picker as an engines list (levels, Maia by rating, your engines), Settings' Engines section and setup with its sizes, and the screens that lost the engine's sheet, polished to the brief (`docs/ui-brief.md`) and the kit.
-3. **Calibrate the Stockfish ladder.** The node budgets were chosen for Reckless; calibrate on Stockfish (`chess levels calibrate`) and, if the spread is off, retune the budgets and temperatures so the ladder spans 800 to full strength evenly.
-4. **Maia everywhere.** lc0 publishes Windows builds only: on Linux and macOS, setup uses an `lc0` on the PATH. Build or fetch lc0 for those platforms, or document it in `chess diagnostics`.
-5. **eos gains the patterns the app hand-styles** (a non-modal side sheet, a popover, a selectable list row and a tree, a compact stat link, a chart with series highlighting, a virtual list), released and adopted; then a last audit of words, keyboard paths, phone and tablet, both schemes, reduced motion and contrast.
+2. **The design pass on the web app.** The opponent picker as an engines list (each engine with its own levels), Settings' Engines section and setup with its sizes, and the screens that lost the engine's sheet, polished to the brief (`docs/ui-brief.md`) and the kit.
+3. **Calibrate the ladders.** The node budgets were chosen for Reckless; calibrate Stockfish's and Reckless's levels (`chess levels calibrate --engine stockfish`, `--engine reckless`) and, if the spread is off, retune the budgets and temperatures so each ladder spans 800 to full strength evenly. The budgets are one ladder for every engine; a ladder per engine is the next step if one engine's spread cannot be fixed by its ratings alone.
+4. **eos gains the patterns the app hand-styles** (a non-modal side sheet, a popover, a selectable list row and a tree, a compact stat link, a chart with series highlighting, a virtual list), released and adopted; then a last audit of words, keyboard paths, phone and tablet, both schemes, reduced motion and contrast.
 
 ## The player side in detail
 
@@ -78,26 +77,26 @@ Why these numbers:
 - **Below 1800, choice does the weakening.** Nodes stay at 300 or more, so every MultiPV line is a real search, and the weakening comes from choosing among the engine's own candidates. At T = 15, a move 10 win% worse is played half as often as the best. That is a beginner's inconsistency, with no move outside the engine's top 8, and the move is never a random blunder.
 - **Above 1800, only nodes change.** From 6,000 to 400,000 nodes is six doublings. At roughly +130 Elo per doubling at low budgets, falling to about +60 higher up, that is the 2000 to 2800 span.
 
-These were chosen for Reckless and carried over to Stockfish, which is stronger per node, so the nominal ratings likely read low until calibration replaces them. The UI shows a level's calibrated rating once it has one (games > 0), else "about <nominal>".
+These were chosen for Reckless and are the ladder of every engine: Stockfish (stronger per node) and engines you add start from the same nominal ratings, which likely read low or high until calibration replaces them with that engine's own. An engine without MultiPV plays levels 1 to 6 at their node budgets alone (no softmax), so its low levels read stronger than their nominal ratings until calibrated. The UI shows a level's calibrated rating once it has one (games > 0), else "about <nominal>".
 
-**Storage** (migrations `0002_player.sql`, `0006_drill_themes.sql`; repositories `store::drills`, `store::levels`):
+**Storage** (migrations `0002_player.sql`, `0006_drill_themes.sql`, `0008_engine_levels.sql`; repositories `store::drills`, `store::levels`):
 
 - `drills`: one row per position key (UNIQUE), the schedule in plain columns, indexed on `due`.
 - `drill_answers (drill, at, answer, outcome, first)`: `first` marks a drill's first answer, for the daily cap of new drills.
-- `level_games (game PRIMARY KEY, white, black, calibration)`: the entrant at each seat of a game played at a level. `play` writes it when a local game with a level starts, and for calibration games.
-- `level_ratings (entrant PRIMARY KEY, elo, low, high, games, updated_at)`: the last fit.
+- `level_games (game PRIMARY KEY, white, black, calibration, engine)`: the entrant at each seat of a game played at an engine's levels, and that engine. `play` writes it when a local game with a level starts, and for calibration games.
+- `level_ratings (engine, entrant, elo, low, high, games, updated_at, PRIMARY KEY (engine, entrant))`: each engine's last fit.
 - Methods:
   - `insert_drills`, `drill`, `drills`, `drill_keys`, `record_drill_answer(graded, answer)` (one transaction), `drill_answers(since)`, `drills_started_since`, `delete_drill`
-  - `record_level_game`, `level_seats`, `level_games` (finished only), `put_level_ratings` (replaces the fit), `level_ratings`
+  - `record_level_game(game, engine, …)`, `level_seats`, `level_games(engine)` (finished only), `put_level_ratings(engine, …)` (replaces that engine's fit), `level_ratings(engine)`
 
 **Routes** (the server's; every one with a CLI command of the same name):
 
 ```
-GET    /api/levels                        { levels: [{ level: Level, rating: Estimate | null, games }], you: EntrantRating | null,
-                                            suggested: level id | null (nearest your rating), updated_at }
-GET    /api/levels/plan?count=3           PlannedMatch[]
-POST   /api/levels/calibrate              { matches?: PlannedMatch[], count?, games_per_pair? } → Work (default: plan(…, 3));
-                                            refits after each match
+GET    /api/levels?engine=                { engine, levels: [{ level: Level, rating: Estimate | null, games }], you: EntrantRating | null,
+                                            suggested: level id | null (nearest your rating), updated_at } (default the analysis engine)
+GET    /api/levels/plan?engine=&count=3   PlannedMatch[]
+POST   /api/levels/calibrate              { engine?, matches?: PlannedMatch[], count?, games_per_pair? } → Work (default: the
+                                            analysis engine, plan(…, 3)); refits that engine after each match
 POST   /api/games                         a seat at a level: "stockfish@5" (or { player: "stockfish", level: 5 }), optional `seed`;
                                             a bare engine id is full strength; the game's seats go to level_games
 GET    /api/drills                        Drill[] (all, soonest due first)
@@ -114,7 +113,7 @@ GET    /api/progress?window=10            Progress
 - **Fair play.** Drills are not refused by the server. The web client hides them while `policy.assist ≠ allowed`. The repertoire is refused with 409 while you play (it is assistance, like the explorer: allowed when every live game is correspondence).
 - **Theory for the repertoire.** By default a position is theory when it was reached within the named opening's plies (`opening.ply`) in any of your Lichess games: free, and Lichess's own book. The explorer (masters) can refine it later, outside live games.
 - **Calibration** is background work at `Priority::Background`, the lowest priority (beside reviews of all of a player's games). Every level plays at fixed nodes from four random plies, and level 1 to 6 seats use `choose_move`, so all calibration games are played by `play`'s engine seats.
-- **When the fit runs.** The server refits (`fit` over `level_games` with `priors(ladder, your Lichess rating)`) after each calibration match and after each finished game of yours against a level, then stores it.
+- **When the fit runs.** The server refits an engine's ladder (`fit` over its `level_games` with `priors(ladder, your Lichess rating)`) after each calibration match of its levels and after each finished game of yours against one of its levels, then stores it.
 
 **Services and wiring** (built: `play::levels`, `play::calibrate`, `analysis::drills`, `analysis::repertoire`, `analysis::progress`). Each route calls one function.
 
@@ -126,9 +125,9 @@ GET    /api/progress?window=10            Progress
 - **Routes → calls:**
 
 ```
-GET    /api/levels                 games.levels().overview()                    → play::LevelsOverview
-GET    /api/levels/plan?count=3    games.levels().plan(count)                   → PlannedMatch[]
-POST   /api/levels/calibrate       body play::CalibrateRequest { matches?, count?, games_per_pair? }
+GET    /api/levels?engine=         games.levels().overview(engine)              → play::LevelsOverview
+GET    /api/levels/plan?count=3    games.levels().plan(engine, count)           → PlannedMatch[]
+POST   /api/levels/calibrate       body play::CalibrateRequest { engine?, matches?, count?, games_per_pair? }
                                    scheduler.submit(games.levels().prepare_calibration(&engines, req).await?) → Work
 POST   /api/games                  games.start(NewGameRequest)  (level seats below; optional `seed`)
 GET    /api/drills                 drills.list()                                → Drill[]
@@ -142,26 +141,26 @@ GET    /api/players/you/repertoire ?side=&max_plies=&min_games=&limit= (analysis
 GET    /api/progress?window=10     profiles.progress(window)                    → core::progress::Progress
 ```
 
-- **Level seats** (`play::SeatRequest`): `<engine id>@<level>`, or the object `{ "player": "stockfish", "level"?: 5 }`, for the analysis engine only (`Engine.levels`; another engine at a level is 400). A bare engine id is full strength on the clock (or its fixed budget). An unknown level is 400.
-  - A seat at a level searches the level's nodes per move, whatever the game's clock (full strength, `nodes: None`, plays the clock), with its MultiPV. It plays `choose_move`'s pick, drawn from a SplitMix64 seeded by `NewGameRequest.seed` (random when none; the seed is not stored).
-  - Its name is "<engine name> <rating>" ("Stockfish 1650": calibrated once the level has games, else nominal), with `rating` set.
-  - When every seat is a level or you, the game goes to `level_games` (not calibration), and the ladder is refitted when it ends.
-- **Calibration work:** the spec is `play::CalibrateSpec { matches, engine }`, resolved when queued: the plan when no matches are given, `games_per_pair` applied, the analysis engine's id.
+- **Level seats** (`play::SeatRequest`): `<engine id>@<level>`, or the object `{ "player": "stockfish", "level"?: 5 }`, for any engine whose `Engine.levels` is true (an engine with a fixed budget at a level is 400). A bare engine id is full strength on the clock (or its fixed budget). An unknown level is 400.
+  - A seat at a level searches the level's nodes per move, whatever the game's clock (full strength, `nodes: None`, plays the clock), with its MultiPV (an engine that does not declare `MultiPV` searches one line: the level is its node budget alone). It plays `choose_move`'s pick, drawn from a SplitMix64 seeded by `NewGameRequest.seed` (random when none; the seed is not stored).
+  - Its name is "<engine name> <rating>" ("Reckless 1650": that engine's calibrated rating once the level has games, else nominal), with `rating` set.
+  - When every seat is you or a level of one engine, the game goes to `level_games` with that engine (not calibration), and its ladder is refitted when it ends. A game between two engines' levels belongs to neither.
+- **Calibration work:** the spec is `play::CalibrateSpec { matches, engine }`, resolved when queued: the engine named (else the analysis engine; one with a fixed budget is 400), that engine's plan when no matches are given, `games_per_pair` applied.
   - It plays each match's games, as many at once as `cx.cores(2, all)` grants (two cores a game). Its engines start without ledger reservations, so they never pause other work as live play does.
   - Colours alternate. Games start from four random plies. Each level plays at `calibration_nodes()` (full strength 1,000,000), with adjudication on.
   - Games are stored as finished local games whose seats are named "<engine name> <rating>" with their `level` set, and `level_games.calibration` set. They are not announced one by one (no `game.upserted`); game lists should leave calibration games out once they have a filter for it.
   - It checkpoints after each batch (`CalibrateCheckpoint { done per match, failed }`), stops at a safe point before each batch, refits after each match (`levels.updated`), and fails when every game of a batch fails. Its result is `{ games, failed, matches }`.
-- **The fit:** `Levels::refit()` runs `fit(priors(ladder, anchor), pair_results(level_games))`, stores it and emits `levels.updated`. Without your Lichess rating, You has no prior, so your games are left out of the fit and the ladder keeps its nominal scale.
+- **The fit:** `Levels::refit(engine)` runs `fit(priors(ladder, anchor), pair_results(level_games))`, stores it and emits `levels.updated`. Without your Lichess rating, You has no prior, so your games are left out of the fit and the ladder keeps its nominal scale.
 - **Drills** are made from your reviewed games' mistakes and blunders: the weak spots of each game, with the reviewed move's best and second lines, deduplicated by key, biggest swing first. `make_from_weak_spots` reads your newest 500 games. Every change is announced on `player:you`.
 - **Progress:** your trend over your newest 1,000 games and the drill hit rate (window 50).
 
 **Events:**
 
-| Kind             | Payload                                    | Topic        | Kept for replay |
-| ---------------- | ------------------------------------------ | ------------ | --------------- |
-| `drill.upserted` | `Drill`                                    | `player:you` | yes             |
-| `drill.answered` | `{ drill, outcome, at }`                   | `player:you` | yes             |
-| `drill.deleted`  | `{ id }`                                   | `player:you` | yes             |
-| `levels.updated` | `{ ratings: EntrantRating[], updated_at }` | `engines`    | yes             |
+| Kind             | Payload                                            | Topic        | Kept for replay |
+| ---------------- | -------------------------------------------------- | ------------ | --------------- |
+| `drill.upserted` | `Drill`                                            | `player:you` | yes             |
+| `drill.answered` | `{ drill, outcome, at }`                           | `player:you` | yes             |
+| `drill.deleted`  | `{ id }`                                           | `player:you` | yes             |
+| `levels.updated` | `{ engine, ratings: EntrantRating[], updated_at }` | `engines`    | yes             |
 
 These kinds are in `core::events::EventKind` (payloads `Drill`, `DrillAnswered`, `DrillDeleted`, `LevelsUpdated`), with `WorkKind::Calibrate`.

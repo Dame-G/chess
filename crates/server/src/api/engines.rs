@@ -40,7 +40,7 @@ pub async fn add_engine(
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Path)]
 pub struct EnginePath {
-    /// The engine's id: `stockfish`, `maia-1500`, `my-engine`.
+    /// The engine's id: `stockfish`, `reckless`, `my-engine`.
     pub id: String,
 }
 
@@ -59,8 +59,9 @@ pub struct AnalysisEngine {
     pub engine: String,
 }
 
-/// Chooses the analysis engine: reviews, live evaluation, drills and the levels run on it. It must be installed and
-/// play on the clock (Maia's fixed node cannot analyse: 400).
+/// Chooses the analysis engine: reviews, live evaluation and drills run on it, and it is the engine `levels` and
+/// `calibrate_levels` mean when none is named. It must be installed and play on the clock (an engine with a fixed node
+/// budget cannot analyse: 400).
 #[utoipa::path(put, path = "/api/engines/analysis", operation_id = "set_analysis_engine", tag = "engines",
     request_body = AnalysisEngine,
     responses((status = 200, body = EnginesOverview), (status = 400, body = chess_core::error::ErrorBody),
@@ -72,16 +73,16 @@ pub async fn set_analysis_engine(
     Ok(Json(app.engines.set_analysis(&b.engine).await?))
 }
 
-/// What setup would download (Stockfish 19, lc0 and Maia's nets) with the sizes GitHub gives, and what is installed
-/// already. Downloads nothing.
+/// What setup would download (Stockfish 19 and Reckless 0.9.0, each its own package) with the sizes GitHub gives, and
+/// what is installed already. Downloads nothing.
 #[utoipa::path(get, path = "/api/setup", operation_id = "setup_plan", tag = "engines",
     responses((status = 200, body = SetupPlan)))]
 pub async fn setup_plan(State(app): State<Arc<App>>) -> ApiResult<Json<SetupPlan>> {
     Ok(Json(app.setup.plan().await?))
 }
 
-/// Downloads the built-in engines into the data directory's `tools/` and adds them to the list, as work. Only on this
-/// explicit request (the CLI shows the sizes and asks first).
+/// Downloads the built-in engines (the packages named, else both) into the data directory's `tools/` and adds them to
+/// the list, as work. Only on this explicit request (the CLI shows the sizes and asks first).
 #[utoipa::path(post, path = "/api/setup", operation_id = "setup", tag = "engines", request_body = SetupRequest,
     responses((status = 201, body = Work)))]
 pub async fn setup(State(app): State<Arc<App>>, body: axum::body::Bytes) -> ApiResult<(StatusCode, Json<Work>)> {
@@ -90,8 +91,7 @@ pub async fn setup(State(app): State<Arc<App>>, body: axum::body::Bytes) -> ApiR
     Ok((StatusCode::CREATED, Json(work)))
 }
 
-/// The machine's health for Settings: the analysis engine, the Maia engines, the disk and the database, each with
-/// what to do about it.
+/// The machine's health for Settings: the analysis engine, the disk and the database, each with what to do about it.
 #[utoipa::path(get, path = "/api/diagnostics", operation_id = "diagnostics", tag = "engines",
     responses((status = 200, body = Health)))]
 pub async fn diagnostics(State(app): State<Arc<App>>) -> ApiResult<Json<Health>> {

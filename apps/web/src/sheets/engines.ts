@@ -1,5 +1,5 @@
 import type { Engine, SetupPlan } from "../api/types";
-import { bytes } from "../format";
+import { bytes, formatNumber } from "../format";
 
 /**
  * UCI options written one per line as `Name=value` (`Threads=4`, `Hash = 256`), read into what `POST /api/engines`
@@ -18,13 +18,25 @@ export function readOptions(text: string): { options: Record<string, string>; er
   return { options };
 }
 
-/** What an engine reports in the list: what it calls itself (else where it is), or that setup installs it. */
-export function engineDetail(e: Pick<Engine, "installed" | "id_name" | "path" | "kind">): string {
+/**
+ * What an engine reports in the list: what it calls itself (else where it is), or that setup installs it; and how its
+ * levels play when it has no MultiPV (each level's node budget alone) or none at all (a fixed budget).
+ */
+export function engineDetail(
+  e: Pick<Engine, "installed" | "id_name" | "path" | "kind"> & Partial<Pick<Engine, "multipv" | "nodes">>,
+): string {
   if (!e.installed) return e.kind === "custom" ? (e.path ?? "Not found") : "Installed by setup, below";
-  return e.id_name ?? e.path ?? "";
+  const what = e.id_name ?? e.path ?? "";
+  const note =
+    e.nodes != null
+      ? `${formatNumber(e.nodes)} node${e.nodes === 1 ? "" : "s"} a move, no levels`
+      : e.multipv === false
+        ? "No MultiPV: its levels play their node budget alone"
+        : "";
+  return [what, note].filter(Boolean).join(" · ");
 }
 
-/** Where a download comes from, for the small print: its host and file name (`github.com`, `maia-1100.pb.gz`). */
+/** Where a download comes from, for the small print: its host and file name (`github.com`, `reckless-windows-avx2.exe`). */
 export function sourceOf(url: string): { host: string; file: string } {
   try {
     const u = new URL(url);
@@ -38,13 +50,12 @@ export function sourceOf(url: string): { host: string; file: string } {
 export const addErrorField = (message: string): "name" | "path" => (/already|name/i.test(message) ? "name" : "path");
 
 /**
- * Whether an engine can analyse: installed, and not one that plays like a person (a Maia, which has a rating and
- * searches one node). The analysis engine runs reviews, live evaluation, drills and the levels.
+ * Whether an engine can analyse: installed, and searching on the clock rather than a fixed node budget. The analysis
+ * engine runs reviews, live evaluation and drills.
  */
-export const canAnalyse = (e: Pick<Engine, "installed" | "rating" | "nodes">): boolean =>
-  e.installed && e.rating == null && e.nodes !== 1;
+export const canAnalyse = (e: Pick<Engine, "installed" | "nodes">): boolean => e.installed && e.nodes == null;
 
-/** What setup would download, as one line: "Stockfish 19 and Maia: 182 MB", or that nothing is left to download. */
+/** What setup would download, as one line: "Stockfish 19 and Reckless 0.9.0: 140 MB", or that nothing is left. */
 export function setupLine(plan: SetupPlan): string {
   if (!plan.downloads.length) return "Everything setup installs is here.";
   const names = plan.downloads.map((d) => d.name);

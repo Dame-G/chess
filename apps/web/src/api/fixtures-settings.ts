@@ -1,5 +1,5 @@
 /**
- * Fixture states for Settings. `?fixtures=settings-edge`: no analysis engine and no Maia, with long paths.
+ * Fixture states for Settings. `?fixtures=settings-edge`: no analysis engine and no Reckless, with long paths.
  * `?fixtures=settings-error`: the machine's health and the token fail to load.
  */
 import { error, reply } from "./fixtures-http";
@@ -27,12 +27,12 @@ export function settingsRoute(mode: string | null, path: string): Response | und
             action: { label: "Set it up", command: "chess setup" },
           },
           {
-            key: "maia",
+            key: "reckless",
             level: "info",
             ok: true,
-            title: "Maia",
-            detail: "No Maia engine is installed: the human-like opponents need lc0 and Maia's nets.",
-            action: { label: "Set it up", command: "chess setup" },
+            title: "Reckless",
+            detail: "Reckless is not installed: another engine to play, with its own levels, and to analyse with",
+            action: { label: "Set it up", command: "chess setup --only reckless" },
           },
         ],
       });

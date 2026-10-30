@@ -4,7 +4,7 @@ import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ETextarea } from "@eos-ui/vue/components/ETextarea";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
-import type { Engine } from "../api/types";
+import type { Engine, SetupDownload } from "../api/types";
 import { bytes, formatNumber } from "../format";
 import { addErrorField, canAnalyse, engineDetail, readOptions, setupLine, sourceOf } from "../sheets/engines";
 import { useEngines } from "../stores/engines";
@@ -16,9 +16,10 @@ import UiSection from "../ui/UiSection.vue";
 import { useConfirm } from "../ui/useConfirm";
 
 /**
- * Settings › Engines: every engine the app can play and analyse with (the built-ins, installed or not, and the ones
- * you added), which one analyses, and the way to add, remove and set them up. Setup says what it would download and
- * how much before anything is fetched; the download runs as work, which the header shows.
+ * Settings › Engines: every engine the app can play and analyse with (the built-ins Stockfish and Reckless, installed
+ * or not, and the ones you added), which one analyses, and the way to add, remove and set them up. Every engine on the
+ * clock has its own levels. Setup says what it would download and how much before anything is fetched, each package
+ * on its own or all at once; the download runs as work, which the header shows.
  */
 const engines = useEngines();
 const work = useWork();
@@ -114,19 +115,26 @@ async function add() {
 const plan = computed(() => engines.plan);
 const settingUp = computed(() => [...work.running, ...work.queued].find((w) => w.kind === "setup"));
 const starting = ref(false);
-async function download() {
+/** Downloads one package (`only`), or every package setup lists, after saying what and how much. */
+async function download(only?: SetupDownload) {
   const p = plan.value;
   if (!p?.downloads.length) return;
+  const chosen = only ? { ...p, downloads: [only], bytes: only.bytes ?? 0 } : p;
   const yes = await confirm({
-    title: `Download ${p.bytes ? bytes(p.bytes) : "the engines"}?`,
-    body: `${setupLine(p)}, from their GitHub releases into the data directory's tools folder.`,
+    title: `Download ${chosen.bytes ? bytes(chosen.bytes) : only ? only.name : "the engines"}?`,
+    body: `${setupLine(chosen)}, from GitHub releases into the data directory's tools folder.`,
     confirmLabel: "Download",
   });
   if (!yes) return;
   starting.value = true;
-  const ok = await attempt("Setup did not start", () => engines.setup());
+  const ok = await attempt("Setup did not start", () => engines.setup(only ? { packages: [only.package] } : undefined));
   starting.value = false;
-  if (ok) toast.show({ title: "Downloading the engines", message: "The header shows how it goes.", tone: "info" });
+  if (ok)
+    toast.show({
+      title: `Downloading ${only?.name ?? "the engines"}`,
+      message: "The header shows how it goes.",
+      tone: "info",
+    });
 }
 </script>
 
@@ -136,7 +144,9 @@ async function download() {
       <template #aside>
         <EButton variant="outline" size="sm" @click="openAdd">Add engine</EButton>
       </template>
-      <template #note>The analysis engine runs reviews, live evaluation, drills and the levels.</template>
+      <template #note>
+        The analysis engine runs reviews, live evaluation and drills. Every engine on the clock has its own levels.
+      </template>
       <UiEmpty v-if="failed" dense tone="error" title="The engines could not be read." :body="failed">
         <template #actions><EButton variant="quiet" size="sm" @click="read">Try again</EButton></template>
       </UiEmpty>
@@ -173,8 +183,8 @@ async function download() {
 
     <UiSection title="Setup">
       <template v-if="plan?.downloads.length" #aside>
-        <EButton size="sm" :loading="starting" :disabled="!!settingUp" @click="download">
-          Download{{ plan.bytes ? ` ${bytes(plan.bytes)}` : "" }}
+        <EButton size="sm" :loading="starting" :disabled="!!settingUp" @click="download()">
+          Download{{ plan.downloads.length > 1 ? " all" : "" }}{{ plan.bytes ? ` ${bytes(plan.bytes)}` : "" }}
         </EButton>
       </template>
       <span v-if="!plan && !failed" class="skel block" aria-label="Reading what setup would download" />
@@ -187,7 +197,18 @@ async function download() {
               <span class="name">{{ d.name }}</span>
               <span class="detail">{{ sourceOf(d.url).host }} · {{ sourceOf(d.url).file }}</span>
             </span>
-            <span class="size num">{{ d.bytes ? bytes(d.bytes) : "" }}</span>
+            <span class="end">
+              <span class="size num">{{ d.bytes ? bytes(d.bytes) : "" }}</span>
+              <EButton
+                v-if="plan.downloads.length > 1"
+                variant="quiet"
+                size="sm"
+                :disabled="!!settingUp || starting"
+                @click="download(d)"
+              >
+                Download
+              </EButton>
+            </span>
           </li>
           <li v-if="plan.downloads.length > 1 && plan.bytes" class="row total">
             <span class="what"><span class="name">Total</span></span>
@@ -292,6 +313,13 @@ async function download() {
 .size {
   font: var(--t-fig);
   text-align: end;
+}
+
+.end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
 }
 
 .total {
