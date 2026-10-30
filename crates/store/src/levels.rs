@@ -3,8 +3,8 @@
 
 use dameless_core::{
     Error, GameId, Timestamp,
-    levels::{Entrant, EntrantRating, LevelGame},
     levels::Estimate,
+    levels::{Entrant, EntrantRating, LevelGame},
 };
 use rusqlite::{OptionalExtension, params};
 
@@ -137,7 +137,10 @@ mod tests {
         let finished = |i: i64, outcome| {
             let store = store.clone();
             async move {
-                let id = store.insert_game(local(PlayerKey::Engine("stockfish".into()), PlayerKey::Engine("stockfish".into()), i)).await.unwrap();
+                let id = store
+                    .insert_game(local(PlayerKey::Engine("stockfish".into()), PlayerKey::Engine("stockfish".into()), i))
+                    .await
+                    .unwrap();
                 store
                     .finish_game(id, GameEnd::new(outcome, Ending::Checkmate), Timestamp::from_unix_ms(i))
                     .await

@@ -83,18 +83,17 @@ impl Connections {
 
     /// Picks up the stored token: your account is followed again.
     pub async fn start(&self) -> Result<(), Error> {
-        for key in [ConnectionKey::You] {
-            let token = self
-                .inner
-                .hub
-                .secrets
-                .lichess_token(key)
-                .map_err(|e| Error::internal(format!("read the {key} token: {e}")))?;
-            if let Some(client) = self.inner.clients.set(key, token.as_deref())
-                && let Some(account) = self.status(key).account
-            {
-                client.set_username(&account.username);
-            }
+        let key = ConnectionKey::You;
+        let token = self
+            .inner
+            .hub
+            .secrets
+            .lichess_token(key)
+            .map_err(|e| Error::internal(format!("read the {key} token: {e}")))?;
+        if let Some(client) = self.inner.clients.set(key, token.as_deref())
+            && let Some(account) = self.status(key).account
+        {
+            client.set_username(&account.username);
         }
         self.inner.you.resume().await;
         Ok(())

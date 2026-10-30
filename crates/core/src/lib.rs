@@ -25,9 +25,7 @@ pub mod time;
 pub mod work;
 
 pub use error::{Error, ErrorCode, Result};
-pub use ids::{
-    Color, ConnectionKey, GameId, PlayerKey, ReviewId, Side, SidePair, Timestamp, WorkId,
-};
+pub use ids::{Color, ConnectionKey, GameId, PlayerKey, ReviewId, Side, SidePair, Timestamp, WorkId};
 pub use score::Score;
 pub use time::{Speed, TimeControl};
 

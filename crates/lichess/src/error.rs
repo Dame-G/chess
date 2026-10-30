@@ -1,7 +1,6 @@
 //! What a call to Lichess can come to, beyond an answer. The token is never part of an error: errors are shown to
 //! people and logged.
 
-
 use serde_json::Value;
 
 use crate::time::parse_iso;
@@ -46,7 +45,6 @@ pub struct RateLimitInfo {
     /// When it lifts (ms since 1970), when Lichess says.
     pub until: Option<i64>,
 }
-
 
 impl LichessError {
     /// Reads an error body (any text).
@@ -129,5 +127,4 @@ mod tests {
         assert!(matches!(&e, Error::RateLimited { .. }));
         assert_eq!(e.lichess().unwrap().ratelimit.as_ref().unwrap().seconds, Some(5.0));
     }
-
 }

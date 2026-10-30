@@ -70,8 +70,12 @@ impl Priority {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Subject {
-    Game { id: GameId },
-    Player { key: PlayerKey },
+    Game {
+        id: GameId,
+    },
+    Player {
+        key: PlayerKey,
+    },
     /// The engines list: installing the built-in engines.
     Engines,
 }

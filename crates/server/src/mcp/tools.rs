@@ -28,7 +28,7 @@ pub enum Reach {
 
 /// Operations that reach beyond the machine, and how. Everything not listed is [`Reach::Local`].
 const REACH: &[(&str, Reach)] = &[
-    // Your account and the bot's.
+    // Your account.
     ("login", Reach::RealAccount),
     ("set_connection_token", Reach::RealAccount),
     ("logout", Reach::RealAccount),
@@ -38,21 +38,15 @@ const REACH: &[(&str, Reach)] = &[
     ("accept_challenge", Reach::RealAccount),
     ("decline_challenge", Reach::RealAccount),
     ("cancel_challenge", Reach::RealAccount),
-    ("set_bot_settings", Reach::RealAccount),
-    ("set_bot_online", Reach::RealAccount),
-    ("set_bot_seek", Reach::RealAccount),
     // In a Lichess game these play, offer, resign or abort on Lichess.
     ("act_in_game", Reach::RealAccount),
     ("stop_game", Reach::RealAccount),
-    // Pushes and downloads.
-    ("push", Reach::Outside),
+    // Downloads.
     ("setup", Reach::Outside),
-    ("import_dataset", Reach::Outside),
-    // Fetches upstream Reckless from GitHub (and merges it locally).
-    ("sync_upstream", Reach::ReadsOutside),
+    // Reads from GitHub (the sizes of the built-in engines' downloads).
+    ("setup_plan", Reach::ReadsOutside),
     // Reads from Lichess.
     ("import_player", Reach::ReadsOutside),
-    ("online_bots", Reach::ReadsOutside),
     ("top_players", Reach::ReadsOutside),
     ("get_player", Reach::ReadsOutside),
     ("explorer", Reach::ReadsOutside),
@@ -60,20 +54,13 @@ const REACH: &[(&str, Reach)] = &[
 ];
 
 /// Operations that undo or destroy something (beyond their own effect being reversible by another call): deleting,
-/// stopping, resigning, merging into `main`, rewording a commit, pushing, forgetting a token.
+/// stopping, resigning, forgetting a token.
 const DESTRUCTIVE: &[&str] = &[
-    "delete_build",
-    "prune_builds",
-    "delete_dataset",
     "delete_drill",
+    "remove_engine",
     "stop_work",
-    "stop_idea",
     "stop_game",
     "stop_eval",
-    "promote_idea",
-    "sync_upstream",
-    "fix_bench",
-    "push",
     "logout",
     "decline_challenge",
     "cancel_challenge",
@@ -89,29 +76,16 @@ const NOTES: &[(&str, &str)] = &[
     (
         "act_in_game",
         "In a Lichess game this plays on the user's real account: only the move or action the user chose, never one \
-         an engine or you picked for them (Lichess's fair-play rules forbid it). In a local game against Dameless it \
+         an engine or you picked for them (Lichess's fair-play rules forbid it). In a local game against an engine it \
          is free.",
     ),
     ("stop_game", "In a Lichess game of the user's this resigns it (or aborts it before both sides moved) on Lichess."),
-    ("push", "Pushes the fork's main to GitHub. Never without the user asking for this push."),
     (
-        "promote_idea",
-        "Merges a kept idea into the fork's main locally and makes it the champion. Only for an idea whose verdict \
-         is kept, and only when the user wants it promoted.",
+        "setup",
+        "Downloads the built-in engines (Stockfish, lc0 and Maia's nets; about a hundred MB, `setup_plan` gives the \
+         sizes). Only when the user asked, after they saw the sizes.",
     ),
-    (
-        "sync_upstream",
-        "Fetches upstream Reckless from GitHub and merges its new commits into the fork's main locally, making the \
-         next champion without trials (the app also does this every six hours while `set_upstream_settings` has it \
-         on). It never pushes.",
-    ),
-    (
-        "import_dataset",
-        "Downloads a large file (often gigabytes). Tell the user the size and get their go-ahead before passing \
-         `confirm: true`.",
-    ),
-    ("setup", "Downloads fastchess and the opening book (a few hundred MB). Only when the user asked."),
-    ("delete_dataset", "Deletes the dataset's files from disk. Only when the user asked."),
+    ("add_engine", "Starts the binary at `path` to check it speaks UCI: only a path the user gave."),
 ];
 
 /// Where a parameter goes in the request.
@@ -405,9 +379,9 @@ mod tests {
                 assert!(op.schema["$defs"].get(name).is_some(), "{}: {name} is not defined", op.id);
             }
         }
-        let create = ops.iter().find(|op| op.id == "create_idea").unwrap();
-        assert_eq!(create.schema["required"], json!(["body"]));
-        assert!(create.schema["$defs"].get("NewIdeaRequest").is_some());
+        let add = ops.iter().find(|op| op.id == "add_engine").unwrap();
+        assert_eq!(add.schema["required"], json!(["body"]));
+        assert!(add.schema["$defs"].get("NewEngineRequest").is_some());
         let game = ops.iter().find(|op| op.id == "get_game").unwrap();
         assert_eq!(game.params[0].place, Place::Path);
         assert!(game.read_only && !game.destructive);
@@ -430,15 +404,15 @@ mod tests {
     #[test]
     fn real_accounts_and_the_outside_world_say_so() {
         let ops = operations(&doc(), crate::cli::COMMANDS);
-        for id in ["challenge", "seek", "set_bot_online", "set_bot_seek", "set_connection_token", "logout", "login"] {
+        for id in ["challenge", "seek", "set_connection_token", "logout", "login"] {
             let op = ops.iter().find(|op| op.id == id).unwrap();
             assert_eq!(op.reach, Reach::RealAccount, "{id}");
             assert!(op.description.contains("real Lichess account: only when the user asked"), "{id}");
         }
-        for id in ["push", "import_dataset", "setup"] {
-            let op = ops.iter().find(|op| op.id == id).unwrap();
-            assert_eq!(op.reach, Reach::Outside, "{id}");
-        }
+        let setup = ops.iter().find(|op| op.id == "setup").unwrap();
+        assert_eq!(setup.reach, Reach::Outside);
+        let plan = ops.iter().find(|op| op.id == "setup_plan").unwrap();
+        assert_eq!(plan.reach, Reach::ReadsOutside);
         let eval = ops.iter().find(|op| op.id == "start_eval").unwrap();
         assert!(eval.description.contains("fair_play"));
     }

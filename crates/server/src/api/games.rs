@@ -10,7 +10,7 @@ use axum::{
     response::IntoResponse,
 };
 use dameless_core::{
-    ConnectionKey, Error, GameId, PlayerKey, Side, TimeControl, Timestamp, TrialId,
+    ConnectionKey, Error, GameId, PlayerKey, Side, TimeControl, Timestamp,
     chess::pgn,
     events::Payload,
     game::{Ending, Game, GameStatus, GameSummary, Opening, Seat, SeatAction, Source},
@@ -19,7 +19,6 @@ use dameless_core::{
 };
 use dameless_play::NewGameRequest;
 use dameless_store::{GameFilter, NewGame, SourceKind};
-use dameless_work::VersionRef;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use utoipa::{IntoParams, ToSchema};
 
@@ -34,17 +33,15 @@ pub(crate) fn word<T: DeserializeOwned>(text: &str) -> Option<T> {
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct GamesQuery {
-    /// Games this player sat in: `you`, `dameless`, `lichess:<name>`, `stockfish:<n>`.
+    /// Games this player sat in: `you`, `engine:<id>`, `lichess:<name>`.
     pub player: Option<String>,
-    /// Sources, comma-separated: `local`, `lichess`, `import`, `trial`.
+    /// Sources, comma-separated: `local`, `lichess`, `import`.
     pub source: Option<String>,
     /// States, comma-separated: `starting`, `live`, `finished`, `aborted`.
     pub status: Option<String>,
     /// Speeds, comma-separated: `bullet`, `blitz`, `rapid`, `classical`, `correspondence`.
     pub speed: Option<String>,
     pub rated: Option<bool>,
-    /// One trial's games.
-    pub trial: Option<i64>,
     /// Games started at or after this time (ISO-8601).
     pub since: Option<String>,
     /// The page after this game (the last id of the previous page).
@@ -65,7 +62,6 @@ pub async fn list_games(State(app): State<Arc<App>>, Query(q): Query<GamesQuery>
         statuses: list(q.status.as_deref(), "a game status", word::<GameStatus>)?,
         speeds: list(q.speed.as_deref(), "a speed", Speed::parse)?,
         rated: q.rated,
-        trial: q.trial.map(TrialId),
         since: q
             .since
             .as_deref()
@@ -88,8 +84,7 @@ fn bad(message: impl Into<String>) -> ApiError {
     ApiError(Error::bad_request(message))
 }
 
-/// Starts a local game: you against Dameless, or Dameless against itself. Engines are started (their versions built
-/// when needed) before the game is stored.
+/// Starts a local game: you against an engine, or two engines. Engines are started before the game is stored.
 #[utoipa::path(post, path = "/api/games", operation_id = "start_game", tag = "games", request_body = NewGameRequest,
     responses((status = 201, body = Game), (status = 400, body = dameless_core::error::ErrorBody), (status = 404, body = dameless_core::error::ErrorBody)))]
 pub async fn start_game(
@@ -258,13 +253,13 @@ fn sanitized(name: &str) -> PlayerKey {
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct ReviewQuery {
-    /// The version that reviewed it (`champion`, `v14`, `#12`, a branch); the newest review when none.
-    pub version: Option<String>,
+    /// The engine that reviewed it, by id; the newest review when none.
+    pub engine: Option<String>,
     /// The node budget per position; any when none.
     pub nodes: Option<u64>,
 }
 
-/// A game's newest review (or the one with this version and budget). 404 without one.
+/// A game's newest review (or the one by this engine and budget). 404 without one.
 #[utoipa::path(get, path = "/api/games/{id}/review", operation_id = "get_review", tag = "games", params(GamePath, ReviewQuery),
     responses((status = 200, body = Review), (status = 404, body = dameless_core::error::ErrorBody)))]
 pub async fn get_review(
@@ -272,9 +267,8 @@ pub async fn get_review(
     Path(p): Path<GamePath>,
     Query(q): Query<ReviewQuery>,
 ) -> ApiResult<Json<Review>> {
-    let version = q.version.as_deref().map(VersionRef::parse);
     app.reviews
-        .get(GameId(p.id), version.as_ref(), q.nodes)
+        .get(GameId(p.id), q.engine.as_deref(), q.nodes)
         .await?
         .map(Json)
         .ok_or_else(|| ApiError(Error::not_found(format!("Game {} has no review yet", p.id))))

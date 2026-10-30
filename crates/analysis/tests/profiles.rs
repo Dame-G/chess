@@ -70,10 +70,8 @@ async fn profiles_add_up_games_and_reviews() {
     assert_eq!(profiles.player(&PlayerKey::Engine("maia-1500".into())).await.unwrap().name, "Maia 1500");
     assert_eq!(profiles.player(&PlayerKey::Engine("reckless".into())).await.unwrap().name, "Reckless");
 
-    let comparison = profiles
-        .compare(vec![PlayerKey::You, fake(), bob.clone()], ProfileFilter::default())
-        .await
-        .unwrap();
+    let comparison =
+        profiles.compare(vec![PlayerKey::You, fake(), bob.clone()], ProfileFilter::default()).await.unwrap();
     assert_eq!(comparison.profiles.len(), 3);
     assert_eq!((comparison.profiles[2].games, comparison.profiles[2].results.overall.wins), (1, 1));
     assert!(comparison.leaders.iter().any(|l| l.row == "accuracy" && !l.players.is_empty()));

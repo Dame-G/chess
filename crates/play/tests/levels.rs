@@ -14,9 +14,7 @@ use dameless_core::{
     work::{Priority, WorkKind},
 };
 use dameless_hub::{Config, Executor, Hub, Next, TopicFilter, WorkContext};
-use dameless_play::{
-    Calibrate, CalibrateRequest, CalibrateResult, Games, Levels, NewGameRequest, SeatRequest, Timing,
-};
+use dameless_play::{Calibrate, CalibrateRequest, CalibrateResult, Games, Levels, NewGameRequest, SeatRequest, Timing};
 
 fn request(white: &str, black: &str, time: TimeControl, seed: Option<u64>) -> NewGameRequest {
     NewGameRequest {
@@ -98,10 +96,8 @@ async fn a_level_chooses_among_its_lines_the_same_way_for_the_same_seed() {
     let play = |seed: u64| {
         let games = s.games.clone();
         async move {
-            let g = games
-                .start(request("fake@1", "fake@1", TimeControl::Nodes { nodes: 1000 }, Some(seed)))
-                .await
-                .unwrap();
+            let g =
+                games.start(request("fake@1", "fake@1", TimeControl::Nodes { nodes: 1000 }, Some(seed))).await.unwrap();
             games.wait_finished(g.summary.id, Duration::from_secs(60)).await.unwrap()
         }
     };

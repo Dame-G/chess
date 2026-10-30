@@ -3,7 +3,6 @@
 use std::{path::Path, time::Duration};
 
 use dameless_engine::{
-
     pool::{EngineSpec, Pool, Reset},
     uci::{Bound, Engine, Limits, Position, Score, SearchEvent},
 };
@@ -132,4 +131,3 @@ async fn warms_engines_ahead() {
     pool.kill_idle_older_than(Duration::from_secs(3600));
     assert_eq!(pool.stats(&spec).idle, 2);
 }
-

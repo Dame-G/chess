@@ -275,7 +275,11 @@ pub async fn probe(path: &Path, args: &[String]) -> Result<String, Error> {
         .map_err(|e| Error::bad_request(format!("{} is not a UCI engine: {e:#}", path.display())))?;
     let name = engine.name.trim().to_owned();
     engine.quit().await;
-    Ok(if name.is_empty() { path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default() } else { name })
+    Ok(if name.is_empty() {
+        path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+    } else {
+        name
+    })
 }
 
 /// Engines for tests and for running without the app's list: each id points at a binary, with arguments; the first

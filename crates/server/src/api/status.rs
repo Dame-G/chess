@@ -1,15 +1,14 @@
-//! The app itself: the health check, its status, the token, and setup.
+//! The app itself: the health check, its status and the token.
 
-use std::{path::Path, sync::Arc, sync::OnceLock};
+use std::{sync::Arc, sync::OnceLock};
 
 use axum::extract::State;
-use dameless_core::{Error, events::Policy};
-use dameless_engine::git::Repo;
+use dameless_core::events::Policy;
 use dameless_hub::LedgerSnapshot;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::error::{ApiResult, Json};
+use super::error::Json;
 use crate::App;
 
 /// The health check's answer.
@@ -56,44 +55,14 @@ pub struct Machine {
     pub memory_bytes: Option<u64>,
     /// The data directory.
     pub data_dir: String,
-    pub engine: EngineCheckout,
-    /// Built binaries on disk.
-    pub builds: BuildsOnDisk,
-}
-
-/// The engine checkout (`RECKLESS_DIR`).
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
-pub struct EngineCheckout {
-    pub dir: String,
-    /// Whether it is a git checkout.
-    pub found: bool,
-    /// The branch checked out, if any.
-    pub branch: Option<String>,
-    /// The commit checked out.
-    pub commit: Option<String>,
-    /// Uncommitted changes (they block promoting into a checked-out `main`).
-    pub dirty: bool,
-}
-
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
-pub struct BuildsOnDisk {
-    /// Builds (folders holding an engine binary).
-    pub count: u32,
-    /// Everything under the builds directory: the builds, the nets they embed and cargo's cache.
-    pub bytes: u64,
 }
 
 /// The status line's facts, and Settings › Machine.
 #[utoipa::path(get, path = "/api/status", operation_id = "status", tag = "app", responses((status = 200, body = Status)))]
-pub async fn status(State(app): State<Arc<App>>) -> ApiResult<Json<Status>> {
+pub async fn status(State(app): State<Arc<App>>) -> Json<Status> {
     let config = &app.hub.config;
-    let engine = engine_checkout(&config.reckless_dir).await;
-    let builds_dir = config.builds_dir();
-    let builds = tokio::task::spawn_blocking(move || disk_usage(&builds_dir))
-        .await
-        .map_err(|e| Error::internal(e.to_string()))?;
     let fixed = fixed_machine();
-    Ok(Json(Status {
+    Json(Status {
         version: env!("CARGO_PKG_VERSION").into(),
         machine: Machine {
             os: fixed.os.clone(),
@@ -102,15 +71,13 @@ pub async fn status(State(app): State<Arc<App>>) -> ApiResult<Json<Status>> {
             logical_cores: fixed.logical_cores,
             memory_bytes: fixed.memory_bytes,
             data_dir: config.data_dir.display().to_string(),
-            engine,
-            builds,
         },
         cores: app.hub.ledger.total(),
         ledger: app.hub.ledger.snapshot(),
         policy: app.hub.policy.current(),
         lichess_url: app.connections.lichess_url().to_owned(),
         next_event: app.hub.bus.next_id(),
-    }))
+    })
 }
 
 struct Fixed {
@@ -141,41 +108,6 @@ fn fixed_machine() -> &'static Fixed {
     })
 }
 
-async fn engine_checkout(dir: &Path) -> EngineCheckout {
-    let repo = Repo::new(dir);
-    let commit = repo.git(&["rev-parse", "HEAD"]).await.ok().map(|s| s.trim().to_owned());
-    let dirty = match commit {
-        Some(_) => repo.git(&["status", "--porcelain"]).await.is_ok_and(|s| !s.trim().is_empty()),
-        None => false,
-    };
-    EngineCheckout {
-        dir: dir.display().to_string(),
-        found: commit.is_some(),
-        branch: if commit.is_some() { repo.checked_out().await } else { None },
-        commit,
-        dirty,
-    }
-}
-
-/// The builds directly under `dir` and the bytes of everything in it.
-fn disk_usage(dir: &Path) -> BuildsOnDisk {
-    fn bytes(path: &Path) -> u64 {
-        match std::fs::symlink_metadata(path) {
-            Ok(m) if m.is_dir() => {
-                std::fs::read_dir(path).map(|rd| rd.flatten().map(|e| bytes(&e.path())).sum()).unwrap_or(0)
-            }
-            Ok(m) => m.len(),
-            Err(_) => 0,
-        }
-    }
-    // A build is a folder holding the engine; `networks` and cargo's `target` cache are not builds, though their
-    // bytes count as the disk the builds take.
-    let count = std::fs::read_dir(dir)
-        .map(|rd| rd.flatten().filter(|e| e.path().join(dameless_engine::exe("reckless")).is_file()).count())
-        .unwrap_or(0);
-    BuildsOnDisk { count: count as u32, bytes: bytes(dir) }
-}
-
 /// The API token.
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct Token {
@@ -186,20 +118,4 @@ pub struct Token {
 #[utoipa::path(get, path = "/api/token", operation_id = "token", tag = "app", responses((status = 200, body = Token)))]
 pub async fn token(State(app): State<Arc<App>>) -> Json<Token> {
     Json(Token { token: app.hub.token.clone() })
-}
-
-/// What setup did.
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct SetupReport {
-    /// What it did, line by line.
-    pub log: Vec<String>,
-}
-
-/// Downloads fastchess and the opening book the trials use into the tools folder. Only on this explicit request.
-#[utoipa::path(post, path = "/api/setup", operation_id = "setup", tag = "app",
-    responses((status = 200, body = SetupReport), (status = 502, body = dameless_core::error::ErrorBody)))]
-pub async fn setup(State(app): State<Arc<App>>) -> ApiResult<Json<SetupReport>> {
-    let mut log = Vec::new();
-    dameless_work::setup(&app.hub, &mut |line: &str| log.push(line.to_owned())).await?;
-    Ok(Json(SetupReport { log }))
 }

@@ -251,10 +251,8 @@ impl Eval {
         }
         let session = format!("{:012x}", self.inner.next.fetch_add(1, Ordering::Relaxed) & 0xffff_ffff_ffff);
         let reservation = hub.ledger.reserve(format!("eval:{session}"), threads);
-        let spec = engine_spec(&binary)
-            .option("Threads", threads)
-            .option("Hash", SESSION_HASH)
-            .option("MultiPV", req.multipv);
+        let spec =
+            engine_spec(&binary).option("Threads", threads).option("Hash", SESSION_HASH).option("MultiPV", req.multipv);
         let mut engine =
             self.inner.pool.checkout(&spec).await.map_err(|e| Error::internal(format!("start the engine: {e:#}")))?;
         // A Lichess game that started while the engine loaded: nothing was running yet to stop.

@@ -155,14 +155,17 @@ impl SeatSpec {
         }
         let (id, level) = match text.split_once('@') {
             Some((id, level)) => {
-                let level = level.parse::<u32>().map_err(|_| format!("{text:?}: a level is a number, as in stockfish@5"))?;
+                let level =
+                    level.parse::<u32>().map_err(|_| format!("{text:?}: a level is a number, as in stockfish@5"))?;
                 (id, Some(level))
             }
             None => (text, None),
         };
         let id = id.strip_prefix("engine:").unwrap_or(id);
         if !valid_engine_id(id) || id == "you" {
-            return Err(format!("{text:?} is not a seat: use you, an engine's id (stockfish), or stockfish@5 for a level"));
+            return Err(format!(
+                "{text:?} is not a seat: use you, an engine's id (stockfish), or stockfish@5 for a level"
+            ));
         }
         Ok(Self::Engine { id: id.to_owned(), level })
     }

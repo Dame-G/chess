@@ -123,5 +123,4 @@ mod tests {
         assert_eq!(s[2].points[0].value, 0.6);
         assert!(your_series(&[], &[], 10).is_empty());
     }
-
 }

@@ -607,7 +607,8 @@ mod tests {
         assert_eq!("stockfish@5".parse::<SeatRequest>().unwrap(), SeatRequest::at_level("stockfish", 5));
         assert_eq!(SeatRequest::at_level("stockfish", 5).to_string(), "stockfish@5");
         assert!("Bob Smith".parse::<SeatRequest>().is_err());
-        let object: SeatRequest = serde_json::from_value(serde_json::json!({ "player": "stockfish", "level": 3 })).unwrap();
+        let object: SeatRequest =
+            serde_json::from_value(serde_json::json!({ "player": "stockfish", "level": 3 })).unwrap();
         assert_eq!(object, SeatRequest::at_level("stockfish", 3));
         let req: NewGameRequest = serde_json::from_value(serde_json::json!({
             "white": "you", "black": "maia-1500", "time": { "type": "clock", "initial_ms": 300000, "increment_ms": 3000 },

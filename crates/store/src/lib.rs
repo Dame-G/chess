@@ -30,8 +30,8 @@ pub mod records;
 pub mod reviews;
 pub mod work;
 
-pub use games::{GameFilter, GameUpdate, NewGame, SourceKind};
 pub use engines::EngineRecord;
+pub use games::{GameFilter, GameUpdate, NewGame, SourceKind};
 pub use records::{ConnectionField, ConnectionRecord};
 pub use work::{NewWork, WorkLists, WorkUpdate};
 

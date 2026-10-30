@@ -1,4 +1,4 @@
-//! The Lichess connections: you (your account) and bot (Dameless's BOT account). Tokens go in, never out.
+//! Your Lichess connection. Tokens go in, never out.
 
 use std::sync::Arc;
 
@@ -9,10 +9,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     routing::get,
 };
-use dameless_core::{
-    ConnectionKey, Error,
-    lichess::{BotSettings, ConnectionStatus, SeekMode, seek::OnlineBot},
-};
+use dameless_core::{ConnectionKey, Error, lichess::ConnectionStatus};
 use dameless_play::{
     LoginStarted,
     you::{ChallengeBody, ChallengeSent, SeekRequestBody},
@@ -26,32 +23,29 @@ use super::{
 };
 use crate::App;
 
-/// Both connections.
+/// The connections: yours.
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct Connections {
     pub you: ConnectionStatus,
-    pub bot: ConnectionStatus,
 }
 
-/// Both Lichess connections as the app shows them.
+/// Your Lichess connection as the app shows it.
 #[utoipa::path(get, path = "/api/connections", operation_id = "list_connections", tag = "connections",
     responses((status = 200, body = Connections)))]
 pub async fn list_connections(State(app): State<Arc<App>>) -> Json<Connections> {
-    Json(Connections {
-        you: app.connections.status(ConnectionKey::You),
-        bot: app.connections.status(ConnectionKey::Bot),
-    })
+    Json(Connections { you: app.connections.status(ConnectionKey::You) })
 }
 
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Path)]
 pub struct KeyPath {
-    /// `you` or `bot`.
+    /// `you`.
     pub key: String,
 }
 
 fn key_of(text: &str) -> ApiResult<ConnectionKey> {
-    word::<ConnectionKey>(text).ok_or_else(|| ApiError(Error::bad_request(format!("{text:?} is not you or bot"))))
+    word::<ConnectionKey>(text)
+        .ok_or_else(|| ApiError(Error::bad_request(format!("{text:?} is not a connection: use you"))))
 }
 
 /// `POST /api/connections/you/login`.
@@ -112,13 +106,11 @@ async fn callback(State(app): State<Arc<App>>, Query(q): Query<CallbackQuery>) -
 /// `PUT /api/connections/{key}/token`.
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct TokenBody {
-    /// A personal Lichess token: yours with `board:play` (and `challenge:read`, `challenge:write`), the bot's with
-    /// `bot:play`.
+    /// A personal Lichess token with `board:play` (and `challenge:read`, `challenge:write`).
     pub token: String,
 }
 
-/// Stores a Lichess token after Lichess checks it. Yours must be a person's account allowed to play; the bot's a
-/// BOT account. Neither may be the other's.
+/// Stores a Lichess token after Lichess checks it: a person's account (not a BOT) allowed to play.
 #[utoipa::path(put, path = "/api/connections/{key}/token", operation_id = "set_connection_token", tag = "connections",
     params(KeyPath), request_body = TokenBody,
     responses((status = 200, body = ConnectionStatus), (status = 400, body = dameless_core::error::ErrorBody), (status = 502, body = dameless_core::error::ErrorBody)))]
@@ -154,8 +146,7 @@ pub async fn cancel_seek(State(app): State<Arc<App>>) -> Json<ConnectionStatus> 
     Json(app.connections.you().cancel_seek().await)
 }
 
-/// Challenges from a connection: yours to a player (blitz or slower), Lichess's AI (`ai_level`) or your bot
-/// (`my_bot`); the bot's to a player (the bot must be online).
+/// Challenges from your account: a player (blitz or slower) or Lichess's AI (`ai_level`).
 #[utoipa::path(post, path = "/api/connections/{key}/challenge", operation_id = "challenge", tag = "connections",
     params(KeyPath), request_body = ChallengeBody,
     responses((status = 201, body = ChallengeSent), (status = 400, body = dameless_core::error::ErrorBody), (status = 409, body = dameless_core::error::ErrorBody)))]
@@ -171,7 +162,7 @@ pub async fn challenge(
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Path)]
 pub struct ChallengePath {
-    /// `you` (the bot answers challenges by its settings).
+    /// `you`.
     pub key: String,
     /// Lichess's challenge id.
     pub id: String,
@@ -180,7 +171,6 @@ pub struct ChallengePath {
 fn yours(key: &str) -> ApiResult<()> {
     match key_of(key)? {
         ConnectionKey::You => Ok(()),
-        ConnectionKey::Bot => Err(ApiError(Error::bad_request("the bot answers challenges by its settings"))),
     }
 }
 
@@ -230,56 +220,4 @@ pub async fn cancel_challenge(
 ) -> ApiResult<Json<ConnectionStatus>> {
     yours(&p.key)?;
     Ok(Json(app.connections.you().cancel(&p.id).await?))
-}
-
-/// Replaces the bot's settings: the version it plays, hash, threads, move overhead, which challenges it takes, and
-/// how it seeks. Answers the settings as stored.
-#[utoipa::path(put, path = "/api/connections/bot/settings", operation_id = "set_bot_settings", tag = "connections",
-    request_body = BotSettings,
-    responses((status = 200, body = BotSettings), (status = 400, body = dameless_core::error::ErrorBody), (status = 404, body = dameless_core::error::ErrorBody)))]
-pub async fn set_bot_settings(State(app): State<Arc<App>>, Json(b): Json<BotSettings>) -> ApiResult<Json<BotSettings>> {
-    Ok(Json(app.connections.bot().set_settings(b).await?))
-}
-
-/// `POST /api/connections/bot/online`.
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct OnlineBody {
-    pub online: bool,
-}
-
-/// Takes the bot online (it stays online across restarts until taken offline) or offline (games in progress are
-/// played out).
-#[utoipa::path(post, path = "/api/connections/bot/online", operation_id = "set_bot_online", tag = "connections",
-    request_body = OnlineBody,
-    responses((status = 200, body = ConnectionStatus), (status = 409, body = dameless_core::error::ErrorBody)))]
-pub async fn set_bot_online(
-    State(app): State<Arc<App>>,
-    Json(b): Json<OnlineBody>,
-) -> ApiResult<Json<ConnectionStatus>> {
-    Ok(Json(app.connections.bot().set_online(b.online).await?))
-}
-
-/// `POST /api/connections/bot/seek`.
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct BotSeekBody {
-    pub mode: SeekMode,
-}
-
-/// The bot looks for games against other bots: `once` until one starts, `always` after every game too, `off` stops
-/// (and withdraws the challenge waiting for an answer).
-#[utoipa::path(post, path = "/api/connections/bot/seek", operation_id = "set_bot_seek", tag = "connections",
-    request_body = BotSeekBody,
-    responses((status = 200, body = ConnectionStatus), (status = 409, body = dameless_core::error::ErrorBody)))]
-pub async fn set_bot_seek(
-    State(app): State<Arc<App>>,
-    Json(b): Json<BotSeekBody>,
-) -> ApiResult<Json<ConnectionStatus>> {
-    Ok(Json(app.connections.bot().set_seek(b.mode).await?))
-}
-
-/// The bots online on Lichess now, with their ratings.
-#[utoipa::path(get, path = "/api/connections/bot/bots", operation_id = "online_bots", tag = "connections",
-    responses((status = 200, body = Vec<OnlineBot>), (status = 409, body = dameless_core::error::ErrorBody), (status = 502, body = dameless_core::error::ErrorBody)))]
-pub async fn online_bots(State(app): State<Arc<App>>) -> ApiResult<Json<Vec<OnlineBot>>> {
-    Ok(Json(app.connections.bot().online_bots().await?))
 }

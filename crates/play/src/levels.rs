@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex};
 use dameless_core::{
     Error, PlayerKey, Timestamp,
     events::{LevelsUpdated, Payload},
-    levels::{self, Entrant, EntrantRating, Level, PlannedMatch},
     levels::Estimate,
+    levels::{self, Entrant, EntrantRating, Level, PlannedMatch},
     lichess::ConnectionStatus,
     work::{Priority, Subject, WorkKind},
 };
@@ -205,7 +205,11 @@ impl Levels {
 
     /// The calibration work for a request, resolved now: the matches (planned when not given) and the engine (the
     /// analysis engine). The caller queues it with the scheduler (`Scheduler::submit`).
-    pub async fn prepare_calibration(&self, engines: &dyn EngineSource, req: CalibrateRequest) -> Result<NewWork, Error> {
+    pub async fn prepare_calibration(
+        &self,
+        engines: &dyn EngineSource,
+        req: CalibrateRequest,
+    ) -> Result<NewWork, Error> {
         let mut matches = match req.matches {
             Some(m) => m,
             None => self.plan(req.count.unwrap_or(DEFAULT_MATCHES).clamp(1, 64)).await?,

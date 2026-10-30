@@ -436,7 +436,9 @@ mod tests {
         }
         // Lichess ids are lower case.
         assert_eq!("lichess:CuteMouse83".parse::<PlayerKey>().unwrap(), PlayerKey::Lichess("cutemouse83".into()));
-        for bad in ["", "me", "lichess:", "lichess:a b", "engine:", "engine:Big", "engine:-x", "dameless", "stockfish:5"] {
+        for bad in
+            ["", "me", "lichess:", "lichess:a b", "engine:", "engine:Big", "engine:-x", "dameless", "stockfish:5"]
+        {
             assert!(bad.parse::<PlayerKey>().is_err(), "{bad}");
         }
         assert!(serde_json::from_value::<PlayerKey>(serde_json::json!("nobody")).is_err());

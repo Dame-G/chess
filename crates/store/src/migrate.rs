@@ -51,7 +51,9 @@ fn apply_to(conn: &mut Connection, to: usize) -> DbResult<()> {
         }
         let broken: i64 = conn.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| r.get(0))?;
         if broken > 0 {
-            return Err(Error::internal(format!("the migrated database has {broken} rows with dangling references")).into());
+            return Err(
+                Error::internal(format!("the migrated database has {broken} rows with dangling references")).into()
+            );
         }
         Ok(())
     })();
@@ -134,7 +136,9 @@ mod tests {
         apply_to(&mut conn, 6).unwrap();
         let t = "2026-01-01T00:00:00.000Z";
         let seat = |player: &str, name: &str, version: &str| {
-            format!(r#"{{"player":"{player}","name":"{name}","level":null,"version":{version},"build":null,"rating":null,"title":null}}"#)
+            format!(
+                r#"{{"player":"{player}","name":"{name}","level":null,"version":{version},"build":null,"rating":null,"title":null}}"#
+            )
         };
         let you = seat("you", "You", "null");
         let dameless = seat("dameless", "Dameless v3", "1");
@@ -155,7 +159,8 @@ mod tests {
         ))
         .unwrap();
         let game = |id: i64, kind: &str, source: &str, white: &str, black: &str, trial: &str| {
-            let key = |s: &str| serde_json::from_str::<serde_json::Value>(s).unwrap()["player"].as_str().unwrap().to_owned();
+            let key =
+                |s: &str| serde_json::from_str::<serde_json::Value>(s).unwrap()["player"].as_str().unwrap().to_owned();
             conn.execute(
                 &format!(
                     "INSERT INTO games (id, source_kind, source, source_owner, white, black, white_key, black_key, time, \
@@ -176,7 +181,14 @@ mod tests {
             &seat("lichess:bob", "bob", "null"),
             "NULL",
         );
-        game(4, "lichess", r#"{"type":"lichess","connection":"you","id":"q","rated":false,"speed":"rapid"}"#, &you, &ai, "NULL");
+        game(
+            4,
+            "lichess",
+            r#"{"type":"lichess","connection":"you","id":"q","rated":false,"speed":"rapid"}"#,
+            &you,
+            &ai,
+            "NULL",
+        );
         game(5, "local", r#"{"type":"local"}"#, &dameless, &dameless, "NULL");
         conn.execute_batch(&format!(
             r#"
@@ -196,7 +208,9 @@ mod tests {
         let count = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap();
 
         // Trial and calibration games are gone; yours, the bot's and the one against Lichess's AI stay.
-        let ids: String = conn.query_row("SELECT group_concat(id, ',') FROM (SELECT id FROM games ORDER BY id)", [], |r| r.get(0)).unwrap();
+        let ids: String = conn
+            .query_row("SELECT group_concat(id, ',') FROM (SELECT id FROM games ORDER BY id)", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(ids, "1,3,4");
         // Dameless's seat is Reckless's, labelled with the commit it played.
         assert_eq!(one("SELECT black_key FROM games WHERE id = 1"), "engine:reckless");

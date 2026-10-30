@@ -579,7 +579,10 @@ pub(crate) mod tests {
             .unwrap();
         assert_eq!((s.black, s.opening, s.you), (black, Some(opening), Some(Side::White)));
         let s = store
-            .update_game(id, GameUpdate { white: Some(seat(PlayerKey::Engine("maia-1500".into()))), ..Default::default() })
+            .update_game(
+                id,
+                GameUpdate { white: Some(seat(PlayerKey::Engine("maia-1500".into()))), ..Default::default() },
+            )
             .await
             .unwrap();
         assert_eq!(s.you, None);
@@ -591,7 +594,11 @@ pub(crate) mod tests {
         let bob = PlayerKey::Lichess("bob".into());
         let mut ids = Vec::new();
         for i in 0..10 {
-            let (w, b) = if i % 2 == 0 { (PlayerKey::You, bob.clone()) } else { (PlayerKey::Engine("stockfish".into()), PlayerKey::You) };
+            let (w, b) = if i % 2 == 0 {
+                (PlayerKey::You, bob.clone())
+            } else {
+                (PlayerKey::Engine("stockfish".into()), PlayerKey::You)
+            };
             let mut g = local(w, b, i * 1000);
             g.status = GameStatus::Finished;
             ids.push(store.insert_game(g).await.unwrap());
@@ -657,8 +664,12 @@ pub(crate) mod tests {
         g.source = source.clone();
         let id = store.insert_game(g.clone()).await.unwrap();
         assert_eq!(store.find_source(source.clone()).await.unwrap().map(|s| s.id), Some(id));
-        let bobs =
-            Source::Import { owner: PlayerKey::Lichess("bob".into()), id: "q7ZvsdUF".into(), rated: true, speed: Speed::Rapid };
+        let bobs = Source::Import {
+            owner: PlayerKey::Lichess("bob".into()),
+            id: "q7ZvsdUF".into(),
+            rated: true,
+            speed: Speed::Rapid,
+        };
         assert!(store.find_source(bobs.clone()).await.unwrap().is_none());
         g.source = bobs;
         store.insert_game(g).await.unwrap();

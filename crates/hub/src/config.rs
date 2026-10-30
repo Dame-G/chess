@@ -47,7 +47,7 @@ impl Default for LichessUrls {
     }
 }
 
-//// Everything the app is configured with.
+/// Everything the app is configured with.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
     /// The data directory, absolute.

@@ -232,7 +232,14 @@ impl Setup {
         }
     }
 
-    async fn download(&self, cx: &WorkContext, d: &SetupDownload, to: &Path, total: u64, done: &mut u64) -> Result<(), Error> {
+    async fn download(
+        &self,
+        cx: &WorkContext,
+        d: &SetupDownload,
+        to: &Path,
+        total: u64,
+        done: &mut u64,
+    ) -> Result<(), Error> {
         cx.log(format!("Downloading {} from {}", d.name, d.url));
         let start = *done;
         let mut report = |n: u64| {
@@ -289,7 +296,12 @@ impl Executor for Setup {
                         .ok_or_else(|| Error::internal("the Stockfish release holds no stockfish binary"))?;
                     let engine = self
                         .engines
-                        .install(EngineRecord::new("stockfish", "Stockfish", dameless_core::engines::EngineKind::Builtin, bin.display().to_string()))
+                        .install(EngineRecord::new(
+                            "stockfish",
+                            "Stockfish",
+                            dameless_core::engines::EngineKind::Builtin,
+                            bin.display().to_string(),
+                        ))
                         .await?;
                     cx.log(format!("Installed {}", engine.label()));
                     installed.push(engine.id);

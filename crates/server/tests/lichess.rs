@@ -1,5 +1,5 @@
 //! The Lichess connections over HTTP, against the mock: a token stored, your game mirrored onto the board, fair play
-//! refusing analysis while it runs, logging in, the bot, the leaderboard and imports.
+//! refusing analysis while it runs, logging in, the leaderboard and imports.
 
 mod common;
 
@@ -88,31 +88,15 @@ async fn logging_in_starts_at_lichess_and_comes_back() {
 }
 
 #[tokio::test]
-async fn the_bot_and_public_reads() {
+async fn public_reads_and_imports() {
     let t = TestApp::start().await;
-    t.mock.add_account("bot-tok", MockAccount::bot("DamelessBot"));
-    let (status, bot) = t.put("/api/connections/bot/token", json!({ "token": "bot-tok" })).await;
-    assert_eq!(status, 200, "{bot}");
-    assert_eq!(bot["account"]["title"], "BOT");
-    let mut settings = bot["bot"]["settings"].clone();
-    settings["version"] = json!("champion");
-    let (status, s) = t.put("/api/connections/bot/settings", settings).await;
-    assert_eq!((status, s["version"].as_str()), (200, Some("champion")));
-    let (status, on) = t.post("/api/connections/bot/online", json!({ "online": true })).await;
-    assert_eq!(status, 200, "{on}");
-    assert_eq!(t.get("/api/connections/bot/bots").await.0, 200);
-    assert_eq!(t.post("/api/connections/bot/seek", json!({ "mode": "off" })).await.0, 200);
-    assert_eq!(t.post("/api/connections/bot/challenges/x/accept", json!({})).await.0, 400);
-    assert_eq!(t.post("/api/connections/bot/online", json!({ "online": false })).await.0, 200);
-    let (_, d) = t.get("/api/dameless").await;
-    assert!(!d["connection"].is_null());
-
+    assert_eq!(t.put("/api/connections/bot/token", json!({ "token": "x" })).await.0, 400, "there is no bot");
     let (status, top) = t.get("/api/players/top?speed=blitz&nb=3").await;
     assert_eq!(status, 200, "{top}");
     assert_eq!(t.get("/api/players/top?speed=fast").await.0, 400);
     let (status, w) = t.post("/api/players/lichess:alice/import", json!({ "max": 5 })).await;
     assert_eq!(status, 202, "{w}");
     assert_eq!(w["kind"], "import");
-    assert_eq!(t.post("/api/players/dameless/import", json!({})).await.0, 400);
+    assert_eq!(t.post("/api/players/engine:fake/import", json!({})).await.0, 400);
     t.stop().await;
 }

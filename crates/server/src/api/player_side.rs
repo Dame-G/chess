@@ -1,4 +1,4 @@
-//! The player side: Dameless's levels and their calibration, your drills, your repertoire, and both players' progress.
+//! The player side: the levels and their calibration, your drills, your repertoire, and your progress.
 
 use std::sync::Arc;
 
@@ -57,7 +57,7 @@ pub async fn calibrate_levels(
     body: axum::body::Bytes,
 ) -> ApiResult<(StatusCode, Json<Work>)> {
     let req: CalibrateRequest = super::optional_body(&body)?;
-    let new = app.games.levels().prepare_calibration(&app.versions as &dyn dameless_play::Binaries, req).await?;
+    let new = app.games.levels().prepare_calibration(&app.engines, req).await?;
     Ok((StatusCode::ACCEPTED, Json(app.scheduler.submit(new).await?)))
 }
 
@@ -195,7 +195,7 @@ pub async fn get_prep(State(app): State<Arc<App>>, Query(q): Query<PrepRequest>)
     Ok(Json(app.profiles.prep(q).await?))
 }
 
-/// Both players' lines: your rating, accuracy and drill hit rate, and Dameless's Elo over its versions.
+/// Your lines: your rating, accuracy and drill hit rate over time.
 #[utoipa::path(get, path = "/api/progress", operation_id = "get_progress", tag = "players", params(WindowQuery),
     responses((status = 200, body = Progress)))]
 pub async fn get_progress(State(app): State<Arc<App>>, Query(q): Query<WindowQuery>) -> ApiResult<Json<Progress>> {

@@ -7,10 +7,7 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{
-    Error, Lichess,
-    client::Body,
-};
+use crate::{Error, Lichess, client::Body};
 
 /// A Lichess user as `/api/account`, `/api/user/{name}`, `/api/bot/online` and the leaderboards send it. Each sends
 /// some of these fields; the rest are empty.
@@ -151,7 +148,6 @@ impl Lichess {
             expires: info["expires"].as_i64(),
         }))
     }
-
 }
 
 #[cfg(test)]
@@ -178,5 +174,4 @@ mod tests {
         assert!(info.expires.is_some());
         assert_eq!(mock.client(Some("unknown")).test_token().await.unwrap(), None);
     }
-
 }

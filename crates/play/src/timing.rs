@@ -3,7 +3,6 @@
 
 use std::time::Duration;
 
-
 #[derive(Clone, Debug)]
 pub struct Timing {
     /// A broken stream is reopened after this, doubling up to `reconnect_max`.

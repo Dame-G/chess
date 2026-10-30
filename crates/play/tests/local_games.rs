@@ -150,8 +150,7 @@ async fn stopping_aborts_an_engine_game_and_games_start_from_a_position() {
     assert_eq!((g.summary.outcome, g.summary.ending), (Some(Outcome::WhiteWins), Some(Ending::Checkmate)));
     assert_eq!(g.moves[0].san, "Ra8#");
 
-    let game =
-        s.games.start(request("slow", "slow", TimeControl::Movetime { ms: 1000 })).await.unwrap();
+    let game = s.games.start(request("slow", "slow", TimeControl::Movetime { ms: 1000 })).await.unwrap();
     let g = s.games.stop(game.summary.id).await.unwrap();
     assert_eq!((g.summary.status, g.summary.ending), (GameStatus::Aborted, Some(Ending::Aborted)));
 }

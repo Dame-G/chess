@@ -269,13 +269,7 @@ impl Reviews {
         window.games.push_back(Pending { id, began, state });
     }
 
-    async fn read(
-        &self,
-        window: &mut Window,
-        index: usize,
-        id: GameId,
-        search: &SearchKey,
-    ) -> Result<Pend, Error> {
+    async fn read(&self, window: &mut Window, index: usize, id: GameId, search: &SearchKey) -> Result<Pend, Error> {
         let store = &self.eval.hub().store;
         let Some(game) = store.game(id).await? else { return Ok(Pend::Skipped("no such game")) };
         if matches!(game.summary.status, GameStatus::Live | GameStatus::Starting) {
@@ -370,33 +364,35 @@ impl Reviews {
                 state.failed += 1;
                 cx.log(format!("{}/{total} game {id}: failed: {why}", i + 1));
             }
-            Pend::Searching { game, evals, searched, cached, .. } => match self.judge(&game, &evals, spec, search, label).await {
-                Ok(review) => {
-                    state.reviewed += 1;
-                    state.searched += searched as u64;
-                    state.cached += cached as u64;
-                    cx.log(format!(
+            Pend::Searching { game, evals, searched, cached, .. } => {
+                match self.judge(&game, &evals, spec, search, label).await {
+                    Ok(review) => {
+                        state.reviewed += 1;
+                        state.searched += searched as u64;
+                        state.cached += cached as u64;
+                        cx.log(format!(
                         "{}/{total} game {id}: accuracy {} / {}, {searched} positions searched, {cached} cached, {:.1} s.",
                         i + 1,
                         accuracy_text(review.summary.white.accuracy),
                         accuracy_text(review.summary.black.accuracy),
                         done.began.elapsed().as_secs_f64()
                     ));
-                    if let Some(drills) = &self.drills {
-                        match drills.make_from_game(id).await {
-                            Ok(made) if !made.is_empty() => {
-                                cx.log(format!("{} new drills from game {id}.", made.len()))
+                        if let Some(drills) = &self.drills {
+                            match drills.make_from_game(id).await {
+                                Ok(made) if !made.is_empty() => {
+                                    cx.log(format!("{} new drills from game {id}.", made.len()))
+                                }
+                                Ok(_) => {}
+                                Err(e) => cx.log(format!("No drills from game {id}: {}", e.message())),
                             }
-                            Ok(_) => {}
-                            Err(e) => cx.log(format!("No drills from game {id}: {}", e.message())),
                         }
                     }
+                    Err(e) => {
+                        state.failed += 1;
+                        cx.log(format!("{}/{total} game {id}: failed: {}", i + 1, e.message()));
+                    }
                 }
-                Err(e) => {
-                    state.failed += 1;
-                    cx.log(format!("{}/{total} game {id}: failed: {}", i + 1, e.message()));
-                }
-            },
+            }
         }
         state.next = i + 1;
         cx.save_checkpoint(&*state).await?;
@@ -510,7 +506,8 @@ impl Executor for Reviews {
         let state: ReviewCheckpoint = cx.checkpoint().unwrap_or_default();
         let total = spec.games.len();
         let hub = self.eval.hub().clone();
-        let binary = self.eval.engines().ready(Some(&spec.engine).filter(|e| !e.is_empty()).map(String::as_str)).await?;
+        let binary =
+            self.eval.engines().ready(Some(&spec.engine).filter(|e| !e.is_empty()).map(String::as_str)).await?;
         let label = binary.engine.label().to_owned();
         let plural = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
         if state.next == 0 {

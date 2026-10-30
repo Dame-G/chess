@@ -274,4 +274,3 @@ async fn reply(State(mock): State<Mock>, Json(b): Json<Value>) -> Json<Value> {
     mock.reply_by_default(reply, b["accepts_offers"].as_bool().unwrap_or(false));
     Json(json!({ "ok": true }))
 }
-

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Dameless",
-    "description": "You and your engine, getting stronger at one board. Every command of the `dameless` CLI is one of these routes. Every request but `/api/health` carries `Authorization: Bearer <token>`.",
+    "description": "Play, review and analyze chess, with any UCI engine. Every command of the `dameless` CLI is one of these routes. Every request but `/api/health` carries `Authorization: Bearer <token>`.",
     "license": {
       "name": "GPL-3.0-or-later",
       "identifier": "GPL-3.0-or-later"
@@ -10,85 +10,6 @@
     "version": "0.1.0"
   },
   "paths": {
-    "/api/builds/prune": {
-      "post": {
-        "tags": [
-          "dameless"
-        ],
-        "summary": "Deletes the binaries nothing uses: every version's older builds, or all of them with `keep_latest: false`.",
-        "operationId": "prune_builds",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PruneBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Pruned"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/builds/{id}": {
-      "delete": {
-        "tags": [
-          "dameless"
-        ],
-        "summary": "Deletes a build's binary; its record stays for what used it. 409 while something uses it.",
-        "operationId": "delete_build",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Build"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/compare": {
       "get": {
         "tags": [
@@ -168,7 +89,7 @@
         "tags": [
           "connections"
         ],
-        "summary": "Both Lichess connections as the app shows them.",
+        "summary": "Your Lichess connection as the app shows it.",
         "operationId": "list_connections",
         "responses": {
           "200": {
@@ -176,173 +97,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Connections"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/connections/bot/bots": {
-      "get": {
-        "tags": [
-          "connections"
-        ],
-        "summary": "The bots online on Lichess now, with their ratings.",
-        "operationId": "online_bots",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/OnlineBot"
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "502": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/connections/bot/online": {
-      "post": {
-        "tags": [
-          "connections"
-        ],
-        "summary": "Takes the bot online (it stays online across restarts until taken offline) or offline (games in progress are\nplayed out).",
-        "operationId": "set_bot_online",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OnlineBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConnectionStatus"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/connections/bot/seek": {
-      "post": {
-        "tags": [
-          "connections"
-        ],
-        "summary": "The bot looks for games against other bots: `once` until one starts, `always` after every game too, `off` stops\n(and withdraws the challenge waiting for an answer).",
-        "operationId": "set_bot_seek",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BotSeekBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConnectionStatus"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/connections/bot/settings": {
-      "put": {
-        "tags": [
-          "connections"
-        ],
-        "summary": "Replaces the bot's settings: the version it plays, hash, threads, move overhead, which challenges it takes, and\nhow it seeks. Answers the settings as stored.",
-        "operationId": "set_bot_settings",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BotSettings"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BotSettings"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -472,7 +226,7 @@
           {
             "name": "key",
             "in": "path",
-            "description": "`you` or `bot`.",
+            "description": "`you`.",
             "required": true,
             "schema": {
               "type": "string"
@@ -497,13 +251,13 @@
         "tags": [
           "connections"
         ],
-        "summary": "Challenges from a connection: yours to a player (blitz or slower), Lichess's AI (`ai_level`) or your bot\n(`my_bot`); the bot's to a player (the bot must be online).",
+        "summary": "Challenges from your account: a player (blitz or slower) or Lichess's AI (`ai_level`).",
         "operationId": "challenge",
         "parameters": [
           {
             "name": "key",
             "in": "path",
-            "description": "`you` or `bot`.",
+            "description": "`you`.",
             "required": true,
             "schema": {
               "type": "string"
@@ -562,7 +316,7 @@
           {
             "name": "key",
             "in": "path",
-            "description": "`you` (the bot answers challenges by its settings).",
+            "description": "`you`.",
             "required": true,
             "schema": {
               "type": "string"
@@ -611,7 +365,7 @@
           {
             "name": "key",
             "in": "path",
-            "description": "`you` (the bot answers challenges by its settings).",
+            "description": "`you`.",
             "required": true,
             "schema": {
               "type": "string"
@@ -660,7 +414,7 @@
           {
             "name": "key",
             "in": "path",
-            "description": "`you` (the bot answers challenges by its settings).",
+            "description": "`you`.",
             "required": true,
             "schema": {
               "type": "string"
@@ -719,13 +473,13 @@
         "tags": [
           "connections"
         ],
-        "summary": "Stores a Lichess token after Lichess checks it. Yours must be a person's account allowed to play; the bot's a\nBOT account. Neither may be the other's.",
+        "summary": "Stores a Lichess token after Lichess checks it: a person's account (not a BOT) allowed to play.",
         "operationId": "set_connection_token",
         "parameters": [
           {
             "name": "key",
             "in": "path",
-            "description": "`you` or `bot`.",
+            "description": "`you`.",
             "required": true,
             "schema": {
               "type": "string"
@@ -773,245 +527,12 @@
         }
       }
     },
-    "/api/dameless": {
-      "get": {
-        "tags": [
-          "dameless"
-        ],
-        "summary": "Dameless's logbook: champion, line, ideas, the bot and its strength over versions.",
-        "operationId": "get_dameless",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DamelessView"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/dameless/push": {
-      "post": {
-        "tags": [
-          "dameless"
-        ],
-        "summary": "Pushes the fork's `main` to `origin`. Only ever on this explicit request (the UI confirms first).",
-        "operationId": "push",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Pushed"
-                }
-              }
-            }
-          },
-          "502": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/datasets": {
-      "get": {
-        "tags": [
-          "training"
-        ],
-        "summary": "Every dataset, the cap on them together and the room left.",
-        "operationId": "list_datasets",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DataStatus"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/datasets/datagen": {
-      "post": {
-        "tags": [
-          "training"
-        ],
-        "summary": "Self-play data with Reckless's datagen branch (work). The same name again grows that dataset. 409 when the cap or\nthe disk leaves no room.",
-        "operationId": "datagen",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DatagenRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Work"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/datasets/import": {
-      "post": {
-        "tags": [
-          "training"
-        ],
-        "summary": "Downloads one shard into a dataset (work). Refused (400) without `confirm: true` for the size shown; 409 when the\ndownload and its conversion would pass the cap or fill the disk.",
-        "operationId": "import_dataset",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ImportRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Work"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/datasets/{id}": {
-      "delete": {
-        "tags": [
-          "training"
-        ],
-        "summary": "Deletes a dataset's files. 400 without `confirm: true`; 409 while something uses it.",
-        "operationId": "delete_dataset",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConfirmBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Dataset"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/diagnostics": {
       "get": {
         "tags": [
-          "harness"
+          "engines"
         ],
-        "summary": "The machine's health for Settings: fastchess, the book, the engine checkout, clang, CUDA, the GPU, the disk, the\ndatabase, builds and the harness check, each with what to do about it.",
+        "summary": "The machine's health for Settings: the analysis engine, the Maia engines, the disk and the database, each with\nwhat to do about it.",
         "operationId": "diagnostics",
         "responses": {
           "200": {
@@ -1308,6 +829,169 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DrillHint"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines": {
+      "get": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "Every engine: the built-ins first (installed or not), then the engines you added; and the analysis engine.",
+        "operationId": "list_engines",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnginesOverview"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "Adds a UCI engine by path. It must answer UCI's handshake; what it calls itself (`id name`) is kept. 409 when the\nid is taken (a built-in's or another engine's), 400 when the file is not a UCI engine.",
+        "operationId": "add_engine",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewEngineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Engine"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines/analysis": {
+      "put": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "Chooses the analysis engine: reviews, live evaluation, drills and the levels run on it. It must be installed and\nplay on the clock (Maia's fixed node cannot analyse: 400).",
+        "operationId": "set_analysis_engine",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisEngine"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnginesOverview"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/engines/{id}": {
+      "delete": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "Removes an engine from the list. A built-in's files stay (setup adds it again); when it was the analysis engine,\nStockfish analyses again.",
+        "operationId": "remove_engine",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The engine's id: `stockfish`, `maia-1500`, `my-engine`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnginesOverview"
                 }
               }
             }
@@ -1643,7 +1327,7 @@
           {
             "name": "player",
             "in": "query",
-            "description": "Games this player sat in: `you`, `dameless`, `lichess:<name>`, `stockfish:<n>`.",
+            "description": "Games this player sat in: `you`, `engine:<id>`, `lichess:<name>`.",
             "required": false,
             "schema": {
               "type": "string"
@@ -1652,7 +1336,7 @@
           {
             "name": "source",
             "in": "query",
-            "description": "Sources, comma-separated: `local`, `lichess`, `import`, `trial`.",
+            "description": "Sources, comma-separated: `local`, `lichess`, `import`.",
             "required": false,
             "schema": {
               "type": "string"
@@ -1682,16 +1366,6 @@
             "required": false,
             "schema": {
               "type": "boolean"
-            }
-          },
-          {
-            "name": "trial",
-            "in": "query",
-            "description": "One trial's games.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
             }
           },
           {
@@ -1762,7 +1436,7 @@
         "tags": [
           "games"
         ],
-        "summary": "Starts a local game: you against Dameless, or Dameless against itself. Engines are started (their versions built\nwhen needed) before the game is stored.",
+        "summary": "Starts a local game: you against an engine, or two engines. Engines are started before the game is stored.",
         "operationId": "start_game",
         "requestBody": {
           "content": {
@@ -2017,7 +1691,7 @@
         "tags": [
           "games"
         ],
-        "summary": "A game's newest review (or the one with this version and budget). 404 without one.",
+        "summary": "A game's newest review (or the one by this engine and budget). 404 without one.",
         "operationId": "get_review",
         "parameters": [
           {
@@ -2031,9 +1705,9 @@
             }
           },
           {
-            "name": "version",
+            "name": "engine",
             "in": "query",
-            "description": "The version that reviewed it (`champion`, `v14`, `#12`, a branch); the newest review when none.",
+            "description": "The engine that reviewed it, by id; the newest review when none.",
             "required": false,
             "schema": {
               "type": "string"
@@ -2123,80 +1797,6 @@
         }
       }
     },
-    "/api/harness": {
-      "get": {
-        "tags": [
-          "harness"
-        ],
-        "summary": "Whether this machine's harness is trusted: the last check, whether it still applies, and one running.",
-        "operationId": "harness_status",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HarnessStatus"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/harness/check": {
-      "post": {
-        "tags": [
-          "harness"
-        ],
-        "summary": "Starts a harness check: `main` against a branch identical to it, first for determinism (pairs at 25,000 nodes, each\nof which must be the same game twice; 1,000 by default), then for symmetry (timed pairs at VSTC, 4,000 by default,\nwhose Elo must hold 0 and whose pentanomial must be symmetric). Answers its idea. 409 while one runs or without\nfastchess and the book; 400 for a part of no pairs.",
-        "operationId": "check_harness",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/HarnessCheckRequest"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Idea"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/health": {
       "get": {
         "tags": [
@@ -2218,616 +1818,6 @@
         "security": [
           {}
         ]
-      }
-    },
-    "/api/ideas": {
-      "get": {
-        "tags": [
-          "ideas"
-        ],
-        "summary": "Ideas, newest first.",
-        "operationId": "list_ideas",
-        "parameters": [
-          {
-            "name": "status",
-            "in": "query",
-            "description": "States, comma-separated: `queued`, `running`, `kept`, `dropped`, `stopped`, `failed`.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "tag",
-            "in": "query",
-            "description": "Ideas with this tag (a batch).",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "At most this many, newest first; all when none.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Idea"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "ideas"
-        ],
-        "summary": "Creates an idea and queues its first trial. A `custom` trial instead of the funnel is a single test (any preset,\nbounds or a fixed number of pairs). A branch whose `Bench:` line is missing or stale is refused (409) unless\n`fix_bench` asks for it to be fixed.",
-        "operationId": "create_idea",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewIdeaRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Idea"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ideas/batch": {
-      "post": {
-        "tags": [
-          "ideas"
-        ],
-        "summary": "Several ideas under one tag, all checked before any is queued; they run one after another.",
-        "operationId": "create_batch",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BatchRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Idea"
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ideas/check-branch": {
-      "get": {
-        "tags": [
-          "ideas"
-        ],
-        "summary": "Whether a branch's tip has a right `Bench:` line (ok, missing, stale, or not built yet to tell). Never builds.",
-        "operationId": "check_branch",
-        "parameters": [
-          {
-            "name": "branch",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BranchCheck"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ideas/fix-bench": {
-      "post": {
-        "tags": [
-          "ideas"
-        ],
-        "summary": "Builds a branch's tip if needed and rewords it with the measured `Bench:` line (locally, never pushed). 409 when\nthe branch moved since `commit`; 400 for `main` or upstream.",
-        "operationId": "fix_bench",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FixBenchRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BranchCheck"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ideas/{id}": {
-      "get": {
-        "tags": [
-          "ideas"
-        ],
-        "summary": "An idea with its trials.",
-        "operationId": "get_idea",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Idea"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ideas/{id}/dataset": {
-      "post": {
-        "tags": [
-          "training"
-        ],
-        "summary": "A dataset made from an idea's trial games. 404 without trial games.",
-        "operationId": "dataset_from_trials",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/FromTrialsBody"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Dataset"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ideas/{id}/promote": {
-      "post": {
-        "tags": [
-          "ideas"
-        ],
-        "summary": "Promotes a kept idea: its branch is merged into the fork's `main` locally, making the next champion, which is the\nanswer. Refused (409, nothing changed) when the checkout has uncommitted changes. Pushing is separate.",
-        "operationId": "promote_idea",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Version"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ideas/{id}/resume": {
-      "post": {
-        "tags": [
-          "ideas"
-        ],
-        "summary": "Carries on a stopped or failed idea from the trial that did not finish.",
-        "operationId": "resume_idea",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Idea"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ideas/{id}/stop": {
-      "post": {
-        "tags": [
-          "ideas"
-        ],
-        "summary": "Stops an idea: its running trial at the next safe point (keeping its rounds), or a queued one at once.",
-        "operationId": "stop_idea",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Idea"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ideas/{id}/train": {
-      "get": {
-        "tags": [
-          "training"
-        ],
-        "summary": "A net idea's training: its settings, every reading (resumes included) and the net it made. 404 for another kind.",
-        "operationId": "get_idea_train",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TrainView"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ideas/{id}/trials/{trial}": {
-      "get": {
-        "tags": [
-          "ideas"
-        ],
-        "summary": "One trial of an idea, with its evidence.",
-        "operationId": "get_trial",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "trial",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Trial"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ideas/{id}/tune": {
-      "get": {
-        "tags": [
-          "ideas"
-        ],
-        "summary": "A tune idea's settings, its parameters and its SPSA history (one step per update). 404 for an idea that is not a\ntune.",
-        "operationId": "get_tune",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TuneDetail"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/api/levels": {
@@ -2923,69 +1913,6 @@
                   "items": {
                     "$ref": "#/components/schemas/PlannedMatch"
                   }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/nets": {
-      "get": {
-        "tags": [
-          "training"
-        ],
-        "summary": "Every net the app knows, newest first.",
-        "operationId": "list_nets",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Net"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/nets/{id}": {
-      "get": {
-        "tags": [
-          "training"
-        ],
-        "summary": "One net.",
-        "operationId": "get_net",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Net"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -3201,7 +2128,7 @@
           {
             "name": "key",
             "in": "path",
-            "description": "`you`, `dameless`, `lichess:<name>` or `stockfish:<1-8>`.",
+            "description": "`you`, `engine:<id>` or `lichess:<name>`.",
             "required": true,
             "schema": {
               "type": "string"
@@ -3241,7 +2168,7 @@
           {
             "name": "key",
             "in": "path",
-            "description": "`you`, `dameless`, `lichess:<name>` or `stockfish:<1-8>`.",
+            "description": "`you`, `engine:<id>` or `lichess:<name>`.",
             "required": true,
             "schema": {
               "type": "string"
@@ -3306,7 +2233,7 @@
           {
             "name": "key",
             "in": "path",
-            "description": "`you`, `dameless`, `lichess:<name>` or `stockfish:<1-8>`.",
+            "description": "`you`, `engine:<id>` or `lichess:<name>`.",
             "required": true,
             "schema": {
               "type": "string"
@@ -3378,7 +2305,7 @@
         "tags": [
           "players"
         ],
-        "summary": "Both players' lines: your rating, accuracy and drill hit rate, and Dameless's Elo over its versions.",
+        "summary": "Your lines: your rating, accuracy and drill hit rate over time.",
         "operationId": "get_progress",
         "parameters": [
           {
@@ -3454,27 +2381,46 @@
       }
     },
     "/api/setup": {
-      "post": {
+      "get": {
         "tags": [
-          "app"
+          "engines"
         ],
-        "summary": "Downloads fastchess and the opening book the trials use into the tools folder. Only on this explicit request.",
-        "operationId": "setup",
+        "summary": "What setup would download (Stockfish 19, lc0 and Maia's nets) with the sizes GitHub gives, and what is installed\nalready. Downloads nothing.",
+        "operationId": "setup_plan",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SetupReport"
+                  "$ref": "#/components/schemas/SetupPlan"
                 }
               }
             }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "engines"
+        ],
+        "summary": "Downloads the built-in engines into the data directory's `tools/` and adds them to the list, as work. Only on this\nexplicit request (the CLI shows the sizes and asks first).",
+        "operationId": "setup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupRequest"
+              }
+            }
           },
-          "502": {
+          "required": true
+        },
+        "responses": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
+                  "$ref": "#/components/schemas/Work"
                 }
               }
             }
@@ -3562,297 +2508,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Token"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/train": {
-      "post": {
-        "tags": [
-          "training"
-        ],
-        "summary": "A training run outside any idea (work on the GPU). 409 without a GPU; 404 for an unknown parent net or dataset.",
-        "operationId": "train",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TrainSpec"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Work"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/tunables": {
-      "get": {
-        "tags": [
-          "dameless"
-        ],
-        "summary": "The tunables a branch declares (`src/parameters.rs`), read from its `spsa` build. When that build is not there\nyet, it is queued and the answer is 409: ask again once it is done (`GET /api/work`).",
-        "operationId": "list_tunables",
-        "parameters": [
-          {
-            "name": "branch",
-            "in": "query",
-            "description": "The branch (or any version) whose tunables to list.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Tunable"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/upstream": {
-      "get": {
-        "tags": [
-          "dameless"
-        ],
-        "summary": "Taking upstream Reckless: the automatic sync's setting, the last sync (merged, up to date or failed, with the\nupstream commits it brought), one running, and when the next automatic one is due.",
-        "operationId": "upstream_status",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UpstreamStatus"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "dameless"
-        ],
-        "summary": "Turns the automatic sync with upstream on or off (on by default: every six hours).",
-        "operationId": "set_upstream_settings",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpstreamSettings"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UpstreamStatus"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/upstream/sync": {
-      "post": {
-        "tags": [
-          "dameless"
-        ],
-        "summary": "Takes upstream Reckless now: fetches the fork's `upstream` remote and, when `upstream/main` has commits the champion\nlacks, merges them into the fork's `main` locally (fast-forward, or a merge commit with its measured `Bench:` line),\nbuilds and benches the result and makes it the next champion. No trials: upstream's commits are tested on its own\nfleet. A conflict, a failed build or bench, or a dirty checkout of `main` changes nothing. Never pushes. Answers the\nwork; 409 while a sync runs or without an `upstream` remote.",
-        "operationId": "sync_upstream",
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Work"
-                }
-              }
-            }
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/versions": {
-      "get": {
-        "tags": [
-          "dameless"
-        ],
-        "summary": "Versions, newest first.",
-        "operationId": "list_versions",
-        "parameters": [
-          {
-            "name": "line",
-            "in": "query",
-            "description": "One line: `champion`, `idea`, `upstream` or `other`.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Version"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "dameless"
-        ],
-        "summary": "Makes a version of a branch, tag or commit and queues its build (see `GET /api/work`). Answers the version.",
-        "operationId": "make_version",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MakeVersion"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Version"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/versions/{id}/builds": {
-      "get": {
-        "tags": [
-          "dameless"
-        ],
-        "summary": "A version's builds, newest first (diagnostics).",
-        "operationId": "list_builds",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Build"
-                  }
                 }
               }
             }
@@ -4110,40 +2765,6 @@
           }
         }
       }
-    },
-    "/api/work/{id}/train": {
-      "get": {
-        "tags": [
-          "training"
-        ],
-        "summary": "One run's readings.",
-        "operationId": "work_train",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/TrainStep"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
@@ -4188,6 +2809,19 @@
           }
         }
       },
+      "AnalysisEngine": {
+        "type": "object",
+        "description": "`PUT /api/engines/analysis`.",
+        "required": [
+          "engine"
+        ],
+        "properties": {
+          "engine": {
+            "type": "string",
+            "description": "The engine's id."
+          }
+        }
+      },
       "AnswerRequest": {
         "type": "object",
         "description": "`POST /api/drills/{id}/answer`.",
@@ -4209,274 +2843,6 @@
           "explorer_only",
           "off"
         ]
-      },
-      "Author": {
-        "type": "string",
-        "description": "Who had the idea.",
-        "enum": [
-          "you",
-          "claude"
-        ]
-      },
-      "BatchRequest": {
-        "type": "object",
-        "description": "`POST /api/ideas/batch`: several ideas under one tag.",
-        "required": [
-          "ideas",
-          "tag"
-        ],
-        "properties": {
-          "ideas": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/NewIdeaRequest"
-            }
-          },
-          "tag": {
-            "type": "string"
-          }
-        }
-      },
-      "BenchLineStatus": {
-        "type": "string",
-        "description": "How a branch's `Bench:` line stands.",
-        "enum": [
-          "ok",
-          "missing",
-          "stale",
-          "unbuilt"
-        ]
-      },
-      "BotSeekBody": {
-        "type": "object",
-        "description": "`POST /api/connections/bot/seek`.",
-        "required": [
-          "mode"
-        ],
-        "properties": {
-          "mode": {
-            "$ref": "#/components/schemas/SeekMode"
-          }
-        }
-      },
-      "BotSettings": {
-        "type": "object",
-        "description": "The bot's settings: what plays, how, and which challenges it accepts. Stored by `play`; old or partial stored\nsettings fill in the defaults.",
-        "properties": {
-          "accept_bots": {
-            "type": "boolean",
-            "description": "Accept challenges from other bots.",
-            "default": true
-          },
-          "accept_casual": {
-            "type": "boolean",
-            "description": "Accept casual challenges.",
-            "default": true
-          },
-          "accept_people": {
-            "type": "boolean",
-            "description": "Accept challenges from people.",
-            "default": true
-          },
-          "accept_rated": {
-            "type": "boolean",
-            "description": "Accept rated challenges.",
-            "default": true
-          },
-          "from_position": {
-            "type": "boolean",
-            "description": "Also accept standard chess from a set position (Lichess's `fromPosition`). Other variants are always declined.",
-            "default": false
-          },
-          "hash": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Hash table size in MiB. Default 64.",
-            "default": 64,
-            "minimum": 0
-          },
-          "max_games": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Games at once. Challenges beyond this are declined as `later`. Default 1.",
-            "default": 1,
-            "minimum": 0
-          },
-          "max_increment": {
-            "type": "integer",
-            "format": "int32",
-            "description": "The largest increment accepted, in seconds.",
-            "default": 30,
-            "minimum": 0
-          },
-          "max_initial": {
-            "type": "integer",
-            "format": "int32",
-            "description": "The longest initial clock accepted, in seconds.",
-            "default": 1800,
-            "minimum": 0
-          },
-          "min_increment": {
-            "type": "integer",
-            "format": "int32",
-            "description": "The smallest increment accepted, in seconds.",
-            "default": 0,
-            "minimum": 0
-          },
-          "min_initial": {
-            "type": "integer",
-            "format": "int32",
-            "description": "The shortest initial clock accepted, in seconds.",
-            "default": 60,
-            "minimum": 0
-          },
-          "move_overhead": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Milliseconds the engine keeps in hand on every move for the network, as Reckless's `MoveOverhead` (0 to 2000).\nDefault 300.",
-            "default": 300,
-            "minimum": 0
-          },
-          "ponder": {
-            "type": "boolean",
-            "description": "Think on the opponent's time: after its move the engine searches the reply it expects (`go ponder`), and a\nright guess saves that time. Only with a version whose engine declares UCI's `Ponder` option. Default true.",
-            "default": true
-          },
-          "seek_clocks": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "The clocks the bot challenges other bots at when it looks for a game, as Lichess writes them: minutes plus\nincrement seconds, such as `3+2`. One is picked at random for each challenge. Default 3+0, 3+2 and 5+3.",
-            "default": [
-              "3+0",
-              "3+2",
-              "5+3"
-            ]
-          },
-          "seek_range": {
-            "type": "integer",
-            "format": "int32",
-            "description": "The rating window for opponents when looking for a game: bots within this many points of ours at that speed\nare preferred, then within twice as many, then any. Default 300.",
-            "default": 300,
-            "minimum": 0
-          },
-          "seek_rated": {
-            "type": "boolean",
-            "description": "Whether the challenges it sends when looking for a game are rated. Default true.",
-            "default": true
-          },
-          "speeds": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Speed"
-            },
-            "description": "The speeds accepted. UltraBullet and correspondence are never played.",
-            "default": [
-              "bullet",
-              "blitz",
-              "rapid"
-            ]
-          },
-          "threads": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Search threads per game. Default 1.",
-            "default": 1,
-            "minimum": 0
-          },
-          "version": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The version that plays: a version name such as `v14` or an id, or `champion` meaning the champion at the start\nof each game. Nothing plays (challenges are declined) until one is chosen.",
-            "default": null
-          }
-        }
-      },
-      "BotStatus": {
-        "type": "object",
-        "description": "What only the bot's connection has.",
-        "required": [
-          "online",
-          "settings",
-          "seek",
-          "bot_games_today"
-        ],
-        "properties": {
-          "bot_games_today": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Games against bots started in the last 24 hours.",
-            "minimum": 0
-          },
-          "bot_limit_until": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Timestamp",
-                "description": "While at the daily limit: when it lifts."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "online": {
-            "type": "boolean",
-            "description": "Online across restarts until stopped."
-          },
-          "seek": {
-            "$ref": "#/components/schemas/SeekStatus"
-          },
-          "settings": {
-            "$ref": "#/components/schemas/BotSettings"
-          }
-        }
-      },
-      "BranchCheck": {
-        "type": "object",
-        "description": "`GET /api/ideas/check-branch?branch=`: a branch's tip and its `Bench:` line.",
-        "required": [
-          "branch",
-          "commit",
-          "status",
-          "detail"
-        ],
-        "properties": {
-          "bench_line": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "What the tip's message says.",
-            "minimum": 0
-          },
-          "branch": {
-            "type": "string"
-          },
-          "commit": {
-            "type": "string",
-            "description": "The tip's full sha."
-          },
-          "detail": {
-            "type": "string",
-            "description": "One sentence for people."
-          },
-          "measured": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "What its build measured, when it has been built.",
-            "minimum": 0
-          },
-          "status": {
-            "$ref": "#/components/schemas/BenchLineStatus"
-          }
-        }
       },
       "Budget": {
         "oneOf": [
@@ -4538,103 +2904,6 @@
         ],
         "description": "Where a session's search stops."
       },
-      "Build": {
-        "type": "object",
-        "description": "A binary of a version: a cache keyed by commit, cargo features and net, shown in diagnostics only.",
-        "required": [
-          "id",
-          "version",
-          "features",
-          "path",
-          "status"
-        ],
-        "properties": {
-          "bench": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "What its `bench` measured: must equal the commit's `Bench:` line.",
-            "minimum": 0
-          },
-          "features": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Cargo features it was built with, such as `spsa`, and `pgo` for a profile-guided build (made for the bot and\nfor games against you, never for trials)."
-          },
-          "id": {
-            "$ref": "#/components/schemas/BuildId"
-          },
-          "net": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/NetId",
-                "description": "The net it embeds, when not the commit's own."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "nps": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "Nodes per second of a single `bench`.",
-            "minimum": 0
-          },
-          "path": {
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/BuildStatus"
-          },
-          "version": {
-            "$ref": "#/components/schemas/VersionId"
-          }
-        }
-      },
-      "BuildId": {
-        "type": "integer",
-        "format": "int64",
-        "description": "One binary of a version (a cache keyed by commit and features)."
-      },
-      "BuildStatus": {
-        "type": "string",
-        "enum": [
-          "queued",
-          "building",
-          "ready",
-          "failed",
-          "deleted"
-        ]
-      },
-      "BuildsOnDisk": {
-        "type": "object",
-        "required": [
-          "count",
-          "bytes"
-        ],
-        "properties": {
-          "bytes": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Everything under the builds directory: the builds, the nets they embed and cargo's cache.",
-            "minimum": 0
-          },
-          "count": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Builds (folders holding an engine binary).",
-            "minimum": 0
-          }
-        }
-      },
       "CalibrateRequest": {
         "type": "object",
         "description": "`POST /api/levels/calibrate`.",
@@ -4665,13 +2934,6 @@
               "$ref": "#/components/schemas/PlannedMatch"
             },
             "description": "These matches; else the plan's `count` most useful ones."
-          },
-          "version": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The version every level plays; the champion when none."
           }
         }
       },
@@ -4740,7 +3002,7 @@
       },
       "ChallengeBody": {
         "type": "object",
-        "description": "`POST /api/connections/{key}/challenge`: exactly one of `username`, `ai_level` (yours only) and `my_bot` (yours\nonly).",
+        "description": "`POST /api/connections/{key}/challenge`: exactly one of `username` and `ai_level`.",
         "properties": {
           "ai_level": {
             "type": [
@@ -4753,9 +3015,6 @@
           "color": {
             "$ref": "#/components/schemas/Color",
             "description": "The colour the connection plays."
-          },
-          "my_bot": {
-            "type": "boolean"
           },
           "rated": {
             "type": "boolean"
@@ -5021,22 +3280,11 @@
           }
         }
       },
-      "ConfirmBody": {
-        "type": "object",
-        "description": "`DELETE /api/datasets/{id}`.",
-        "properties": {
-          "confirm": {
-            "type": "boolean",
-            "description": "Your explicit go-ahead: deleting a dataset cannot be undone."
-          }
-        }
-      },
       "ConnectionKey": {
         "type": "string",
-        "description": "A Lichess account linked to the app: yours, or Dameless's BOT account.",
+        "description": "A Lichess account linked to the app: yours, through the Board API. It is the only one, and stays an enum so games\nand routes name it the same way everywhere.",
         "enum": [
-          "you",
-          "bot"
+          "you"
         ]
       },
       "ConnectionState": {
@@ -5050,7 +3298,6 @@
       },
       "ConnectionStatus": {
         "type": "object",
-        "description": "A connection as the app shows it: the `connection.upserted` event and `GET /api/connections`.",
         "required": [
           "key",
           "configured",
@@ -5063,16 +3310,6 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/Account"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "bot": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/BotStatus"
               },
               {
                 "type": "null"
@@ -5122,375 +3359,15 @@
       },
       "Connections": {
         "type": "object",
-        "description": "Both connections.",
+        "description": "The connections: yours.",
         "required": [
-          "you",
-          "bot"
+          "you"
         ],
         "properties": {
-          "bot": {
-            "$ref": "#/components/schemas/ConnectionStatus"
-          },
           "you": {
             "$ref": "#/components/schemas/ConnectionStatus"
           }
         }
-      },
-      "CustomTrial": {
-        "type": "object",
-        "description": "A custom idea's single trial (what `chess test` was).",
-        "required": [
-          "preset"
-        ],
-        "properties": {
-          "alpha": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "description": "The SPRT's false-accept rate (default 0.05)."
-          },
-          "beta": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "description": "The SPRT's false-reject rate (default 0.10, Reckless's; the funnels run at 0.20)."
-          },
-          "bounds": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "number",
-              "format": "double"
-            },
-            "description": "SPRT bounds in normalized Elo; with neither these nor `pairs`, [0, 3]."
-          },
-          "pairs": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "description": "A fixed number of game pairs instead of an SPRT.",
-            "minimum": 0
-          },
-          "preset": {
-            "$ref": "#/components/schemas/Preset"
-          }
-        }
-      },
-      "DamelessView": {
-        "type": "object",
-        "description": "Dameless's profile: `GET /api/dameless`.",
-        "required": [
-          "champion",
-          "line",
-          "ideas",
-          "strength",
-          "regressions"
-        ],
-        "properties": {
-          "champion": {
-            "$ref": "#/components/schemas/Version"
-          },
-          "connection": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/BotStatus",
-                "description": "The bot, when its Lichess account is connected."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "ideas": {
-            "$ref": "#/components/schemas/IdeaLists"
-          },
-          "line": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Version"
-            },
-            "description": "The champion line, newest first. A champion taken from upstream carries `upstream`: the commits it brought."
-          },
-          "regressions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RegressionCheck"
-            },
-            "description": "Finished regression checks (after every fifth promotion, the champion against the champion five promotions\nearlier), newest first. One that did not pass says the champion is measurably worse; nothing was reverted."
-          },
-          "strength": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ProgressPoint"
-            },
-            "description": "Each champion version and its cumulative Elo over `v1` (each promotion's deciding estimate added up, the\nerrors in quadrature), oldest first. A champion a regression check measured is placed by that check instead\n(`measured`), and those after it add on from there."
-          },
-          "upstream": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/UpstreamSync",
-                "description": "The last sync with upstream Reckless, whatever its outcome (a failure says why, having changed nothing)."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        }
-      },
-      "DataStatus": {
-        "type": "object",
-        "description": "`GET /api/datasets`: every dataset, and the room left.",
-        "required": [
-          "cap_bytes",
-          "used_bytes",
-          "keep_free_bytes",
-          "datasets"
-        ],
-        "properties": {
-          "cap_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The cap on every dataset together (`DAMELESS_DATA_CAP_GB`).",
-            "minimum": 0
-          },
-          "datasets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Dataset"
-            }
-          },
-          "disk_free_bytes": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "Free space on the data directory's disk.",
-            "minimum": 0
-          },
-          "keep_free_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "description": "What training work always leaves free.",
-            "minimum": 0
-          },
-          "used_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          }
-        }
-      },
-      "DatagenRequest": {
-        "type": "object",
-        "description": "`POST /api/datasets/datagen`: self-play data.",
-        "required": [
-          "positions"
-        ],
-        "properties": {
-          "name": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The dataset to write or grow; `datagen` when left out. Running again on the same name resumes it."
-          },
-          "opening": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "`dfrc` (default), `chess960` or `startpos`."
-          },
-          "positions": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The dataset's total positions to reach (positions already there count).",
-            "minimum": 0
-          },
-          "soft_nodes": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "Soft nodes per move (the tool's default, 5,000, when left out).",
-            "minimum": 0
-          },
-          "threads": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "description": "Worker threads (one engine each); half the machine's cores when left out, at most what the ledger grants.",
-            "minimum": 0
-          },
-          "version": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The engine: a version of Reckless's datagen branch (`origin/datagen` when left out)."
-          }
-        }
-      },
-      "Dataset": {
-        "type": "object",
-        "description": "A dataset: a directory with a `manifest.json`.",
-        "required": [
-          "id",
-          "name",
-          "format",
-          "positions",
-          "games",
-          "size_bytes",
-          "source",
-          "path",
-          "created_at",
-          "updated_at"
-        ],
-        "properties": {
-          "created_at": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "format": {
-            "type": "string",
-            "description": "`viriformat`, `binpack`, `mixed`, ... as the manifest says."
-          },
-          "games": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "id": {
-            "$ref": "#/components/schemas/DatasetId"
-          },
-          "name": {
-            "type": "string",
-            "description": "Unique: also its directory's name under the data directory's `data/`."
-          },
-          "path": {
-            "type": "string",
-            "description": "The directory, absolute."
-          },
-          "positions": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "score_units": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "`cp` or `reckless_internal`; training wants Reckless's internal units."
-          },
-          "size_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "source": {
-            "$ref": "#/components/schemas/DatasetSource"
-          },
-          "updated_at": {
-            "$ref": "#/components/schemas/Timestamp"
-          }
-        }
-      },
-      "DatasetId": {
-        "type": "integer",
-        "format": "int64",
-        "description": "A dataset directory the app knows."
-      },
-      "DatasetSource": {
-        "oneOf": [
-          {
-            "type": "object",
-            "description": "Self-play with Reckless's `datagen` branch; `settings` as the tool recorded them.",
-            "required": [
-              "settings",
-              "type"
-            ],
-            "properties": {
-              "settings": {},
-              "type": {
-                "type": "string",
-                "enum": [
-                  "datagen"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A shard downloaded (with your go-ahead) and converted.",
-            "required": [
-              "url",
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "import"
-                ]
-              },
-              "url": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "An idea's trial games, converted.",
-            "required": [
-              "idea",
-              "type"
-            ],
-            "properties": {
-              "idea": {
-                "$ref": "#/components/schemas/IdeaId"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "trials"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Anything else the manifest names.",
-            "required": [
-              "source",
-              "type"
-            ],
-            "properties": {
-              "source": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "other"
-                ]
-              }
-            }
-          }
-        ],
-        "description": "Where a dataset came from."
       },
       "DeclineBody": {
         "type": "object",
@@ -5555,52 +3432,6 @@
           },
           "uci": {
             "type": "string"
-          }
-        }
-      },
-      "Determinism": {
-        "type": "object",
-        "description": "How the determinism part came out.",
-        "required": [
-          "passed",
-          "pairs",
-          "nodes",
-          "uneven",
-          "openings",
-          "detail"
-        ],
-        "properties": {
-          "detail": {
-            "type": "string",
-            "description": "One sentence for people."
-          },
-          "nodes": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Nodes a move.",
-            "minimum": 0
-          },
-          "openings": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "The openings (start FENs) whose games differed, at most [`OPENINGS_KEPT`]."
-          },
-          "pairs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Pairs played.",
-            "minimum": 0
-          },
-          "passed": {
-            "type": "boolean"
-          },
-          "uneven": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Pairs that did not score exactly 1, or whose games differed.",
-            "minimum": 0
           }
         }
       },
@@ -5935,39 +3766,130 @@
           "other"
         ]
       },
-      "EngineCheckout": {
+      "Engine": {
         "type": "object",
-        "description": "The engine checkout (`RECKLESS_DIR`).",
+        "description": "An engine of the engines list.",
         "required": [
-          "dir",
-          "found",
-          "dirty"
+          "id",
+          "name",
+          "kind",
+          "args",
+          "options",
+          "installed",
+          "analysis",
+          "levels"
         ],
         "properties": {
-          "branch": {
+          "analysis": {
+            "type": "boolean",
+            "description": "Whether it is the analysis engine."
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Arguments it is started with (lc0's `--weights=…` for Maia)."
+          },
+          "created_at": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "The slug seats and player keys name it by: `stockfish`, `maia-1500`."
+          },
+          "id_name": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The branch checked out, if any."
+            "description": "What it calls itself (its UCI `id name`), read when it was added or installed: `Stockfish 19`. Reviews and the\nposition cache are keyed by it, so a new release of an engine never reads an old one's results as its own."
           },
-          "commit": {
+          "installed": {
+            "type": "boolean",
+            "description": "Whether it can be started: a binary is there."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EngineKind"
+          },
+          "levels": {
+            "type": "boolean",
+            "description": "Whether the ladder of levels runs on it (the analysis engine, when it plays on the clock)."
+          },
+          "name": {
+            "type": "string",
+            "description": "As shown: `Stockfish`, `Maia 1500`."
+          },
+          "nodes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Nodes it searches a move whatever the clock: Maia's 1. None plays on the clock.",
+            "minimum": 0
+          },
+          "options": {
+            "type": "object",
+            "description": "UCI options set after the handshake, before the app's own (`Threads`, `Hash`, `MultiPV`).",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "path": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The commit checked out."
+            "description": "The binary; none for a built-in that is not installed yet."
           },
-          "dir": {
-            "type": "string"
+          "rating": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The rating it plays at, when it has one by design (Maia's nominal rating).",
+            "minimum": 0
+          }
+        }
+      },
+      "EngineKind": {
+        "type": "string",
+        "description": "Where an engine comes from.",
+        "enum": [
+          "builtin",
+          "custom"
+        ]
+      },
+      "EnginesOverview": {
+        "type": "object",
+        "description": "`GET /api/engines` and the `engines.changed` event.",
+        "required": [
+          "analysis",
+          "engines"
+        ],
+        "properties": {
+          "analysis": {
+            "type": "string",
+            "description": "The analysis engine's id."
           },
-          "dirty": {
-            "type": "boolean",
-            "description": "Uncommitted changes (they block promoting into a checked-out `main`)."
-          },
-          "found": {
-            "type": "boolean",
-            "description": "Whether it is a git checkout."
+          "engines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Engine"
+            },
+            "description": "Built-ins first (installed or not), then the engines you added, by name."
           }
         }
       },
@@ -6045,7 +3967,7 @@
       },
       "Estimate": {
         "type": "object",
-        "description": "An estimate with its 95 % interval: `elo` and the interval's ends.",
+        "description": "An Elo with its 95 % interval.",
         "required": [
           "elo",
           "low",
@@ -6080,6 +4002,13 @@
             "type": "string",
             "description": "Who asks (a browser tab, a CLI run): one session per client, a new one replaces the old."
           },
+          "engine": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The engine to search with, by id; the analysis engine when none."
+          },
           "fen": {
             "type": [
               "string",
@@ -6108,13 +4037,6 @@
             "format": "int32",
             "description": "Search threads (cores reserved); 1 when none.",
             "minimum": 0
-          },
-          "version": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The version to search with (`champion`, `v14`, `#12`, a branch); the champion when none."
           }
         }
       },
@@ -6179,19 +4101,20 @@
         "description": "A started session: its events come on topic `eval:<session>`.",
         "required": [
           "session",
-          "version",
+          "engine",
           "fen"
         ],
         "properties": {
+          "engine": {
+            "type": "string",
+            "description": "The engine searching, by what it calls itself: `Stockfish 19`."
+          },
           "fen": {
             "type": "string",
             "description": "The position searched, after the moves."
           },
           "session": {
             "type": "string"
-          },
-          "version": {
-            "$ref": "#/components/schemas/VersionId"
           }
         }
       },
@@ -6231,7 +4154,7 @@
               },
               "topic": {
                 "type": "string",
-                "description": "`game:<id>`, `games`, `idea:<id>`, `ideas`, `work`, `player:<key>`, `connection:you|bot`, `versions`,\n`policy`, `eval:<session>`; `stream` on `reload`."
+                "description": "`game:<id>`, `games`, `work`, `player:<key>`, `connection:you`, `engines`, `policy`, `eval:<session>`; `stream`\non `reload`."
               }
             }
           }
@@ -6340,78 +4263,6 @@
             ],
             "properties": {
               "data": {
-                "$ref": "#/components/schemas/Idea"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "idea.upserted"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/Trial"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "trial.upserted"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/TrialProgress"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "trial.progress"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/TuneProgress"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "tune.progress"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
                 "$ref": "#/components/schemas/Work"
               },
               "kind": {
@@ -6438,24 +4289,6 @@
                 "type": "string",
                 "enum": [
                   "work.log"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/Version"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "version.upserted"
                 ]
               }
             }
@@ -6632,66 +4465,12 @@
             ],
             "properties": {
               "data": {
-                "$ref": "#/components/schemas/TrainProgress"
+                "$ref": "#/components/schemas/EnginesOverview"
               },
               "kind": {
                 "type": "string",
                 "enum": [
-                  "train.progress"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/Dataset"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "dataset.upserted"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/Net"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "net.upserted"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/UpstreamSync"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "upstream.synced"
+                  "engines.changed"
                 ]
               }
             }
@@ -6718,37 +4497,6 @@
           }
         ],
         "description": "Each kind with its payload."
-      },
-      "FixBenchRequest": {
-        "type": "object",
-        "description": "`POST /api/ideas/fix-bench`: the branch to fix, and optionally the tip it was checked at, so a branch that moved\nsince is not reworded blind.",
-        "required": [
-          "branch"
-        ],
-        "properties": {
-          "branch": {
-            "type": "string"
-          },
-          "commit": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
-      },
-      "FromTrialsBody": {
-        "type": "object",
-        "description": "`POST /api/ideas/{id}/dataset`.",
-        "properties": {
-          "name": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "`trials-<id>` when left out."
-          }
-        }
       },
       "Game": {
         "type": "object",
@@ -6845,7 +4593,7 @@
       "GameId": {
         "type": "integer",
         "format": "int64",
-        "description": "A game: played here, on Lichess, imported, or a trial's."
+        "description": "A game: played here, on Lichess, or imported."
       },
       "GameMoment": {
         "type": "object",
@@ -7132,190 +4880,9 @@
           }
         }
       },
-      "HarnessCheck": {
-        "type": "object",
-        "description": "A finished check, as stored for the machine (`meta` key `harness.check`).",
-        "required": [
-          "machine",
-          "at",
-          "idea",
-          "passed",
-          "engine_commit",
-          "summary"
-        ],
-        "properties": {
-          "at": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "book": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "determinism": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Determinism",
-                "description": "The determinism part; none for a check made before it existed (an SPRT at VSTC [0, 3])."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "elo": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Estimate",
-                "description": "Logistic Elo of the identical engine ± 95 %, from the symmetry run."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "engine_commit": {
-            "type": "string",
-            "description": "The champion's commit it was played with."
-          },
-          "fastchess": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "idea": {
-            "$ref": "#/components/schemas/IdeaId",
-            "description": "The idea that ran it."
-          },
-          "machine": {
-            "$ref": "#/components/schemas/Machine"
-          },
-          "passed": {
-            "type": "boolean"
-          },
-          "summary": {
-            "type": "string",
-            "description": "One sentence for people."
-          },
-          "symmetry": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Symmetry",
-                "description": "The symmetry part; none when the determinism part failed first."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        }
-      },
-      "HarnessCheckRequest": {
-        "type": "object",
-        "description": "`POST /api/harness/check`.",
-        "properties": {
-          "determinism_pairs": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "description": "Pairs of the determinism part, at 25,000 nodes (default 1,000).",
-            "minimum": 0
-          },
-          "symmetry_pairs": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "description": "Pairs of the symmetry part, at VSTC (default 4,000).",
-            "minimum": 0
-          }
-        }
-      },
-      "HarnessStatus": {
-        "type": "object",
-        "description": "`GET /api/harness`: whether results on this machine can be trusted. Trials' verdicts show `summary` beside them\nwhile `trusted` is false.",
-        "required": [
-          "checked",
-          "current",
-          "trusted",
-          "summary"
-        ],
-        "properties": {
-          "at": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Timestamp"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "checked": {
-            "type": "boolean",
-            "description": "A check has finished on some machine."
-          },
-          "current": {
-            "type": "boolean",
-            "description": "The last check was on this machine, with the fastchess and book installed now."
-          },
-          "idea": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/IdeaId"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "last": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/HarnessCheck",
-                "description": "The last check, in full: its determinism and symmetry parts."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "passed": {
-            "type": [
-              "boolean",
-              "null"
-            ],
-            "description": "The last check's outcome."
-          },
-          "running": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/IdeaId",
-                "description": "A check queued or running now."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "summary": {
-            "type": "string",
-            "description": "One sentence for people."
-          },
-          "trusted": {
-            "type": "boolean",
-            "description": "Checked here, current and passed: results on this machine can be trusted."
-          }
-        }
-      },
       "Health": {
         "type": "object",
-        "description": "`GET /api/health`: every item, and whether none fails.",
+        "description": "`GET /api/diagnostics`: every item, and whether none fails.",
         "required": [
           "ok",
           "items"
@@ -7375,7 +4942,7 @@
           },
           "key": {
             "type": "string",
-            "description": "`fastchess`, `book`, `engine`, `clang`, `pgo`, `cuda`, `gpu`, `disk`, `database`, `builds`, `harness`."
+            "description": "`analysis`, `maia`, `disk`, `database`."
           },
           "level": {
             "$ref": "#/components/schemas/HealthLevel"
@@ -7444,160 +5011,6 @@
           }
         }
       },
-      "Idea": {
-        "type": "object",
-        "description": "A hypothesis and a change to try.",
-        "required": [
-          "id",
-          "title",
-          "hypothesis",
-          "kind",
-          "author",
-          "branch",
-          "base",
-          "status",
-          "trials",
-          "tags",
-          "created_at"
-        ],
-        "properties": {
-          "author": {
-            "$ref": "#/components/schemas/Author"
-          },
-          "base": {
-            "$ref": "#/components/schemas/VersionId",
-            "description": "What it is tested against, usually the champion when queued."
-          },
-          "branch": {
-            "type": "string",
-            "description": "The change; for a tune, the branch with the tunables."
-          },
-          "created_at": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "ended_at": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Timestamp"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "hypothesis": {
-            "type": "string"
-          },
-          "id": {
-            "$ref": "#/components/schemas/IdeaId"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/IdeaKind"
-          },
-          "notes": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Claude's or your reasoning, in markdown."
-          },
-          "status": {
-            "$ref": "#/components/schemas/IdeaStatus"
-          },
-          "tags": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Batches are tags."
-          },
-          "title": {
-            "type": "string",
-            "description": "\"Deeper LMR at high depth\"."
-          },
-          "trials": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TrialSummary"
-            }
-          },
-          "verdict": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "One sentence: \"Kept: +3.1 ± 2.0 Elo at short games\"."
-          },
-          "version": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/VersionId",
-                "description": "The version under test (a tune's once SPSA has written it)."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        }
-      },
-      "IdeaId": {
-        "type": "integer",
-        "format": "int64",
-        "description": "An idea: a hypothesis and a change to try."
-      },
-      "IdeaKind": {
-        "type": "string",
-        "description": "What kind of change an idea is, which picks its funnel.",
-        "enum": [
-          "gain",
-          "neutral",
-          "speed",
-          "tune",
-          "net"
-        ]
-      },
-      "IdeaLists": {
-        "type": "object",
-        "description": "Ideas by where they are.",
-        "required": [
-          "running",
-          "queued",
-          "recent"
-        ],
-        "properties": {
-          "queued": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Idea"
-            }
-          },
-          "recent": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Idea"
-            },
-            "description": "Ended ideas, newest first (at most 20)."
-          },
-          "running": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Idea"
-            }
-          }
-        }
-      },
-      "IdeaStatus": {
-        "type": "string",
-        "enum": [
-          "queued",
-          "running",
-          "kept",
-          "dropped",
-          "stopped",
-          "failed"
-        ]
-      },
       "ImportBody": {
         "type": "object",
         "description": "`POST /api/players/{key}/import`.",
@@ -7654,41 +5067,6 @@
                 "type": "null"
               }
             ]
-          }
-        }
-      },
-      "ImportRequest": {
-        "type": "object",
-        "description": "`POST /api/datasets/import`: one shard to download, with your go-ahead for its size.",
-        "required": [
-          "url",
-          "expected_bytes",
-          "name"
-        ],
-        "properties": {
-          "confirm": {
-            "type": "boolean",
-            "description": "Your explicit go-ahead for downloading `expected_bytes`: without it the request is refused."
-          },
-          "expected_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The download's size, as shown to you before you confirmed it.",
-            "minimum": 0
-          },
-          "name": {
-            "type": "string",
-            "description": "The dataset it goes into (shards of one set share a name)."
-          },
-          "sha256": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Checked after the download, when given."
-          },
-          "url": {
-            "type": "string"
           }
         }
       },
@@ -7797,28 +5175,13 @@
           "free",
           "oversubscribed",
           "reservations",
-          "grants",
-          "gpus",
-          "gpu_grants"
+          "grants"
         ],
         "properties": {
           "free": {
             "type": "integer",
             "format": "int32",
             "description": "What work can still be granted.",
-            "minimum": 0
-          },
-          "gpu_grants": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/WorkId"
-            },
-            "description": "The work holding each GPU in use."
-          },
-          "gpus": {
-            "type": "integer",
-            "format": "int32",
-            "description": "GPUs on the machine (`DAMELESS_GPUS`, else what nvidia-smi finds).",
             "minimum": 0
           },
           "granted": {
@@ -7858,7 +5221,7 @@
       },
       "Level": {
         "type": "object",
-        "description": "Dameless at one strength.",
+        "description": "The ladder engine at one strength.",
         "required": [
           "id",
           "name",
@@ -7881,7 +5244,7 @@
           },
           "name": {
             "type": "string",
-            "description": "`Level 5`; the UI writes \"Dameless at 1600\" from the calibrated rating."
+            "description": "`Level 5`; the UI writes \"Stockfish 1600\" from the calibrated rating."
           },
           "nodes": {
             "type": [
@@ -7999,81 +5362,6 @@
           }
         }
       },
-      "Line": {
-        "oneOf": [
-          {
-            "type": "object",
-            "description": "The fork's `main`, numbered `v1`, `v2`, … in order of promotion.",
-            "required": [
-              "number",
-              "type"
-            ],
-            "properties": {
-              "number": {
-                "type": "integer",
-                "format": "int32",
-                "minimum": 0
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "champion"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "An idea's change (or a tune's result).",
-            "required": [
-              "idea",
-              "type"
-            ],
-            "properties": {
-              "idea": {
-                "$ref": "#/components/schemas/IdeaId"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "idea"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A tip of upstream Reckless.",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "upstream"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Anything else built by ref.",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "other"
-                ]
-              }
-            }
-          }
-        ],
-        "description": "Which line of development a version is on."
-      },
       "Liveness": {
         "type": "object",
         "description": "The health check's answer.",
@@ -8088,29 +5376,6 @@
           "version": {
             "type": "string",
             "description": "The app's version."
-          }
-        }
-      },
-      "Llr": {
-        "type": "object",
-        "description": "A trial's log-likelihood ratio and the bounds that decide it.",
-        "required": [
-          "value",
-          "lower",
-          "upper"
-        ],
-        "properties": {
-          "lower": {
-            "type": "number",
-            "format": "double"
-          },
-          "upper": {
-            "type": "number",
-            "format": "double"
-          },
-          "value": {
-            "type": "number",
-            "format": "double"
           }
         }
       },
@@ -8146,54 +5411,13 @@
           }
         }
       },
-      "LrSchedule": {
-        "type": "string",
-        "description": "How the learning rate falls over a run, as `bullet-train --lr-schedule` takes it.",
-        "enum": [
-          "cosine",
-          "linear",
-          "step",
-          "constant"
-        ]
-      },
-      "Machine": {
-        "type": "object",
-        "description": "The machine a check ran on.",
-        "required": [
-          "cpu",
-          "cores",
-          "os"
-        ],
-        "properties": {
-          "cores": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Physical cores.",
-            "minimum": 0
-          },
-          "cpu": {
-            "type": "string",
-            "description": "The CPU's brand string, \"Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz\"."
-          },
-          "os": {
-            "type": "string",
-            "description": "\"Windows 11 Home 24H2\", \"Linux 6.8 Ubuntu 24.04\"."
-          }
-        }
-      },
       "MachineInfo": {
         "type": "object",
         "description": "What the app runs on.",
         "required": [
-          "data_dir",
-          "engine",
-          "builds"
+          "data_dir"
         ],
         "properties": {
-          "builds": {
-            "$ref": "#/components/schemas/BuildsOnDisk",
-            "description": "Built binaries on disk."
-          },
           "cpu": {
             "type": [
               "string",
@@ -8203,9 +5427,6 @@
           "data_dir": {
             "type": "string",
             "description": "The data directory."
-          },
-          "engine": {
-            "$ref": "#/components/schemas/EngineCheckout"
           },
           "logical_cores": {
             "type": [
@@ -8253,27 +5474,13 @@
           }
         }
       },
-      "MakeVersion": {
-        "type": "object",
-        "description": "`POST /api/versions`.",
-        "required": [
-          "ref"
-        ],
-        "properties": {
-          "ref": {
-            "type": "string",
-            "description": "A branch, tag or commit of the fork (or `champion`, `v14`, `#12`)."
-          }
-        }
-      },
       "Metric": {
         "type": "string",
         "description": "What a series measures.",
         "enum": [
           "rating",
           "accuracy",
-          "drill_hit_rate",
-          "elo"
+          "drill_hit_rate"
         ]
       },
       "Moment": {
@@ -8442,136 +5649,62 @@
           }
         }
       },
-      "Net": {
+      "NewEngineRequest": {
         "type": "object",
-        "description": "A network file.",
+        "description": "`POST /api/engines`: an engine you add by path.",
         "required": [
-          "id",
           "name",
-          "sha256",
-          "path",
-          "arch",
-          "size_bytes",
-          "created_at"
+          "path"
         ],
         "properties": {
-          "arch": {
-            "type": "string",
-            "description": "The architecture, [`RECKLESS_ARCH`] for every net so far."
-          },
-          "created_at": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "dataset": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/DatasetId",
-                "description": "The (first) dataset it was trained on."
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "id": {
-            "$ref": "#/components/schemas/NetId"
-          },
-          "metrics": {
-            "description": "Offline metrics (validation loss, ...), when measured. Not measured yet: always null for now."
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Its id (a slug); made from the name when left out."
           },
           "name": {
             "type": "string",
-            "description": "`v60-7f587dfb` for a shipped net, the run's name for a trained one (`net-3`)."
+            "description": "As shown: `Reckless dev`."
           },
-          "parent": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/NetId",
-                "description": "The net it was fine-tuned from."
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "nodes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Nodes it searches a move whatever the clock (Maia-like engines); none plays on the clock.",
+            "minimum": 0
+          },
+          "options": {
+            "type": "object",
+            "description": "UCI options set after the handshake.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "path": {
             "type": "string",
-            "description": "The file in the data directory's `nets/`, absolute."
+            "description": "The binary."
           },
-          "run": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/NetRun",
-                "description": "The run that made it; none for a shipped net."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "sha256": {
-            "type": "string"
-          },
-          "size_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          }
-        }
-      },
-      "NetId": {
-        "type": "integer",
-        "format": "int64",
-        "description": "A network file the app knows."
-      },
-      "NetRun": {
-        "type": "object",
-        "description": "The training run a net came from.",
-        "required": [
-          "superbatches",
-          "positions"
-        ],
-        "properties": {
-          "final_loss": {
+          "rating": {
             "type": [
-              "number",
+              "integer",
               "null"
             ],
-            "format": "double",
-            "description": "The last superbatch's mean loss."
-          },
-          "idea": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/IdeaId",
-                "description": "The idea it was trained for, when it was."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "positions": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Positions trained on (bullet's count, the dataset cycled).",
-            "minimum": 0
-          },
-          "superbatches": {
-            "type": "integer",
             "format": "int32",
+            "description": "The rating it plays at by design, when it has one.",
             "minimum": 0
-          },
-          "work": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/WorkId",
-                "description": "The `Train` work item."
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         }
       },
@@ -8636,93 +5769,6 @@
           }
         }
       },
-      "NewIdeaRequest": {
-        "type": "object",
-        "description": "`POST /api/ideas`: an idea to try.",
-        "required": [
-          "title",
-          "branch"
-        ],
-        "properties": {
-          "author": {
-            "$ref": "#/components/schemas/Author"
-          },
-          "base": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "What it is tested against: a version (`v14`, a branch, `#12`); the champion when left out."
-          },
-          "branch": {
-            "type": "string",
-            "description": "The change: a branch of the fork (for a tune, the branch with the tunables)."
-          },
-          "custom": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/CustomTrial",
-                "description": "One trial with any preset and bounds or a fixed number of pairs, instead of the funnel."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "fix_bench": {
-            "type": "boolean",
-            "description": "When the branch's tip has no `Bench:` line or a stale one, build it and reword the tip with the measured bench\nbefore creating the idea (this changes the fork's branch locally). Without it, such a branch is refused with a\n409, since the fingerprint stage would fail on it."
-          },
-          "hypothesis": {
-            "type": "string"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/IdeaKind"
-          },
-          "long": {
-            "type": "boolean",
-            "description": "Add the long-games stage to the funnel."
-          },
-          "notes": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "tags": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "title": {
-            "type": "string",
-            "description": "\"Deeper LMR at high depth\"."
-          },
-          "train": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/TrainSpec",
-                "description": "A net idea's training run (a fine-tune of its base's net with the default schedule when left out). A net idea\nneeds no branch: it trains for the champion's code (`branch` may be left empty)."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "tune": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/TuneSpec",
-                "description": "A tune's settings (a tune idea without them tunes with OpenBench's defaults)."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        }
-      },
       "Offers": {
         "type": "object",
         "description": "Offers standing in a live game: who offered a draw, who asked to take back.",
@@ -8745,40 +5791,6 @@
               {
                 "type": "null"
               }
-            ]
-          }
-        }
-      },
-      "OnlineBody": {
-        "type": "object",
-        "description": "`POST /api/connections/bot/online`.",
-        "required": [
-          "online"
-        ],
-        "properties": {
-          "online": {
-            "type": "boolean"
-          }
-        }
-      },
-      "OnlineBot": {
-        "type": "object",
-        "description": "A bot online now, as `GET /api/bot/online` lists it.",
-        "required": [
-          "name",
-          "ratings"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "ratings": {
-            "$ref": "#/components/schemas/Ratings"
-          },
-          "title": {
-            "type": [
-              "string",
-              "null"
             ]
           }
         }
@@ -8898,15 +5910,6 @@
           "black_wins",
           "draw"
         ]
-      },
-      "Pentanomial": {
-        "type": "array",
-        "items": {
-          "type": "integer",
-          "format": "int64",
-          "minimum": 0
-        },
-        "description": "Game-pair outcomes from the dev engine's side: `[LL, LD, WL+DD, WD, WW]`, i.e. pairs scoring 0, ½, 1, 1½ and 2."
       },
       "Phase": {
         "type": "string",
@@ -9091,12 +6094,11 @@
       },
       "PlayerKey": {
         "type": "string",
-        "description": "`you`, `dameless`, `lichess:<id>` or `stockfish:<1-8>`",
+        "description": "`you`, `engine:<id>` or `lichess:<id>`",
         "examples": [
           "you",
-          "dameless",
-          "lichess:cutemouse83",
-          "stockfish:5"
+          "engine:stockfish",
+          "lichess:cutemouse83"
         ]
       },
       "Policy": {
@@ -9271,27 +6273,12 @@
           }
         }
       },
-      "Preset": {
-        "type": "string",
-        "description": "Named game settings, as Reckless names its tests.",
-        "enum": [
-          "vstc",
-          "stc",
-          "ltc",
-          "stc_hash",
-          "ltc_hash",
-          "smp",
-          "nodes"
-        ]
-      },
       "Priority": {
         "type": "string",
-        "description": "Which work runs first when cores are short: the lower, the sooner. Live games and live evaluation reserve their\ncores outside the queue; these order the work items.",
+        "description": "Which work runs first when cores are short: the lower, the sooner. Live games and live evaluation reserve their\ncores outside the queue; these order the work items. The numbers are what the store keeps.",
         "enum": [
           "live",
-          "interactive",
           "review",
-          "idea",
           "background"
         ]
       },
@@ -9441,7 +6428,7 @@
               "null"
             ],
             "format": "int32",
-            "description": "All the player's games not yet reviewed at the default version and budget, whatever the filter: what\n\"Review all\" does. Only a single profile fills it; `None` when unknown (no champion yet).",
+            "description": "All the player's games not reviewed by any engine yet, whatever the filter: what \"Review all\" does. Only a\nsingle profile fills it; `None` when unknown.",
             "minimum": 0
           },
           "weak_spots": {
@@ -9519,7 +6506,7 @@
               "string",
               "null"
             ],
-            "description": "One sentence for people: \"412 pairs, LLR 1.2 of 2.94\"."
+            "description": "One sentence for people: \"12 of 40 games\"."
           },
           "total": {
             "type": [
@@ -9531,13 +6518,13 @@
           },
           "unit": {
             "type": "string",
-            "description": "What is counted: `pairs`, `iterations`, `games`, `positions`."
+            "description": "What is counted: `games`, `positions`, `bytes`."
           }
         }
       },
       "ProgressChart": {
         "type": "object",
-        "description": "Both players' lines: `GET /api/progress`.",
+        "description": "Your lines: `GET /api/progress`.",
         "required": [
           "series"
         ],
@@ -9565,130 +6552,16 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/GameId",
-                "description": "The game or version the point comes from, to open it."
+                "description": "The game the point comes from, to open it."
               },
               {
                 "type": "null"
               }
             ]
-          },
-          "high": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "label": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "`v14`, for a version."
-          },
-          "low": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "description": "A 95 % interval, where the value has one (Dameless's Elo)."
-          },
-          "measured": {
-            "type": "boolean",
-            "description": "Dameless's point measured by a regression check (games between this champion and one five promotions back)\nrather than added up from promotions' estimates."
           },
           "value": {
             "type": "number",
             "format": "double"
-          },
-          "version": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/VersionId"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        }
-      },
-      "PruneBody": {
-        "type": "object",
-        "description": "`POST /api/builds/prune`.",
-        "properties": {
-          "dry_run": {
-            "type": "boolean",
-            "description": "Say what would go, delete nothing."
-          },
-          "keep_latest": {
-            "type": [
-              "boolean",
-              "null"
-            ],
-            "description": "Keep every version's newest build of each feature set (default true)."
-          },
-          "older_than_days": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "description": "Only binaries at least this old.",
-            "minimum": 0
-          }
-        }
-      },
-      "Pruned": {
-        "type": "object",
-        "description": "What pruning removed (or would have).",
-        "required": [
-          "builds",
-          "bytes",
-          "in_use",
-          "dry_run"
-        ],
-        "properties": {
-          "builds": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BuildId"
-            },
-            "description": "The builds whose binaries were deleted (or would be)."
-          },
-          "bytes": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Bytes freed (or that would be).",
-            "minimum": 0
-          },
-          "dry_run": {
-            "type": "boolean"
-          },
-          "in_use": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BuildId"
-            },
-            "description": "Builds left alone because something uses them."
-          }
-        }
-      },
-      "Pushed": {
-        "type": "object",
-        "description": "What a push did.",
-        "required": [
-          "remote",
-          "head"
-        ],
-        "properties": {
-          "head": {
-            "type": "string",
-            "description": "The commit `main` is at, there and here."
-          },
-          "remote": {
-            "type": "string"
           }
         }
       },
@@ -9762,69 +6635,6 @@
                 "type": "null"
               }
             ]
-          }
-        }
-      },
-      "RegressionCheck": {
-        "type": "object",
-        "description": "One finished check: `GET /api/dameless` lists them.",
-        "required": [
-          "idea",
-          "champion",
-          "champion_name",
-          "against",
-          "against_name",
-          "passed",
-          "pairs",
-          "summary",
-          "at"
-        ],
-        "properties": {
-          "against": {
-            "$ref": "#/components/schemas/VersionId",
-            "description": "The champion five promotions earlier."
-          },
-          "against_name": {
-            "type": "string"
-          },
-          "at": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "champion": {
-            "$ref": "#/components/schemas/VersionId",
-            "description": "The new champion, and its name (`v11`)."
-          },
-          "champion_name": {
-            "type": "string"
-          },
-          "elo": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Estimate",
-                "description": "The new champion's logistic Elo over `against`, ± 95 %."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "idea": {
-            "$ref": "#/components/schemas/IdeaId",
-            "description": "The idea that played it."
-          },
-          "pairs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Game pairs played.",
-            "minimum": 0
-          },
-          "passed": {
-            "type": "boolean",
-            "description": "Passed: not measurably worse than `against`."
-          },
-          "summary": {
-            "type": "string",
-            "description": "One sentence: \"v11 over v6: +12.4 ± 3.1 Elo over 10000 pairs\"."
           }
         }
       },
@@ -10060,7 +6870,7 @@
         "required": [
           "id",
           "game",
-          "version",
+          "engine",
           "nodes",
           "summary",
           "plies",
@@ -10069,6 +6879,10 @@
         "properties": {
           "created_at": {
             "$ref": "#/components/schemas/Timestamp"
+          },
+          "engine": {
+            "type": "string",
+            "description": "The engine that reviewed it, by the name it reports (its UCI `id name`): `Stockfish 19`."
           },
           "game": {
             "$ref": "#/components/schemas/GameId"
@@ -10089,19 +6903,16 @@
           },
           "summary": {
             "$ref": "#/components/schemas/ReviewSummary"
-          },
-          "version": {
-            "$ref": "#/components/schemas/VersionId"
           }
         }
       },
       "ReviewBody": {
         "type": "object",
-        "description": "`POST /api/reviews`: some games, or a player's newest games not reviewed yet with this version and budget.",
+        "description": "`POST /api/reviews`: some games, or a player's newest games no engine has reviewed yet.",
         "properties": {
           "background": {
             "type": "boolean",
-            "description": "Review in the background: at the lowest priority (`background`, below ideas), so trials keep their cores, and\nin a lane of its own, so a review asked for meanwhile runs at once. With `player` and no `limit`: every game of\ntheirs not reviewed yet, newest first."
+            "description": "Review in the background: at the lowest priority (`background`, beside calibration), and in a lane of its own, so a review asked for meanwhile runs at once. With `player` and no `limit`: every game of\ntheirs not reviewed yet, newest first."
           },
           "concurrency": {
             "type": [
@@ -10111,6 +6922,13 @@
             "format": "int32",
             "description": "Engines at once. When none: half the machine's cores; in the background, all of them (it gives them back\nwithin one search when live play or other work needs them).",
             "minimum": 0
+          },
+          "engine": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The engine to review with, by id; the analysis engine when none."
           },
           "games": {
             "type": "array",
@@ -10141,7 +6959,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/PlayerKey",
-                "description": "This player's newest finished games not yet reviewed: `you`, `dameless`, `lichess:<name>`."
+                "description": "This player's newest finished games no engine has reviewed: `you`, `engine:<id>`, `lichess:<name>`."
               },
               {
                 "type": "null"
@@ -10159,13 +6977,6 @@
             "items": {
               "$ref": "#/components/schemas/Speed"
             }
-          },
-          "version": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The version to review with (`champion`, `v14`, `#12`, a branch); the champion when none."
           }
         }
       },
@@ -10178,7 +6989,7 @@
         "type": "object",
         "description": "A review's summary per side.",
         "required": [
-          "version",
+          "engine",
           "nodes",
           "white",
           "black"
@@ -10195,6 +7006,10 @@
             "format": "int32",
             "minimum": 0
           },
+          "engine": {
+            "type": "string",
+            "description": "The engine that reviewed it, by the name it reports (its UCI `id name`): `Stockfish 19`."
+          },
           "middlegame_ply": {
             "type": [
               "integer",
@@ -10208,9 +7023,6 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
-          },
-          "version": {
-            "$ref": "#/components/schemas/VersionId"
           },
           "white": {
             "$ref": "#/components/schemas/SideReview"
@@ -10367,55 +7179,6 @@
           }
         }
       },
-      "Scaling": {
-        "type": "object",
-        "description": "How a trial's or a tune's clock was scaled.",
-        "required": [
-          "copies",
-          "dev_nps",
-          "base_nps",
-          "measured_nps",
-          "reference_nps",
-          "scale"
-        ],
-        "properties": {
-          "base_nps": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The mean speed of the copies of base's `bench`. A tune has one build, so both are its speed.",
-            "minimum": 0
-          },
-          "copies": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Copies of `bench` run at once: the games played at once times each game's threads.",
-            "minimum": 0
-          },
-          "dev_nps": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The mean speed of the copies of dev's `bench`, in nodes per second.",
-            "minimum": 0
-          },
-          "measured_nps": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The speed the factor comes from: base's, as Reckless's OpenBench scales its tests.",
-            "minimum": 0
-          },
-          "reference_nps": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The speed the written clock is meant for.",
-            "minimum": 0
-          },
-          "scale": {
-            "type": "number",
-            "format": "double",
-            "description": "`reference_nps / measured_nps`: what the clock's base time and increment were multiplied by."
-          }
-        }
-      },
       "Score": {
         "oneOf": [
           {
@@ -10453,16 +7216,12 @@
           "name"
         ],
         "properties": {
-          "build": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/BuildId",
-                "description": "The exact binary a Dameless seat played."
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "engine": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What an engine seat's engine called itself (its UCI `id name`): `Stockfish 19`, `Lc0 v0.32.1`."
           },
           "level": {
             "type": [
@@ -10470,12 +7229,12 @@
               "null"
             ],
             "format": "int32",
-            "description": "The level of the ladder a Dameless seat played at; none at full strength.",
+            "description": "The level of the ladder an engine seat played at (or Lichess's AI level); none at full strength.",
             "minimum": 0
           },
           "name": {
             "type": "string",
-            "description": "What to show: \"You\" is shown as the Lichess username when linked; a Dameless seat by its version's name, or\nat a level of its ladder by its rating (\"Dameless 1650\")."
+            "description": "What to show: \"You\" is shown as the Lichess username when linked; an engine seat by the engine's name, or at a\nlevel of the ladder by its rating (\"Stockfish 1650\")."
           },
           "player": {
             "$ref": "#/components/schemas/PlayerKey"
@@ -10492,17 +7251,6 @@
             "type": [
               "string",
               "null"
-            ]
-          },
-          "version": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/VersionId",
-                "description": "The version a Dameless seat played."
-              },
-              {
-                "type": "null"
-              }
             ]
           }
         }
@@ -10526,97 +7274,13 @@
       },
       "SeatRequest": {
         "type": "string",
-        "description": "`you`, `dameless` (the champion), `dameless:<version>`, and `@<level>` after either Dameless form to play at a level (`dameless@5`). The object `{ player, version?, level? }` reads too.",
+        "description": "`you`, an engine's id (`stockfish`, `maia-1500`), or `<engine id>@<level>` for a level of the analysis engine's ladder (`stockfish@5`). The object `{ player, level? }` reads too.",
         "examples": [
           "you",
-          "dameless",
-          "dameless:v14",
-          "dameless@5"
+          "stockfish",
+          "stockfish@5",
+          "maia-1500"
         ]
-      },
-      "SeekChallenge": {
-        "type": "object",
-        "description": "The challenge the bot has sent and is waiting on.",
-        "required": [
-          "id",
-          "url",
-          "opponent",
-          "clock",
-          "rated"
-        ],
-        "properties": {
-          "clock": {
-            "$ref": "#/components/schemas/SeekClock"
-          },
-          "id": {
-            "type": "string",
-            "description": "The challenge id, which becomes the game id if it is accepted."
-          },
-          "opponent": {
-            "$ref": "#/components/schemas/SeekOpponent"
-          },
-          "rated": {
-            "type": "boolean"
-          },
-          "url": {
-            "type": "string"
-          }
-        }
-      },
-      "SeekClock": {
-        "type": "object",
-        "description": "A clock to challenge another bot at: the initial time and the increment, in seconds.",
-        "required": [
-          "initial",
-          "increment"
-        ],
-        "properties": {
-          "increment": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Seconds.",
-            "minimum": 0
-          },
-          "initial": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Seconds.",
-            "minimum": 0
-          }
-        }
-      },
-      "SeekMode": {
-        "type": "string",
-        "description": "Whether, and how, the bot is looking for games.",
-        "enum": [
-          "off",
-          "once",
-          "always"
-        ]
-      },
-      "SeekOpponent": {
-        "type": "object",
-        "required": [
-          "name",
-          "rating"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "rating": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Their rating at the challenge's speed.",
-            "minimum": 0
-          },
-          "title": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
       },
       "SeekRequestBody": {
         "type": "object",
@@ -10640,35 +7304,6 @@
           },
           "time": {
             "$ref": "#/components/schemas/TimeControl"
-          }
-        }
-      },
-      "SeekStatus": {
-        "type": "object",
-        "required": [
-          "mode"
-        ],
-        "properties": {
-          "mode": {
-            "$ref": "#/components/schemas/SeekMode"
-          },
-          "note": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "A short sentence on how the search last went, for people to read."
-          },
-          "pending": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/SeekChallenge",
-                "description": "The challenge sent and not answered yet. There is never more than one."
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         }
       },
@@ -10696,19 +7331,91 @@
           }
         }
       },
-      "SetupReport": {
+      "SetupDownload": {
         "type": "object",
-        "description": "What setup did.",
+        "description": "One download of the plan.",
         "required": [
-          "log"
+          "package",
+          "name",
+          "url"
         ],
         "properties": {
-          "log": {
+          "bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Its size, when GitHub said.",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "For people: `Stockfish 19`, `lc0 v0.32.1`, `Maia 1500's net`."
+          },
+          "package": {
+            "$ref": "#/components/schemas/SetupPackage"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "SetupPackage": {
+        "type": "string",
+        "description": "What setup installs: `stockfish`, `maia`.",
+        "enum": [
+          "stockfish",
+          "maia"
+        ]
+      },
+      "SetupPlan": {
+        "type": "object",
+        "description": "`GET /api/setup`: what `POST /api/setup` would download, and what is installed already.",
+        "required": [
+          "downloads",
+          "bytes",
+          "installed",
+          "notes"
+        ],
+        "properties": {
+          "bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Everything together, of the sizes known.",
+            "minimum": 0
+          },
+          "downloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SetupDownload"
+            }
+          },
+          "installed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SetupPackage"
+            },
+            "description": "The packages installed already (they are skipped)."
+          },
+          "notes": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "What it did, line by line."
+            "description": "What cannot be installed here, for people: \"lc0 publishes no build for this platform: put lc0 on the PATH\"."
+          }
+        }
+      },
+      "SetupRequest": {
+        "type": "object",
+        "description": "`POST /api/setup`: which packages to install; all when empty.",
+        "properties": {
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SetupPackage"
+            }
           }
         }
       },
@@ -10859,7 +7566,7 @@
           },
           {
             "type": "object",
-            "description": "Played through one of the Lichess connections.",
+            "description": "Played through your Lichess connection.",
             "required": [
               "connection",
               "id",
@@ -10915,31 +7622,6 @@
                 "type": "string",
                 "enum": [
                   "import"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A trial's game, read from fastchess's PGN: its trial and its index there.",
-            "required": [
-              "trial",
-              "index",
-              "type"
-            ],
-            "properties": {
-              "index": {
-                "type": "integer",
-                "format": "int32",
-                "minimum": 0
-              },
-              "trial": {
-                "$ref": "#/components/schemas/TrialId"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "trial"
                 ]
               }
             }
@@ -11008,22 +7690,6 @@
           }
         }
       },
-      "Stage": {
-        "type": "string",
-        "description": "A stage of an idea.",
-        "enum": [
-          "fingerprint",
-          "screen",
-          "short",
-          "long",
-          "speed",
-          "tune",
-          "confirm",
-          "custom",
-          "train",
-          "regression"
-        ]
-      },
       "StartFrom": {
         "oneOf": [
           {
@@ -11047,21 +7713,6 @@
                 "type": "string",
                 "enum": [
                   "position"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A random line of the opening book the trials use.",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "book"
                 ]
               }
             }
@@ -11138,42 +7789,6 @@
             ],
             "properties": {
               "id": {
-                "$ref": "#/components/schemas/IdeaId"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "idea"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "type"
-            ],
-            "properties": {
-              "id": {
-                "$ref": "#/components/schemas/TrialId"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "trial"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "type"
-            ],
-            "properties": {
-              "id": {
                 "$ref": "#/components/schemas/GameId"
               },
               "type": {
@@ -11204,68 +7819,21 @@
           },
           {
             "type": "object",
+            "description": "The engines list: installing the built-in engines.",
             "required": [
-              "id",
               "type"
             ],
             "properties": {
-              "id": {
-                "$ref": "#/components/schemas/VersionId"
-              },
               "type": {
                 "type": "string",
                 "enum": [
-                  "version"
+                  "engines"
                 ]
               }
             }
           }
         ],
         "description": "What a piece of work is about, so the UI can link to it."
-      },
-      "Symmetry": {
-        "type": "object",
-        "description": "How symmetric the timed pairs of identical engines came out.",
-        "required": [
-          "passed",
-          "pairs",
-          "z_doubles",
-          "z_halves",
-          "detail"
-        ],
-        "properties": {
-          "detail": {
-            "type": "string",
-            "description": "One sentence for people."
-          },
-          "pairs": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "passed": {
-            "type": "boolean"
-          },
-          "z_doubles": {
-            "type": "number",
-            "format": "double",
-            "description": "`(WW − LL) / √(WW + LL)`: how many standard errors the doubles lean towards the change."
-          },
-          "z_halves": {
-            "type": "number",
-            "format": "double",
-            "description": "`(WD − LD) / √(WD + LD)`, the same for the half points."
-          }
-        }
-      },
-      "SyncOutcome": {
-        "type": "string",
-        "description": "How a sync ended.",
-        "enum": [
-          "up_to_date",
-          "merged",
-          "failed"
-        ]
       },
       "Theme": {
         "type": "object",
@@ -11573,268 +8141,7 @@
         "properties": {
           "token": {
             "type": "string",
-            "description": "A personal Lichess token: yours with `board:play` (and `challenge:read`, `challenge:write`), the bot's with\n`bot:play`."
-          }
-        }
-      },
-      "TrainProgress": {
-        "type": "object",
-        "description": "`train.progress`: a training run's latest reading (throttled to one a second). Published on `idea:<id>` when the\nrun is a net idea's, else on `work`.",
-        "required": [
-          "work",
-          "superbatch",
-          "superbatches",
-          "batch",
-          "batches_per_superbatch",
-          "loss",
-          "lr",
-          "positions_per_sec",
-          "elapsed_seconds"
-        ],
-        "properties": {
-          "batch": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "batches_per_superbatch": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "elapsed_seconds": {
-            "type": "number",
-            "format": "double"
-          },
-          "grad_norm": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "idea": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/IdeaId"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "loss": {
-            "type": "number",
-            "format": "double"
-          },
-          "lr": {
-            "type": "number",
-            "format": "double"
-          },
-          "positions_per_sec": {
-            "type": "number",
-            "format": "double"
-          },
-          "superbatch": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "superbatches": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "work": {
-            "$ref": "#/components/schemas/WorkId"
-          }
-        }
-      },
-      "TrainSchedule": {
-        "type": "object",
-        "description": "A run's schedule, as `bullet-train train` takes it.",
-        "required": [
-          "superbatches",
-          "batches_per_superbatch",
-          "batch_size",
-          "lr",
-          "final_lr",
-          "wdl"
-        ],
-        "properties": {
-          "batch_size": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "batches_per_superbatch": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "final_lr": {
-            "type": "number",
-            "format": "double"
-          },
-          "final_wdl": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "description": "... and at the end (the same as `wdl` when left out)."
-          },
-          "lr": {
-            "type": "number",
-            "format": "double"
-          },
-          "lr_schedule": {
-            "$ref": "#/components/schemas/LrSchedule"
-          },
-          "superbatches": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "wdl": {
-            "type": "number",
-            "format": "double",
-            "description": "The weight of the game result in the target, at the start."
-          }
-        }
-      },
-      "TrainSpec": {
-        "type": "object",
-        "description": "What a training run trains: the `Train` work's spec, and a `net` idea's `train`.",
-        "properties": {
-          "datasets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DatasetId"
-            },
-            "description": "The data; empty means every dataset in Reckless's internal units."
-          },
-          "from_scratch": {
-            "type": "boolean",
-            "description": "Train from random weights instead of fine-tuning."
-          },
-          "keep_checkpoints": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Checkpoints kept, newest first (about 0.72 GB each).",
-            "minimum": 0
-          },
-          "name": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The new net's name; `net-<work id>` when left out."
-          },
-          "parent": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/NetId",
-                "description": "The net to fine-tune; the champion's when left out (unless `from_scratch`)."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "save_rate": {
-            "type": "integer",
-            "format": "int32",
-            "description": "A checkpoint every this many superbatches (and at the end).",
-            "minimum": 0
-          },
-          "schedule": {
-            "$ref": "#/components/schemas/TrainSchedule"
-          }
-        }
-      },
-      "TrainStep": {
-        "type": "object",
-        "description": "One reading of a run, as the loss chart plots it: kept for every `progress` line of the trainer.",
-        "required": [
-          "seq",
-          "superbatch",
-          "batch",
-          "loss",
-          "lr",
-          "positions_per_sec",
-          "elapsed_seconds"
-        ],
-        "properties": {
-          "batch": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Within the superbatch, from 1.",
-            "minimum": 0
-          },
-          "elapsed_seconds": {
-            "type": "number",
-            "format": "double"
-          },
-          "grad_norm": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "loss": {
-            "type": "number",
-            "format": "double",
-            "description": "The mean batch loss since the previous reading."
-          },
-          "lr": {
-            "type": "number",
-            "format": "double"
-          },
-          "positions_per_sec": {
-            "type": "number",
-            "format": "double"
-          },
-          "seq": {
-            "type": "integer",
-            "format": "int32",
-            "description": "From 1, in the order the trainer wrote them.",
-            "minimum": 0
-          },
-          "superbatch": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
-      "TrainView": {
-        "type": "object",
-        "description": "`GET /api/ideas/{id}/train`: a net idea's training: its settings, every reading so far and the net it made.",
-        "required": [
-          "spec",
-          "steps"
-        ],
-        "properties": {
-          "net": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Net"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "spec": {
-            "$ref": "#/components/schemas/TrainSpec"
-          },
-          "steps": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TrainStep"
-            }
+            "description": "A personal Lichess token with `board:play` (and `challenge:read`, `challenge:write`)."
           }
         }
       },
@@ -11878,873 +8185,6 @@
             "minimum": 0
           }
         }
-      },
-      "Trial": {
-        "type": "object",
-        "description": "One stage of an idea: a set of games (or benches, or SPSA) and a verdict.",
-        "required": [
-          "id",
-          "idea",
-          "stage",
-          "status",
-          "penta",
-          "wdl"
-        ],
-        "properties": {
-          "alpha": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "description": "The SPRT's false-accept rate (with `bounds`)."
-          },
-          "beta": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "description": "The SPRT's false-reject rate (with `bounds`)."
-          },
-          "bounds": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "number",
-              "format": "double"
-            },
-            "description": "SPRT bounds in normalized Elo, `[lower, upper]`."
-          },
-          "detail": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "One sentence for people."
-          },
-          "elo": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Estimate",
-                "description": "Logistic Elo ± 95 %."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "ended_at": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Timestamp"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "id": {
-            "$ref": "#/components/schemas/TrialId"
-          },
-          "idea": {
-            "$ref": "#/components/schemas/IdeaId"
-          },
-          "llr": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Llr"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "nelo": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Estimate"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "pairs": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "description": "A fixed number of game pairs instead of an SPRT (a custom trial).",
-            "minimum": 0
-          },
-          "penta": {
-            "$ref": "#/components/schemas/Pentanomial",
-            "description": "Game pairs from the idea's side: `[LL, LD, DD+WL, WD, WW]`."
-          },
-          "played": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/TimeControl",
-                "description": "The clock after scaling (11+0.11)."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "preset": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Preset"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "scaling": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Scaling"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "stage": {
-            "$ref": "#/components/schemas/Stage"
-          },
-          "started_at": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Timestamp"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "status": {
-            "$ref": "#/components/schemas/TrialStatus"
-          },
-          "time": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/TimeControl",
-                "description": "The clock as written (8+0.08)."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "wdl": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            },
-            "description": "Games won, drawn and lost by the idea's side."
-          }
-        }
-      },
-      "TrialId": {
-        "type": "integer",
-        "format": "int64",
-        "description": "One stage of an idea."
-      },
-      "TrialProgress": {
-        "type": "object",
-        "description": "`trial.progress`: a trial's running totals.",
-        "required": [
-          "id",
-          "idea",
-          "penta",
-          "wdl"
-        ],
-        "properties": {
-          "elo": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Estimate"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "id": {
-            "$ref": "#/components/schemas/TrialId"
-          },
-          "idea": {
-            "$ref": "#/components/schemas/IdeaId",
-            "description": "The trial's idea, which is the topic it is published on."
-          },
-          "llr": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Llr"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "penta": {
-            "$ref": "#/components/schemas/Pentanomial"
-          },
-          "wdl": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        }
-      },
-      "TrialStatus": {
-        "type": "string",
-        "enum": [
-          "waiting",
-          "running",
-          "passed",
-          "failed",
-          "stopped",
-          "skipped"
-        ]
-      },
-      "TrialSummary": {
-        "type": "object",
-        "description": "What an idea shows of each trial.",
-        "required": [
-          "id",
-          "stage",
-          "status",
-          "pairs"
-        ],
-        "properties": {
-          "alpha": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "beta": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "bounds": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "number",
-              "format": "double"
-            }
-          },
-          "detail": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "elo": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Estimate"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "id": {
-            "$ref": "#/components/schemas/TrialId"
-          },
-          "llr": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Llr"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "pairs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Game pairs played.",
-            "minimum": 0
-          },
-          "preset": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Preset"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "stage": {
-            "$ref": "#/components/schemas/Stage"
-          },
-          "status": {
-            "$ref": "#/components/schemas/TrialStatus"
-          }
-        }
-      },
-      "Tunable": {
-        "type": "object",
-        "description": "One tunable: its range and step sizes, and where it starts.",
-        "required": [
-          "name",
-          "start",
-          "min",
-          "max",
-          "c_end",
-          "r_end"
-        ],
-        "properties": {
-          "c_end": {
-            "type": "number",
-            "format": "double",
-            "description": "The perturbation at the last iteration."
-          },
-          "max": {
-            "type": "number",
-            "format": "double"
-          },
-          "min": {
-            "type": "number",
-            "format": "double"
-          },
-          "name": {
-            "type": "string"
-          },
-          "r_end": {
-            "type": "number",
-            "format": "double",
-            "description": "The learning rate `a_k / c_k²` at the last iteration."
-          },
-          "start": {
-            "type": "number",
-            "format": "double"
-          }
-        }
-      },
-      "TunableOverride": {
-        "type": "object",
-        "description": "A parameter to tune, as asked: anything left out comes from the engine's declaration, so `{ \"name\": \"x\" }` tunes\n`x` as declared.",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "c_end": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "max": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "min": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "name": {
-            "type": "string"
-          },
-          "r_end": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "start": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          }
-        }
-      },
-      "TuneDetail": {
-        "type": "object",
-        "description": "`GET /api/ideas/{id}/tune`.",
-        "required": [
-          "spec",
-          "params",
-          "steps"
-        ],
-        "properties": {
-          "params": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TuneParamInfo"
-            },
-            "description": "The parameters, in the order of each step's values."
-          },
-          "spec": {
-            "$ref": "#/components/schemas/TuneSpec"
-          },
-          "steps": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TuneStep"
-            }
-          }
-        }
-      },
-      "TuneParamInfo": {
-        "type": "object",
-        "description": "A tuned parameter: its name, and its range when the tuned branch's `spsa` build is known.",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "max": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "min": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "name": {
-            "type": "string"
-          },
-          "start": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          }
-        }
-      },
-      "TuneProgress": {
-        "type": "object",
-        "description": "`tune.progress`: an SPSA update was applied.",
-        "required": [
-          "idea",
-          "iteration",
-          "values",
-          "result"
-        ],
-        "properties": {
-          "idea": {
-            "$ref": "#/components/schemas/IdeaId"
-          },
-          "iteration": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Counted from 1, in the order updates were applied.",
-            "minimum": 0
-          },
-          "result": {
-            "type": "integer",
-            "format": "int64",
-            "description": "θ+'s games won minus games lost."
-          },
-          "values": {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "double"
-            },
-            "description": "Every parameter after it, in the tune's order."
-          }
-        }
-      },
-      "TuneSpec": {
-        "type": "object",
-        "description": "What a tune idea runs.",
-        "required": [
-          "iterations",
-          "pairs",
-          "time",
-          "hash",
-          "alpha",
-          "gamma",
-          "a_ratio"
-        ],
-        "properties": {
-          "a_ratio": {
-            "type": "number",
-            "format": "double"
-          },
-          "alpha": {
-            "type": "number",
-            "format": "double"
-          },
-          "concurrency": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "description": "Games at once; none for what the scheduler grants.",
-            "minimum": 0
-          },
-          "gamma": {
-            "type": "number",
-            "format": "double"
-          },
-          "hash": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Hash in MiB.",
-            "minimum": 0
-          },
-          "iterations": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "pairs": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Game pairs per iteration.",
-            "minimum": 0
-          },
-          "params": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TunableOverride"
-            },
-            "description": "The parameters; empty means every declared tunable."
-          },
-          "time": {
-            "$ref": "#/components/schemas/TimeControl",
-            "description": "The games' clock as written (scaled when the tune starts), or a node limit."
-          }
-        }
-      },
-      "TuneStep": {
-        "type": "object",
-        "description": "One applied update: the store's `tune_steps` row.",
-        "required": [
-          "iteration",
-          "values",
-          "result",
-          "penta"
-        ],
-        "properties": {
-          "iteration": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Counted from 1, in the order updates were applied.",
-            "minimum": 0
-          },
-          "penta": {
-            "$ref": "#/components/schemas/Pentanomial",
-            "description": "θ+ against θ−, as game pairs from θ+'s side."
-          },
-          "result": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Games won minus games lost by θ+."
-          },
-          "values": {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "double"
-            },
-            "description": "Every parameter after this step, in the order of the tune's parameters."
-          }
-        }
-      },
-      "UpstreamCommit": {
-        "type": "object",
-        "description": "One upstream commit a sync brought.",
-        "required": [
-          "sha",
-          "subject"
-        ],
-        "properties": {
-          "sha": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string",
-            "description": "Its first line."
-          }
-        }
-      },
-      "UpstreamMerge": {
-        "type": "object",
-        "description": "What a champion taken from upstream brought: the range of upstream commits merged into the fork's `main`.",
-        "required": [
-          "base",
-          "upstream",
-          "commits",
-          "fast_forward"
-        ],
-        "properties": {
-          "base": {
-            "type": "string",
-            "description": "The fork's `main` before (the last champion's commit)."
-          },
-          "commits": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/UpstreamCommit"
-            },
-            "description": "The upstream commits the champion lacked, newest first."
-          },
-          "fast_forward": {
-            "type": "boolean",
-            "description": "`main` simply moved to upstream's commit (the fork had nothing of its own on top); else a merge commit."
-          },
-          "upstream": {
-            "type": "string",
-            "description": "The upstream commit merged (upstream's `main` then)."
-          }
-        }
-      },
-      "UpstreamSettings": {
-        "type": "object",
-        "description": "The automatic sync's settings (`meta` key `upstream.settings`).",
-        "required": [
-          "auto"
-        ],
-        "properties": {
-          "auto": {
-            "type": "boolean",
-            "description": "Look for new upstream commits every six hours and take them (on by default)."
-          }
-        }
-      },
-      "UpstreamStatus": {
-        "type": "object",
-        "description": "`GET /api/upstream`.",
-        "required": [
-          "settings",
-          "remote"
-        ],
-        "properties": {
-          "last": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/UpstreamSync",
-                "description": "The last sync, whatever its outcome."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "next_at": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Timestamp",
-                "description": "When the automatic sync looks next (none while it is off)."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "remote": {
-            "type": "boolean",
-            "description": "The engine checkout has a remote named `upstream`; without one there is nothing to sync."
-          },
-          "running": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/WorkId",
-                "description": "A sync queued or running now."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "settings": {
-            "$ref": "#/components/schemas/UpstreamSettings"
-          }
-        }
-      },
-      "UpstreamSync": {
-        "type": "object",
-        "description": "One sync, as the logbook and `GET /api/upstream` show it (also sent as `upstream.synced`).",
-        "required": [
-          "at",
-          "outcome",
-          "detail",
-          "work"
-        ],
-        "properties": {
-          "at": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "champion": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Its name, `v3`."
-          },
-          "detail": {
-            "type": "string",
-            "description": "One sentence for people: \"v3 from upstream: 4 commits (69aea908..a814d54e), bench 2837905\"."
-          },
-          "merge": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/UpstreamMerge",
-                "description": "What it brought (when merged), or would have brought (a failed merge)."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "outcome": {
-            "$ref": "#/components/schemas/SyncOutcome"
-          },
-          "version": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/VersionId",
-                "description": "The champion it made (when merged)."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "work": {
-            "$ref": "#/components/schemas/WorkId",
-            "description": "The work item that ran it."
-          }
-        }
-      },
-      "Version": {
-        "type": "object",
-        "description": "One commit of Dameless that matters: the champion line, an idea's change, an upstream tip.",
-        "required": [
-          "id",
-          "name",
-          "commit",
-          "line",
-          "created_at"
-        ],
-        "properties": {
-          "bench": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "The commit's `Bench:` line: the engine's functional fingerprint.",
-            "minimum": 0
-          },
-          "branch": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "commit": {
-            "type": "string",
-            "description": "The full sha."
-          },
-          "created_at": {
-            "$ref": "#/components/schemas/Timestamp"
-          },
-          "elo": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Estimate",
-                "description": "Elo against its parent, from the deciding trial."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "id": {
-            "$ref": "#/components/schemas/VersionId"
-          },
-          "line": {
-            "$ref": "#/components/schemas/Line"
-          },
-          "name": {
-            "type": "string",
-            "description": "`v14` on the champion line, else the branch name."
-          },
-          "net": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/NetId",
-                "description": "The net its builds embed; none for the commit's own (the file its build script names). A version of the\nchampion's code with a trained net is named `v14 + net-3`, and a champion can be code plus a net."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "parent": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/VersionId",
-                "description": "The champion it was built on."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "upstream": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/UpstreamMerge",
-                "description": "A champion taken from upstream Reckless: the upstream commits it brought."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        }
-      },
-      "VersionId": {
-        "type": "integer",
-        "format": "int64",
-        "description": "A commit of Dameless that matters."
       },
       "Wdl": {
         "type": "object",
@@ -12936,7 +8376,7 @@
           },
           "title": {
             "type": "string",
-            "description": "\"Trying deeper-lmr · short games\"."
+            "description": "\"Reviewing 20 games\"."
           }
         }
       },
@@ -12948,17 +8388,10 @@
       "WorkKind": {
         "type": "string",
         "enum": [
-          "build",
-          "trial",
-          "tune",
           "review",
           "import",
-          "promote",
           "calibrate",
-          "datagen",
-          "train",
-          "dataset_import",
-          "upstream"
+          "setup"
         ]
       },
       "WorkLists": {

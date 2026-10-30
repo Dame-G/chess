@@ -7,7 +7,7 @@
 //! - **Tools.** One per operation of the OpenAPI document ([`tools`]), named by its operation id. A call is made into
 //!   a request and sent through the app's own router (its handlers, its guard), so a tool does exactly what its route
 //!   does and answers with the route's JSON. A route's error is a tool error carrying the status and the error body.
-//! - **Two more tools** wait without polling from the client: `wait_for_work` and `wait_for_idea`.
+//! - **One more tool** waits without polling from the client: `wait_for_work`.
 //!
 //! The server's instructions carry the rules an agent must keep: fair play, and the user's real accounts.
 
@@ -43,29 +43,27 @@ use tools::{Operation, Place, Reach};
 
 /// What the server tells a client when it connects: how to work with the app, and the rules.
 pub const INSTRUCTIONS: &str = "\
-Dameless is a chess app with two players at one board: the user and their engine, Dameless (a fork of Reckless). \
+Dameless is a chess app to play, review and analyze games, with any UCI engine as an opponent or the analysis engine. \
 Every tool is one route of the app's API, named by its operation id; the description names the CLI command that does \
 the same. Results are the route's JSON.
 
 How to work:
-- Start with `get_dameless` (the champion, the logbook of ideas, the bot) and `status` (machine, cores, fair play).
-- Engine work is ideas: commit a change on a branch of the fork with an up-to-date `Bench:` line, then `create_idea` \
-or `create_batch` with a hypothesis, notes and `author: \"claude\"`. Ideas run as work in the background; \
-`wait_for_idea` and `wait_for_work` wait for them.
-- Read verdicts honestly: the short (STC [0, 4], alpha 0.05, beta 0.20) trial decides, and its kept Elo tends to read \
-high; a gain under about 2 Elo needs the long trial before it is trusted. A dropped regression check (`regressions` in \
-`get_dameless`) means the champion is measurably worse than five promotions ago: report it first. Promote (`promote_idea`) only kept ideas, when the user wants it. \
-Never `push` unless the user asked for that push.
-- On a new machine, check the harness first (`harness_status`, `check_harness`).
+- Start with `status` (machine, cores, fair play) and `list_engines` (the engines and the analysis engine). A fresh app \
+needs its engines: `setup_plan` says what `setup` would download and how big it is.
+- Games are `start_game` (seats `you`, an engine's id such as `stockfish` or `maia-1500`, or `stockfish@5` for a \
+level), `list_games` and `get_game`. Reviews (`review_games`), imports and calibration run as work in the \
+background; `wait_for_work` waits for them.
+- A player's figures are `get_profile` and `compare_players` (keys `you`, `engine:<id>`, `lichess:<name>`); yours also \
+`get_progress`, `drills_today`, `get_repertoire` and `get_prep`.
 
 Fair play (a hard rule): while the user plays a game on Lichess, the app refuses analysis (engine evaluation, the \
 explorer, the tablebase, reviews, the repertoire, other players' imports) with 409 `fair_play`. Never work around \
 it, and never analyse or suggest moves for a position from a game the user is playing. In a Lichess game, \
 `act_in_game` only ever sends the move or action the user chose.
 
-Real accounts: tools whose description says they act on the user's real Lichess account (challenges, seeks, the bot \
-going online or seeking, tokens, logging out, moves in Lichess games) or on the outside world (push, downloads) are \
-used only when the user asked for that action.";
+Real accounts: tools whose description says they act on the user's real Lichess account (challenges, seeks, tokens, \
+logging out, moves in Lichess games) or on the outside world (downloads) are used only when the user asked for that \
+action.";
 
 /// How long the wait tools sleep between looks.
 const POLL: Duration = Duration::from_secs(2);
@@ -150,17 +148,13 @@ impl Server {
         Ok(result(answer))
     }
 
-    /// `wait_for_work` and `wait_for_idea`: look every few seconds until the item ends or the time is up.
-    async fn wait(&self, args: &Map<String, Value>, idea: bool) -> Result<CallToolResult, ErrorData> {
+    /// `wait_for_work`: look every few seconds until the item ends or the time is up.
+    async fn wait(&self, args: &Map<String, Value>) -> Result<CallToolResult, ErrorData> {
         let Some(id) = args.get("id").and_then(Value::as_i64) else {
             return Ok(CallToolResult::error(vec![ContentBlock::text("`id` (an integer) is required")]));
         };
         let timeout = args.get("timeout_seconds").and_then(Value::as_u64).unwrap_or(600).min(MAX_WAIT_SECONDS);
-        let (uri, ended): (String, &[&str]) = if idea {
-            (format!("/api/ideas/{id}"), &["kept", "dropped", "stopped", "failed"])
-        } else {
-            (format!("/api/work/{id}"), &["done", "failed", "stopped"])
-        };
+        let (uri, ended): (String, &[&str]) = (format!("/api/work/{id}"), &["done", "failed", "stopped"]);
         let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout);
         loop {
             let answer = self.send(Method::GET, &uri, None).await?;
@@ -171,8 +165,7 @@ impl Server {
             let finished = item.get("status").and_then(Value::as_str).is_some_and(|s| ended.contains(&s));
             let now = tokio::time::Instant::now();
             if finished || now >= deadline {
-                let key = if idea { "idea" } else { "work" };
-                let text = json!({ "finished": finished, key: item }).to_string();
+                let text = json!({ "finished": finished, "work": item }).to_string();
                 return Ok(CallToolResult::success(vec![ContentBlock::text(text)]));
             }
             tokio::time::sleep(POLL.min(deadline - now)).await;
@@ -262,8 +255,8 @@ fn tool(op: &Operation) -> Tool {
     Tool::new(op.id.clone(), op.description.clone(), Arc::new(op.schema.clone())).with_annotations(annotations)
 }
 
-/// The two tools that wait.
-fn wait_tools() -> [Tool; 2] {
+/// The tool that waits.
+fn wait_tools() -> [Tool; 1] {
     let schema = |what: &str| {
         let Value::Object(map) = json!({
             "type": "object",
@@ -282,23 +275,14 @@ fn wait_tools() -> [Tool; 2] {
         Arc::new(map)
     };
     let annotations = || ToolAnnotations::new().read_only(true).destructive(false).idempotent(true).open_world(false);
-    [
-        Tool::new(
-            "wait_for_work",
-            "Waits until a work item (a build, trial, tune, review, import, ...) is done, failed or stopped, or until \
+    [Tool::new(
+        "wait_for_work",
+        "Waits until a work item (a review, an import, calibration, setup) is done, failed or stopped, or until \
              `timeout_seconds` pass, looking every two seconds. Answers `{ finished, work }`; call again to keep \
              waiting. Work paused for a live game stays unfinished until it resumes.",
-            schema("work item"),
-        )
-        .with_annotations(annotations()),
-        Tool::new(
-            "wait_for_idea",
-            "Waits until an idea ends (kept, dropped, stopped or failed), or until `timeout_seconds` pass, looking \
-             every two seconds. Answers `{ finished, idea }` with its trials and verdict; call again to keep waiting.",
-            schema("idea"),
-        )
-        .with_annotations(annotations()),
-    ]
+        schema("work item"),
+    )
+    .with_annotations(annotations())]
 }
 
 impl ServerHandler for Server {
@@ -325,8 +309,7 @@ impl ServerHandler for Server {
     ) -> Result<CallToolResponse, ErrorData> {
         let args = request.arguments.unwrap_or_default();
         let result = match &*request.name {
-            "wait_for_work" => self.wait(&args, false).await?,
-            "wait_for_idea" => self.wait(&args, true).await?,
+            "wait_for_work" => self.wait(&args).await?,
             name => match operations().iter().find(|op| op.id == name) {
                 Some(op) => self.call_operation(op, args).await?,
                 None => return Err(ErrorData::invalid_params(format!("there is no tool {name}"), None)),
@@ -357,8 +340,8 @@ mod tests {
         assert_eq!(uri, "/api/games?player=you&speed=blitz,rapid");
         let (uri, _) = request(op("get_player"), args(json!({ "key": "lichess:alice" }))).unwrap();
         assert_eq!(uri, "/api/players/lichess%3Aalice");
-        let (uri, body) = request(op("create_idea"), args(json!({ "body": { "title": "x" } }))).unwrap();
-        assert_eq!((uri.as_str(), body.unwrap()), ("/api/ideas", br#"{"title":"x"}"#.to_vec()));
+        let (uri, body) = request(op("add_engine"), args(json!({ "body": { "name": "x" } }))).unwrap();
+        assert_eq!((uri.as_str(), body.unwrap()), ("/api/engines", br#"{"name":"x"}"#.to_vec()));
         assert!(request(op("get_game"), args(json!({}))).unwrap_err().contains("`id` is required"));
         assert!(request(op("get_game"), args(json!({ "id": 1, "nope": 2 }))).unwrap_err().contains("unknown argument"));
         assert!(request(op("get_game"), args(json!({ "id": 1, "body": {} }))).unwrap_err().contains("takes no body"));

@@ -21,7 +21,7 @@ use crate::App;
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Path)]
 pub struct PlayerPath {
-    /// `you`, `dameless`, `lichess:<name>` or `stockfish:<1-8>`.
+    /// `you`, `engine:<id>` or `lichess:<name>`.
     pub key: String,
 }
 
@@ -198,7 +198,7 @@ pub async fn import_player(
         .scheduler
         .submit(NewWork {
             kind: WorkKind::Import,
-            priority: Priority::Interactive,
+            priority: Priority::Review,
             title,
             subject: Subject::Player { key },
             spec: serde_json::to_value(spec).map_err(|e| Error::internal(e.to_string()))?,

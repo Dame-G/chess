@@ -57,7 +57,6 @@ impl State {
     fn core_waiter_ahead(&self, key: (u8, u64), total: u32) -> bool {
         self.core_waiters.range(..key).any(|(_, w)| w.min <= total)
     }
-
 }
 
 /// Where a request that has not waited stands in line: behind everyone of its priority or higher.
@@ -385,7 +384,10 @@ mod tests {
         let rx = ledger.changed();
         drop(background);
         assert!(rx.has_changed().unwrap());
-        assert!(ledger.grant(WorkId(1), Priority::Background, 1, 4).is_none(), "the background must not jump the urgent");
+        assert!(
+            ledger.grant(WorkId(1), Priority::Background, 1, 4).is_none(),
+            "the background must not jump the urgent"
+        );
         let background_waits = ledger.request_cores(WorkId(1), Priority::Background, 1, 4);
         assert!(background_waits.grant().is_none());
         let b = urgent.grant().unwrap();
@@ -441,5 +443,4 @@ mod tests {
         assert_eq!(background.grant().unwrap().cores(), 2);
         assert_eq!(ledger.waiting_for_cores(), 0);
     }
-
 }

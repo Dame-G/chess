@@ -76,7 +76,7 @@ async fn the_binary_is_a_client() {
 
     // Play a move against the fake engine and get the reply.
     let (ok, out, err) = tokio::task::block_in_place(|| {
-        cli(&t, &["play", "--white", "you", "--black", "dameless", "--movetime", "20", "--json"])
+        cli(&t, &["play", "--white", "you", "--black", "fake", "--movetime", "20", "--json"])
     });
     assert!(ok, "{err}");
     let game: Value = serde_json::from_str(&out).unwrap();

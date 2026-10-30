@@ -225,7 +225,10 @@ mod tests {
         let idea = store.insert_work(new(Priority::Background, "idea")).await.unwrap();
         let review = store.insert_work(new(Priority::Review, "review")).await.unwrap();
         let idea2 = store
-            .insert_work(NewWork { subject: Subject::Player { key: PlayerKey::You }, ..new(Priority::Background, "idea 2") })
+            .insert_work(NewWork {
+                subject: Subject::Player { key: PlayerKey::You },
+                ..new(Priority::Background, "idea 2")
+            })
             .await
             .unwrap();
         assert_eq!(idea.status, WorkStatus::Queued);

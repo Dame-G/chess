@@ -256,7 +256,10 @@ mod tests {
         let (store, _dir) = testing::store();
         let mut ids = Vec::new();
         for i in 0..5 {
-            let id = store.insert_game(local(PlayerKey::You, PlayerKey::Engine("stockfish".into()), i * 1000)).await.unwrap();
+            let id = store
+                .insert_game(local(PlayerKey::You, PlayerKey::Engine("stockfish".into()), i * 1000))
+                .await
+                .unwrap();
             if i < 4 {
                 store
                     .finish_game(id, GameEnd::new(Outcome::WhiteWins, Ending::Checkmate), Timestamp::from_unix_ms(i))

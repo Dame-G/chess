@@ -20,11 +20,7 @@
 //!
 //! The output has, per game, both accuracies and each move's judgement, classification and score before it.
 
-use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::{collections::VecDeque, sync::Mutex, time::Instant};
 
 use dameless_analysis::{Eval, ReviewRequest, ReviewResult, Reviews, search};
 use dameless_core::{
@@ -123,8 +119,7 @@ async fn main() {
 /// The app's own review, end to end, in a fresh data directory.
 async fn app(engine: &std::path::Path, games: &[Game], cores: usize, nodes: u64) -> (Vec<GameOut>, u64) {
     let dir = tempfile::tempdir().unwrap();
-    let config =
-        Config::new(dir.path().join("data"), "127.0.0.1:0".parse().unwrap(), cores as u32);
+    let config = Config::new(dir.path().join("data"), "127.0.0.1:0".parse().unwrap(), cores as u32);
     let hub = Hub::open(config).unwrap();
     let eval = Eval::new(hub.clone(), FixedEngines::new().with("bench", engine, &[]).shared());
     let mut ids = Vec::new();
