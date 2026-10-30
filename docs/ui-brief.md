@@ -4,7 +4,9 @@ Status: audit and direction, written by the design director. Implementers: read 
 
 Audit evidence is in `docs/ui-audit/` (PNGs, NOT yet git-ignored: add `/docs/ui-audit` to .gitignore before committing; regenerate with the scripts described at the end). Every screenshot named below lives there. The fixtures used: `?fixtures`, `?fixtures=empty|error|loading|newcomer|long|settings-edge`. `real-*.png` are read-only shots of the live app at :7979.
 
-Vocabulary rules from AGENTS.md still hold (you, Dameless, version, champion, idea, trial, game, player, work, review, connection). Never in UI copy: build (except diagnostics), branch (except the idea form), match, experiment, test, batch, job, runner, human.
+Vocabulary rules from AGENTS.md hold (you, engine, analysis engine, level, game, player, work, review, connection). Never in UI copy: build, match, experiment, test, batch, job, runner, human.
+
+The app no longer has the Dameless sheet, ideas, trials, versions, the bot or training: the parts of sections 5 to 7 about them have no screen to apply to. The tokens, the kit, the layout and the rules (sections 1 to 4) stand, and `docs/design.md` › The web app lists the screens as they are.
 
 ---
 
