@@ -7406,6 +7406,7 @@
           "date",
           "answers",
           "passes",
+          "hinted",
           "rate",
           "rolling"
         ],

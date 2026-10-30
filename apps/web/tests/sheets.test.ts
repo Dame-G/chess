@@ -56,6 +56,7 @@ function profile(patch: Partial<Profile> & { score?: number | null; acpl?: numbe
     longest_win_streak: 3,
     moments: { best: [], blunders: [], most_accurate_game: null, least_accurate_game: null },
     weak_spots: [],
+    themes: [],
     ...patch,
   };
 }

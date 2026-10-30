@@ -50,10 +50,10 @@ const verbs = computed<CommandItem[]>(() => [
     ? [
         {
           id: "do:drills",
-          label: "Drills",
+          label: "Train",
           group: "Do",
           shortcut: "d",
-          keywords: ["practice", "mistakes"],
+          keywords: ["drills", "practice", "mistakes", "themes"],
         },
       ]
     : []),

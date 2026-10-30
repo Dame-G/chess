@@ -358,7 +358,6 @@ pub struct HitRatePoint {
     /// Passes found without a hint.
     pub passes: u32,
     /// Passes found with a hint, each worth half in the rates.
-    #[serde(default)]
     pub hinted: u32,
     /// Credit per answer that day, 0 to 1.
     pub rate: f64,

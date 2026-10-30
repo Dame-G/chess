@@ -2692,7 +2692,7 @@ export interface components {
              * Format: int32
              * @description Passes found with a hint, each worth half in the rates.
              */
-            hinted?: number;
+            hinted: number;
             /**
              * Format: int32
              * @description Passes found without a hint.

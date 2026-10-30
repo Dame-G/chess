@@ -10,7 +10,7 @@ import { INITIAL_FEN } from "../board/position";
 import { formatPercent, plural } from "../format";
 import { departures, mainLineIds, outline, share, type OutlineBranch, type OutlineRow } from "../sheets/repertoire";
 import { useRepertoire } from "../stores/repertoire";
-import { stored } from "../stored";
+import { usePrep } from "../stores/prep";
 import UiEmpty from "../ui/UiEmpty.vue";
 import UiSection from "../ui/UiSection.vue";
 import UiSeg from "../ui/UiSeg.vue";
@@ -25,7 +25,12 @@ const repertoire = useRepertoire();
 const board = useBoard();
 const router = useRouter();
 
-const side = stored<Side>("repertoire.side", "white");
+/** The colour is Prep's, so the two sections follow one choice. */
+const colour = usePrep();
+const side = computed<Side>({
+  get: () => colour.side,
+  set: (s) => (colour.side = s),
+});
 onMounted(() => void repertoire.load());
 
 const rep = computed(() => repertoire.sides[side.value]);

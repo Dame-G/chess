@@ -11,6 +11,7 @@ import type {
   Dataset,
   Departure,
   Drill,
+  DrillHint,
   DrillOutcome,
   EventKind,
   EventPayloads,
@@ -19,11 +20,15 @@ import type {
   Idea,
   LevelRating,
   Net,
+  Prep,
+  PrepLine,
   ProgressChart,
   Repertoire,
   RepertoireMove,
   RepertoireNode,
   Side,
+  ThemeKind,
+  WeakSpot,
   Status,
   TrainStep,
   Work,
@@ -70,6 +75,8 @@ interface DrillSpec {
   swing: number;
   opening: string;
   phase: "opening" | "middlegame" | "endgame";
+  kind: ThemeKind;
+  detail?: string;
   due: number;
 }
 
@@ -82,6 +89,7 @@ const DRILLS: DrillSpec[] = [
     swing: 14,
     opening: "Italian Game",
     phase: "opening",
+    kind: "opening_error",
     due: -2,
   },
   {
@@ -92,6 +100,8 @@ const DRILLS: DrillSpec[] = [
     swing: 19,
     opening: "Sicilian Defense",
     phase: "middlegame",
+    kind: "king_safety",
+    detail: "king moved, castling lost",
     due: -1,
   },
   {
@@ -102,6 +112,7 @@ const DRILLS: DrillSpec[] = [
     swing: 11,
     opening: "Queen's Gambit Declined",
     phase: "opening",
+    kind: "opening_error",
     due: 0,
   },
   {
@@ -112,6 +123,8 @@ const DRILLS: DrillSpec[] = [
     swing: 22,
     opening: "London System",
     phase: "middlegame",
+    kind: "missed_tactic",
+    detail: "wins material",
     due: 0,
   },
   {
@@ -122,6 +135,8 @@ const DRILLS: DrillSpec[] = [
     swing: 16,
     opening: "Caro-Kann Defense",
     phase: "opening",
+    kind: "time_trouble",
+    detail: "7 s left",
     due: 0,
   },
   {
@@ -132,6 +147,8 @@ const DRILLS: DrillSpec[] = [
     swing: 12,
     opening: "Italian Game",
     phase: "opening",
+    kind: "hanging_piece",
+    detail: "a bishop",
     due: 3,
   },
   {
@@ -142,6 +159,8 @@ const DRILLS: DrillSpec[] = [
     swing: 31,
     opening: "Philidor Defense",
     phase: "middlegame",
+    kind: "missed_tactic",
+    detail: "winning capture",
     due: 5,
   },
 ];
@@ -167,7 +186,7 @@ function makeDrills(ctx: LearnContext): Drill[] {
       played: playedUci,
       played_san: s.played,
       swing: s.swing,
-      theme: { opening: s.opening, phase: s.phase },
+      theme: { opening: s.opening, phase: s.phase, kind: s.kind, detail: s.detail ?? null },
       due: ctx.minutesAgo(-s.due * 60 * 24 + (s.due <= 0 ? 60 : 0)),
       interval_days: answered ? 6 : 0,
       ease: 2.5,
@@ -179,14 +198,34 @@ function makeDrills(ctx: LearnContext): Drill[] {
   });
 }
 
+/** A drill as the server sends it before it is answered: the position and its theme, without the answer. */
+function question(d: Drill): Drill {
+  return { ...d, best_moves: [], best_san: [], line: [], played: "", played_san: "" };
+}
+
+/** `core::drills::hint`: what kind of move, then which piece (and where it stands), never the move. */
+function hintOf(d: Drill, level: number): DrillHint {
+  const san = d.best_san[0] ?? "";
+  if (level < 2) {
+    const text = san.includes("+") || san.includes("#") ? "A check" : san.includes("x") ? "A capture" : "A quiet move";
+    return { level, text, from: null };
+  }
+  const piece = san.startsWith("O")
+    ? "king"
+    : (({ N: "knight", B: "bishop", R: "rook", Q: "queen", K: "king" } as Record<string, string>)[san[0] ?? ""] ??
+      "pawn");
+  return { level, text: `Move the ${piece}`, from: (d.best_moves[0] ?? "").slice(0, 2) || null };
+}
+
 /** SM-2 with two answers, as `core::drills::grade` has it. */
-function grade(d: Drill, outcome: DrillOutcome, now: string): Drill {
+function grade(d: Drill, outcome: DrillOutcome, now: string, hinted = false): Drill {
   const pass = outcome === "pass";
-  const interval = !pass ? 1 : d.reps === 0 ? 1 : d.reps === 1 ? 6 : Math.round(d.interval_days * d.ease);
-  const ease = Math.max(1.3, d.ease + (pass ? 0.1 : -0.32));
+  const half = pass && hinted;
+  const interval = !pass || half ? 1 : d.reps === 0 ? 1 : d.reps === 1 ? 6 : Math.round(d.interval_days * d.ease);
+  const ease = Math.max(1.3, d.ease + (half ? -0.14 : pass ? 0.1 : -0.32));
   return {
     ...d,
-    reps: pass ? d.reps + 1 : 0,
+    reps: half ? d.reps : pass ? d.reps + 1 : 0,
     lapses: pass ? d.lapses : d.lapses + 1,
     interval_days: interval,
     ease,
@@ -202,10 +241,11 @@ function trend(): HitRatePoint[] {
   for (let day = 13; day >= 0; day--) {
     const n = 4 + ((day * 5) % 5);
     const p = Math.round(n * (0.4 + (13 - day) * 0.018 + (day % 3 === 0 ? -0.05 : 0.04)));
-    passes += p;
+    const hinted = day % 2 === 0 && p > 1 ? 1 : 0;
+    passes += p - 0.5 * hinted;
     answers += n;
     const date = new Date(Date.now() - day * 86_400_000).toISOString().slice(0, 10);
-    out.push({ date, answers: n, passes: p, rate: p / n, rolling: passes / answers });
+    out.push({ date, answers: n, passes: p - hinted, hinted, rate: (p - 0.5 * hinted) / n, rolling: passes / answers });
   }
   return out;
 }
@@ -277,6 +317,170 @@ const BLACK_LINES: Line[] = [
   { sans: "d4 Nf6 Bf4 d5 e3 c5 c3 Nc6 Nd2 e6", games: 7, wins: 4, draws: 1, out: 9 },
   { sans: "e4 c6 d4 d5 e5 Bf5 Nf3 e6", games: 3, wins: 1, draws: 0, out: 5 },
 ];
+
+// ---- Your prep
+
+interface PrepSpec {
+  name: string;
+  eco: string;
+  sans: string;
+  games: number;
+  wins: number;
+  draws: number;
+  reviewed: number;
+  /** Reviewed games with a mistake in the first twelve moves, the mistakes in all, and what they cost. */
+  early: number;
+  mistakes: number;
+  swing: number;
+}
+
+const WHITE_PREP: PrepSpec[] = [
+  {
+    name: "Italian Game: Giuoco Piano",
+    eco: "C54",
+    sans: "e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6",
+    games: 14,
+    wins: 8,
+    draws: 1,
+    reviewed: 12,
+    early: 2,
+    mistakes: 2,
+    swing: 31.4,
+  },
+  {
+    name: "Sicilian Defense: Najdorf Variation",
+    eco: "B90",
+    sans: "e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 a6",
+    games: 9,
+    wins: 2,
+    draws: 1,
+    reviewed: 8,
+    early: 4,
+    mistakes: 6,
+    swing: 112.6,
+  },
+  {
+    name: "Queen's Gambit Declined: Orthodox Defense",
+    eco: "D63",
+    sans: "d4 d5 c4 e6 Nc3 Nf6 Bg5 Be7 e3 O-O",
+    games: 7,
+    wins: 3,
+    draws: 2,
+    reviewed: 7,
+    early: 0,
+    mistakes: 0,
+    swing: 0,
+  },
+  {
+    name: "Caro-Kann Defense: Advance Variation",
+    eco: "B12",
+    sans: "e4 c6 d4 d5 e5",
+    games: 6,
+    wins: 4,
+    draws: 1,
+    reviewed: 5,
+    early: 2,
+    mistakes: 3,
+    swing: 47.5,
+  },
+  {
+    name: "Philidor Defense",
+    eco: "C41",
+    sans: "e4 e5 Nf3 d6",
+    games: 4,
+    wins: 3,
+    draws: 0,
+    reviewed: 4,
+    early: 0,
+    mistakes: 0,
+    swing: 0,
+  },
+];
+const BLACK_PREP: PrepSpec[] = [
+  {
+    name: "Sicilian Defense: Najdorf Variation",
+    eco: "B90",
+    sans: "e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 a6",
+    games: 12,
+    wins: 5,
+    draws: 1,
+    reviewed: 10,
+    early: 3,
+    mistakes: 4,
+    swing: 66.3,
+  },
+  {
+    name: "London System",
+    eco: "D02",
+    sans: "d4 Nf6 Bf4 d5 e3 c5 c3 Nc6",
+    games: 8,
+    wins: 5,
+    draws: 1,
+    reviewed: 8,
+    early: 1,
+    mistakes: 1,
+    swing: 14.8,
+  },
+  {
+    name: "Italian Game: Giuoco Piano",
+    eco: "C54",
+    sans: "e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6",
+    games: 6,
+    wins: 2,
+    draws: 2,
+    reviewed: 5,
+    early: 0,
+    mistakes: 0,
+    swing: 0,
+  },
+];
+
+function prepLines(side: Side, specs: PrepSpec[], games: GameId[]): Prep {
+  const lines: PrepLine[] = specs.map((s, i) => {
+    const sans = s.sans.split(" ");
+    const { ucis, fens } = walk(s.sans);
+    const losses = s.games - s.wins - s.draws;
+    const score = (s.wins + s.draws / 2) / s.games;
+    const pgn = sans.map((m, n) => (n % 2 === 0 ? `${n / 2 + 1}. ${m}` : m)).join(" ");
+    const worst: WeakSpot | null = s.mistakes
+      ? {
+          game: games[i % Math.max(1, games.length)] ?? 1,
+          ply: Math.min(ucis.length + 1, 24),
+          fen: fens.at(-1)!,
+          played: "h3",
+          best: "Re1",
+          swing: Math.round((s.swing / s.mistakes) * 1.6 * 10) / 10,
+          opening: s.name.split(":")[0]!,
+          phase: "opening",
+          recurring: s.mistakes,
+          kind: "opening_error",
+          detail: null,
+        }
+      : null;
+    return {
+      name: s.name,
+      eco: s.eco,
+      moves: ucis,
+      pgn,
+      fen: fens.at(-1)!,
+      games: s.games,
+      wins: s.wins,
+      draws: s.draws,
+      losses,
+      score,
+      reviewed: s.reviewed,
+      early_games: s.early,
+      early_mistakes: s.mistakes,
+      early_swing: s.swing,
+      worst,
+      drill_games: games.slice(0, Math.max(1, s.early)).filter(() => s.early > 0),
+      scores_badly: s.games >= 4 && score < 0.45,
+      goes_wrong_early: s.reviewed >= 3 && s.early / s.reviewed >= 0.3,
+      example: games[i % Math.max(1, games.length)] ?? 1,
+    };
+  });
+  return { side, games: specs.reduce((n, s) => n + s.games, 0), lines };
+}
 
 interface Acc {
   fen: string;
@@ -514,6 +718,8 @@ export function createLearnRoutes(ctx: LearnContext): Handler {
   let drills: Drill[] | null = null;
   const theDrills = () => (drills ??= makeDrills(ctx));
   const answered: { at: string; outcome: DrillOutcome }[] = [];
+  /** The deepest hint asked for each drill not answered yet. */
+  const hints = new Map<number, number>();
   const netList = nets(ctx);
   const dataList = datasets(ctx);
   const live = 7;
@@ -610,17 +816,35 @@ export function createLearnRoutes(ctx: LearnContext): Handler {
     if (method === "GET") {
       if (path === "/api/drills/today") {
         const now = Date.now();
+        const theme = url.searchParams.get("theme");
+        const games = (url.searchParams.get("games") ?? "").split(",").filter(Boolean).map(Number);
+        const maxPly = Number(url.searchParams.get("max_ply") ?? Infinity);
+        // A theme or a line is a session on it: whatever is due first, then new ones, then those not due yet.
+        const session = theme !== null || games.length > 0;
         const list = theDrills()
-          .filter((d) => Date.parse(d.due) <= now + 3_600_000)
-          .sort((a, b) => Date.parse(a.due) - Date.parse(b.due));
+          .filter((d) => (session ? true : Date.parse(d.due) <= now + 3_600_000))
+          .filter((d) => (theme ? d.theme.kind === theme : true))
+          .filter((d) => (games.length ? games.includes(d.game) && d.ply <= maxPly : true))
+          .sort((a, b) => Date.parse(a.due) - Date.parse(b.due))
+          .slice(0, session ? 10 : 30);
         return reply("/api/drills/today", "get", {
-          drills: structuredClone(list),
+          drills: list.map(question),
           due: list.filter((d) => d.reps > 0 || d.answered_at).length,
           new: list.filter((d) => !d.answered_at).length,
           started_today: 0,
+          total: theDrills().length,
         });
       }
-      if (path === "/api/drills") return reply("/api/drills", "get", structuredClone(theDrills()));
+      if (path === "/api/drills") return reply("/api/drills", "get", theDrills().map(question));
+      if (path === "/api/players/you/prep") {
+        if (explorerRefused()) return error(409, "fair_play", ctx.status.policy.reason ?? "");
+        const side = (url.searchParams.get("side") ?? "white") as Side;
+        return reply(
+          "/api/players/you/prep",
+          "get",
+          prepLines(side, side === "white" ? WHITE_PREP : BLACK_PREP, ctx.yourGames()),
+        );
+      }
       if (path === "/api/drills/trend") return reply("/api/drills/trend", "get", trend());
       if (path === "/api/levels")
         return reply("/api/levels", "get", {
@@ -680,6 +904,13 @@ export function createLearnRoutes(ctx: LearnContext): Handler {
       if (path === "/api/drills") {
         return reply("/api/drills", "post", []);
       }
+      if ((m = path.match(/^\/api\/drills\/(\d+)\/hint$/))) {
+        const d = theDrills().find((x) => x.id === Number(m![1]));
+        if (!d) return error(404, "not_found", "No such drill.");
+        const level = Math.min(2, (hints.get(d.id) ?? 0) + 1);
+        hints.set(d.id, level);
+        return reply("/api/drills/{id}/hint", "post", hintOf(d, level));
+      }
       if ((m = path.match(/^\/api\/drills\/(\d+)\/answer$/))) {
         const d = theDrills().find((x) => x.id === Number(m![1]));
         if (!d) return error(404, "not_found", "No such drill.");
@@ -688,16 +919,18 @@ export function createLearnRoutes(ctx: LearnContext): Handler {
         const parsed = parseSan(pos, move);
         const uci = parsed ? uciOf(pos, parsed) : move;
         const outcome: DrillOutcome = d.best_moves.includes(uci) || d.best_san.includes(move) ? "pass" : "fail";
+        const hinted = hints.delete(d.id) && outcome === "pass";
         const now = new Date().toISOString();
-        const next = grade(d, outcome, now);
+        const next = grade(d, outcome, now, hinted);
         drills = theDrills().map((x) => (x.id === d.id ? next : x));
         answered.push({ at: now, outcome });
         const isUci = /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(move);
         const playedSan = isUci ? (playUci(setup(d.fen)!, move)?.san ?? move) : move;
-        emit("drill.upserted", "player:you", structuredClone(next));
+        emit("drill.upserted", "player:you", structuredClone(question(next)));
         emit("drill.answered", "player:you", { drill: d.id, outcome, at: now });
         return reply("/api/drills/{id}/answer", "post", {
           outcome,
+          hinted,
           drill: structuredClone(next),
           best_moves: d.best_moves,
           best_san: d.best_san,
