@@ -4,15 +4,15 @@ mod common;
 
 use std::time::Duration;
 
-use common::{eventually, harness};
-use dameless_analysis::{Budget, EvalRequest};
-use dameless_core::{
+use chess_analysis::{Budget, EvalRequest};
+use chess_core::{
     ErrorCode, Score,
     chess::{Position, position_key},
     events::{EvalInfo, EventKind},
     review::ToSearch,
 };
-use dameless_hub::{Next, Subscription, TopicFilter};
+use chess_hub::{Next, Subscription, TopicFilter};
+use common::{eventually, harness};
 
 fn request(client: &str, moves: &[&str]) -> EvalRequest {
     EvalRequest {
@@ -168,7 +168,7 @@ async fn evaluations_are_cached_by_position_engine_nodes_and_multipv() {
     let other = h.eval.evaluate_positions(&[one(&after_e4)], &h.engine, 20_000, 2, 1).await.unwrap();
     assert_eq!((other.searched, other.cached), (1, 0));
     // An engine with a fixed budget cannot analyse.
-    let maia = dameless_analysis::EvalRequest { engine: Some("maia-1500".into()), ..request("tab-9", &[]) };
+    let maia = chess_analysis::EvalRequest { engine: Some("maia-1500".into()), ..request("tab-9", &[]) };
     assert_eq!(h.eval.start_session(maia).await.unwrap_err().status(), 400);
 
     // Many at once: the cached one is read, a repeated one searched once, the finished one not at all.

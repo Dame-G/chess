@@ -1,16 +1,16 @@
 //! From the engine's words to the domain's: UCI scores are the side to move's, every score analysis stores or sends is
 //! White's. Everything that reads an engine here goes through these functions, so the flip happens in one place.
 
-use dameless_core::{
+use chess_core::{
     Error, Score, Side,
     events::EvalLine,
     review::{EvalLine as PositionLine, PositionEval},
 };
-use dameless_engine::{
+use chess_engine::{
     pool::EngineSpec,
     uci::{self, Engine, Info, Limits, Position, SearchEvent},
 };
-use dameless_work::EngineBinary;
+use chess_work::EngineBinary;
 
 /// Hash for review searches, in MiB: small, since a search at a review's budget fills little of it, and a run's next
 /// position needs what the search before it found, not every table entry since the run began.

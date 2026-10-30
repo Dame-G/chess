@@ -13,17 +13,17 @@ use std::{
 };
 
 use async_trait::async_trait;
-use dameless_core::{
+use chess_core::{
     Error,
     engines::{Builtin, MAIA_RATINGS, Package, builtin},
     work::{Priority, Progress, Subject, WorkKind},
 };
-use dameless_engine::{
+use chess_engine::{
     proc,
     tools::{self, ReleaseAsset},
 };
-use dameless_hub::{Executor, WorkContext};
-use dameless_store::{EngineRecord, NewWork};
+use chess_hub::{Executor, WorkContext};
+use chess_store::{EngineRecord, NewWork};
 use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -125,7 +125,7 @@ fn stockfish_binary(dir: &Path) -> Option<PathBuf> {
 
 /// lc0: the one setup unpacked, else one on the PATH.
 fn lc0_binary(dir: &Path) -> Option<PathBuf> {
-    tools::find_binary(dir, |n| n == dameless_engine::exe("lc0")).or_else(|| proc::which("lc0"))
+    tools::find_binary(dir, |n| n == chess_engine::exe("lc0")).or_else(|| proc::which("lc0"))
 }
 
 /// Setup: the plan and the `setup` work. Cheap to clone.
@@ -299,7 +299,7 @@ impl Executor for Setup {
                         .install(EngineRecord::new(
                             "stockfish",
                             "Stockfish",
-                            dameless_core::engines::EngineKind::Builtin,
+                            chess_core::engines::EngineKind::Builtin,
                             bin.display().to_string(),
                         ))
                         .await?;
@@ -330,7 +330,7 @@ impl Executor for Setup {
                         let mut record = EngineRecord::new(
                             &id,
                             b.name,
-                            dameless_core::engines::EngineKind::Builtin,
+                            chess_core::engines::EngineKind::Builtin,
                             lc0.display().to_string(),
                         );
                         record.options.insert("WeightsFile".into(), net.display().to_string());

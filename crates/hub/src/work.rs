@@ -16,13 +16,13 @@ use std::{
 };
 
 use async_trait::async_trait;
-use dameless_core::{
+use chess_core::{
     Error,
     events::{AssistKind, Payload, WorkLog},
     ids::WorkId,
     work::{Priority, Progress, WorkKind},
 };
-use dameless_store::work::WorkUpdate;
+use chess_store::work::WorkUpdate;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;

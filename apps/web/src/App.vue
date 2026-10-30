@@ -67,7 +67,7 @@ watchEffect(() => {
     ? `${s.you === "white" ? "You" : seatName(s.white)} vs ${s.you === "black" ? "You" : seatName(s.black)}`
     : "";
   const what = place || game;
-  document.title = what ? `${what} · Dameless` : "Dameless";
+  document.title = what ? `${what} · Chess` : "Chess";
 });
 </script>
 

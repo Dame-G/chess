@@ -18,16 +18,16 @@ use std::{
 };
 
 use async_trait::async_trait;
-use dameless_core::{
+use chess_core::{
     Error, GameId, PlayerKey, Speed,
     events::{AssistKind, Payload, ReviewUpserted},
     game::{Game, GameStatus},
     review::{self, PositionEval, Review, ReviewInput, judge_game, to_search},
     work::{Priority, Progress, Subject, Work, WorkKind},
 };
-use dameless_hub::{Executor, WorkContext};
-use dameless_store::{GameFilter, NewWork, positions::SearchKey};
-use dameless_work::Scheduler;
+use chess_hub::{Executor, WorkContext};
+use chess_store::{GameFilter, NewWork, positions::SearchKey};
+use chess_work::Scheduler;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 

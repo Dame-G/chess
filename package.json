@@ -1,8 +1,8 @@
 {
-  "name": "dameless",
+  "name": "chess",
   "private": true,
   "version": "0.0.0",
-  "description": "Dameless: you and your engine, getting stronger at one board. Published at https://chess.dame.gg.",
+  "description": "Chess: you and your engine, getting stronger at one board. Published at https://chess.dame.gg.",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "packageManager": "pnpm@12.14.0",

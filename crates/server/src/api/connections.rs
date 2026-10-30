@@ -9,8 +9,8 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     routing::get,
 };
-use dameless_core::{ConnectionKey, Error, lichess::ConnectionStatus};
-use dameless_play::{
+use chess_core::{ConnectionKey, Error, lichess::ConnectionStatus};
+use chess_play::{
     LoginStarted,
     you::{ChallengeBody, ChallengeSent, SeekRequestBody},
 };
@@ -61,7 +61,7 @@ pub struct LoginBody {
 /// `?lichess=error&message=…`). The link works once, for ten minutes.
 #[utoipa::path(post, path = "/api/connections/you/login", operation_id = "login", tag = "connections",
     request_body(content = Option<LoginBody>),
-    responses((status = 200, body = LoginStarted), (status = 400, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = LoginStarted), (status = 400, body = chess_core::error::ErrorBody)))]
 pub async fn login(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
@@ -113,7 +113,7 @@ pub struct TokenBody {
 /// Stores a Lichess token after Lichess checks it: a person's account (not a BOT) allowed to play.
 #[utoipa::path(put, path = "/api/connections/{key}/token", operation_id = "set_connection_token", tag = "connections",
     params(KeyPath), request_body = TokenBody,
-    responses((status = 200, body = ConnectionStatus), (status = 400, body = dameless_core::error::ErrorBody), (status = 502, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = ConnectionStatus), (status = 400, body = chess_core::error::ErrorBody), (status = 502, body = chess_core::error::ErrorBody)))]
 pub async fn set_token(
     State(app): State<Arc<App>>,
     Path(p): Path<KeyPath>,
@@ -134,7 +134,7 @@ pub async fn logout(State(app): State<Arc<App>>, Path(p): Path<KeyPath>) -> ApiR
 /// Opens a seek in the lobby for you (rapid or slower, the Board API's rule). The game starts when someone takes it.
 #[utoipa::path(post, path = "/api/connections/you/seek", operation_id = "seek", tag = "connections",
     request_body = SeekRequestBody,
-    responses((status = 200, body = ConnectionStatus), (status = 400, body = dameless_core::error::ErrorBody), (status = 409, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = ConnectionStatus), (status = 400, body = chess_core::error::ErrorBody), (status = 409, body = chess_core::error::ErrorBody)))]
 pub async fn seek(State(app): State<Arc<App>>, Json(b): Json<SeekRequestBody>) -> ApiResult<Json<ConnectionStatus>> {
     Ok(Json(app.connections.you().seek(b).await?))
 }
@@ -149,7 +149,7 @@ pub async fn cancel_seek(State(app): State<Arc<App>>) -> Json<ConnectionStatus> 
 /// Challenges from your account: a player (blitz or slower) or Lichess's AI (`ai_level`).
 #[utoipa::path(post, path = "/api/connections/{key}/challenge", operation_id = "challenge", tag = "connections",
     params(KeyPath), request_body = ChallengeBody,
-    responses((status = 201, body = ChallengeSent), (status = 400, body = dameless_core::error::ErrorBody), (status = 409, body = dameless_core::error::ErrorBody)))]
+    responses((status = 201, body = ChallengeSent), (status = 400, body = chess_core::error::ErrorBody), (status = 409, body = chess_core::error::ErrorBody)))]
 pub async fn challenge(
     State(app): State<Arc<App>>,
     Path(p): Path<KeyPath>,
@@ -178,7 +178,7 @@ fn yours(key: &str) -> ApiResult<()> {
 /// variants): accept that on lichess.org.
 #[utoipa::path(post, path = "/api/connections/{key}/challenges/{id}/accept", operation_id = "accept_challenge",
     tag = "connections", params(ChallengePath),
-    responses((status = 200, body = ConnectionStatus), (status = 400, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = ConnectionStatus), (status = 400, body = chess_core::error::ErrorBody)))]
 pub async fn accept_challenge(
     State(app): State<Arc<App>>,
     Path(p): Path<ChallengePath>,
@@ -199,7 +199,7 @@ pub struct DeclineBody {
 /// Declines a challenge to you.
 #[utoipa::path(post, path = "/api/connections/{key}/challenges/{id}/decline", operation_id = "decline_challenge",
     tag = "connections", params(ChallengePath), request_body(content = Option<DeclineBody>),
-    responses((status = 200, body = ConnectionStatus), (status = 400, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = ConnectionStatus), (status = 400, body = chess_core::error::ErrorBody)))]
 pub async fn decline_challenge(
     State(app): State<Arc<App>>,
     Path(p): Path<ChallengePath>,
@@ -213,7 +213,7 @@ pub async fn decline_challenge(
 /// Withdraws a challenge of yours.
 #[utoipa::path(delete, path = "/api/connections/{key}/challenges/{id}", operation_id = "cancel_challenge",
     tag = "connections", params(ChallengePath),
-    responses((status = 200, body = ConnectionStatus), (status = 400, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = ConnectionStatus), (status = 400, body = chess_core::error::ErrorBody)))]
 pub async fn cancel_challenge(
     State(app): State<Arc<App>>,
     Path(p): Path<ChallengePath>,

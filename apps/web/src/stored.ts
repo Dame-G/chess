@@ -4,13 +4,13 @@ import { ref, watch, type Ref } from "vue";
 export function stored<T>(key: string, initial: T): Ref<T> {
   let value = initial;
   try {
-    const saved = localStorage.getItem(`dameless.${key}`);
+    const saved = localStorage.getItem(`chess.${key}`);
     if (saved !== null) value = JSON.parse(saved) as T;
   } catch {}
   const r = ref(value) as Ref<T>;
   watch(r, (v) => {
     try {
-      localStorage.setItem(`dameless.${key}`, JSON.stringify(v));
+      localStorage.setItem(`chess.${key}`, JSON.stringify(v));
     } catch {}
   });
   return r;

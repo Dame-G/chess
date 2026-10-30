@@ -39,7 +39,7 @@ const engine = ref("stockfish");
 const kvItems = [
   { label: "Cores", value: 15 },
   { label: "Analysis engine", value: "C:\\tools\\stockfish\\stockfish.exe", mono: true, copy: true },
-  { label: "Data", value: "C:\\Users\\dame\\AppData\\Local\\dameless", mono: true, copy: true },
+  { label: "Data", value: "C:\\Users\\dame\\AppData\\Local\\chess", mono: true, copy: true },
   { label: "Engines", value: "2 engines, 182 MB" },
   { label: "Status", value: "Healthy", tone: "win" as const },
 ];

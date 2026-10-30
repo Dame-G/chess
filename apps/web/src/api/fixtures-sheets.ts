@@ -645,7 +645,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
   };
 
   const status = ctx.status;
-  status.machine = { ...status.machine, data_dir: "C:\\Users\\dame\\AppData\\Local\\dameless" };
+  status.machine = { ...status.machine, data_dir: "C:\\Users\\dame\\AppData\\Local\\chess" };
 
   return (method, path, url, body) => {
     let m: RegExpMatchArray | null;
@@ -710,7 +710,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
               title: "Opening book",
               detail: "UHO_Lichess_4852_v1.epd is installed.",
             },
-            { key: "database", level: "ok", ok: true, title: "Database", detail: "dameless.db, 41 MB." },
+            { key: "database", level: "ok", ok: true, title: "Database", detail: "chess.db, 41 MB." },
             { key: "disk", level: "ok", ok: true, title: "Disk", detail: "212 GB free on the data drive." },
           ],
         });

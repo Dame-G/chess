@@ -4,14 +4,14 @@ mod common;
 
 use std::process::Command;
 
+use chess::cli::{COMMANDS, Cli};
 use clap::Parser;
 use common::*;
-use dameless::cli::{COMMANDS, Cli};
 use serde_json::Value;
 
 #[test]
 fn every_route_has_a_command() {
-    let doc = serde_json::to_value(dameless::api::openapi()).unwrap();
+    let doc = serde_json::to_value(chess::api::openapi()).unwrap();
     let mut ops = Vec::new();
     for item in doc["paths"].as_object().unwrap().values() {
         for op in item.as_object().unwrap().values() {
@@ -36,19 +36,19 @@ fn every_route_has_a_command() {
 
 #[test]
 fn the_event_union_covers_every_kind() {
-    let doc = serde_json::to_value(dameless::api::openapi()).unwrap();
+    let doc = serde_json::to_value(chess::api::openapi()).unwrap();
     let union = doc["components"]["schemas"]["EventData"].to_string();
-    for kind in dameless::api::events::kinds() {
+    for kind in chess::api::events::kinds() {
         assert!(union.contains(&format!("\"{kind}\"")), "the Event schema has no {kind}");
     }
 }
 
 fn cli(t: &TestApp, args: &[&str]) -> (bool, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_dameless"))
+    let out = Command::new(env!("CARGO_BIN_EXE_chess"))
         .args(args)
-        .env("DAMELESS_URL", &t.url)
-        .env("DAMELESS_TOKEN", &t.token)
-        .env("DAMELESS_DATA", &t.data)
+        .env("CHESS_URL", &t.url)
+        .env("CHESS_TOKEN", &t.token)
+        .env("CHESS_DATA", &t.data)
         .output()
         .unwrap();
     (
@@ -89,11 +89,11 @@ async fn the_binary_is_a_client() {
     assert!(ok, "{err}");
 
     // The token comes from the data directory when not given.
-    let out = Command::new(env!("CARGO_BIN_EXE_dameless"))
+    let out = Command::new(env!("CARGO_BIN_EXE_chess"))
         .args(["token"])
-        .env("DAMELESS_URL", &t.url)
-        .env_remove("DAMELESS_TOKEN")
-        .env("DAMELESS_DATA", &t.data)
+        .env("CHESS_URL", &t.url)
+        .env_remove("CHESS_TOKEN")
+        .env("CHESS_DATA", &t.data)
         .output()
         .unwrap();
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), t.token);

@@ -400,13 +400,13 @@ describe("UiKeyValue", () => {
     m = await mount(UiKeyValue, {
       items: [
         { label: "Cores", value: 15 },
-        { label: "Path", value: "C:\\dameless", mono: true },
+        { label: "Path", value: "C:\\chess", mono: true },
         { label: "State", value: "Healthy", tone: "win" },
       ],
     });
     const rows = [...m.el.querySelectorAll(".ui-kv")];
     expect(rows.map((r) => text(r.querySelector("dt")))).toEqual(["Cores", "Path", "State"]);
-    expect(rows.map((r) => text(r.querySelector("dd")))).toEqual(["15", "C:\\dameless", "Healthy"]);
+    expect(rows.map((r) => text(r.querySelector("dd")))).toEqual(["15", "C:\\chess", "Healthy"]);
     expect(rows[1]?.querySelector(".mono")).not.toBeNull();
     expect(rows[2]?.querySelector(".ui-kv-text--win")).not.toBeNull();
   });

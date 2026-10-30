@@ -1,5 +1,5 @@
 [package]
-name = "dameless-play"
+name = "chess-play"
 description = "The Referee runtime: game tasks and seat controllers (engine, local, Lichess board, Lichess bot)."
 version.workspace = true
 edition.workspace = true
@@ -9,12 +9,12 @@ repository.workspace = true
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
-dameless-core.workspace = true
-dameless-engine.workspace = true
-dameless-hub.workspace = true
-dameless-lichess.workspace = true
-dameless-store.workspace = true
-dameless-work.workspace = true
+chess-core.workspace = true
+chess-engine.workspace = true
+chess-hub.workspace = true
+chess-lichess.workspace = true
+chess-store.workspace = true
+chess-work.workspace = true
 futures.workspace = true
 getrandom.workspace = true
 reqwest.workspace = true
@@ -26,7 +26,7 @@ tracing.workspace = true
 utoipa.workspace = true
 
 [dev-dependencies]
-dameless-lichess = { workspace = true, features = ["mock"] }
+chess-lichess = { workspace = true, features = ["mock"] }
 tempfile.workspace = true
 
 # A tiny UCI engine that plays legal (if aimless) chess, for the tests of the Referee runtime, so they run without

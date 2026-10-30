@@ -1,4 +1,4 @@
-# Dameless: the design
+# Chess: the design
 
 This is the contract for the app. Every crate, route, event, table and screen follows it. When code and this file disagree, one of them is wrong: fix the code, or change this file in the same commit and say why.
 
@@ -41,7 +41,7 @@ Never: build, match, experiment, test, batch, job, runner, human.
 ## Shape of the system
 
 ```
-apps/web  (Vue 3.5 + eos + chessground)  ──REST + SSE──►  dameless serve  (127.0.0.1:7979)
+apps/web  (Vue 3.5 + eos + chessground)  ──REST + SSE──►  chess serve  (127.0.0.1:7979)
                                                           │
 crates/                                                    ▼
   core       pure domain: types, chess, review rules, referee rules, levels, engines, Lichess rules, events
@@ -52,7 +52,7 @@ crates/                                                    ▼
   play       the Referee runtime: game tasks, seat controllers (engine, local, Lichess board), your connection, levels
   analysis   the evaluation service (warm engine pool, position cache), reviews, profiles, drills, repertoire, progress
   work       the scheduler, the engines list, setup, diagnostics
-  server     axum API (utoipa → OpenAPI), SSE, /mcp, wiring, the `dameless` binary (serve + CLI)
+  server     axum API (utoipa → OpenAPI), SSE, /mcp, wiring, the `chess` binary (serve + CLI)
 ```
 
 Dependencies only point down this list's layers:
@@ -73,12 +73,12 @@ Dependencies only point down this list's layers:
 - **Reviews and profiles** (`analysis::Reviews::new(eval)`, `analysis::Profiles::new(hub)`): `Reviews` is the `Review` executor and queues reviews (`prepare(ReviewRequest) -> NewWork`, resolved when queued, or `submit(&scheduler, req) -> Work`); `get(game, engine, nodes)` backs `GET /api/games/{id}/review`. `Profiles::profile(key, filter)`, `compare(keys, filter)` and `player(key)` back the player routes.
 - **Connections** (`play::Connections::new(hub, games, lichess_config)`, `start()`): owns your Lichess client, shared by everything that talks to Lichess for your account (imports, the explorer, seat controllers), and `anonymous()` for public calls. It keeps `hub.policy` current from your live games. `set_token`, `logout`, `start_login(return_to, redirect_uri)`, `finish_login(code, state, error) -> LoginFinished { return_to, result }`, `explorer`, `tablebase`, `user`, `leaderboard`, `challenge(key, body)`; `you()` (seek, challenges) for the rest.
 
-The binary is `dameless` (crate `server`). `dameless serve` runs the app; every other subcommand is a client of a running app over HTTP, one subcommand per route.
+The binary is `chess` (crate `server`). `chess serve` runs the app; every other subcommand is a client of a running app over HTTP, one subcommand per route.
 
 ### Process and data
 
-- Listens on `127.0.0.1:7979` (`DAMELESS_LISTEN`). Bearer token for every request except `GET /api/health`; `Origin`/`Host` checks against DNS rebinding; the hosted UI origin `https://chess.dame.gg` is allowed with the token.
-- Data directory: `dirs::data_local_dir()/dameless` (`DAMELESS_DATA`): `dameless.db`, `token`, `secrets/lichess-you` (0600 on Unix), `tools/` (the built-in engines: `stockfish/`, `lc0/`, `maia/`), `games/` (archived PGN, zstd), `logs/work-<id>.log`.
+- Listens on `127.0.0.1:7979` (`CHESS_LISTEN`). Bearer token for every request except `GET /api/health`; `Origin`/`Host` checks against DNS rebinding; the hosted UI origin `https://chess.dame.gg` is allowed with the token.
+- Data directory: `dirs::data_local_dir()/chess` (`CHESS_DATA`): `chess.db`, `token`, `secrets/lichess-you` (0600 on Unix), `tools/` (the built-in engines: `stockfish/`, `lc0/`, `maia/`), `games/` (archived PGN, zstd), `logs/work-<id>.log`. The first start with the default folder copies your files from the old `dameless` folder, if there is one and no `chess` folder yet (`hub::legacy`).
 - `LICHESS_URL`, `LICHESS_EXPLORER_URL`, `LICHESS_TABLEBASE_URL` point the adapters elsewhere (a mock in tests).
 - In debug builds the server serves `apps/web/dist` from disk; in release it embeds it (rust-embed).
 
@@ -179,7 +179,7 @@ pub struct Move {
 }
 ```
 
-Games against Lichess's AI are recorded against `engine:stockfish` with the AI's level on the seat. Games recorded before the engines list keep reading: Dameless's seats are `engine:reckless` (named "Reckless …", `engine` the commit it played, "Reckless abcdef1"), and the old BOT account's Lichess games are Reckless's imported history (`Import { owner: engine:reckless }`).
+Games against Lichess's AI are recorded against `engine:stockfish` with the AI's level on the seat. Games recorded before the engines list keep reading: Chess's seats are `engine:reckless` (named "Reckless …", `engine` the commit it played, "Reckless abcdef1"), and the old BOT account's Lichess games are Reckless's imported history (`Import { owner: engine:reckless }`).
 
 ### Engines
 
@@ -204,7 +204,7 @@ pub struct Engine {
 pub struct EnginesOverview { pub analysis: String, pub engines: Vec<Engine> }   // built-ins first, then yours by name
 ```
 
-- **Built-ins** (`core::engines::BUILTINS`): `stockfish` (Stockfish 19) and `maia-1100` … `maia-1900` (lc0 v0.32.1 with Maia's nets, `nodes: 1`, `rating` the net's). They are always listed; one that is not installed has `installed: false` and no path. `dameless setup` downloads them into `tools/` (`work::setup`): Stockfish's release build for this platform, picked from the release's asset list by OS and architecture (universal, else AVX2, else plain x86-64; the Windows fallback is `stockfish-windows-x86-64-universal.zip`), lc0's CPU build for Windows (`lc0-v0.32.1-windows-cpu-dnnl.zip`; elsewhere an `lc0` on the PATH), and each Maia net (`maia-<n>.pb.gz`, set as lc0's `WeightsFile`). Each installed engine is started once to read its `id name`.
+- **Built-ins** (`core::engines::BUILTINS`): `stockfish` (Stockfish 19) and `maia-1100` … `maia-1900` (lc0 v0.32.1 with Maia's nets, `nodes: 1`, `rating` the net's). They are always listed; one that is not installed has `installed: false` and no path. `chess setup` downloads them into `tools/` (`work::setup`): Stockfish's release build for this platform, picked from the release's asset list by OS and architecture (universal, else AVX2, else plain x86-64; the Windows fallback is `stockfish-windows-x86-64-universal.zip`), lc0's CPU build for Windows (`lc0-v0.32.1-windows-cpu-dnnl.zip`; elsewhere an `lc0` on the PATH), and each Maia net (`maia-<n>.pb.gz`, set as lc0's `WeightsFile`). Each installed engine is started once to read its `id name`.
 - **Engines you add** (`kind: custom`): a name, a path, arguments, options, and optionally `nodes` and `rating`. The app starts it once to check it answers UCI's handshake (400 when it does not), keeps what it calls itself, and makes its id from the name unless given one (409 when taken by a built-in or another engine).
 - **The analysis engine** is `meta` `engines.analysis` (default `stockfish`); an engine with a fixed budget cannot be it (400). Removing it from the list makes Stockfish the analysis engine again.
 - **What results are keyed by:** an engine's `cache_key()` is `<id>|<id_name>` (`stockfish|Stockfish 19`): reviews and the position cache use it, so a new release of an engine never reads an old one's results as its own, and its `label()` (`id_name`, else the name) is what reviews and seats show.
@@ -318,7 +318,7 @@ pub enum Assist { Allowed, ExplorerOnly /* every live game is correspondence */,
 
 ## Scheduler and resources (`crates/work`, ledger in `crates/hub`)
 
-- **Cores:** `DAMELESS_CORES`, default physical cores − 1. A ledger in `hub` hands out cores.
+- **Cores:** `CHESS_CORES`, default physical cores − 1. A ledger in `hub` hands out cores.
 - **Live first.** A local game with an engine seat reserves its threads (1 per engine by default) for as long as it runs. Live evaluation on the board reserves 1 core (more if asked). These are reservations, not work items.
 - **Work** takes what is left, by priority (`Review` before `Background`: reviewing all of a player's games and calibrating the levels), oldest first within a priority. The ledger keeps that order: a request it cannot grant waits in line (`Ledger::request_cores`; `cx.cores` passes the item's priority), keyed by priority and then by when it began waiting, and nothing behind a waiter is granted, even when it would fit, so background work that gives its cores back between units and asks again at once never starves a review waiting beside it. A waiter that is stopped leaves the line (the request is a guard); one asking for more cores than the machine has holds nobody up. Reservations never wait.
 - **Lanes:** the scheduler runs one item at a time per lane — calibration; reviews; background reviews (so a review asked for now never waits days behind one) — and starts an item only while a core is free or lower-priority work holds some (it hands them back at its next unit, and the ledger serves the new item first).
@@ -386,13 +386,13 @@ meta        (key TEXT PRIMARY KEY, value JSON)
 
 A game's offers, clocks and actions are not columns: they belong to the game being played, which `play` holds in memory and overlays on the stored record.
 
-**Migration 7** (`0007_engines.sql`) turned a database of the engine-development app into this one: it deletes trial games and calibration games (with their reviews and drills), the levels' ratings and seats (the ladder was Reckless's), and the work, meta and the BOT connection only engine development used; it rewrites Dameless's seats onto `engine:reckless`, Lichess's AI onto `engine:stockfish`, the BOT account's games into Reckless's imported history, and each review's key and label from its commit (`reckless|Reckless abcdef1`); and it drops the versions, builds, ideas, trials, tune steps, nets, datasets and training tables, and the old position cache.
+**Migration 7** (`0007_engines.sql`) turned a database of the engine-development app into this one: it deletes trial games and calibration games (with their reviews and drills), the levels' ratings and seats (the ladder was Reckless's), and the work, meta and the BOT connection only engine development used; it rewrites Chess's seats onto `engine:reckless`, Lichess's AI onto `engine:stockfish`, the BOT account's games into Reckless's imported history, and each review's key and label from its commit (`reckless|Reckless abcdef1`); and it drops the versions, builds, ideas, trials, tune steps, nets, datasets and training tables, and the old position cache.
 
 ## API (`crates/server`)
 
-Resource routes; actions are `POST` sub-routes. Every route has a `utoipa` path, so `crates/server/openapi.json` (`dameless openapi`) is complete and typed, and `scripts/api-types.mjs` (`corepack pnpm api`; `api:check` fails on stale files) regenerates `apps/web/src/api/schema.d.ts` from it. Errors are `{ error: { code, message } }` with codes `bad_request` 400, `unauthorized` 401, `forbidden` 403 (a foreign `Host` or `Origin`), `not_found` 404, `conflict` 409, `fair_play` 409, `rate_limited` 429 (with `Retry-After` when known), `upstream` 502, and `internal` 500 for anything unexpected (core::error::Error carries one of these codes, so every crate shares the vocabulary). A body, query or path that does not read is a `bad_request` in the same shape.
+Resource routes; actions are `POST` sub-routes. Every route has a `utoipa` path, so `crates/server/openapi.json` (`chess openapi`) is complete and typed, and `scripts/api-types.mjs` (`corepack pnpm api`; `api:check` fails on stale files) regenerates `apps/web/src/api/schema.d.ts` from it. Errors are `{ error: { code, message } }` with codes `bad_request` 400, `unauthorized` 401, `forbidden` 403 (a foreign `Host` or `Origin`), `not_found` 404, `conflict` 409, `fair_play` 409, `rate_limited` 429 (with `Retry-After` when known), `upstream` 502, and `internal` 500 for anything unexpected (core::error::Error carries one of these codes, so every crate shares the vocabulary). A body, query or path that does not read is a `bad_request` in the same shape.
 
-**Who may call** (`api::guard`): every request but `GET /api/health` and the login callback carries `Authorization: Bearer <token>` (the event stream also takes `?token=`, for `EventSource`). Bound to loopback, every request (the UI's pages too) must name a loopback `Host` (DNS rebinding), and a request with an `Origin` must come from the app itself (`http://<host>`) or the hosted UI `https://chess.dame.gg`, which gets CORS (with `Authorization`, `Last-Event-ID` and private-network access). The UI the app serves needs no token: bound to loopback, a request the browser marks `Sec-Fetch-Site: same-origin` whose `Origin`, if any, is `http://<its Host>` is let in (no page can forge that header, and a program on the machine could read the token anyway); the page also carries the token, `<meta name="dameless-token" content="…">`, for browsers that send no `Sec-Fetch-Site`. Every answer carries `X-Frame-Options: DENY`, `nosniff` and `no-referrer`. The web UI is `apps/web/dist`, read from disk in debug builds and embedded (rust-embed) in release, with paths that are not files answered by `index.html`.
+**Who may call** (`api::guard`): every request but `GET /api/health` and the login callback carries `Authorization: Bearer <token>` (the event stream also takes `?token=`, for `EventSource`). Bound to loopback, every request (the UI's pages too) must name a loopback `Host` (DNS rebinding), and a request with an `Origin` must come from the app itself (`http://<host>`) or the hosted UI `https://chess.dame.gg`, which gets CORS (with `Authorization`, `Last-Event-ID` and private-network access). The UI the app serves needs no token: bound to loopback, a request the browser marks `Sec-Fetch-Site: same-origin` whose `Origin`, if any, is `http://<its Host>` is let in (no page can forge that header, and a program on the machine could read the token anyway); the page also carries the token, `<meta name="chess-token" content="…">`, for browsers that send no `Sec-Fetch-Site`. Every answer carries `X-Frame-Options: DENY`, `nosniff` and `no-referrer`. The web UI is `apps/web/dist`, read from disk in debug builds and embedded (rust-embed) in release, with paths that are not files answered by `index.html`.
 
 Seats of a local game are `you`, `<engine id>`, `<engine id>@<level>`. Player keys are `you`, `engine:<id>`, `lichess:<name>`. Engines in requests are ids (`stockfish`); none means the analysis engine.
 
@@ -478,25 +478,25 @@ GET    /api/events?since=&topics=&token=             SSE
 
 **The event stream**: each event is `id: <id>`, `event: <kind>`, `data: { id, topic, kind, data }` (the `Event` schema: a union of every kind with its typed payload). `since` or `Last-Event-ID` replays the kept events after it, then live ones follow. When events after that id are no longer kept, or a slow client fell behind and events were dropped, a `reload` event (no SSE id; envelope id 0, topic `stream`, `data: { reason }`) tells the client to fetch what it shows again. A comment every 15 seconds keeps idle connections open; streams end when the app stops.
 
-**The CLI** (`crates/server/src/cli`) mirrors the routes; `dameless::cli::COMMANDS` maps every operation id to its command, and a test checks it against the document. Every command takes `--json` (one JSON document on stdout; errors on stderr, non-zero exit); `--wait` (work) and `--follow` (games) where something runs. It finds the app at `DAMELESS_URL` (default http://127.0.0.1:7979), with `DAMELESS_TOKEN` or the token in the data directory (`DAMELESS_DATA`). Tokens for Lichess are read from stdin, never from the command line.
+**The CLI** (`crates/server/src/cli`) mirrors the routes; `chess::cli::COMMANDS` maps every operation id to its command, and a test checks it against the document. Every command takes `--json` (one JSON document on stdout; errors on stderr, non-zero exit); `--wait` (work) and `--follow` (games) where something runs. It finds the app at `CHESS_URL` (default http://127.0.0.1:7979), with `CHESS_TOKEN` or the token in the data directory (`CHESS_DATA`). Tokens for Lichess are read from stdin, never from the command line.
 
 ```
-dameless serve | openapi | health | status | diagnostics | token | events [--topics] [--since]
-dameless setup [--only stockfish,maia] [--yes] [--wait]          (shows each download's size and asks first)
-dameless engines | engines add --name … --path … [--option K=V --arg … --nodes --rating --id] | engines remove <id> | engines analysis <id>
-dameless games [--player --source --status --speed --rated --calibration --limit]
-dameless game <id> [--pgn | --review [--engine --nodes] | --follow]
-dameless play --white you --black stockfish@5 --tc 5+3 | --nodes N | --movetime MS [--fen --moves …] [--follow]
-dameless move <game> e4 [--no-wait] | draw <game> [--accept|--decline] | takeback <game> [--accept|--decline]
-dameless resign|abort|stop <game> | claim <game> [--draw]
-dameless import you | lichess:<name> [--max --since --speeds --rated --wait] | import --pgn <file|-> [--you white]
-dameless review <game>… | --player you [--limit --all --background --engine --nodes --wait]
-dameless player <key> | profile <key> | compare <key>… [--speeds --rated --since --limit] | players top [speed] [--nb]
-dameless repertoire --side white | prep --side white | progress | levels [plan | calibrate] | drills [today | hint | make | answer <id> <move> | delete <id> | trend]
-dameless eval [--fen --moves --engine --depth|--nodes --multipv] (streams until done) | eval --list | eval --stop <session>
-dameless explorer [--db --fen --play …] | tablebase --fen <fen, _ for spaces>
-dameless work [show|stop|pause|resume|log|wait <id>]
-dameless lichess | lichess you [login | token | logout | seek --tc 10+5 | seek --stop | challenge … | accept|decline|cancel <id>]
+chess serve | openapi | health | status | diagnostics | token | events [--topics] [--since]
+chess setup [--only stockfish,maia] [--yes] [--wait]          (shows each download's size and asks first)
+chess engines | engines add --name … --path … [--option K=V --arg … --nodes --rating --id] | engines remove <id> | engines analysis <id>
+chess games [--player --source --status --speed --rated --calibration --limit]
+chess game <id> [--pgn | --review [--engine --nodes] | --follow]
+chess play --white you --black stockfish@5 --tc 5+3 | --nodes N | --movetime MS [--fen --moves …] [--follow]
+chess move <game> e4 [--no-wait] | draw <game> [--accept|--decline] | takeback <game> [--accept|--decline]
+chess resign|abort|stop <game> | claim <game> [--draw]
+chess import you | lichess:<name> [--max --since --speeds --rated --wait] | import --pgn <file|-> [--you white]
+chess review <game>… | --player you [--limit --all --background --engine --nodes --wait]
+chess player <key> | profile <key> | compare <key>… [--speeds --rated --since --limit] | players top [speed] [--nb]
+chess repertoire --side white | prep --side white | progress | levels [plan | calibrate] | drills [today | hint | make | answer <id> <move> | delete <id> | trend]
+chess eval [--fen --moves --engine --depth|--nodes --multipv] (streams until done) | eval --list | eval --stop <session>
+chess explorer [--db --fen --play …] | tablebase --fen <fen, _ for spaces>
+chess work [show|stop|pause|resume|log|wait <id>]
+chess lichess | lichess you [login | token | logout | seek --tc 10+5 | seek --stop | challenge … | accept|decline|cancel <id>]
 ```
 
 **MCP** (`crates/server/src/mcp`): `POST /mcp` serves one tool per operation of the document plus `wait_for_work`, through the app's own router, with annotations from three tables checked by tests (`REACH`: real-account and outside-world operations, `DESTRUCTIVE`, `FAIR_PLAY`) and the fair-play and real-account rules in the server's instructions.
@@ -506,7 +506,7 @@ dameless lichess | lichess you [login | token | logout | seek --tc 10+5 | seek -
 ### Layout
 
 ```
-┌ header: Dameless · [command bar ⌘K] · New game · You 1,840 · ● work · ⚙ ─────────────────────────────────┐
+┌ header: Chess · [command bar ⌘K] · New game · You 1,840 · ● work · ⚙ ─────────────────────────────────┐
 ├ Games rail ─────────┬────────────── Board ──────────────────────┬ Panel (or a sheet) ───────────────────┤
 │ filter: All · You · │ opponent strip (name, rating, clock)       │ the game card: who plays whom, the     │
 │ Lichess             │                                            │ result or "vs", one muted line         │
@@ -566,7 +566,7 @@ Keyboard: `←/→` moves, `Home/End`, `F` flip, `Space` engine on/off (Explore)
 ## Working on the app
 
 - `C:\dev\chess` is the development checkout of `main`; the live app runs from a worktree of its own, so half-finished code cannot break it.
-- **Never touch real accounts.** No agent logs in to Lichess, stores a real token, or talks to lichess.org; every Lichess path is tested against the mock server (`dameless_lichess::testing::MockLichess`, behind the crate's `mock` feature so `play` and `server` test against the same mock).
+- **Never touch real accounts.** No agent logs in to Lichess, stores a real token, or talks to lichess.org; every Lichess path is tested against the mock server (`chess_lichess::testing::MockLichess`, behind the crate's `mock` feature so `play` and `server` test against the same mock).
 - **Never download engines in tests.** Tests use the fake UCI engines in the repository; `work`'s engine tests start `work-fake-uci`, built from the engine crate's.
 - Each agent owns its crate or directory and commits only its own paths: `git commit -m "…" -- <paths>`, never `git add -A`, never leave files staged. Build into the shared `CARGO_TARGET_DIR` `target-shared` (cargo locks it) or your own `target-<you>`; `target*/` is ignored.
 - Gates per crate before committing: `cargo fmt`, `cargo clippy -p <crate> --all-targets -- -D warnings`, `cargo test -p <crate>`. Web: `corepack pnpm lint`, `format:check`, `typecheck`, `test`, `knip`.

@@ -1,7 +1,7 @@
 //! A mock Lichess to point a running app at, for walking the Lichess flows by hand: `LICHESS_URL=http://127.0.0.1:9797`.
 //!
 //! ```text
-//! cargo run -p dameless-lichess --features mock --example mock_server [-- <port>]
+//! cargo run -p chess-lichess --features mock --example mock_server [-- <port>]
 //! ```
 //!
 //! It knows you, `Dame`, by a (fake) token, `lip_mock_you`. The OAuth page grants every login as `Dame` at once.
@@ -35,7 +35,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use dameless_lichess::{
+use chess_lichess::{
     Color, GameStatus, Side,
     challenge::{ChallengeRequest, DeclineReason},
     testing::{ChallengeAnswer, GameSetup, MockAccount, MockLichess, Reply, Seat, exported_game},
@@ -70,7 +70,7 @@ fn script(mock: &MockLichess) {
         mock.answer_challenges(name, ChallengeAnswer::Accept);
     }
     let day = 86_400_000;
-    let now = dameless_lichess::now_ms();
+    let now = chess_lichess::now_ms();
     mock.set_games_export(
         "dame",
         (0..6)

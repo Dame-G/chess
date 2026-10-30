@@ -18,7 +18,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use dameless_core::{WorkId, work::Priority};
+use chess_core::{WorkId, work::Priority};
 use serde::Serialize;
 use tokio::sync::watch;
 use utoipa::ToSchema;

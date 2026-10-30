@@ -26,7 +26,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use dameless_core::Error;
+use chess_core::Error;
 
 use super::error::ApiError;
 use crate::App;

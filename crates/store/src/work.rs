@@ -1,7 +1,7 @@
 //! Work: background items with their spec (what to do, owned by the `work` crate), a checkpoint (where to carry on
 //! after a restart) and their progress.
 
-use dameless_core::{
+use chess_core::{
     Error, Timestamp, WorkId,
     work::{Priority, Progress, Subject, Work, WorkKind, WorkStatus},
 };
@@ -204,7 +204,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use dameless_core::{GameId, PlayerKey};
+    use chess_core::{GameId, PlayerKey};
 
     use super::*;
     use crate::testing;

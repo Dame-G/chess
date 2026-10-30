@@ -17,7 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use dameless_core::chess::Position;
+use chess_core::chess::Position;
 
 /// One line of a search: its moves and its score for the side to move.
 struct Line {

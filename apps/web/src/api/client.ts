@@ -4,7 +4,7 @@ import type { paths } from "./schema";
 import type { ErrorBody, ErrorCode } from "./types";
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
-const STORAGE = "dameless.server";
+const STORAGE = "chess.server";
 const DEFAULT_SERVER = "http://127.0.0.1:7979";
 
 export interface Connection {
@@ -14,17 +14,17 @@ export interface Connection {
   token: string;
 }
 
-/** The token the server puts in the page it serves (`<meta name="dameless-token">`), if any. */
+/** The token the server puts in the page it serves (`<meta name="chess-token">`), if any. */
 function pageToken(): string {
   try {
-    return document.querySelector<HTMLMetaElement>('meta[name="dameless-token"]')?.content ?? "";
+    return document.querySelector<HTMLMetaElement>('meta[name="chess-token"]')?.content ?? "";
   } catch {
     return "";
   }
 }
 
 /**
- * Where the server is. Served by `dameless serve` itself (or the dev server, which proxies it), the page and the API
+ * Where the server is. Served by `chess serve` itself (or the dev server, which proxies it), the page and the API
  * share an origin: the server lets its own page in by the browser's `Sec-Fetch-Site`, and the page carries the token
  * for browsers that send none. On chess.dame.gg the paired server is remembered with its token in this browser.
  */
@@ -103,12 +103,12 @@ async function retarget(request: Request): Promise<Response> {
     });
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
-    throw new ApiError(0, "network", "The server cannot be reached. Start it with dameless serve.");
+    throw new ApiError(0, "network", "The server cannot be reached. Start it with chess serve.");
   }
 }
 
 /** The API, typed by the server's OpenAPI document: `client.GET("/api/games/{id}", { params: { path: { id } } })`. */
-export const client = createClient<paths>({ baseUrl: "http://dameless.invalid", fetch: retarget });
+export const client = createClient<paths>({ baseUrl: "http://chess.invalid", fetch: retarget });
 
 interface Answer<T> {
   data?: T;

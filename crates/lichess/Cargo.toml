@@ -1,5 +1,5 @@
 [package]
-name = "dameless-lichess"
+name = "chess-lichess"
 description = "Adapter: Lichess's HTTP API with its rate rules, OAuth PKCE, NDJSON streams, Bot and Board API, import, explorer."
 version.workspace = true
 edition.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-# A scriptable Lichess on 127.0.0.1 (`dameless_lichess::testing`), for this crate's tests and for the crates above it.
+# A scriptable Lichess on 127.0.0.1 (`chess_lichess::testing`), for this crate's tests and for the crates above it.
 mock = ["dep:axum", "dep:shakmaty"]
 
 [dependencies]

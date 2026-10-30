@@ -1,4 +1,4 @@
-# Dameless
+# Chess
 
 **Play, review, analyze.** A chess app for one person, with any UCI engine as an opponent or the analysis engine.
 
@@ -13,21 +13,21 @@ Everything runs on your machine. The app serves its own UI; https://chess.dame.g
 
 ```bash
 corepack pnpm install && corepack pnpm build    # the web UI, into apps/web/dist
-cargo build --release -p dameless
-target/release/dameless serve                   # http://127.0.0.1:7979
-target/release/dameless setup                   # Stockfish 19, lc0 and Maia's nets (shows the sizes, asks first)
+cargo build --release -p chess
+target/release/chess serve                   # http://127.0.0.1:7979
+target/release/chess setup                   # Stockfish 19, lc0 and Maia's nets (shows the sizes, asks first)
 ```
 
 Then open http://127.0.0.1:7979. To let Claude Code drive it:
 
 ```bash
-claude mcp add --transport http dameless http://127.0.0.1:7979/mcp --header "Authorization: Bearer $(dameless token)"
+claude mcp add --transport http chess http://127.0.0.1:7979/mcp --header "Authorization: Bearer $(chess token)"
 ```
 
 ## More
 
 - [`AGENTS.md`](AGENTS.md): running the app, the CLI and MCP, every area, and working on the code.
-- [`skill/dameless/`](skill/dameless/SKILL.md): the Claude Code skill for driving the app.
+- [`skill/chess/`](skill/chess/SKILL.md): the Claude Code skill for driving the app.
 - [`docs/design.md`](docs/design.md): the contract for every crate, route, event, table and screen.
 - [`docs/roadmap.md`](docs/roadmap.md): what is built and what comes next.
 

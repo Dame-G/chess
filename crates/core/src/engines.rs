@@ -1,5 +1,5 @@
 //! Engines: the UCI engines the app plays against and analyses with. Any UCI engine can be one: the built-ins that
-//! `dameless setup` installs (Stockfish, and Maia's human-like nets on lc0) and engines you add by path.
+//! `chess setup` installs (Stockfish, and Maia's human-like nets on lc0) and engines you add by path.
 //!
 //! One engine is the **analysis engine** (Stockfish by default): reviews, live evaluation, drills and the ladder of
 //! levels run on it. An engine with a fixed node budget (Maia plays one node a move, as it is meant to) plays that
@@ -20,7 +20,7 @@ pub const DEFAULT_ANALYSIS: &str = "stockfish";
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EngineKind {
-    /// One of the engines `dameless setup` downloads ([`BUILTINS`]).
+    /// One of the engines `chess setup` downloads ([`BUILTINS`]).
     Builtin,
     /// Added by path.
     Custom,

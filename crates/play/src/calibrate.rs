@@ -15,7 +15,7 @@
 use std::time::Instant;
 
 use async_trait::async_trait;
-use dameless_core::{
+use chess_core::{
     Error, GameId, SidePair, TimeControl,
     chess::Position,
     game::{GameEnd, GameStatus, Outcome, Seat, Source, Turn},
@@ -23,12 +23,12 @@ use dameless_core::{
     referee::{Referee, Setup, Sitter},
     work::{Progress, WorkKind},
 };
-use dameless_hub::{Executor, WorkContext};
-use dameless_store::{NewGame, now};
+use chess_hub::{Executor, WorkContext};
+use chess_store::{NewGame, now};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
-use dameless_work::EngineBinary;
+use chess_work::EngineBinary;
 
 use crate::{
     engine_seat::{EngineOptions, EngineSeat, SplitMix64},

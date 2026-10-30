@@ -2,7 +2,7 @@
 
 use std::{path::Path, time::Duration};
 
-use dameless_engine::{
+use chess_engine::{
     pool::{EngineSpec, Pool, Reset},
     uci::{Bound, Engine, Limits, Position, Score, SearchEvent},
 };
@@ -101,7 +101,7 @@ async fn waits_at_the_limit_and_resizes() {
     pool.resize(&spec, 1);
     drop(first);
     drop(second);
-    assert_eq!(pool.stats(&spec), dameless_engine::pool::PoolStats { limit: 1, checked_out: 0, idle: 1 });
+    assert_eq!(pool.stats(&spec), chess_engine::pool::PoolStats { limit: 1, checked_out: 0, idle: 1 });
     pool.kill_idle();
     assert_eq!(pool.stats(&spec).idle, 0);
 }
@@ -119,7 +119,7 @@ async fn replaces_an_engine_that_died() {
     let mut b = pool.checkout(&spec).await.unwrap();
     assert!(b.search(&Position::startpos(), &Limits::depth(1), |_| {}).await.is_ok());
     b.discard();
-    assert_eq!(pool.stats(&spec), dameless_engine::pool::PoolStats { limit: 1, checked_out: 0, idle: 0 });
+    assert_eq!(pool.stats(&spec), chess_engine::pool::PoolStats { limit: 1, checked_out: 0, idle: 0 });
 }
 
 #[tokio::test]

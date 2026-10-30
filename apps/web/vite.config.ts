@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [vue()],
   resolve: { dedupe: ["vue"] },
   server: {
-    // In development `dameless serve` is a separate process; its API is proxied so the page and the API share an
+    // In development `chess serve` is a separate process; its API is proxied so the page and the API share an
     // origin, as they do when the server serves the built app.
     port: 5179,
     strictPort: true,

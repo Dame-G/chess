@@ -23,19 +23,19 @@ use std::{
     time::Duration,
 };
 
-use dameless_core::{
+use chess_core::{
     Error, Side,
     chess::{Position, position_key},
     events::{AssistKind, EvalInfo, Payload, Topic},
     review::{PositionEval, ToSearch},
 };
-use dameless_engine::{
+use chess_engine::{
     pool::{EngineSpec, Pool, PooledEngine, Reset},
     uci::{self, Info, Limits, SearchEvent},
 };
-use dameless_hub::{Hub, Reservation};
-use dameless_store::positions::SearchKey;
-use dameless_work::{EngineBinary, EngineSource};
+use chess_hub::{Hub, Reservation};
+use chess_store::positions::SearchKey;
+use chess_work::{EngineBinary, EngineSource};
 use serde::{Deserialize, Serialize};
 use tokio::{task::JoinHandle, time::Instant};
 use tokio_util::sync::CancellationToken;

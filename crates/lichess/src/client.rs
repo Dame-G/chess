@@ -49,7 +49,7 @@ impl Lichess {
                 config,
                 http,
                 token,
-                agent: Mutex::new(format!("Dameless/{}", env!("CARGO_PKG_VERSION"))),
+                agent: Mutex::new(format!("Chess/{}", env!("CARGO_PKG_VERSION"))),
                 slot: tokio::sync::Mutex::new(()),
                 paused_until: Mutex::new(None),
                 cache: Cache::default(),
@@ -70,9 +70,9 @@ impl Lichess {
         self.shared.token.is_some()
     }
 
-    /// Puts the account's name in the User-Agent (`Dameless/0.1.0 user:<name>`), as Lichess asks of bots.
+    /// Puts the account's name in the User-Agent (`Chess/0.1.0 user:<name>`), as Lichess asks of bots.
     pub fn set_username(&self, name: &str) {
-        *self.shared.agent.lock().unwrap() = format!("Dameless/{} user:{name}", env!("CARGO_PKG_VERSION"));
+        *self.shared.agent.lock().unwrap() = format!("Chess/{} user:{name}", env!("CARGO_PKG_VERSION"));
     }
 
     /// How long until this token may make requests again after a 429, or `None` when it may now. Requests made
@@ -279,7 +279,7 @@ mod tests {
         assert_eq!(mock.requests_to("/api/account").len(), 4);
         // The token is in the header, never in the address.
         assert!(mock.requests().iter().all(|r| !r.path.contains("tok") && r.token.as_deref() == Some("tok")));
-        assert!(mock.requests()[0].user_agent.starts_with("Dameless/"));
+        assert!(mock.requests()[0].user_agent.starts_with("Chess/"));
     }
 
     #[tokio::test]

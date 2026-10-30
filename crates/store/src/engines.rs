@@ -3,10 +3,10 @@
 
 use std::collections::BTreeMap;
 
-use dameless_core::{Error, Timestamp, engines::EngineKind};
+use chess_core::{Error, Timestamp, engines::EngineKind};
 use rusqlite::{OptionalExtension, Row, params};
 
-use crate::{DbResult, Store, from_json, from_word, now, to_json, word};
+use crate::{DbError, DbResult, Store, from_json, from_word, now, to_json, word};
 
 /// The meta key of the analysis engine's id.
 pub const ANALYSIS_KEY: &str = "engines.analysis";
@@ -119,10 +119,82 @@ impl Store {
     }
 }
 
+/// Points every engine whose binary, arguments or options lie under `from` at the same place under `to`, in the
+/// database file at `db`, before the app opens it: a data directory copied to a new place keeps its built-ins in its
+/// own `tools/` rather than the old one's. A database from before the engines list has no table and nothing to change.
+/// Returns how many engines changed.
+pub fn rebase_engine_paths(db: &std::path::Path, from: &str, to: &str) -> Result<usize, Error> {
+    let fail = |e: DbError| Error::internal(format!("rebase the engines in {}: {e}", db.display()));
+    let conn = rusqlite::Connection::open(db).map_err(|e| fail(e.into()))?;
+    let rebase = |s: &str| s.strip_prefix(from).map(|rest| format!("{to}{rest}"));
+    let run = || -> DbResult<usize> {
+        let exists: bool = conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'engines')",
+            [],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            return Ok(0);
+        }
+        let mut rows = Vec::new();
+        {
+            let mut stmt = conn.prepare("SELECT id, path, args, options FROM engines")?;
+            let mut q = stmt.query([])?;
+            while let Some(r) = q.next()? {
+                let (id, path): (String, String) = (r.get(0)?, r.get(1)?);
+                let args: Vec<String> = from_json(&r.get::<_, String>(2)?)?;
+                let options: BTreeMap<String, String> = from_json(&r.get::<_, String>(3)?)?;
+                rows.push((id, path, args, options));
+            }
+        }
+        let mut changed = 0;
+        for (id, path, args, options) in rows {
+            let new_path = rebase(&path).unwrap_or_else(|| path.clone());
+            let new_args: Vec<String> = args.iter().map(|a| rebase(a).unwrap_or_else(|| a.clone())).collect();
+            let new_options: BTreeMap<String, String> =
+                options.iter().map(|(k, v)| (k.clone(), rebase(v).unwrap_or_else(|| v.clone()))).collect();
+            if new_path != path || new_args != args || new_options != options {
+                conn.execute(
+                    "UPDATE engines SET path = ?2, args = ?3, options = ?4 WHERE id = ?1",
+                    params![id, new_path, to_json(&new_args)?, to_json(&new_options)?],
+                )?;
+                changed += 1;
+            }
+        }
+        Ok(changed)
+    };
+    run().map_err(fail)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::testing;
+
+    #[tokio::test]
+    async fn engines_under_an_old_folder_are_rebased() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("chess.db");
+        {
+            let store = Store::open(&db).unwrap();
+            let mut maia = EngineRecord::new("maia-1500", "Maia 1500", EngineKind::Builtin, "/old/tools/lc0/lc0");
+            maia.options.insert("WeightsFile".into(), "/old/tools/maia/maia-1500.pb.gz".into());
+            maia.options.insert("Threads".into(), "1".into());
+            store.put_engine(maia).await.unwrap();
+            store.put_engine(EngineRecord::new("mine", "Mine", EngineKind::Custom, "/bin/mine")).await.unwrap();
+        }
+        assert_eq!(rebase_engine_paths(&db, "/old/tools", "/new/tools").unwrap(), 1);
+        let store = Store::open(&db).unwrap();
+        let maia = store.engine("maia-1500").await.unwrap().unwrap();
+        assert_eq!(maia.path, "/new/tools/lc0/lc0");
+        assert_eq!(maia.options["WeightsFile"], "/new/tools/maia/maia-1500.pb.gz");
+        assert_eq!(maia.options["Threads"], "1");
+        assert_eq!(store.engine("mine").await.unwrap().unwrap().path, "/bin/mine");
+
+        let bare = dir.path().join("bare.db");
+        rusqlite::Connection::open(&bare).unwrap();
+        assert_eq!(rebase_engine_paths(&bare, "/old/tools", "/new/tools").unwrap(), 0);
+    }
 
     #[tokio::test]
     async fn engines_are_added_replaced_and_removed() {

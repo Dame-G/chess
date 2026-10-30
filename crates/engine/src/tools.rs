@@ -1,7 +1,7 @@
 //! Downloads for the built-in engines: GitHub release assets (with their sizes, read from the release's asset list),
 //! plain files, and unpacking zip and tar archives into a directory.
 //!
-//! Nothing downloads unless the caller asks (the `setup` work, which `dameless setup` queues after showing the sizes).
+//! Nothing downloads unless the caller asks (the `setup` work, which `chess setup` queues after showing the sizes).
 
 use std::path::{Path, PathBuf};
 
@@ -14,7 +14,7 @@ use tokio::io::AsyncWriteExt;
 pub const GITHUB_API: &str = "https://api.github.com";
 
 /// What GitHub asks every API client to send.
-const USER_AGENT: &str = concat!("dameless/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("chess/", env!("CARGO_PKG_VERSION"));
 
 /// One file of a GitHub release.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]

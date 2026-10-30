@@ -1,4 +1,4 @@
-//! The `dameless` command line. `dameless serve` runs the app; every other command is one API call (or a few, or a
+//! The `chess` command line. `chess serve` runs the app; every other command is one API call (or a few, or a
 //! poll, or the event stream) against a running app, printed as one JSON document with `--json` and as a short
 //! summary otherwise. Errors go to stderr with a non-zero exit. [`COMMANDS`] says which command calls which route,
 //! and a test checks that every route of the OpenAPI document has one.
@@ -8,8 +8,8 @@ pub mod client;
 use std::{path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result, bail};
+use chess_core::TimeControl;
 use clap::{Args, Parser, Subcommand};
-use dameless_core::TimeControl;
 use serde_json::{Value, json};
 
 pub use client::Client;
@@ -17,18 +17,18 @@ use client::print;
 
 /// The command line.
 #[derive(Parser)]
-#[command(name = "dameless", version, about = "Play, review and analyze chess, with any UCI engine")]
+#[command(name = "chess", version, about = "Play, review and analyze chess, with any UCI engine")]
 pub struct Cli {
     /// The data directory (database, token, engines). The platform's local data folder by default.
-    #[arg(long, global = true, env = "DAMELESS_DATA")]
+    #[arg(long, global = true, env = "CHESS_DATA")]
     pub data: Option<PathBuf>,
 
     /// The app's URL, for every command but `serve`.
-    #[arg(long, global = true, env = "DAMELESS_URL", default_value = "http://127.0.0.1:7979")]
+    #[arg(long, global = true, env = "CHESS_URL", default_value = "http://127.0.0.1:7979")]
     pub url: String,
 
     /// The API token. A local app's is read from its data directory.
-    #[arg(long, global = true, env = "DAMELESS_TOKEN", hide_env_values = true)]
+    #[arg(long, global = true, env = "CHESS_TOKEN", hide_env_values = true)]
     pub token: Option<String>,
 
     /// Print one JSON document instead of a summary.
@@ -41,7 +41,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Run the app: the API, the event stream and the web UI (`DAMELESS_LISTEN`, default 127.0.0.1:7979).
+    /// Run the app: the API, the event stream and the web UI (`CHESS_LISTEN`, default 127.0.0.1:7979).
     Serve,
     /// Print the OpenAPI document.
     Openapi,
@@ -595,65 +595,65 @@ pub struct ChallengeArgs {
 /// Which command calls each route, by operation id: what the parity test checks against the OpenAPI document, and
 /// the CLI's words for each route.
 pub const COMMANDS: &[(&str, &str)] = &[
-    ("health", "dameless health"),
-    ("status", "dameless status"),
-    ("diagnostics", "dameless diagnostics"),
-    ("token", "dameless token"),
-    ("setup_plan", "dameless setup"),
-    ("setup", "dameless setup --yes"),
-    ("list_engines", "dameless engines"),
-    ("add_engine", "dameless engines add --name Reckless --path ./reckless"),
-    ("remove_engine", "dameless engines remove reckless"),
-    ("set_analysis_engine", "dameless engines analysis stockfish"),
-    ("follow_events", "dameless events --topics games"),
-    ("list_games", "dameless games"),
-    ("start_game", "dameless play --white you --black stockfish@5 --tc 5+3"),
-    ("import_pgn", "dameless import --pgn game.pgn"),
-    ("get_game", "dameless game 12"),
-    ("get_game_pgn", "dameless game 12 --pgn"),
-    ("act_in_game", "dameless move 12 e4"),
-    ("stop_game", "dameless stop 12"),
-    ("get_review", "dameless game 12 --review"),
-    ("start_eval", "dameless eval --depth 20"),
-    ("list_evals", "dameless eval --list"),
-    ("stop_eval", "dameless eval --stop 00000000000a"),
-    ("explorer", "dameless explorer --db masters"),
-    ("tablebase", "dameless tablebase --fen 8/8/8/8/8/8/6k1/4K2R_w_K_-_0_1"),
-    ("review_games", "dameless review 12 13"),
-    ("top_players", "dameless players top blitz"),
-    ("get_player", "dameless player lichess:cutemouse83"),
-    ("get_profile", "dameless profile you"),
-    ("compare_players", "dameless compare you lichess:cutemouse83"),
-    ("import_player", "dameless import lichess:cutemouse83"),
-    ("get_repertoire", "dameless repertoire --side white"),
-    ("get_prep", "dameless prep --side white"),
-    ("get_progress", "dameless progress"),
-    ("list_levels", "dameless levels"),
-    ("plan_levels", "dameless levels plan"),
-    ("calibrate_levels", "dameless levels calibrate"),
-    ("list_drills", "dameless drills"),
-    ("make_drills", "dameless drills make"),
-    ("drills_today", "dameless drills today"),
-    ("hint_drill", "dameless drills hint 3"),
-    ("answer_drill", "dameless drills answer 3 Nf3"),
-    ("delete_drill", "dameless drills delete 3"),
-    ("drills_trend", "dameless drills trend"),
-    ("list_work", "dameless work"),
-    ("get_work", "dameless work show 7"),
-    ("stop_work", "dameless work stop 7"),
-    ("pause_work", "dameless work pause 7"),
-    ("resume_work", "dameless work resume 7"),
-    ("work_log", "dameless work log 7"),
-    ("list_connections", "dameless lichess"),
-    ("login", "dameless lichess you login"),
-    ("set_connection_token", "dameless lichess you token"),
-    ("logout", "dameless lichess you logout"),
-    ("seek", "dameless lichess you seek --tc 10+5"),
-    ("cancel_seek", "dameless lichess you seek --stop"),
-    ("challenge", "dameless lichess you challenge alice --tc 5+3"),
-    ("accept_challenge", "dameless lichess you accept abcd1234"),
-    ("decline_challenge", "dameless lichess you decline abcd1234"),
-    ("cancel_challenge", "dameless lichess you cancel abcd1234"),
+    ("health", "chess health"),
+    ("status", "chess status"),
+    ("diagnostics", "chess diagnostics"),
+    ("token", "chess token"),
+    ("setup_plan", "chess setup"),
+    ("setup", "chess setup --yes"),
+    ("list_engines", "chess engines"),
+    ("add_engine", "chess engines add --name Reckless --path ./reckless"),
+    ("remove_engine", "chess engines remove reckless"),
+    ("set_analysis_engine", "chess engines analysis stockfish"),
+    ("follow_events", "chess events --topics games"),
+    ("list_games", "chess games"),
+    ("start_game", "chess play --white you --black stockfish@5 --tc 5+3"),
+    ("import_pgn", "chess import --pgn game.pgn"),
+    ("get_game", "chess game 12"),
+    ("get_game_pgn", "chess game 12 --pgn"),
+    ("act_in_game", "chess move 12 e4"),
+    ("stop_game", "chess stop 12"),
+    ("get_review", "chess game 12 --review"),
+    ("start_eval", "chess eval --depth 20"),
+    ("list_evals", "chess eval --list"),
+    ("stop_eval", "chess eval --stop 00000000000a"),
+    ("explorer", "chess explorer --db masters"),
+    ("tablebase", "chess tablebase --fen 8/8/8/8/8/8/6k1/4K2R_w_K_-_0_1"),
+    ("review_games", "chess review 12 13"),
+    ("top_players", "chess players top blitz"),
+    ("get_player", "chess player lichess:cutemouse83"),
+    ("get_profile", "chess profile you"),
+    ("compare_players", "chess compare you lichess:cutemouse83"),
+    ("import_player", "chess import lichess:cutemouse83"),
+    ("get_repertoire", "chess repertoire --side white"),
+    ("get_prep", "chess prep --side white"),
+    ("get_progress", "chess progress"),
+    ("list_levels", "chess levels"),
+    ("plan_levels", "chess levels plan"),
+    ("calibrate_levels", "chess levels calibrate"),
+    ("list_drills", "chess drills"),
+    ("make_drills", "chess drills make"),
+    ("drills_today", "chess drills today"),
+    ("hint_drill", "chess drills hint 3"),
+    ("answer_drill", "chess drills answer 3 Nf3"),
+    ("delete_drill", "chess drills delete 3"),
+    ("drills_trend", "chess drills trend"),
+    ("list_work", "chess work"),
+    ("get_work", "chess work show 7"),
+    ("stop_work", "chess work stop 7"),
+    ("pause_work", "chess work pause 7"),
+    ("resume_work", "chess work resume 7"),
+    ("work_log", "chess work log 7"),
+    ("list_connections", "chess lichess"),
+    ("login", "chess lichess you login"),
+    ("set_connection_token", "chess lichess you token"),
+    ("logout", "chess lichess you logout"),
+    ("seek", "chess lichess you seek --tc 10+5"),
+    ("cancel_seek", "chess lichess you seek --stop"),
+    ("challenge", "chess lichess you challenge alice --tc 5+3"),
+    ("accept_challenge", "chess lichess you accept abcd1234"),
+    ("decline_challenge", "chess lichess you decline abcd1234"),
+    ("cancel_challenge", "chess lichess you cancel abcd1234"),
 ];
 
 fn push(q: &mut Vec<(&'static str, String)>, key: &'static str, value: Option<String>) {
@@ -769,7 +769,7 @@ fn numbered(sans: &[String], first: usize, start_fen: &Value) -> String {
     out.join(" ")
 }
 
-/// A game in one line: `#12    finished  Dameless 1400 vs Dameless 1800  0-1 checkmate  1+0  29 moves  2026-10-27 05:07`.
+/// A game in one line: `#12    finished  Chess 1400 vs Chess 1800  0-1 checkmate  1+0  29 moves  2026-10-27 05:07`.
 fn game_line(g: &Value) -> String {
     let result = match g["outcome"].as_str() {
         Some("white_wins") => "1-0",
@@ -835,7 +835,7 @@ pub async fn run(c: Client, command: Command, json: bool) -> Result<()> {
         }
         Command::Status => print(&c.get("/api/status").await?, json, |v| {
             format!(
-                "Dameless {} · {} cores ({} free) · analysis {}\ndata: {}",
+                "Chess {} · {} cores ({} free) · analysis {}\ndata: {}",
                 str_of(&v["version"]),
                 v["cores"],
                 v["ledger"]["free"],

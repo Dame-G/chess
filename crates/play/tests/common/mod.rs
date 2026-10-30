@@ -4,10 +4,10 @@
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use dameless_core::events::{Event, EventKind};
-use dameless_hub::{Config, Hub, Next, Subscription, TopicFilter};
-use dameless_play::{Games, Timing};
-use dameless_work::{EngineSource, FixedEngines};
+use chess_core::events::{Event, EventKind};
+use chess_hub::{Config, Hub, Next, Subscription, TopicFilter};
+use chess_play::{Games, Timing};
+use chess_work::{EngineSource, FixedEngines};
 
 /// The fake UCI engine (`tests/support/fake_engine.rs`).
 pub fn fake() -> PathBuf {

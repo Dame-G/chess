@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 
-use dameless_core::{
+use chess_core::{
     Error, GameId, Timestamp,
     drills::{Drill, DrillAnswer, DrillId, NewDrill, Theme},
     themes::ThemeKind,
@@ -81,7 +81,7 @@ impl Store {
                         d.theme.opening,
                         word(&d.theme.phase),
                         created_at.as_str(),
-                        dameless_core::drills::START_EASE,
+                        chess_core::drills::START_EASE,
                         d.theme.kind.word(),
                         d.theme.detail,
                     ],
@@ -228,7 +228,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use dameless_core::{
+    use chess_core::{
         PlayerKey, Side,
         drills::{DrillOutcome, check, grade, today},
         review::judge::Phase,

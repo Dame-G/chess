@@ -47,7 +47,7 @@ const onYou = computed(() => route.path === "/you");
 </script>
 
 <template>
-  <EAppHeader class="top" brand-to="/" brand-label="Dameless, the board" :link-component="RouterLink" :sticky="phone">
+  <EAppHeader class="top" brand-to="/" brand-label="Chess, the board" :link-component="RouterLink" :sticky="phone">
     <template #brand><Logo /></template>
     <template #logo>
       <EIconButton

@@ -1,7 +1,7 @@
 //! The levels of the ladder: which entrant (`level:<id>` or `you`) sat at each seat of a game played at a level, and the last
 //! calibration fit. The fit itself is `core::levels::fit`, over [`Store::level_games`].
 
-use dameless_core::{
+use chess_core::{
     Error, GameId, Timestamp,
     levels::Estimate,
     levels::{Entrant, EntrantRating, LevelGame},
@@ -11,7 +11,7 @@ use rusqlite::{OptionalExtension, params};
 use crate::{DbError, DbResult, Store, from_word, now};
 
 fn entrant(text: &str) -> DbResult<Entrant> {
-    text.parse().map_err(|e: dameless_core::levels::BadEntrant| DbError::Domain(Error::internal(e.to_string())))
+    text.parse().map_err(|e: chess_core::levels::BadEntrant| DbError::Domain(Error::internal(e.to_string())))
 }
 
 impl Store {
@@ -122,7 +122,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use dameless_core::{
+    use chess_core::{
         PlayerKey,
         game::{Ending, GameEnd, Outcome},
         levels::{fit, ladder, pair_results, priors},

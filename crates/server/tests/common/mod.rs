@@ -5,16 +5,16 @@
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use dameless::{App, Options};
-use dameless_hub::Config;
-use dameless_lichess::testing::MockLichess;
-use dameless_play::Timing;
-use dameless_work::NewEngineRequest;
+use chess::{App, Options};
+use chess_hub::Config;
+use chess_lichess::testing::MockLichess;
+use chess_play::Timing;
+use chess_work::NewEngineRequest;
 use serde_json::Value;
 
-/// The fake UCI engine (analysis's, built as this crate's `dameless-fake-engine`).
+/// The fake UCI engine (analysis's, built as this crate's `chess-fake-engine`).
 pub fn fake_engine() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_dameless-fake-engine"))
+    PathBuf::from(env!("CARGO_BIN_EXE_chess-fake-engine"))
 }
 
 /// The whole app, served on a free loopback port.

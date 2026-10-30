@@ -3,8 +3,8 @@
 
 mod common;
 
+use chess_lichess::testing::{GameSetup, MockAccount, Reply, Seat};
 use common::*;
-use dameless_lichess::testing::{GameSetup, MockAccount, Reply, Seat};
 use serde_json::{Value, json};
 
 #[tokio::test]

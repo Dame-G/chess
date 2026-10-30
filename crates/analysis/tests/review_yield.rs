@@ -7,14 +7,14 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{QUIET_DRAW, SCHOLARS_MATE, eventually, fake, finished_game, harness};
-use dameless_analysis::{ReviewRequest, ReviewResult, ReviewSpec, Reviews};
-use dameless_core::{
+use chess_analysis::{ReviewRequest, ReviewResult, ReviewSpec, Reviews};
+use chess_core::{
     PlayerKey, WorkId,
     game::Outcome,
     work::{Priority, WorkKind},
 };
-use dameless_hub::{Control, Executor, WorkContext};
+use chess_hub::{Control, Executor, WorkContext};
+use common::{QUIET_DRAW, SCHOLARS_MATE, eventually, fake, finished_game, harness};
 use tokio_util::sync::CancellationToken;
 
 /// Searches by nodes take this long.

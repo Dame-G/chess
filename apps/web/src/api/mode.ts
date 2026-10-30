@@ -1,4 +1,4 @@
-const KEY = "dameless.fixtures";
+const KEY = "chess.fixtures";
 
 /**
  * Whether this tab runs on fixtures, and which: `?fixtures` (or `?fixtures=fairplay`) in the address turns them on for

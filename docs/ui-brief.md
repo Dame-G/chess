@@ -351,7 +351,7 @@ props: game: GameSummary | null; mode: Mode
 slots: #status (what is happening now), #actions
 ```
 
-Two lines: `UiPlayer white  [UiResult]  UiPlayer black`, then `Opening · 5+3 · rated · Lichess` in `--t-meta`. This is the one place the panel states who is playing whom; the board strips keep clock + name but the panel no longer repeats "Dameless played h6. Your move." plus "5+3 · local game". Replaces the first lines of Play/Watch/Review panels.
+Two lines: `UiPlayer white  [UiResult]  UiPlayer black`, then `Opening · 5+3 · rated · Lichess` in `--t-meta`. This is the one place the panel states who is playing whom; the board strips keep clock + name but the panel no longer repeats "Stockfish played h6. Your move." plus "5+3 · local game". Replaces the first lines of Play/Watch/Review panels.
 
 ### 3.16 `UiLive.vue`
 
@@ -374,7 +374,7 @@ Header, rail, board stage, panel or sheet.
 ```
 >= 75rem (1200)
 +---------------------------------------------------------------------------------------------+
-| Dameless   [ Search or run a command  Ctrl K ]     [+ New game]  [Train 5]  You 1,840  [work] [gear] |  48
+| Chess      [ Search or run a command  Ctrl K ]     [+ New game]  [Train 5]  You 1,840  [work] [gear] |  48
 +----------+------------------------------------------------------------+---------------------+
 | Games    |                      stage (board)                         | panel / sheet       |
 | rail     |                                                            |                     |

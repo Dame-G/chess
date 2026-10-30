@@ -3,10 +3,10 @@
 use std::sync::Arc;
 
 use axum::{extract::State, http::StatusCode};
-use dameless_analysis::{
+use chess_analysis::{
     AnswerRequest, DrillAnswerResult, DrillsToday, MakeDrillsRequest, RepertoireRequest, SessionRequest,
 };
-use dameless_core::{
+use chess_core::{
     GameId,
     drills::{Drill, DrillHint, DrillId, HitRatePoint},
     levels::PlannedMatch,
@@ -16,7 +16,7 @@ use dameless_core::{
     themes::ThemeKind,
     work::Work,
 };
-use dameless_play::{CalibrateRequest, LevelsOverview};
+use chess_play::{CalibrateRequest, LevelsOverview};
 use serde::Deserialize;
 use utoipa::IntoParams;
 
@@ -51,7 +51,7 @@ pub async fn plan_levels(
 /// ladder is refitted after each match.
 #[utoipa::path(post, path = "/api/levels/calibrate", operation_id = "calibrate_levels", tag = "levels",
     request_body(content = Option<CalibrateRequest>),
-    responses((status = 202, body = Work), (status = 400, body = dameless_core::error::ErrorBody)))]
+    responses((status = 202, body = Work), (status = 400, body = chess_core::error::ErrorBody)))]
 pub async fn calibrate_levels(
     State(app): State<Arc<App>>,
     body: axum::body::Bytes,
@@ -101,7 +101,7 @@ const MAX_GAMES: usize = 200;
 /// theme or opening line. They come as questions: the `fen`, `side` and `theme`, without the answer, which
 /// `answer_drill` returns.
 #[utoipa::path(get, path = "/api/drills/today", operation_id = "drills_today", tag = "drills", params(TodayQuery),
-    responses((status = 200, body = DrillsToday), (status = 400, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = DrillsToday), (status = 400, body = chess_core::error::ErrorBody)))]
 pub async fn drills_today(State(app): State<Arc<App>>, Query(q): Query<TodayQuery>) -> ApiResult<Json<DrillsToday>> {
     let games = q
         .games
@@ -113,19 +113,19 @@ pub async fn drills_today(State(app): State<Arc<App>>, Query(q): Query<TodayQuer
                 .collect::<Result<Vec<_>, _>>()
         })
         .transpose()
-        .map_err(|_| dameless_core::Error::bad_request("games are comma-separated game ids"))?
+        .map_err(|_| chess_core::Error::bad_request("games are comma-separated game ids"))?
         .unwrap_or_default();
     if games.len() > MAX_GAMES {
-        return Err(dameless_core::Error::bad_request(format!("at most {MAX_GAMES} games")).into());
+        return Err(chess_core::Error::bad_request(format!("at most {MAX_GAMES} games")).into());
     }
     let req = SessionRequest { new_per_day: q.new_per_day, limit: q.limit, theme: q.theme, games, max_ply: q.max_ply };
-    Ok(Json(app.drills.today(&dameless_store::now(), &req).await?))
+    Ok(Json(app.drills.today(&chess_store::now(), &req).await?))
 }
 
 /// The next hint at a drill, without the move: first what kind of move it is, then which piece moves. A hint is
 /// remembered until the drill is answered, and a right answer after one counts half and comes back tomorrow.
 #[utoipa::path(post, path = "/api/drills/{id}/hint", operation_id = "hint_drill", tag = "drills", params(DrillPath),
-    responses((status = 200, body = DrillHint), (status = 404, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = DrillHint), (status = 404, body = chess_core::error::ErrorBody)))]
 pub async fn hint_drill(State(app): State<Arc<App>>, Path(p): Path<DrillPath>) -> ApiResult<Json<DrillHint>> {
     Ok(Json(app.drills.hint(DrillId(p.id)).await?))
 }
@@ -139,7 +139,7 @@ pub struct DrillPath {
 /// Answers a drill (UCI or SAN): the outcome, the drill rescheduled, and the answer with its line.
 #[utoipa::path(post, path = "/api/drills/{id}/answer", operation_id = "answer_drill", tag = "drills", params(DrillPath),
     request_body = AnswerRequest,
-    responses((status = 200, body = DrillAnswerResult), (status = 404, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = DrillAnswerResult), (status = 404, body = chess_core::error::ErrorBody)))]
 pub async fn answer_drill(
     State(app): State<Arc<App>>,
     Path(p): Path<DrillPath>,
@@ -150,7 +150,7 @@ pub async fn answer_drill(
 
 /// Deletes a drill.
 #[utoipa::path(delete, path = "/api/drills/{id}", operation_id = "delete_drill", tag = "drills", params(DrillPath),
-    responses((status = 204), (status = 404, body = dameless_core::error::ErrorBody)))]
+    responses((status = 204), (status = 404, body = chess_core::error::ErrorBody)))]
 pub async fn delete_drill(State(app): State<Arc<App>>, Path(p): Path<DrillPath>) -> ApiResult<StatusCode> {
     app.drills.delete(DrillId(p.id)).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -177,7 +177,7 @@ pub async fn drills_trend(
 /// Refused (409) while you play on Lichess, unless every game of yours is correspondence.
 #[utoipa::path(get, path = "/api/players/you/repertoire", operation_id = "get_repertoire", tag = "players",
     params(RepertoireRequest),
-    responses((status = 200, body = Repertoire), (status = 409, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = Repertoire), (status = 409, body = chess_core::error::ErrorBody)))]
 pub async fn get_repertoire(
     State(app): State<Arc<App>>,
     Query(q): Query<RepertoireRequest>,
@@ -190,7 +190,7 @@ pub async fn get_repertoire(
 /// of yours is correspondence.
 #[utoipa::path(get, path = "/api/players/you/prep", operation_id = "get_prep", tag = "players",
     params(PrepRequest),
-    responses((status = 200, body = Prep), (status = 409, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = Prep), (status = 409, body = chess_core::error::ErrorBody)))]
 pub async fn get_prep(State(app): State<Arc<App>>, Query(q): Query<PrepRequest>) -> ApiResult<Json<Prep>> {
     Ok(Json(app.profiles.prep(q).await?))
 }

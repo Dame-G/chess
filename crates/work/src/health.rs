@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-use dameless_core::Error;
+use chess_core::Error;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -135,7 +135,7 @@ impl Diagnostics {
     pub async fn health(&self) -> Result<Health, Error> {
         let hub = self.engines.hub().clone();
         let mut items = Vec::new();
-        let setup = Some(("Install", "dameless setup"));
+        let setup = Some(("Install", "chess setup"));
         let overview = self.engines.overview().await?;
         let analysis = overview.engines.iter().find(|e| e.id == overview.analysis);
         items.push(match analysis {

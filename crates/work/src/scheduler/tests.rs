@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use dameless_core::{
+use chess_core::{
     GameId,
     work::{Priority, Subject},
 };

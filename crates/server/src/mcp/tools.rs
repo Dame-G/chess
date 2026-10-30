@@ -385,7 +385,7 @@ mod tests {
         let game = ops.iter().find(|op| op.id == "get_game").unwrap();
         assert_eq!(game.params[0].place, Place::Path);
         assert!(game.read_only && !game.destructive);
-        assert!(game.description.contains("CLI: `dameless game 12`"));
+        assert!(game.description.contains("CLI: `chess game 12`"));
     }
 
     fn refs_any(value: &Value, out: &mut Vec<String>) {

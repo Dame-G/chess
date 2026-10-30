@@ -34,13 +34,13 @@ use crate::App;
 #[derive(OpenApi)]
 #[openapi(
     info(
-        title = "Dameless",
-        description = "Play, review and analyze chess, with any UCI engine. Every command of the `dameless` CLI is \
+        title = "Chess",
+        description = "Play, review and analyze chess, with any UCI engine. Every command of the `chess` CLI is \
                        one of these routes. Every request but `/api/health` carries `Authorization: Bearer <token>`."
     ),
     modifiers(&Bearer),
     security(("token" = [])),
-    components(schemas(events::Event, dameless_core::error::ErrorBody))
+    components(schemas(events::Event, chess_core::error::ErrorBody))
 )]
 struct ApiDoc;
 
@@ -160,7 +160,7 @@ pub fn protect<S: Clone + Send + Sync + 'static>(router: Router<S>) -> Router<S>
     router
         .layer(
             CorsLayer::new()
-                .allow_origin(HeaderValue::from_static(dameless_hub::config::HOSTED_ORIGIN))
+                .allow_origin(HeaderValue::from_static(chess_hub::config::HOSTED_ORIGIN))
                 .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
                 .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, HeaderName::from_static("last-event-id")])
                 .max_age(Duration::from_secs(3600))
@@ -179,5 +179,5 @@ pub(crate) fn optional_body<T: serde::de::DeserializeOwned + Default>(body: &[u8
     }
     serde_json::from_slice::<Option<T>>(body)
         .map(Option::unwrap_or_default)
-        .map_err(|e| error::ApiError(dameless_core::Error::bad_request(format!("the body does not read: {e}"))))
+        .map_err(|e| error::ApiError(chess_core::Error::bad_request(format!("the body does not read: {e}"))))
 }

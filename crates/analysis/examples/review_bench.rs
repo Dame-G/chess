@@ -2,7 +2,7 @@
 //! revisions of this crate) can be compared on speed and on results.
 //!
 //! ```text
-//! cargo run --release -p dameless-analysis --example review_bench -- \
+//! cargo run --release -p chess-analysis --example review_bench -- \
 //!     --engine reckless.exe --games games.json --mode app --cores 6 [--nodes 200000] [--out app.json]
 //! ```
 //!
@@ -22,15 +22,15 @@
 
 use std::{collections::VecDeque, sync::Mutex, time::Instant};
 
-use dameless_analysis::{Eval, ReviewRequest, ReviewResult, Reviews, search};
-use dameless_core::{
+use chess_analysis::{Eval, ReviewRequest, ReviewResult, Reviews, search};
+use chess_core::{
     game::Game,
     review::{PositionEval, ReviewInput, ReviewedMove, judge_game, to_search},
 };
-use dameless_engine::pool::{EngineSpec, Pool, Reset};
-use dameless_hub::{Config, Executor, Hub, WorkContext};
-use dameless_store::NewGame;
-use dameless_work::FixedEngines;
+use chess_engine::pool::{EngineSpec, Pool, Reset};
+use chess_hub::{Config, Executor, Hub, WorkContext};
+use chess_store::NewGame;
+use chess_work::FixedEngines;
 use serde::Serialize;
 
 #[derive(Serialize)]

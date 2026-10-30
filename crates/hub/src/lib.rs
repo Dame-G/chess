@@ -7,11 +7,12 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-pub use dameless_store::Store;
+pub use chess_store::Store;
 
 pub mod bus;
 pub mod config;
 pub mod ledger;
+pub mod legacy;
 pub mod policy;
 pub mod secrets;
 pub mod work;
@@ -58,7 +59,7 @@ impl Hub {
 
 #[cfg(test)]
 mod tests {
-    use dameless_core::events::AssistKind;
+    use chess_core::events::AssistKind;
 
     use super::*;
 

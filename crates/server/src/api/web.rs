@@ -2,7 +2,7 @@
 //! `pnpm build` shows without rebuilding the app) and embedded in release builds. Paths that are not files are routes
 //! of the single-page app and get `index.html`.
 //!
-//! The page carries the API token in `<meta name="dameless-token">`, so the UI the app serves can call it. Only this
+//! The page carries the API token in `<meta name="chess-token">`, so the UI the app serves can call it. Only this
 //! machine can read the page: the `Host` check refuses other names (DNS rebinding), and the same-origin policy keeps
 //! other websites from reading the answer.
 
@@ -42,7 +42,7 @@ pub async fn web(State(app): State<Arc<App>>, uri: Uri) -> Response {
             ([(header::CACHE_CONTROL, "no-store")], Html(page)).into_response()
         }
         None => Html(
-            "<!doctype html><title>Dameless</title><p>The UI is not built. Run <code>corepack pnpm build</code> in the \
+            "<!doctype html><title>Chess</title><p>The UI is not built. Run <code>corepack pnpm build</code> in the \
              repository (and rebuild the app for a release build).</p>",
         )
         .into_response(),
@@ -51,7 +51,7 @@ pub async fn web(State(app): State<Arc<App>>, uri: Uri) -> Response {
 
 /// The page with the token in a `<meta>` at the top of its head.
 pub fn with_token(page: &str, token: &str) -> String {
-    let meta = format!("<meta name=\"dameless-token\" content=\"{token}\">");
+    let meta = format!("<meta name=\"chess-token\" content=\"{token}\">");
     match page.find("<head>") {
         Some(i) => format!("{}{meta}{}", &page[..i + 6], &page[i + 6..]),
         None => format!("{meta}{page}"),
@@ -64,7 +64,7 @@ mod tests {
     fn puts_the_token_in_the_head() {
         assert_eq!(
             super::with_token("<html><head><title>x</title></head></html>", "t0k"),
-            "<html><head><meta name=\"dameless-token\" content=\"t0k\"><title>x</title></head></html>"
+            "<html><head><meta name=\"chess-token\" content=\"t0k\"><title>x</title></head></html>"
         );
     }
 }

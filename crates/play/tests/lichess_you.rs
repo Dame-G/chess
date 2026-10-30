@@ -5,23 +5,23 @@ mod common;
 
 use std::sync::Arc;
 
-use common::*;
-use dameless_core::{
+use chess_core::{
     Color, ConnectionKey, GameId, PlayerKey, Side, TimeControl,
     events::{Assist, EventKind},
     game::{Ending, Game, GameStatus, Outcome, SeatAction},
     lichess::{ConnectionState, Direction},
 };
-use dameless_lichess::{
+use chess_lichess::{
     GameStatus as LichessStatus,
     challenge::ChallengeRequest,
     explorer::ExplorerQuery,
     testing::{GameSetup, MockAccount, MockLichess, Reply, Seat},
 };
-use dameless_play::{
+use chess_play::{
     Connections,
     you::{ChallengeBody, SeekRequestBody},
 };
+use common::*;
 
 struct Lichess {
     s: Setup,
@@ -101,7 +101,7 @@ async fn your_game_is_played_through_the_board_api() {
 
     // Our takeback, accepted by her: the moves go here too.
     l.s.games.act(id, SeatAction::Takeback, None).await.unwrap();
-    assert_eq!(l.mock.game(&lid).unwrap().takeback_offer, Some(dameless_lichess::Side::White));
+    assert_eq!(l.mock.game(&lid).unwrap().takeback_offer, Some(chess_lichess::Side::White));
     l.mock.accept_takeback(&lid);
     until_async!("the takeback", l.game(id).await.moves.is_empty());
     assert!(l.s.hub.store.game(id).await.unwrap().unwrap().moves.is_empty());
@@ -110,10 +110,10 @@ async fn your_game_is_played_through_the_board_api() {
     until_async!("Alice's reply", l.game(id).await.moves.len() == 2);
     // A draw offer of ours stands at Lichess.
     l.s.games.act(id, SeatAction::OfferDraw, None).await.unwrap();
-    assert_eq!(l.mock.game(&lid).unwrap().draw_offer, Some(dameless_lichess::Side::White));
+    assert_eq!(l.mock.game(&lid).unwrap().draw_offer, Some(chess_lichess::Side::White));
 
     // She leaves: the claim is yours to make.
-    l.mock.opponent_gone(&lid, dameless_lichess::Side::Black, 0);
+    l.mock.opponent_gone(&lid, chess_lichess::Side::Black, 0);
     until_async!("the claim", l.game(id).await.actions.contains(&SeatAction::ClaimVictory));
     l.s.games.act(id, SeatAction::ClaimVictory, None).await.unwrap();
     let g = l.s.games.wait_finished(id, std::time::Duration::from_secs(5)).await.unwrap();
@@ -133,14 +133,14 @@ async fn your_game_is_played_through_the_board_api() {
 }
 
 trait IntoLichess {
-    fn into_lichess(self) -> dameless_lichess::Side;
+    fn into_lichess(self) -> chess_lichess::Side;
 }
 
 impl IntoLichess for Side {
-    fn into_lichess(self) -> dameless_lichess::Side {
+    fn into_lichess(self) -> chess_lichess::Side {
         match self {
-            Side::White => dameless_lichess::Side::White,
-            Side::Black => dameless_lichess::Side::Black,
+            Side::White => chess_lichess::Side::White,
+            Side::Black => chess_lichess::Side::Black,
         }
     }
 }
@@ -159,7 +159,7 @@ async fn a_game_ending_on_lichess_ends_here_and_you_resign_by_stopping() {
     assert_eq!(g.actions, [SeatAction::Move, SeatAction::Abort]);
     l.s.games.act(id, SeatAction::Move, Some("c7c5".into())).await.unwrap();
     // Flagged on lichess.org.
-    l.mock.end_game(&lid, LichessStatus::Outoftime, Some(dameless_lichess::Side::Black));
+    l.mock.end_game(&lid, LichessStatus::Outoftime, Some(chess_lichess::Side::Black));
     let g = l.s.games.wait_finished(id, std::time::Duration::from_secs(5)).await.unwrap();
     assert_eq!((g.summary.outcome, g.summary.ending), (Some(Outcome::BlackWins), Some(Ending::Timeout)));
 
@@ -188,7 +188,7 @@ async fn games_elsewhere_and_correspondence_follow_the_policy() {
     assert_eq!(l.s.hub.policy.current().assist, Assist::Off);
     assert!(l.s.games.live().is_empty());
     assert_eq!(l.connections.tablebase("8/8/8/8/8/2k5/2q5/K7 b - - 0 1").await.unwrap_err().status(), 409);
-    l.mock.end_game(&bullet, LichessStatus::Resign, Some(dameless_lichess::Side::White));
+    l.mock.end_game(&bullet, LichessStatus::Resign, Some(chess_lichess::Side::White));
     until("the policy to lift", || l.s.hub.policy.current().assist == Assist::Allowed).await;
     assert!(l.connections.status(ConnectionKey::You).you.unwrap().elsewhere.is_empty());
 

@@ -5,16 +5,16 @@ mod common;
 
 use std::{sync::Arc, time::Duration};
 
-use common::*;
-use dameless_core::{
+use chess_core::{
     PlayerKey, Side, TimeControl,
     events::{EventKind, LevelsUpdated},
     game::{GameStatus, SeatAction},
     levels::{Entrant, Level},
     work::{Priority, WorkKind},
 };
-use dameless_hub::{Config, Executor, Hub, Next, TopicFilter, WorkContext};
-use dameless_play::{Calibrate, CalibrateRequest, CalibrateResult, Games, Levels, NewGameRequest, SeatRequest, Timing};
+use chess_hub::{Config, Executor, Hub, Next, TopicFilter, WorkContext};
+use chess_play::{Calibrate, CalibrateRequest, CalibrateResult, Games, Levels, NewGameRequest, SeatRequest, Timing};
+use common::*;
 
 fn request(white: &str, black: &str, time: TimeControl, seed: Option<u64>) -> NewGameRequest {
     NewGameRequest {
@@ -52,11 +52,11 @@ fn level_setup() -> LevelSetup {
     LevelSetup { hub, games, _dir: dir }
 }
 
-fn player_events(hub: &Hub) -> dameless_hub::Subscription {
+fn player_events(hub: &Hub) -> chess_hub::Subscription {
     hub.bus.subscribe(0, TopicFilter::of(["engines", "work"]))
 }
 
-fn levels_updated(sub: &mut dameless_hub::Subscription) -> Vec<LevelsUpdated> {
+fn levels_updated(sub: &mut chess_hub::Subscription) -> Vec<LevelsUpdated> {
     let mut out = Vec::new();
     for e in std::mem::take(&mut sub.backlog) {
         if e.kind == EventKind::LevelsUpdated {
@@ -106,7 +106,7 @@ async fn a_level_chooses_among_its_lines_the_same_way_for_the_same_seed() {
     assert_eq!(first.summary.white.name, "Fake 800");
     assert_eq!(first.summary.white.rating, Some(800));
     let again = play(42).await;
-    let moves = |g: &dameless_core::game::Game| g.moves.iter().map(|m| m.uci.clone()).collect::<Vec<_>>();
+    let moves = |g: &chess_core::game::Game| g.moves.iter().map(|m| m.uci.clone()).collect::<Vec<_>>();
     assert_eq!(moves(&first), moves(&again), "the same seed plays the same game");
     let other = play(43).await;
     assert_ne!(moves(&first), moves(&other), "another seed, another game");

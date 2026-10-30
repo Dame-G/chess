@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use dameless_core::events::{Event, Payload, Topic};
+use chess_core::events::{Event, Payload, Topic};
 use tokio::sync::broadcast;
 
 /// How many events are kept for replay.
@@ -196,7 +196,7 @@ impl Subscription {
 
 #[cfg(test)]
 mod tests {
-    use dameless_core::{
+    use chess_core::{
         GameId, Side, WorkId,
         events::{EvalInfo, EventKind, GameThinking, GameUndone, Policy, WorkLog},
     };

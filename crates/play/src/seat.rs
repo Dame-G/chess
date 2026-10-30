@@ -7,7 +7,7 @@
 //!   referee there, and a seat's move counts once Lichess's game stream shows it.
 
 use async_trait::async_trait;
-use dameless_core::{
+use chess_core::{
     Error,
     chess::Position,
     game::{SeatAction, SeatMove, Turn},

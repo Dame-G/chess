@@ -9,19 +9,19 @@
 //! checkpoint after every batch, so a restarted import carries on where it stopped.
 
 use async_trait::async_trait;
-use dameless_core::{
+use chess_core::{
     Error, PlayerKey, Score, Side, Speed, TimeControl, Timestamp,
     chess::Position,
     events::AssistKind,
     game::{Move, Opening, Seat, Source},
     work::{Progress, WorkKind},
 };
-use dameless_hub::{Executor, WorkContext};
-use dameless_lichess::{
+use chess_hub::{Executor, WorkContext};
+use chess_lichess::{
     Error as LichessError,
     import::{ExportPlayer, ExportQuery, ExportedGame},
 };
-use dameless_store::NewGame;
+use chess_store::NewGame;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -120,7 +120,7 @@ impl ImportExecutor {
 
 /// What one import reads from: the client, whose history and whether reading it is assistance.
 struct Reading<'a> {
-    client: &'a dameless_lichess::Lichess,
+    client: &'a chess_lichess::Lichess,
     username: &'a str,
     owner_id: String,
     lichess_url: String,
@@ -139,7 +139,7 @@ impl Executor for ImportExecutor {
             PlayerKey::You => {
                 let client = self
                     .connections
-                    .client(dameless_core::ConnectionKey::You)
+                    .client(chess_core::ConnectionKey::You)
                     .ok_or_else(|| Error::conflict("your Lichess account is not connected: log in first"))?;
                 let name = match self.connections.you().account() {
                     Some(a) => a.username,
@@ -440,7 +440,7 @@ pub fn to_game(
         moves.push(Move { clock_ms: after, think_ms: think, eval, ..Move::new(played.uci, played.san) });
     }
     let winner = g.winner.map(side);
-    let Some(end) = dameless_core::lichess::ending(g.status.key(), winner, Some(&pos)) else {
+    let Some(end) = chess_core::lichess::ending(g.status.key(), winner, Some(&pos)) else {
         return Ok(None);
     };
     let opening =
@@ -466,13 +466,13 @@ pub fn to_game(
 
 #[cfg(test)]
 mod tests {
-    use dameless_core::game::{Ending, GameStatus as Status, Outcome};
-    use dameless_lichess::GameStatus;
+    use chess_core::game::{Ending, GameStatus as Status, Outcome};
+    use chess_lichess::GameStatus;
 
     use super::*;
 
     fn game() -> ExportedGame {
-        serde_json::from_value(dameless_lichess::testing::exported_game("imp00001", 1_700_000_000_000, "Dame", "Bob"))
+        serde_json::from_value(chess_lichess::testing::exported_game("imp00001", 1_700_000_000_000, "Dame", "Bob"))
             .unwrap()
     }
 

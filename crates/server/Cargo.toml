@@ -1,6 +1,6 @@
 [package]
-name = "dameless"
-description = "The Dameless app: the HTTP API, the event stream and the CLI, in one binary."
+name = "chess"
+description = "The Chess app: the HTTP API, the event stream and the CLI, in one binary."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,13 +10,13 @@ repository.workspace = true
 path = "src/lib.rs"
 
 [[bin]]
-name = "dameless"
+name = "chess"
 path = "src/main.rs"
 
 # A tiny UCI engine that knows the rules but not chess (analysis's test engine, shared), so the app's tests play games,
-# evaluate and review without Reckless. Integration tests find it through `CARGO_BIN_EXE_dameless-fake-engine`.
+# evaluate and review without Reckless. Integration tests find it through `CARGO_BIN_EXE_chess-fake-engine`.
 [[bin]]
-name = "dameless-fake-engine"
+name = "chess-fake-engine"
 path = "../analysis/tests/support/fake_eval.rs"
 test = false
 doc = false
@@ -26,14 +26,14 @@ anyhow.workspace = true
 async-trait.workspace = true
 axum = { workspace = true, features = ["macros"] }
 clap.workspace = true
-dameless-analysis.workspace = true
-dameless-core.workspace = true
-dameless-engine.workspace = true
-dameless-hub.workspace = true
-dameless-lichess.workspace = true
-dameless-play.workspace = true
-dameless-store.workspace = true
-dameless-work.workspace = true
+chess-analysis.workspace = true
+chess-core.workspace = true
+chess-engine.workspace = true
+chess-hub.workspace = true
+chess-lichess.workspace = true
+chess-play.workspace = true
+chess-store.workspace = true
+chess-work.workspace = true
 futures.workspace = true
 mime_guess.workspace = true
 reqwest.workspace = true
@@ -52,5 +52,5 @@ utoipa.workspace = true
 utoipa-axum.workspace = true
 
 [dev-dependencies]
-dameless-lichess = { workspace = true, features = ["mock"] }
+chess-lichess = { workspace = true, features = ["mock"] }
 tempfile.workspace = true

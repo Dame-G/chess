@@ -6,7 +6,7 @@
 
 use std::collections::HashSet;
 
-use dameless_core::{
+use chess_core::{
     Error, PlayerKey, Side,
     chess::Position,
     events::AssistKind,
@@ -15,7 +15,7 @@ use dameless_core::{
     profile::ProfileFilter,
     repertoire::{self, Repertoire, RepertoireGame, RepertoireOptions},
 };
-use dameless_store::GameFilter;
+use chess_store::GameFilter;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -58,7 +58,7 @@ impl Profiles {
     pub async fn prep(&self, req: PrepRequest) -> Result<Prep, Error> {
         let hub = self.hub();
         hub.policy.check(AssistKind::Explorer)?;
-        let limit = req.limit.unwrap_or(DEFAULT_GAMES).clamp(1, dameless_store::games::MAX_LIMIT);
+        let limit = req.limit.unwrap_or(DEFAULT_GAMES).clamp(1, chess_store::games::MAX_LIMIT);
         let games =
             hub.store.profile_games(PlayerKey::You, ProfileFilter { limit, ..ProfileFilter::default() }, true).await?;
         let (mut prep, plies) = prep::build(req.side, &games);
@@ -85,7 +85,7 @@ impl Profiles {
             .games(GameFilter {
                 player: Some(PlayerKey::You),
                 statuses: vec![GameStatus::Finished],
-                limit: req.limit.unwrap_or(DEFAULT_GAMES).clamp(1, dameless_store::games::MAX_LIMIT),
+                limit: req.limit.unwrap_or(DEFAULT_GAMES).clamp(1, chess_store::games::MAX_LIMIT),
                 ..GameFilter::default()
             })
             .await?;

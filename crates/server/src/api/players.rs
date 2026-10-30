@@ -3,15 +3,15 @@
 use std::sync::Arc;
 
 use axum::{extract::State, http::StatusCode};
-use dameless_core::{
+use chess_core::{
     Error, PlayerKey, Timestamp,
     events::AssistKind,
     profile::{Comparison, Player, Profile, ProfileFilter},
     time::Speed,
     work::{Priority, Subject, Work, WorkKind},
 };
-use dameless_play::ImportSpec;
-use dameless_store::NewWork;
+use chess_play::ImportSpec;
+use chess_store::NewWork;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -27,7 +27,7 @@ pub struct PlayerPath {
 
 /// What is known of a player.
 #[utoipa::path(get, path = "/api/players/{key}", operation_id = "get_player", tag = "players", params(PlayerPath),
-    responses((status = 200, body = Player), (status = 400, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = Player), (status = 400, body = chess_core::error::ErrorBody)))]
 pub async fn get_player(State(app): State<Arc<App>>, Path(p): Path<PlayerPath>) -> ApiResult<Json<Player>> {
     let key = parse::<PlayerKey>("a player", &p.key)?;
     Ok(Json(app.profiles.player(&key).await?))
@@ -58,7 +58,7 @@ impl FilterQuery {
                     Timestamp::parse(s).ok_or_else(|| ApiError(Error::bad_request(format!("{s:?} is not a time"))))
                 })
                 .transpose()?,
-            limit: self.limit.unwrap_or(dameless_core::profile::DEFAULT_LIMIT),
+            limit: self.limit.unwrap_or(chess_core::profile::DEFAULT_LIMIT),
         })
     }
 }
@@ -66,7 +66,7 @@ impl FilterQuery {
 /// A player's games added up: results over every finished game, engine figures over the reviewed ones, weak spots
 /// for you.
 #[utoipa::path(get, path = "/api/players/{key}/profile", operation_id = "get_profile", tag = "players",
-    params(PlayerPath, FilterQuery), responses((status = 200, body = Profile), (status = 400, body = dameless_core::error::ErrorBody)))]
+    params(PlayerPath, FilterQuery), responses((status = 200, body = Profile), (status = 400, body = chess_core::error::ErrorBody)))]
 pub async fn get_profile(
     State(app): State<Arc<App>>,
     Path(p): Path<PlayerPath>,
@@ -77,7 +77,7 @@ pub async fn get_profile(
     profile.unreviewed_total = app.reviews.unreviewed_count(&key).await.ok();
     if key == PlayerKey::You {
         profile.history_complete =
-            Some(app.hub.store.meta::<bool>(dameless_play::import::COMPLETE_KEY).await?.unwrap_or(false));
+            Some(app.hub.store.meta::<bool>(chess_play::import::COMPLETE_KEY).await?.unwrap_or(false));
     }
     Ok(Json(profile))
 }
@@ -85,7 +85,7 @@ pub async fn get_profile(
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct CompareQuery {
-    /// Two to eight players, comma-separated: `you,dameless,lichess:cutemouse83`.
+    /// Two to eight players, comma-separated: `you,engine:stockfish,lichess:cutemouse83`.
     pub players: String,
     pub speeds: Option<String>,
     pub rated: Option<bool>,
@@ -95,7 +95,7 @@ pub struct CompareQuery {
 
 /// Profiles side by side, with who leads each row.
 #[utoipa::path(get, path = "/api/compare", operation_id = "compare_players", tag = "players", params(CompareQuery),
-    responses((status = 200, body = Comparison), (status = 400, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = Comparison), (status = 400, body = chess_core::error::ErrorBody)))]
 pub async fn compare_players(
     State(app): State<Arc<App>>,
     Query(q): Query<CompareQuery>,
@@ -128,7 +128,7 @@ pub struct LeaderboardEntry {
 
 /// Lichess's leaderboard at a speed.
 #[utoipa::path(get, path = "/api/players/top", operation_id = "top_players", tag = "players", params(TopQuery),
-    responses((status = 200, body = Vec<LeaderboardEntry>), (status = 400, body = dameless_core::error::ErrorBody), (status = 502, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = Vec<LeaderboardEntry>), (status = 400, body = chess_core::error::ErrorBody), (status = 502, body = chess_core::error::ErrorBody)))]
 pub async fn top_players(
     State(app): State<Arc<App>>,
     Query(q): Query<TopQuery>,
@@ -177,7 +177,7 @@ pub struct ImportBody {
 /// `lichess:<name>` (theirs; refused while you play on Lichess).
 #[utoipa::path(post, path = "/api/players/{key}/import", operation_id = "import_player", tag = "players",
     params(PlayerPath), request_body(content = Option<ImportBody>),
-    responses((status = 202, body = Work), (status = 400, body = dameless_core::error::ErrorBody), (status = 409, body = dameless_core::error::ErrorBody)))]
+    responses((status = 202, body = Work), (status = 400, body = chess_core::error::ErrorBody), (status = 409, body = chess_core::error::ErrorBody)))]
 pub async fn import_player(
     State(app): State<Arc<App>>,
     Path(p): Path<PlayerPath>,

@@ -8,13 +8,13 @@
 
 use std::sync::Arc;
 
-use dameless_core::{
+use chess_core::{
     ConnectionKey, Error, Timestamp,
     events::AssistKind,
     lichess::{Account, ConnectionStatus},
 };
-use dameless_hub::Hub;
-use dameless_lichess::{
+use chess_hub::Hub;
+use chess_lichess::{
     Lichess, User,
     explorer::ExplorerQuery,
     oauth::{LOGIN_FOR, Logins},
@@ -75,7 +75,7 @@ pub struct Connections {
 
 impl Connections {
     /// The connections of the Lichess `config` points at (a mock in tests), playing their games through `games`.
-    pub fn new(hub: Arc<Hub>, games: Games, config: dameless_lichess::Config) -> Self {
+    pub fn new(hub: Arc<Hub>, games: Games, config: chess_lichess::Config) -> Self {
         let clients = Arc::new(Clients::new(config));
         let you = You::new(hub.clone(), clients.clone(), games);
         Self { inner: Arc::new(Inner { hub, clients, you, logins: Logins::new(LOGIN_FOR) }) }
@@ -272,7 +272,7 @@ impl Connections {
 
     /// A player's public profile (with your token when you are logged in). 404 when Lichess has no such player.
     pub async fn user(&self, username: &str) -> Result<User, Error> {
-        if !dameless_core::ids::valid_lichess_name(username.trim()) {
+        if !chess_core::ids::valid_lichess_name(username.trim()) {
             return Err(Error::bad_request(format!("{username} is not a Lichess username")));
         }
         self.yours_or_anonymous().user(username.trim()).await.map_err(error::lichess)
@@ -280,10 +280,10 @@ impl Connections {
 
     /// Lichess's leaderboard at a perf (`bullet`, `blitz`, `rapid`, `classical`, `ultraBullet`).
     pub async fn leaderboard(&self, perf: &str, nb: u32) -> Result<Vec<User>, Error> {
-        if !dameless_lichess::players::LEADERBOARD_PERFS.contains(&perf) {
+        if !chess_lichess::players::LEADERBOARD_PERFS.contains(&perf) {
             return Err(Error::bad_request(format!(
                 "perf is one of {}",
-                dameless_lichess::players::LEADERBOARD_PERFS.join(", ")
+                chess_lichess::players::LEADERBOARD_PERFS.join(", ")
             )));
         }
         self.yours_or_anonymous().leaderboard(nb, perf).await.map_err(error::lichess)

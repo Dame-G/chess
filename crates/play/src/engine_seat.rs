@@ -9,19 +9,19 @@
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 use async_trait::async_trait;
-use dameless_core::{
+use chess_core::{
     Error, GameId, Score, Side, TimeControl,
     events::{GameThinking, Payload},
     game::{SeatAction, SeatMove, Turn},
     levels::{self, Level},
 };
-use dameless_engine::{
+use chess_engine::{
     proc,
     uci::{self, Engine, Info, Limits, SearchEvent},
 };
-use dameless_hub::{Bus, Ledger, Reservation};
+use chess_hub::{Bus, Ledger, Reservation};
 
-use dameless_work::EngineBinary;
+use chess_work::EngineBinary;
 
 use crate::{
     error,
@@ -155,7 +155,7 @@ impl EngineSeat {
         }
         match turn.time {
             TimeControl::Clock { increment_ms, initial_ms } => {
-                let clocks = turn.clocks.unwrap_or(dameless_core::SidePair::both(initial_ms));
+                let clocks = turn.clocks.unwrap_or(chess_core::SidePair::both(initial_ms));
                 Limits::clock(uci::Clock {
                     wtime_ms: clocks.white,
                     btime_ms: clocks.black,

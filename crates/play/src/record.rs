@@ -7,13 +7,13 @@ use std::{
     time::Instant,
 };
 
-use dameless_core::{
+use chess_core::{
     Error, GameId, Side, SidePair,
     events::{GameChanged, GameMoved, GameUndone, OpponentGone, Payload},
     game::{Game, GameEnd, GameStatus, GameSummary, Move, Offers, SeatAction},
 };
-use dameless_hub::Hub;
-use dameless_store::{GameUpdate, NewGame, now};
+use chess_hub::Hub;
+use chess_store::{GameUpdate, NewGame, now};
 use tokio::sync::watch;
 
 /// What memory holds of a game being played.
@@ -251,7 +251,7 @@ impl Record {
 /// Both clocks at the start, for a game with a clock: the initial time each.
 fn initial_clocks(game: &Game) -> Option<SidePair<u64>> {
     match game.summary.time {
-        dameless_core::TimeControl::Clock { initial_ms, .. } => Some(SidePair::both(initial_ms)),
+        chess_core::TimeControl::Clock { initial_ms, .. } => Some(SidePair::both(initial_ms)),
         _ => None,
     }
 }

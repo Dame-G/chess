@@ -1,5 +1,5 @@
 [package]
-name = "dameless-engine"
+name = "chess-engine"
 description = "Adapter: UCI processes, the engine pool, downloads of the built-in engines."
 version.workspace = true
 edition.workspace = true

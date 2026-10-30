@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use axum::{extract::State, http::header, response::IntoResponse};
-use dameless_core::{Error, WorkId, work::Work};
+use chess_core::{Error, WorkId, work::Work};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -44,35 +44,35 @@ pub struct WorkPath {
 
 /// One work item.
 #[utoipa::path(get, path = "/api/work/{id}", operation_id = "get_work", tag = "work", params(WorkPath),
-    responses((status = 200, body = Work), (status = 404, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = Work), (status = 404, body = chess_core::error::ErrorBody)))]
 pub async fn get_work(State(app): State<Arc<App>>, Path(p): Path<WorkPath>) -> ApiResult<Json<Work>> {
     Ok(Json(app.scheduler.get(WorkId(p.id)).await?))
 }
 
 /// Stops an item: a queued one at once, a running one at its next safe point.
 #[utoipa::path(post, path = "/api/work/{id}/stop", operation_id = "stop_work", tag = "work", params(WorkPath),
-    responses((status = 200, body = Work), (status = 404, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = Work), (status = 404, body = chess_core::error::ErrorBody)))]
 pub async fn stop_work(State(app): State<Arc<App>>, Path(p): Path<WorkPath>) -> ApiResult<Json<Work>> {
     Ok(Json(app.scheduler.stop(WorkId(p.id)).await?))
 }
 
 /// Pauses an item until it is resumed: a running one at its next safe point, a queued one is held.
 #[utoipa::path(post, path = "/api/work/{id}/pause", operation_id = "pause_work", tag = "work", params(WorkPath),
-    responses((status = 200, body = Work), (status = 404, body = dameless_core::error::ErrorBody), (status = 409, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = Work), (status = 404, body = chess_core::error::ErrorBody), (status = 409, body = chess_core::error::ErrorBody)))]
 pub async fn pause_work(State(app): State<Arc<App>>, Path(p): Path<WorkPath>) -> ApiResult<Json<Work>> {
-    Ok(Json(app.scheduler.pause(WorkId(p.id), dameless_work::scheduler::PAUSED_BY_YOU).await?))
+    Ok(Json(app.scheduler.pause(WorkId(p.id), chess_work::scheduler::PAUSED_BY_YOU).await?))
 }
 
 /// Carries on paused work.
 #[utoipa::path(post, path = "/api/work/{id}/resume", operation_id = "resume_work", tag = "work", params(WorkPath),
-    responses((status = 200, body = Work), (status = 404, body = dameless_core::error::ErrorBody), (status = 409, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = Work), (status = 404, body = chess_core::error::ErrorBody), (status = 409, body = chess_core::error::ErrorBody)))]
 pub async fn resume_work(State(app): State<Arc<App>>, Path(p): Path<WorkPath>) -> ApiResult<Json<Work>> {
     Ok(Json(app.scheduler.resume(WorkId(p.id)).await?))
 }
 
 /// A work item's log, as plain text. Lines also come live as `work.log` events.
 #[utoipa::path(get, path = "/api/work/{id}/log", operation_id = "work_log", tag = "work", params(WorkPath),
-    responses((status = 200, content_type = "text/plain", body = String), (status = 404, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, content_type = "text/plain", body = String), (status = 404, body = chess_core::error::ErrorBody)))]
 pub async fn work_log(State(app): State<Arc<App>>, Path(p): Path<WorkPath>) -> ApiResult<impl IntoResponse> {
     let id = WorkId(p.id);
     app.scheduler.get(id).await?;

@@ -9,7 +9,7 @@ use axum::{
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use dameless_core::Error;
+use chess_core::Error;
 
 /// An error on its way out of a route.
 #[derive(Debug)]

@@ -325,7 +325,7 @@ const tabs = computed(() => [
             <UiField
               v-slot="{ id }"
               label="Token"
-              hint="Run dameless token on the machine with the server, and paste what it prints."
+              hint="Run chess token on the machine with the server, and paste what it prints."
             >
               <EPasswordField :id="id" v-model="token" label="Token" hide-label required autocomplete="off" />
             </UiField>

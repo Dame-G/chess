@@ -16,15 +16,15 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use dameless_core::{
+use chess_core::{
     Error, GameId, PlayerKey, Timestamp,
     drills::{self, Drill, DrillAnswer, DrillHint, DrillId, DrillOutcome, HitRatePoint, NewDrill, SessionFilter},
     events::{DrillAnswered, DrillDeleted, Payload},
     profile::{self, ProfileFilter, ProfileGame},
     themes::ThemeKind,
 };
-use dameless_hub::Hub;
-use dameless_store::now;
+use chess_hub::Hub;
+use chess_store::now;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -242,7 +242,7 @@ impl Drills {
         let asked = self.hints.lock().expect("hints lock").remove(&id).is_some();
         let hinted = asked && outcome == DrillOutcome::Pass;
         let graded = drills::grade(&drill, outcome, hinted, &now);
-        let typed = dameless_core::chess::Position::from_fen(&drill.fen)
+        let typed = chess_core::chess::Position::from_fen(&drill.fen)
             .and_then(|p| p.to_uci(answer))
             .unwrap_or_else(|_| answer.trim().to_owned());
         let record = DrillAnswer { drill: id, at: now.clone(), answer: typed, outcome, hinted };

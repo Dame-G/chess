@@ -43,7 +43,7 @@ use tools::{Operation, Place, Reach};
 
 /// What the server tells a client when it connects: how to work with the app, and the rules.
 pub const INSTRUCTIONS: &str = "\
-Dameless is a chess app to play, review and analyze games, with any UCI engine as an opponent or the analysis engine. \
+Chess is the user's app to play, review and analyze games, with any UCI engine as an opponent or the analysis engine. \
 Every tool is one route of the app's API, named by its operation id; the description names the CLI command that does \
 the same. Results are the route's JSON.
 
@@ -288,7 +288,7 @@ fn wait_tools() -> [Tool; 1] {
 impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("dameless", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("chess", env!("CARGO_PKG_VERSION")))
             .with_instructions(INSTRUCTIONS)
     }
 

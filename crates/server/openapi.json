@@ -1,8 +1,8 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Dameless",
-    "description": "Play, review and analyze chess, with any UCI engine. Every command of the `dameless` CLI is one of these routes. Every request but `/api/health` carries `Authorization: Bearer <token>`.",
+    "title": "Chess",
+    "description": "Play, review and analyze chess, with any UCI engine. Every command of the `chess` CLI is one of these routes. Every request but `/api/health` carries `Authorization: Bearer <token>`.",
     "license": {
       "name": "GPL-3.0-or-later",
       "identifier": "GPL-3.0-or-later"
@@ -21,7 +21,7 @@
           {
             "name": "players",
             "in": "query",
-            "description": "Two to eight players, comma-separated: `you,dameless,lichess:cutemouse83`.",
+            "description": "Two to eight players, comma-separated: `you,engine:stockfish,lichess:cutemouse83`.",
             "required": true,
             "schema": {
               "type": "string"
@@ -7736,7 +7736,7 @@
           "cores": {
             "type": "integer",
             "format": "int32",
-            "description": "Cores the scheduler hands out (`DAMELESS_CORES`).",
+            "description": "Cores the scheduler hands out (`CHESS_CORES`).",
             "minimum": 0
           },
           "ledger": {

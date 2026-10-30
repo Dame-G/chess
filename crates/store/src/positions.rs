@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use dameless_core::{Error, review::PositionEval};
+use chess_core::{Error, review::PositionEval};
 use rusqlite::{OptionalExtension, params};
 
 use crate::{Store, from_json, to_json};
@@ -77,7 +77,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use dameless_core::{Score, review::EvalLine};
+    use chess_core::{Score, review::EvalLine};
 
     use super::*;
     use crate::testing;

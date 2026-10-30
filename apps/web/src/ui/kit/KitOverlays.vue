@@ -238,7 +238,7 @@ const tabs: SheetTab[] = [
           <UiKeyValue
             :items="[
               { label: 'Cores', value: 15 },
-              { label: 'Data', value: 'C:\\dameless', mono: true, copy: true },
+              { label: 'Data', value: 'C:\\chess', mono: true, copy: true },
             ]"
           />
         </UiSection>
