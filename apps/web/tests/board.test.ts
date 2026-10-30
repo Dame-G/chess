@@ -57,7 +57,7 @@ describe("reading a pasted position", () => {
 const base: GameSummary = {
   id: 1,
   white: { player: "you", name: "You", version: null, build: null, rating: null, title: null },
-  black: { player: "dameless", name: "Dameless", version: 1, build: null, rating: null, title: null },
+  black: { player: "dameless", name: "Dameless", rating: null, title: null },
   source: { type: "local" },
   time: { type: "clock", initial_ms: 180_000, increment_ms: 2000 },
   status: "finished",
@@ -80,28 +80,11 @@ describe("modes and what opens first", () => {
     expect(modesFor({ status: "finished", you: null })).toEqual(["review", "explore"]);
   });
 
-  it("opens your live game, then the bot's, then a local engine game, then a trial's, then your last finished game", () => {
-    const bot = {
-      ...base,
-      id: 2,
-      you: null,
-      status: "live" as const,
-      source: { type: "lichess" as const, connection: "bot" as const, id: "x", rated: true, speed: "blitz" as const },
-    };
-    const trial = {
-      ...base,
-      id: 3,
-      you: null,
-      status: "live" as const,
-      source: { type: "trial" as const, trial: 1, index: 0 },
-    };
+  it("opens your live game, then a local engine game, then your last finished game", () => {
     const mine = { ...base, id: 4, status: "live" as const };
     const engines = { ...base, id: 6, you: null, status: "live" as const, source: { type: "local" as const } };
-    expect(firstGame([trial, bot, mine])?.id).toBe(4);
-    expect(firstGame([trial, engines])?.id).toBe(6);
-    expect(firstGame([engines, bot])?.id).toBe(2);
-    expect(firstGame([trial, bot])?.id).toBe(2);
-    expect(firstGame([trial])?.id).toBe(3);
+    expect(firstGame([engines, mine])?.id).toBe(4);
+    expect(firstGame([engines, base])?.id).toBe(6);
     expect(firstGame([{ ...base, id: 5, you: null }, base])?.id).toBe(1);
     expect(firstGame([{ ...base, you: null }])).toBeUndefined();
   });
@@ -116,7 +99,7 @@ describe("the command bar's verbs", () => {
     });
     expect(readVerb("review last 20")).toEqual({ verb: "review", last: 20 });
     expect(readVerb("compare cutemouse83")).toEqual({ verb: "compare", players: ["cutemouse83"] });
-    expect(readVerb("new idea")).toEqual({ verb: "new-idea" });
+    expect(readVerb("new idea")).toBeUndefined();
     expect(readVerb("settings")).toBeUndefined();
   });
 });

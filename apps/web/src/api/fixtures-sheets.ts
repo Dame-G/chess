@@ -1,27 +1,21 @@
 /**
- * The fixtures' answers for the sheets: profiles and comparisons, the leaderboard, ideas and tunes, Dameless's
- * strength, the connections and the machine. `fixtures.ts` hands this module the data it shares (games, ideas, trials,
- * versions, work, connections) and the way to speak on the event stream; everything here is invented too.
+ * The fixtures' answers for the sheets: profiles and comparisons, the leaderboard, the connection and the machine.
+ * `fixtures.ts` hands this module the data it shares (games, work, connections) and the way to speak on the event
+ * stream; everything here is invented too.
  */
 import { error, reply } from "./fixtures-http";
 import { settingsRoute } from "./fixtures-settings";
-import { applyVariants, tuneVariant, variant } from "./fixtures-variants";
 import { leaders } from "./leaders";
 import type {
-  BotSettings,
   Classification,
   ClassCounts,
   Connections,
   ConnectionStatus,
-  DamelessView,
   EventKind,
   EventPayloads,
   Game,
   GameId,
-  Idea,
-  IdeaId,
   Moment,
-  NewIdeaRequest,
   Phase,
   Player,
   PlayerKey,
@@ -32,16 +26,7 @@ import type {
   Status,
   ThemeKind,
   ThemeStat,
-  ProgressPoint,
   LeaderboardEntry,
-  TimeControl,
-  Trial,
-  TrialSummary,
-  Tunable,
-  TuneParamInfo,
-  TuneDetail,
-  TuneStep,
-  Version,
   WeakSpot,
   Wdl,
   Work,
@@ -51,18 +36,13 @@ export interface SheetContext {
   minutesAgo: (m: number) => string;
   rng: (seed: number) => () => number;
   emit: <K extends EventKind>(kind: K, topic: string, data: EventPayloads[K]) => void;
-  ideas: Idea[];
-  trials: Trial[];
-  versions: Version[];
   work: Work[];
   connections: Connections;
   status: Status;
   games: Map<GameId, { game: Game }>;
-  summaryOf: (t: Trial) => TrialSummary;
   /** The position after the first `plies` moves of a game written in SAN, as a FEN. */
   fenAfter: (san: string, plies: number) => string;
   lines: { italian: string; sicilian: string; qgd: string; london: string; caro: string };
-  /** `botnoversion`, `botversion`: the bot is offline, with no version chosen, or with the champion chosen. */
   /** `unlinked`: You has not logged in to Lichess yet. */
   mode: string | null;
 }
@@ -644,384 +624,6 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
     return w;
   }
 
-  // ---- Dameless
-
-  function strength(): ProgressPoint[] {
-    let elo = 0;
-    let variance = 0;
-    return ctx.versions
-      .filter((v) => v.line.type === "champion")
-      .sort(
-        (a, b) => (a.line.type === "champion" ? a.line.number : 0) - (b.line.type === "champion" ? b.line.number : 0),
-      )
-      .map((v) => {
-        if (v.elo) {
-          elo += v.elo.elo;
-          variance += ((v.elo.high - v.elo.low) / 2) ** 2;
-        }
-        const half = Math.sqrt(variance);
-        return {
-          at: v.created_at,
-          value: round(elo),
-          low: round(elo - half),
-          high: round(elo + half),
-          game: null,
-          version: v.id,
-          label: v.name,
-        };
-      });
-  }
-
-  /** A regression check that failed: the newest champion against the oldest (the `regression` variant). */
-  function regressions(line: DamelessView["line"], champion: DamelessView["champion"]): DamelessView["regressions"] {
-    const oldest = line.reduce((a, b) =>
-      (b.line.type === "champion" ? b.line.number : 0) < (a.line.type === "champion" ? a.line.number : 0) ? b : a,
-    );
-    return [
-      {
-        idea: 7,
-        champion: champion.id,
-        champion_name: champion.name,
-        against: oldest.id,
-        against_name: oldest.name,
-        passed: false,
-        elo: { elo: -4.2, low: -7.3, high: -1.1 },
-        pairs: 10000,
-        summary: `Regression: ${champion.name} is measurably worse than ${oldest.name}, −4.2 ± 3.1 Elo over 10000 pairs. Nothing was reverted; read the promotions since ${oldest.name}`,
-        at: minutesAgo(60 * 3),
-      },
-    ];
-  }
-
-  function overview(): DamelessView {
-    const line = ctx.versions.filter((v) => v.line.type === "champion");
-    const sorted = [...ctx.ideas].sort((a, b) => b.created_at.localeCompare(a.created_at));
-    const champion = line.reduce((a, b) =>
-      (b.line.type === "champion" ? b.line.number : 0) > (a.line.type === "champion" ? a.line.number : 0) ? b : a,
-    );
-    return {
-      champion,
-      regressions: variant("regression") ? regressions(line, champion) : [],
-      line: variant("empty") ? line.slice(0, 1) : line,
-      upstream: null,
-      ideas: {
-        running: sorted.filter((i) => i.status === "running"),
-        queued: sorted.filter((i) => i.status === "queued"),
-        recent: sorted.filter((i) => i.status !== "running" && i.status !== "queued").slice(0, 6),
-      },
-      connection: ctx.connections.bot.bot ?? null,
-      strength: variant("empty")
-        ? []
-        : variant("unmeasured")
-          ? strength().map((p) => ({ ...p, value: 0, low: 0, high: 0 }))
-          : strength(),
-    };
-  }
-
-  // ---- Ideas added to the shared fixtures
-
-  const stc: TimeControl = { type: "clock", initial_ms: 8000, increment_ms: 80 };
-  const trial = (t: Partial<Trial> & Pick<Trial, "id" | "idea" | "stage" | "status">): Trial => ({
-    preset: null,
-    time: null,
-    played: null,
-    scaling: null,
-    bounds: null,
-    penta: [0, 0, 0, 0, 0],
-    wdl: [0, 0, 0],
-    llr: null,
-    elo: null,
-    nelo: null,
-    detail: null,
-    started_at: null,
-    ended_at: null,
-    ...t,
-  });
-  const idea = (i: Partial<Idea> & Pick<Idea, "id" | "title" | "kind" | "branch" | "status">): Idea => ({
-    hypothesis: "",
-    author: "claude",
-    base: 14,
-    version: null,
-    verdict: null,
-    trials: [],
-    tags: [],
-    notes: null,
-    created_at: minutesAgo(60),
-    ended_at: null,
-    ...i,
-  });
-
-  ctx.trials.push(
-    trial({
-      id: 20,
-      idea: 4,
-      stage: "tune",
-      status: "running",
-      time: stc,
-      detail: "Iteration 140 of 1,000.",
-      started_at: minutesAgo(60 * 3),
-    }),
-    trial({ id: 21, idea: 5, stage: "fingerprint", status: "passed", detail: "Bench identical: 1,672,794 nodes." }),
-    trial({
-      id: 22,
-      idea: 5,
-      stage: "speed",
-      status: "passed",
-      detail: "1.9 % faster: 538,200 against 528,100 nodes a second, over 20 paired runs.",
-      started_at: minutesAgo(60 * 6),
-      ended_at: minutesAgo(60 * 6 - 4),
-    }),
-    trial({
-      id: 23,
-      idea: 7,
-      stage: "fingerprint",
-      status: "passed",
-      detail: "Bench changed.",
-      ended_at: minutesAgo(60 * 70),
-    }),
-    trial({
-      id: 24,
-      idea: 7,
-      stage: "screen",
-      status: "stopped",
-      preset: "vstc",
-      time: { type: "clock", initial_ms: 4000, increment_ms: 40 },
-      bounds: [-5, 0],
-      penta: [6, 31, 70, 28, 5],
-      wdl: [212, 260, 214],
-      llr: { value: 0.42, lower: -2.94, upper: 2.94 },
-      elo: { elo: 0.4, low: -10.5, high: 11.3 },
-      detail: "Stopped by you after 140 pairs.",
-      started_at: minutesAgo(60 * 70),
-      ended_at: minutesAgo(60 * 69),
-    }),
-    trial({
-      id: 25,
-      idea: 8,
-      stage: "fingerprint",
-      status: "failed",
-      detail: "The branch did not build: cannot find value `margin` in this scope.",
-      ended_at: minutesAgo(60 * 90),
-    }),
-  );
-
-  ctx.versions.push({
-    id: 22,
-    name: "cheaper-history",
-    commit: "c4eap3r".padEnd(40, "0"),
-    branch: "cheaper-history",
-    line: { type: "idea", idea: 5 },
-    parent: 14,
-    bench: 1_672_794,
-    elo: null,
-    created_at: minutesAgo(60 * 6),
-  });
-
-  ctx.ideas.push(
-    idea({
-      id: 4,
-      title: "Retune search constants",
-      hypothesis:
-        "Eight pruning and reduction constants have not moved since v6; tuning them together should find a few Elo.",
-      kind: "tune",
-      author: "you",
-      branch: "spsa/tunables",
-      status: "running",
-      tags: ["tune-oct"],
-      notes: "Starting from the declared defaults. Iterations: 1,000 of 8 pairs.",
-      created_at: minutesAgo(60 * 3),
-    }),
-    idea({
-      id: 5,
-      title: "Cheaper history update",
-      hypothesis: "Updating the continuation history only for moves that raise alpha saves time without changing play.",
-      kind: "speed",
-      branch: "cheaper-history",
-      version: 22,
-      status: "kept",
-      verdict: "Kept: 1.9 % faster, identical search.",
-      notes:
-        "The bench is identical, so the search is unchanged.\n\n- Skips the write for moves that fail low.\n- No change to the table's size.",
-      created_at: minutesAgo(60 * 6),
-      ended_at: minutesAgo(60 * 6 - 4),
-    }),
-    idea({
-      id: 6,
-      title: "Futility margin when improving",
-      hypothesis: "A smaller margin when the static eval is improving prunes more of the quiet tail.",
-      kind: "gain",
-      branch: "futility-improving",
-      status: "queued",
-      tags: ["search-oct"],
-      created_at: minutesAgo(25),
-    }),
-    idea({
-      id: 7,
-      title: "Singular extension at PV nodes",
-      hypothesis: "Extending singular moves at PV nodes by two plies finds more tactics.",
-      kind: "gain",
-      author: "you",
-      branch: "se-pv",
-      status: "stopped",
-      verdict: "Stopped by you at the screen.",
-      created_at: minutesAgo(60 * 70),
-      ended_at: minutesAgo(60 * 69),
-    }),
-    idea({
-      id: 8,
-      title: "Margin by depth in razoring",
-      hypothesis: "Scaling the razoring margin with depth removes a special case.",
-      kind: "neutral",
-      branch: "razor-depth",
-      status: "failed",
-      verdict: "Failed: the branch did not build.",
-      created_at: minutesAgo(60 * 90),
-      ended_at: minutesAgo(60 * 90 - 1),
-    }),
-  );
-  for (const i of ctx.ideas) i.trials = ctx.trials.filter((t) => t.idea === i.id).map(ctx.summaryOf);
-  applyVariants(ctx);
-
-  // ---- Tunes
-
-  const TUNABLES: Tunable[] = [
-    ["rfp_margin", 76, 20, 200],
-    ["rfp_depth", 8, 3, 14],
-    ["nmp_base", 4, 2, 8],
-    ["lmr_base", 98, 40, 160],
-    ["lmr_div", 215, 120, 320],
-    ["lmp_quad", 12, 4, 30],
-    ["futility_base", 118, 40, 240],
-    ["history_bonus", 168, 60, 300],
-  ].map(([name, start, min, max]) => ({
-    name: name as string,
-    start: start as number,
-    min: min as number,
-    max: max as number,
-    c_end: Math.max(1, Math.round(((max as number) - (min as number)) / 20)),
-    r_end: 0.002,
-  }));
-  /** What `GET /api/ideas/{id}/tune` says of each parameter. */
-  const paramInfo = (t: Tunable): TuneParamInfo => ({ name: t.name, start: t.start, min: t.min, max: t.max });
-
-  function tuneState(id: IdeaId): TuneDetail {
-    const rnd = ctx.rng(900 + id);
-    const length = tuneVariant();
-    const params = TUNABLES;
-    const steps: TuneStep[] = [];
-    const target = params.map((p) => p.start + (rnd() - 0.5) * (p.max - p.min) * 0.35);
-    const values = params.map((p) => p.start);
-    for (let k = 1; k <= (length?.steps ?? 140); k++) {
-      params.forEach((p, i) => {
-        const pull = (target[i]! - values[i]!) * 0.035;
-        values[i] = Math.max(p.min, Math.min(p.max, values[i]! + pull + (rnd() - 0.5) * (p.max - p.min) * 0.012));
-      });
-      steps.push({
-        iteration: k,
-        values: values.map((v) => round(v, 2)),
-        result: Math.round((rnd() - 0.45) * 6),
-        penta: [1, 2, 3, 2, 0],
-      });
-    }
-    return {
-      spec: {
-        params: [],
-        iterations: length?.iterations ?? 1000,
-        pairs: 8,
-        time: stc,
-        hash: 16,
-        concurrency: null,
-        alpha: 0.602,
-        gamma: 0.101,
-        a_ratio: 0.1,
-      },
-      params: params.map(paramInfo),
-      steps,
-    };
-  }
-  const tunes = new Map<IdeaId, TuneDetail>();
-  const tuneTimers = new Map<IdeaId, ReturnType<typeof setInterval>>();
-
-  function followTune(id: IdeaId, state: TuneDetail) {
-    if (tuneTimers.has(id) || ctx.ideas.find((i) => i.id === id)?.status !== "running") return;
-    const rnd = ctx.rng(state.steps.length + 5);
-    tuneTimers.set(
-      id,
-      setInterval(() => {
-        const last = state.steps.at(-1)!;
-        const values = last.values.map((v, i) => {
-          const p = TUNABLES[i]!;
-          return round(Math.max(p.min, Math.min(p.max, v + (rnd() - 0.5) * (p.max - p.min) * 0.01)), 2);
-        });
-        const step: TuneStep = {
-          iteration: last.iteration + 1,
-          values,
-          result: Math.round((rnd() - 0.45) * 6),
-          penta: [1, 2, 3, 2, 0],
-        };
-        emit("tune.progress", `idea:${id}`, { idea: id, iteration: step.iteration, values, result: step.result });
-      }, 2500),
-    );
-  }
-
-  /** Makes the next idea's number and queues it, then lets it start a moment later. */
-  function createIdea(body: NewIdeaRequest): Idea {
-    const id = Math.max(...ctx.ideas.map((i) => i.id)) + 1;
-    const made = idea({
-      id,
-      title: body.title,
-      hypothesis: body.hypothesis ?? "",
-      kind: body.kind ?? "gain",
-      author: body.author ?? "you",
-      branch: body.branch,
-      status: "queued",
-      tags: body.tags ?? [],
-      created_at: new Date().toISOString(),
-    });
-    ctx.ideas.push(made);
-    emit("idea.upserted", "ideas", structuredClone(made));
-    setTimeout(() => {
-      made.status = "running";
-      const t = trial({
-        id: Math.max(...ctx.trials.map((x) => x.id)) + 1,
-        idea: id,
-        stage: body.kind === "tune" ? "tune" : body.kind === "net" ? "train" : "fingerprint",
-        status: "running",
-        started_at: new Date().toISOString(),
-      });
-      ctx.trials.push(t);
-      made.trials = [ctx.summaryOf(t)];
-      emit("trial.upserted", "ideas", structuredClone(t));
-      emit("idea.upserted", "ideas", structuredClone(made));
-    }, 2500);
-    return made;
-  }
-
-  function promote(found: Idea): Response {
-    if (found.status !== "kept") return error(409, "conflict", "Only a kept idea can be promoted.");
-    const current = ctx.versions.filter((v) => v.line.type === "champion").length;
-    const decided = [...found.trials].reverse().find((t) => t.elo);
-    const next: Version = {
-      id: current + 1,
-      name: `v${current + 1}`,
-      commit: (found.version != null ? (ctx.versions.find((v) => v.id === found.version)?.commit ?? "") : "").padEnd(
-        40,
-        "0",
-      ),
-      branch: "main",
-      line: { type: "champion", number: current + 1 },
-      parent: current,
-      bench: 1_672_794,
-      elo: decided?.elo ?? { elo: 1.9, low: 0.2, high: 3.6 },
-      created_at: new Date().toISOString(),
-    };
-    ctx.versions.push(next);
-    found.version = next.id;
-    emit("version.upserted", "versions", structuredClone(next));
-    emit("idea.upserted", "ideas", structuredClone(found));
-    return reply("/api/ideas/{id}/promote", "post", structuredClone(next));
-  }
-
   // ---- Connections
 
   const youAccount: ConnectionStatus["account"] = ctx.connections.you.account;
@@ -1035,73 +637,22 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       playing: [],
       challenges: [],
       you: null,
-      bot: null,
     };
-  }
-  // `botnoversion` and `botversion`: the bot is linked and offline, with no version chosen / with the champion chosen.
-  if ((ctx.mode === "botnoversion" || ctx.mode === "botversion") && ctx.connections.bot.bot) {
-    const b = ctx.connections.bot;
-    b.state = "off";
-    b.playing = [];
-    b.bot!.online = false;
-    b.bot!.seek = { mode: "off", pending: null, note: null };
-    b.bot!.settings.version = ctx.mode === "botversion" ? "champion" : null;
   }
   const connectionsEmit = (c: ConnectionStatus) => {
     emit("connection.upserted", `connection:${c.key}`, structuredClone(c));
-    return reply("/api/connections/bot/online", "post", structuredClone(c));
+    return reply("/api/connections/you/seek", "post", structuredClone(c));
   };
-  const bot = () => ctx.connections.bot;
-
-  // A few answered challenges for the bot's card, once the stream is open.
-  setTimeout(() => {
-    const answered = (
-      id: string,
-      name: string,
-      rating: number,
-      event: "accepted" | "declined",
-      reason: string | null,
-    ) =>
-      emit("challenge", "connection:bot", {
-        challenge: {
-          id,
-          connection: "bot",
-          direction: "incoming",
-          opponent: { name, title: "BOT", rating },
-          rated: true,
-          speed: "blitz",
-          variant: "standard",
-          time: { type: "clock", initial_ms: 180_000, increment_ms: 2000 },
-          color: "random",
-          playable: true,
-          url: `https://lichess.org/${id}`,
-        },
-        event,
-        reason,
-        detail: null,
-      });
-    answered("ch1", "Bot-Sam", 2190, "accepted", null);
-    answered("ch2", "FastBot", 2012, "declined", "tooFast");
-    answered("ch3", "Vera-Bot", 2377, "declined", "later");
-  }, 3500);
 
   const status = ctx.status;
-  if (variant("nogpu")) status.ledger.gpus = 0;
-  status.machine = {
-    ...status.machine,
-    engine: { dir: "C:\\dev\\reckless", found: true, branch: "main", commit: "9e3a5e41b0c2f87d", dirty: false },
-    data_dir: "C:\\Users\\dame\\AppData\\Local\\dameless",
-    builds: { count: 23, bytes: 2_340_000_000 },
-  };
+  status.machine = { ...status.machine, data_dir: "C:\\Users\\dame\\AppData\\Local\\dameless" };
 
   return (method, path, url, body) => {
     let m: RegExpMatchArray | null;
     if (method === "GET") {
       const edge = settingsRoute(ctx.mode, path);
       if (edge) return edge;
-      if (path === "/api/dameless") return reply("/api/dameless", "get", structuredClone(overview()));
       if (path === "/api/token") return reply("/api/token", "get", { token: "dmls_4f8c0a2b9d7e41c6a3b5e8f20d19c7a4" });
-      if (path === "/api/tunables") return reply("/api/tunables", "get", structuredClone(TUNABLES));
       if (path === "/api/players/top") {
         if (ctx.mode === "topbroken") return error(502, "upstream", "Lichess did not answer.");
         const speed = url.searchParams.get("speed") ?? "blitz";
@@ -1141,36 +692,6 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
         if (profiles.length !== keys.length) return error(404, "not_found", "Lichess has no such player.");
         return reply("/api/compare", "get", { profiles, leaders: leaders(profiles) });
       }
-      if ((m = path.match(/^\/api\/ideas\/(\d+)\/tune$/))) {
-        const id = Number(m[1]);
-        const found = ctx.ideas.find((i) => i.id === id);
-        if (!found || found.kind !== "tune") return error(404, "not_found", "That idea is not a tune.");
-        let state = tunes.get(id);
-        if (!state) {
-          state = tuneState(id);
-          tunes.set(id, state);
-        }
-        followTune(id, state);
-        return reply("/api/ideas/{id}/tune", "get", structuredClone(state));
-      }
-      if (path === "/api/ideas/check-branch") {
-        // A branch called `wip…` or `…missing` has no Bench line, `…stale` has an old one, anything else is fine.
-        const branch = url.searchParams.get("branch") ?? "";
-        const status = /wip|missing/.test(branch) ? "missing" : /stale/.test(branch) ? "stale" : "ok";
-        return reply("/api/ideas/check-branch", "get", {
-          branch,
-          commit: "9f3c1a7e5b2d4c6a8e0f1b3d5a7c9e2f4b6d8a01",
-          status,
-          bench_line: status === "missing" ? null : 2_418_332,
-          measured: status === "stale" ? 2_418_990 : status === "ok" ? 2_418_332 : null,
-          detail:
-            status === "ok"
-              ? "The tip's Bench line matches its build."
-              : status === "missing"
-                ? "The tip's commit message has no Bench line."
-                : "The tip's Bench line is older than its build.",
-        });
-      }
       if (path === "/api/connections") {
         // `?fixtures=slow` reads the connections late, to see what a sheet says meanwhile.
         if (ctx.mode !== "slow") return undefined;
@@ -1189,83 +710,12 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
               title: "Opening book",
               detail: "UHO_Lichess_4852_v1.epd is installed.",
             },
-            { key: "engine", level: "ok", ok: true, title: "Engine checkout", detail: "C:\\dev\\reckless, on main." },
-            {
-              key: "clang",
-              level: "warn",
-              ok: true,
-              title: "clang",
-              detail: "clang is not on the PATH, so builds with Syzygy support cannot be made.",
-              action: { label: "Install it", command: "winget install LLVM.LLVM" },
-            },
-            {
-              key: "pgo",
-              level: "ok",
-              ok: true,
-              title: "PGO builds",
-              detail: "cargo-pgo 0.3.0 and llvm-profdata: the bot and games against you play profile-guided builds",
-            },
-            {
-              key: "cuda",
-              level: "ok",
-              ok: true,
-              title: "CUDA",
-              detail: "CUDA 12.6 is installed.",
-            },
-            {
-              key: "gpu",
-              level: variant("nogpu") ? "warn" : "ok",
-              ok: true,
-              title: "GPU",
-              detail: variant("nogpu")
-                ? "No GPU was found, so networks cannot be trained here."
-                : "NVIDIA GeForce RTX 3080, 10 GB.",
-            },
             { key: "disk", level: "ok", ok: true, title: "Disk", detail: "212 GB free on the data drive." },
           ],
-        });
-      if (path === "/api/harness")
-        return reply("/api/harness", "get", {
-          checked: !variant("untrusted"),
-          current: !variant("untrusted"),
-          trusted: !variant("untrusted"),
-          passed: variant("untrusted") ? null : true,
-          at: variant("untrusted") ? null : minutesAgo(60 * 24 * 3),
-          idea: null,
-          running: null,
-          last: null,
-          summary: variant("untrusted")
-            ? "The harness has not been checked on this machine."
-            : "Checked on this machine 3 days ago: deterministic over 1000 pairs; symmetric over 4000 pairs at +0.4 ± 2.1 Elo.",
         });
     }
 
     if (method === "POST") {
-      if (path === "/api/ideas")
-        return reply("/api/ideas", "post", structuredClone(createIdea(body as unknown as NewIdeaRequest)), 201);
-      if ((m = path.match(/^\/api\/ideas\/(\d+)\/(stop|resume|promote)$/))) {
-        const found = ctx.ideas.find((i) => i.id === Number(m![1]));
-        if (!found) return error(404, "not_found", "No such idea.");
-        if (m[2] === "promote") return promote(found);
-        found.status = m[2] === "stop" ? "stopped" : "running";
-        found.verdict = m[2] === "stop" ? "Stopped by you." : null;
-        found.ended_at = m[2] === "stop" ? new Date().toISOString() : null;
-        emit("idea.upserted", "ideas", structuredClone(found));
-        return reply("/api/ideas/{id}/stop", "post", structuredClone(found));
-      }
-      if (path === "/api/dameless/push")
-        return reply("/api/dameless/push", "post", { remote: "origin", head: "9e3a5e41b0c2" });
-      if (path === "/api/builds/prune") {
-        const dry = body["dry_run"] === true;
-        const result = { builds: [3, 4, 5, 6, 7, 8, 9, 10, 11], bytes: 940_000_000, dry_run: dry, in_use: [] };
-        if (!dry && status.machine) {
-          status.machine.builds = {
-            count: status.machine.builds.count - 9,
-            bytes: status.machine.builds.bytes - 940_000_000,
-          };
-        }
-        return reply("/api/builds/prune", "post", result);
-      }
       if (path === "/api/reviews" && typeof body["player"] === "string") {
         if (status.policy.assist !== "allowed") return error(409, "fair_play", status.policy.reason ?? "");
         const key = body["player"];
@@ -1324,15 +774,15 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
           expires_in_seconds: 600,
         });
       }
-      if ((m = path.match(/^\/api\/connections\/(you|bot)\/challenges\/([^/]+)\/(accept|decline)$/))) {
-        const c = ctx.connections[m[1] as "you" | "bot"];
-        const found = c.challenges.find((x) => x.id === m![2]);
+      if ((m = path.match(/^\/api\/connections\/you\/challenges\/([^/]+)\/(accept|decline)$/))) {
+        const c = ctx.connections.you;
+        const found = c.challenges.find((x) => x.id === m![1]);
         if (!found) return error(404, "not_found", "That challenge is gone.");
         c.challenges = c.challenges.filter((x) => x !== found);
-        emit("challenge", `connection:${c.key}`, {
+        emit("challenge", "connection:you", {
           challenge: structuredClone(found),
-          event: m[3] === "accept" ? "accepted" : "declined",
-          reason: m[3] === "accept" ? null : "generic",
+          event: m[2] === "accept" ? "accepted" : "declined",
+          reason: m[2] === "accept" ? null : "generic",
           detail: null,
         });
         return reply("/api/connections/{key}/challenges/{id}/accept", "post", structuredClone(c));
@@ -1343,62 +793,20 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
         if (you.you) you.you.seek_note = "Looking for an opponent on Lichess.";
         return connectionsEmit(you);
       }
-      if (path === "/api/connections/bot/online") {
-        const b = bot();
-        if (body["online"] === true && b.bot && !b.bot.settings.version)
-          return error(409, "conflict", "Choose the version the bot plays first: champion, or a version such as v14");
-        if (b.bot) b.bot.online = body["online"] === true;
-        b.state = body["online"] === true ? "online" : "off";
-        if (b.bot && body["online"] !== true) b.bot.seek = { mode: "off", pending: null, note: null };
-        return connectionsEmit(b);
-      }
-      if (path === "/api/connections/bot/seek") {
-        const b = bot();
-        const mode = body["mode"] as "once" | "always" | "off";
-        if (b.bot) {
-          b.bot.seek = {
-            mode,
-            pending: null,
-            note: mode === "off" ? null : "Looking for a bot to challenge.",
-          };
-        }
-        return connectionsEmit(b);
-      }
-    }
-
-    if (method === "PUT") {
-      if ((m = path.match(/^\/api\/connections\/(you|bot)\/token$/))) {
-        const c = ctx.connections[m[1] as "you" | "bot"];
-        const token = String(body["token"] ?? "");
-        if (token.length < 8) return error(400, "bad_request", "Lichess did not accept that token.");
-        c.configured = true;
-        c.state = "online";
-        c.error = null;
-        c.account = m[1] === "you" ? youAccount : (ctx.connections.bot.account ?? botAccount());
-        return connectionsEmit(c);
-      }
-      if (path === "/api/connections/bot/settings") {
-        const b = bot();
-        const settings = body as unknown as BotSettings;
-        if (b.bot) b.bot.settings = settings;
-        connectionsEmit(b);
-        return reply("/api/connections/bot/settings", "put", settings);
-      }
     }
 
     if (method === "DELETE") {
-      if ((m = path.match(/^\/api\/connections\/(you|bot)$/))) {
-        const c = ctx.connections[m[1] as "you" | "bot"];
+      if (path === "/api/connections/you") {
+        const c = ctx.connections.you;
         Object.assign(c, { configured: false, account: null, state: "off", error: null, playing: [], challenges: [] });
-        if (c.bot) c.bot.online = false;
         return connectionsEmit(c);
       }
-      if ((m = path.match(/^\/api\/connections\/(you|bot)\/challenges\/([^/]+)$/))) {
-        const c = ctx.connections[m[1] as "you" | "bot"];
-        const found = c.challenges.find((x) => x.id === m![2]);
+      if ((m = path.match(/^\/api\/connections\/you\/challenges\/([^/]+)$/))) {
+        const c = ctx.connections.you;
+        const found = c.challenges.find((x) => x.id === m![1]);
         if (!found) return error(404, "not_found", "That challenge is gone.");
         c.challenges = c.challenges.filter((x) => x !== found);
-        emit("challenge", `connection:${c.key}`, {
+        emit("challenge", "connection:you", {
           challenge: structuredClone(found),
           event: "canceled",
           reason: null,
@@ -1409,15 +817,6 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
     }
     return undefined;
   };
-
-  function botAccount(): ConnectionStatus["account"] {
-    return {
-      id: "damelessbot",
-      username: "DamelessBot",
-      title: "BOT",
-      ratings: { blitz: { rating: 2304, games: 512, provisional: false } },
-    };
-  }
 }
 
 /** How a hundred reviewed games of yours break down by theme: the figures `themeStats` scales to the games reviewed. */

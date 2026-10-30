@@ -3,7 +3,7 @@ import { useRouter } from "vue-router";
 import { useToast } from "@eos-ui/vue";
 import type { WeakSpot } from "../api/types";
 import { readClock } from "../shell/commands";
-import { useDameless } from "../stores/dameless";
+import { useLevels } from "../stores/levels";
 import { useGames } from "../stores/games";
 import { stored } from "../stored";
 import { playOutSeat } from "./levels";
@@ -25,7 +25,7 @@ export function usePlayOut() {
   const router = useRouter();
   const toast = useToast();
   const games = useGames();
-  const dameless = useDameless();
+  const ladderStore = useLevels();
   const clock = stored("new.clock", "5+3");
   const starting = ref<string | null>(null);
 
@@ -33,8 +33,8 @@ export function usePlayOut() {
     starting.value = spotKey(spot);
     const whiteToMove = spot.fen.split(" ")[1] !== "b";
     try {
-      if (!dameless.levels) await dameless.loadLevels().catch(() => {});
-      const seat = playOutSeat(dameless.levels);
+      if (!ladderStore.levels) await ladderStore.loadLevels().catch(() => {});
+      const seat = playOutSeat(ladderStore.levels);
       const s = await games.start({
         white: whiteToMove ? "you" : seat,
         black: whiteToMove ? seat : "you",

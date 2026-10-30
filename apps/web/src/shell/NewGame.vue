@@ -8,9 +8,9 @@ import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import type { Color, Side, TimeControl } from "../api/types";
 import { useConnections } from "../stores/connections";
-import { useDameless } from "../stores/dameless";
 import { useGames } from "../stores/games";
-import { useVersions } from "../stores/versions";
+import { useLevels } from "../stores/levels";
+import { useMachine } from "../stores/machine";
 import { stored } from "../stored";
 import { levelChoices, suggestedStrength } from "../sheets/levels";
 import LevelPicker from "../parts/LevelPicker.vue";
@@ -23,7 +23,7 @@ import { useUi } from "./ui";
 import UiSelect from "../ui/UiSelect.vue";
 
 /**
- * New game: the opponent (Dameless at a version, Lichess, Stockfish N), the time control, the colour, rated. One
+ * New game: the opponent (Dameless at a level, Lichess, Stockfish N), the time control, the colour, rated. One
  * dialog, showing only the choices that apply to the opponent, and a Start button that says what it will start. From a
  * position ("Play from here"), against Dameless.
  */
@@ -32,8 +32,8 @@ const router = useRouter();
 const toast = useToast();
 const games = useGames();
 const connections = useConnections();
-const versions = useVersions();
-const dameless = useDameless();
+const ladder = useLevels();
+const machine = useMachine();
 
 type Opponent = "dameless" | "stockfish" | "lichess";
 /** The clock choices that are not a preset. */
@@ -53,14 +53,13 @@ const level = stored("new.level", "5");
  */
 const strength = stored("new.strength", "");
 const chosenStrength = computed({
-  get: () => strength.value || suggestedStrength(dameless.levels),
+  get: () => strength.value || suggestedStrength(ladder.levels),
   set: (v: string) => (strength.value = v),
 });
-const version = ref<string>("");
 /** Begin from a random line of the opening book instead of the standard start. */
 const book = ref(false);
 /** The book is not installed yet (Settings › Health says how), so a book start would be refused. */
-const noBook = computed(() => dameless.health?.items.some((i) => i.key === "book" && !i.ok) ?? false);
+const noBook = computed(() => machine.health?.items.some((i) => i.key === "book" && !i.ok) ?? false);
 const lichessHow = ref<"seek" | "challenge">("seek");
 const username = ref("");
 const busy = ref(false);
@@ -68,14 +67,6 @@ const busy = ref(false);
 const fromPosition = computed(() => ui.newGameFrom);
 /** The strength remembered for New game while a practice position borrows the dialog. */
 let remembered: string | null = null;
-// The version is the champion's until chosen; it may arrive after the dialog was first opened.
-watch(
-  () => versions.current?.id,
-  (id) => {
-    if (id != null && !version.value) version.value = String(id);
-  },
-  { immediate: true },
-);
 watch(
   () => ui.newGame,
   async (open) => {
@@ -86,13 +77,12 @@ watch(
     }
     book.value = false;
     if (fromPosition.value) opponent.value = "dameless";
-    if (!version.value && versions.current) version.value = String(versions.current.id);
-    if (!dameless.levels) await dameless.loadLevels().catch(() => {});
-    if (!dameless.health) void dameless.loadHealth().catch(() => {});
+    if (!ladder.levels) await ladder.loadLevels().catch(() => {});
+    if (!machine.health) void machine.loadHealth().catch(() => {});
     // Practising a position ("Play this out") starts at the level nearest your rating.
     if (ui.newGame && fromPosition.value) {
       remembered ??= strength.value;
-      strength.value = suggestedStrength(dameless.levels);
+      strength.value = suggestedStrength(ladder.levels);
     }
   },
 );
@@ -125,7 +115,7 @@ watch(clocks, (options) => {
   if (!options.some((o) => o.value === clock.value))
     clock.value = options.some((o) => o.value === "5+3") ? "5+3" : options[1]!.value;
 });
-const levelOptions = computed(() => levelChoices(dameless.levels));
+const levelOptions = computed(() => levelChoices(ladder.levels));
 
 /** The clock the game is played on. */
 const time = computed<TimeControl>(() => {
@@ -147,17 +137,10 @@ const clockText = computed(() => {
   return clock.value;
 });
 
-/** Dameless's seat: `dameless`, at a version (`:#<id>`) and a level (`@<n>`) when chosen. */
+/** Dameless's seat: `dameless`, at a level (`@<n>`) when chosen. */
 function damelessSeat(): string {
-  const at = version.value && Number(version.value) !== versions.current?.id ? `:#${version.value}` : "";
-  const lvl = chosenStrength.value !== "full" ? `@${chosenStrength.value}` : "";
-  return `dameless${at}${lvl}`;
+  return chosenStrength.value !== "full" ? `dameless@${chosenStrength.value}` : "dameless";
 }
-const versionOptions = computed(() =>
-  [...versions.line]
-    .reverse()
-    .map((v) => ({ value: String(v.id), label: v.id === versions.current?.id ? `${v.name} (champion)` : v.name })),
-);
 
 /** What Start will start, in the button's own words. */
 const confirmLabel = computed(() => {
@@ -211,7 +194,7 @@ async function start() {
       ui.railOpen = false;
       await router.push({ path: "/", query: { game: String(s.id) } });
     } else if (opponent.value === "stockfish") {
-      await connections.challenge("you", {
+      await connections.challenge({
         ai_level: Number(level.value),
         time: time.value,
         rated: false,
@@ -228,7 +211,7 @@ async function start() {
         tone: "info",
       });
     } else {
-      await connections.challenge("you", {
+      await connections.challenge({
         username: username.value.trim(),
         time: time.value,
         rated: rated.value,
@@ -269,7 +252,6 @@ async function start() {
       </UiField>
 
       <template v-if="opponent === 'dameless'">
-        <UiSelect v-if="versionOptions.length > 1" v-model="version" label="Version" :options="versionOptions" />
         <UiField label="Strength" group :hint="strengthHint">
           <LevelPicker v-if="levelOptions.length" v-model="chosenStrength" label="Strength" :choices="levelOptions" />
           <span v-else class="skel picker-skel" aria-label="Reading the levels" />

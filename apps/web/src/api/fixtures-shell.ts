@@ -1,8 +1,8 @@
 /**
  * Fixture variants for the shell and the Games rail: states the default data never reaches, and the games list as the
  * server answers it (filtered, paged after a game, live first). `?fixtures=empty` has no games and no work,
- * `?fixtures=many` has hundreds of games with long names, `?fixtures=flood` is the real app's shape (thousands of trial
- * games newer than thousands of imported ones, so a rail that filters what it was handed finds nothing of yours),
+ * `?fixtures=many` has hundreds of games with long names, `?fixtures=flood` is a long history (thousands of imported
+ * games, reached a page at a time),
  * `?fixtures=slow` answers the games late (the skeleton) and `?fixtures=error` fails to load them.
  */
 import type { GameSummary, Seat } from "./types";
@@ -11,7 +11,7 @@ import { fixtureMode } from "./mode";
 
 const LONG = [
   "an-exceptionally-long-lichess-username-42",
-  "Dameless:deeper-late-move-reductions-with-history",
+  "a-second-rather-long-lichess-username-for-the-rail",
   "xX_the_Knight_Whisperer_Xx",
   "Grandmaster-Of-Very-Long-Names",
 ];
@@ -33,26 +33,12 @@ const seat = (name: string, player: string, rating: number | null = null): Seat 
 
 let floodCache: GameSummary[] | null = null;
 /**
- * The real app's shape: 4,000 trial games from the last hours, then 3,708 of your Lichess games over the last years,
- * all newer than nothing in the default data. Built once.
+ * A long history: 3,708 of your Lichess games over the last years. Built once.
  */
 function floodGames(): GameSummary[] {
   if (floodCache) return floodCache;
   const now = Date.now();
   const out: GameSummary[] = [];
-  for (let i = 0; i < 4000; i++) {
-    out.push({
-      id: 100_000 + i,
-      source: { type: "trial", trial: 3, index: i },
-      white: seat(i % 2 ? "v14" : "deeper-lmr", "dameless"),
-      black: seat(i % 2 ? "deeper-lmr" : "v14", "dameless"),
-      time: { type: "clock", initial_ms: 11_040, increment_ms: 110 },
-      status: "finished",
-      outcome: (["white_wins", "draw", "black_wins"] as const)[i % 3]!,
-      plies: 80,
-      started_at: new Date(now - 60_000 - i * 20_000).toISOString(),
-    });
-  }
   const speeds = ["blitz", "rapid", "bullet", "classical"] as const;
   for (let i = 0; i < 3708; i++) {
     const white = i % 2 === 0;
@@ -92,14 +78,12 @@ export function queryGames(all: readonly GameSummary[], params: URLSearchParams)
   const player = params.get("player");
   const sources = list("source");
   const statuses = list("status");
-  const trial = params.get("trial");
   const before = params.get("before");
   const limit = Number(params.get("limit") ?? 50);
   let rows = all
     .filter((g) => !player || g.white.player === player || g.black.player === player)
     .filter((g) => !sources || sources.includes(g.source.type))
     .filter((g) => !statuses || statuses.includes(g.status))
-    .filter((g) => trial === null || (g.source.type === "trial" && g.source.trial === Number(trial)))
     .sort(newestFirst);
   if (before !== null) {
     const at = rows.findIndex((g) => g.id === Number(before));

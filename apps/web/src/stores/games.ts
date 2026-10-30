@@ -17,12 +17,11 @@ import type {
 import { stored } from "../stored";
 import { listen, reloadOnReconnect } from "./listen";
 
-/** What `GET /api/games` is asked: a player, sources, states, one trial, the page after a game, and how many. */
+/** What `GET /api/games` is asked: a player, sources, states, the page after a game, and how many. */
 export interface GamesQuery {
   player?: string;
   source?: string;
   status?: string;
-  trial?: number;
   before?: number;
   limit?: number;
 }
@@ -62,7 +61,7 @@ export const useGames = defineStore("games", () => {
   const list = computed(() => Object.values(summaries.value).sort(byRailOrder));
 
   /**
-   * The games the rest of the app reads from the held set (the board's first game, the command bar, a trial's evidence):
+   * The games the rest of the app reads from the held set (the board's first game, the command bar):
    * the newest of everything, every game being played, and your newest. The rail pages the rest itself, by its filter.
    */
   async function load() {

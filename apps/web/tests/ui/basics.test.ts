@@ -1,7 +1,7 @@
 import { h, nextTick } from "vue";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Seat } from "../../src/api/types";
-import { healthTone, ideaTone, trialTone, workTone } from "../../src/ui/badge";
+import { healthTone, workTone } from "../../src/ui/badge";
 import UiBadge from "../../src/ui/UiBadge.vue";
 import UiEmpty from "../../src/ui/UiEmpty.vue";
 import UiField from "../../src/ui/UiField.vue";
@@ -41,17 +41,9 @@ describe("UiBadge", () => {
   });
 
   it("maps every status to a tone", () => {
-    expect(ideaTone.running).toBe("info");
-    expect(ideaTone.kept).toBe("win");
-    expect(ideaTone.failed).toBe("loss");
-    expect(ideaTone.dropped).toBe("neutral");
-    expect(trialTone.passed).toBe("win");
-    expect(trialTone.waiting).toBe("neutral");
     expect(workTone.paused).toBe("warn");
     expect(healthTone.fail).toEqual({ tone: "loss", word: "Missing" });
     expect(healthTone.ok.word).toBe("Ready");
-    expect(Object.keys(ideaTone)).toHaveLength(6);
-    expect(Object.keys(trialTone)).toHaveLength(6);
     expect(Object.keys(workTone)).toHaveLength(6);
     expect(Object.keys(healthTone)).toHaveLength(4);
   });
@@ -180,7 +172,7 @@ describe("UiPlayer", () => {
     expect(m.el.querySelector("a")?.getAttribute("href")).toBe("/you");
     m.props["seat"] = { name: "Dameless", key: "dameless" };
     await m.flush();
-    expect(m.el.querySelector("a")?.getAttribute("href")).toBe("/dameless");
+    expect(m.el.querySelector("a")?.getAttribute("href")).toBe("/players/dameless");
   });
 
   it("is not a link without a key, or without link", async () => {

@@ -57,7 +57,6 @@ const groups = [
     title: "Sheets",
     rows: [
       { keys: [["G", "Y"]], does: "Go to You" },
-      { keys: [["G", "D"]], does: "Go to Dameless" },
       { keys: [["G", "S"]], does: "Go to Settings" },
     ],
   },

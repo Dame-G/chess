@@ -6,6 +6,7 @@ import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import type { Player, ProfileFilter } from "../api/types";
 import ChallengeList from "../parts/ChallengeList.vue";
+import LevelsCard from "../parts/LevelsCard.vue";
 import PrepView from "../parts/PrepView.vue";
 import ProfileFilters from "../parts/ProfileFilters.vue";
 import ProfileHead from "../parts/ProfileHead.vue";
@@ -30,7 +31,8 @@ import { useImport } from "./useImport";
 /**
  * You: your Lichess ratings across the top, then your games added up in tabs. Overview is the figures, the review of
  * your games and how you do against Dameless over time; Openings the openings you have met, your prep for each line and
- * your own lines; Train today's drills and your mistakes by theme, each a way to practise it; Challenges what waits for
+ * your own lines; Train today's drills, your mistakes by theme, each a way to practise it, and the
+ * levels Dameless plays at with where you stand among them; Challenges what waits for
  * you on Lichess. Not linked to Lichess yet: the way to log in comes first. No games at all: one page that says how to
  * get some.
  */
@@ -210,10 +212,11 @@ const reviewFirst = computed(() => profile.value?.reviewed === 0);
       <UiEmpty v-if="!drills.available" dense title="Drills are off while you play on Lichess." />
       <ProfileFilters v-model="filter" :games="profile.games" whose="your" tabs />
       <ThemesView :profile="profile" />
+      <LevelsCard />
     </template>
 
     <template #tab-challenges>
-      <ChallengeList :challenges="challenges" connection="you" />
+      <ChallengeList :challenges="challenges" />
     </template>
   </UiSheetPage>
 </template>

@@ -1,47 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { Idea, LevelsOverview, TrialSummary } from "../src/api/types";
-import { evidenceLine, gaugeTrial, eloFigure } from "../src/sheets/idea";
+import type { LevelsOverview } from "../src/api/types";
 import { ladder } from "../src/sheets/levels";
-import { datagenEstimate, datagenSummary } from "../src/sheets/training";
 import { mount } from "./ui/mount";
 import UiMeter from "../src/ui/UiMeter.vue";
-
-const trial = (t: Partial<TrialSummary>): TrialSummary => ({
-  id: 1,
-  stage: "short",
-  status: "running",
-  pairs: 0,
-  ...t,
-});
-
-describe("the evidence line of an idea in a list", () => {
-  it("says the Elo and the pairs it stands on", () => {
-    const idea: Pick<Idea, "status" | "trials"> = {
-      status: "running",
-      trials: [trial({ pairs: 412, elo: { elo: 0.7, low: -5.2, high: 6.6 } })],
-    };
-    expect(evidenceLine(idea)).toBe("+0.7 ± 5.9 Elo after 412 pairs");
-  });
-
-  it("falls back to the pairs, then to the trial's own words, then to nothing", () => {
-    expect(evidenceLine({ status: "running", trials: [trial({ pairs: 1 })] })).toBe("1 pair");
-    expect(evidenceLine({ status: "running", trials: [trial({ detail: "Iteration 3 of 1,000." })] })).toBe(
-      "Iteration 3 of 1,000.",
-    );
-    expect(evidenceLine({ status: "queued", trials: [] })).toBe("");
-  });
-
-  it("draws a gauge only for a running trial that has evidence", () => {
-    const llr = { lower: -2.94, upper: 2.94, value: 0.6 };
-    expect(gaugeTrial({ trials: [trial({ llr })] })?.llr).toEqual(llr);
-    expect(gaugeTrial({ trials: [trial({ llr, status: "passed" })] })).toBeUndefined();
-    expect(gaugeTrial({ trials: [trial({})] })).toBeUndefined();
-  });
-
-  it("keeps an estimate on one line with fixed spaces", () => {
-    expect(eloFigure({ elo: 0.8, low: -1.3, high: 2.9 })).toBe("+0.8 ± 2.1");
-  });
-});
 
 describe("the ladder of levels", () => {
   const level = (id: number, nominal: number) => ({
@@ -89,12 +50,6 @@ describe("the ladder of levels", () => {
   it("puts you at the top when you are above every level", () => {
     const high = { ...overview, you: { estimate: { elo: 2500, low: 2400, high: 2600 }, games: 3 } } as LevelsOverview;
     expect(ladder(high).at(-1)?.id).toBe("you");
-  });
-});
-
-describe("the data generation summary", () => {
-  it("is one short line with the size and the time", () => {
-    expect(datagenSummary(datagenEstimate(20_000_000, 7, 7))).toBe("~86.0 MB · 4 h to 5 h");
   });
 });
 

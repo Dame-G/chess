@@ -1,10 +1,12 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { client, ok } from "../api/client";
-import type { Priority, Work, WorkId } from "../api/types";
+import type { Work, WorkId } from "../api/types";
 import { listen, reloadOnReconnect } from "./listen";
 
-const RANK: Record<Priority, number> = { live: 0, interactive: 1, review: 2, idea: 3, background: 4 };
+/** The scheduler's order, lower first; a priority not named here sits just above background. */
+const RANK: Record<string, number> = { live: 0, interactive: 1, review: 2, background: 4 };
+const rank = (w: Work) => RANK[w.priority] ?? 3;
 
 /** Background work: running, queued (in the order the scheduler takes it) and recently ended. */
 export const useWork = defineStore("work", () => {
@@ -18,14 +20,7 @@ export const useWork = defineStore("work", () => {
   const queued = computed(() =>
     all.value
       .filter((w) => w.status === "queued")
-      .sort((a, b) => RANK[a.priority] - RANK[b.priority] || a.created_at.localeCompare(b.created_at)),
-  );
-  /** An engine being built, or waiting to be: what an evaluation without a binary is waiting for. */
-  const building = computed(
-    () =>
-      all.value
-        .filter((w) => w.kind === "build" && (w.status === "running" || w.status === "queued" || w.status === "paused"))
-        .sort((a, b) => a.id - b.id)[0],
+      .sort((a, b) => rank(a) - rank(b) || a.created_at.localeCompare(b.created_at)),
   );
   const recent = computed(() =>
     all.value
@@ -51,5 +46,5 @@ export const useWork = defineStore("work", () => {
   });
   reloadOnReconnect(load);
 
-  return { items, running, queued, building, recent, loaded, load, stop, pause, resume };
+  return { items, running, queued, recent, loaded, load, stop, pause, resume };
 });

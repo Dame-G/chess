@@ -13,10 +13,10 @@ afterEach(() => {
 const tabs = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>(".tab")];
 
 describe("the phone's tab bar", () => {
-  it("has the four places, the board current at the root", async () => {
+  it("has the three places, the board current at the root", async () => {
     m = await mount(TabBar);
-    expect(tabs(m.el).map((t) => text(t))).toEqual(["Board", "Games", "You", "Dameless"]);
-    expect(tabs(m.el).map((t) => t.getAttribute("aria-current"))).toEqual(["page", null, null, null]);
+    expect(tabs(m.el).map((t) => text(t))).toEqual(["Board", "Games", "You"]);
+    expect(tabs(m.el).map((t) => t.getAttribute("aria-current"))).toEqual(["page", null, null]);
     expect(m.el.querySelector("nav")?.getAttribute("aria-label")).toBe("Main");
   });
 
@@ -26,7 +26,7 @@ describe("the phone's tab bar", () => {
     tabs(m.el)[1]!.click();
     await nextTick();
     expect(ui.railOpen).toBe(true);
-    expect(tabs(m.el).map((t) => t.getAttribute("aria-current"))).toEqual([null, "page", null, null]);
+    expect(tabs(m.el).map((t) => t.getAttribute("aria-current"))).toEqual([null, "page", null]);
     tabs(m.el)[0]!.click();
     await nextTick();
     expect(ui.railOpen).toBe(false);
@@ -42,6 +42,6 @@ describe("the phone's tab bar", () => {
     await nextTick();
     expect(m.router.currentRoute.value.path).toBe("/you");
     expect(ui.railOpen).toBe(false);
-    expect(tabs(m.el).map((t) => t.getAttribute("aria-current"))).toEqual([null, null, "page", null]);
+    expect(tabs(m.el).map((t) => t.getAttribute("aria-current"))).toEqual([null, null, "page"]);
   });
 });

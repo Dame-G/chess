@@ -8,18 +8,6 @@ const routes: RouteRecordRaw[] = [
   { path: "/", name: "board", component: { render: () => null }, meta: { title: "" } },
   { path: "/you", name: "you", component: () => import("./sheets/YouSheet.vue"), meta: { title: "You", sheet: true } },
   {
-    path: "/dameless",
-    name: "dameless",
-    component: () => import("./sheets/DamelessSheet.vue"),
-    meta: { title: "Dameless", sheet: true },
-  },
-  {
-    path: "/dameless/ideas/:id(\\d+)",
-    name: "idea",
-    component: () => import("./sheets/IdeaSheet.vue"),
-    meta: { title: "Idea", sheet: true },
-  },
-  {
     path: "/players/:key",
     name: "player",
     component: () => import("./sheets/PlayerSheet.vue"),

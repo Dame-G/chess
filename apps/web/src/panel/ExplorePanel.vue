@@ -3,13 +3,11 @@ import { computed, onMounted, ref } from "vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextarea } from "@eos-ui/vue/components/ETextarea";
-import { buildingText } from "../format";
 import { useBoard } from "../board/board";
 import { inspectPosition, sanLine } from "../board/position";
 import { useEvaluation } from "../stores/evaluation";
 import { usePolicy } from "../stores/policy";
 import { useRepertoire } from "../stores/repertoire";
-import { useWork } from "../stores/work";
 import { repertoireNote } from "../sheets/repertoire";
 import { useUi } from "../shell/ui";
 import UiEmpty from "../ui/UiEmpty.vue";
@@ -27,11 +25,7 @@ const board = useBoard();
 const evaluation = useEvaluation();
 const policy = usePolicy();
 const ui = useUi();
-const work = useWork();
 const repertoire = useRepertoire();
-
-/** The first engine build can take a minute: say so, rather than a blank for as long. */
-const waiting = computed(() => (work.building ? buildingText(work.building.title) : ""));
 
 onMounted(() => {
   if (repertoire.available && !repertoire.sides.white) void repertoire.load();
@@ -128,7 +122,6 @@ function onEnter(e: KeyboardEvent) {
         </template>
         <div v-else class="lines lines--wait" role="status" aria-label="The engine is thinking">
           <span v-for="i in 3" :key="i" class="skel line-skel" />
-          <p v-if="waiting" class="note">{{ waiting }}</p>
         </div>
       </section>
 

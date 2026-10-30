@@ -19,18 +19,18 @@ import WdlBar from "./WdlBar.vue";
 /**
  * A player's games added up, the same building blocks for You and anyone on Lichess: the trend, results, accuracy by
  * phase and by speed, moves per game, time per move, and the best moments and worst blunders (links onto the board).
- * What needs a review is left out until there is one. With `progress` (yours) the trend can also be read beside
- * Dameless's.
+ * What needs a review is left out until there is one. With `progress` (yours) the trend can also be read as your
+ * rating and accuracy over time.
  */
 const props = defineProps<{ profile: Profile; progress?: ProgressData | null }>();
 
 const reviewed = computed(() => props.profile.reviewed > 0);
 
 // ---- Progress
-const view = ref<"games" | "dameless">("games");
+const view = ref<"games" | "progress">("games");
 const trendShown = computed(() => props.profile.trend.length > 1);
-const withDameless = computed(() => !!props.progress && props.progress.series.some((s) => s.points.length > 1));
-const progressView = computed(() => view.value === "dameless" && withDameless.value);
+const withProgress = computed(() => !!props.progress && props.progress.series.some((s) => s.points.length > 1));
+const progressView = computed(() => view.value === "progress" && withProgress.value);
 
 // ---- Results
 const sides = computed(() => [
@@ -166,16 +166,16 @@ const momentColumns = [
 
 <template>
   <div class="profile">
-    <UiSection v-if="trendShown || withDameless" title="Progress">
+    <UiSection v-if="trendShown || withProgress" title="Progress">
       <template #aside>
         <UiSeg
-          v-if="withDameless && trendShown"
+          v-if="withProgress && trendShown"
           v-model="view"
           label="Progress chart"
           size="sm"
           :options="[
             { value: 'games', label: 'Your games' },
-            { value: 'dameless', label: 'With Dameless' },
+            { value: 'progress', label: 'Rating and accuracy' },
           ]"
         />
       </template>

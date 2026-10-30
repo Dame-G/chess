@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { calibrationTime, isCalibrated, ladder } from "../sheets/levels";
-import { useDameless } from "../stores/dameless";
+import { useLevels } from "../stores/levels";
 import { usePolicy } from "../stores/policy";
 import { useWork } from "../stores/work";
 import UiBadge from "../ui/UiBadge.vue";
@@ -17,7 +17,7 @@ import Term from "./Term.vue";
  * playing (or the one it was designed for, drawn quieter), the games behind it, and You where your rating falls.
  * Calibrate levels queues the games that teach the most, in the background.
  */
-const dameless = useDameless();
+const ladderStore = useLevels();
 const policy = usePolicy();
 const work = useWork();
 const toast = useToast();
@@ -26,14 +26,14 @@ const failed = ref<string | null>(null);
 async function read() {
   failed.value = null;
   try {
-    await Promise.all([dameless.loadLevels(), dameless.loadPlan()]);
+    await Promise.all([ladderStore.loadLevels(), ladderStore.loadPlan()]);
   } catch (e) {
     failed.value = e instanceof Error ? e.message : String(e);
   }
 }
 onMounted(read);
 
-const overview = computed(() => dameless.levels);
+const overview = computed(() => ladderStore.levels);
 const levels = computed(() => overview.value?.levels ?? []);
 const rungs = computed(() => (overview.value ? ladder(overview.value) : []));
 /** One scale for every row: from the lowest end of any interval to the highest, so a wide interval is seen as wide. */
@@ -60,7 +60,7 @@ const provisional = computed(() => rungs.value.some((r) => r.kind === "level" &&
 const calibrating = computed(() => [...work.running, ...work.queued].find((w) => w.kind === "calibrate"));
 /** Games calibrate in pairs on two cores each. */
 const slots = computed(() => Math.max(1, Math.floor((policy.status?.cores ?? 8) / 4)));
-const time = computed(() => calibrationTime(dameless.plan, levels.value, slots.value));
+const time = computed(() => calibrationTime(ladderStore.plan, levels.value, slots.value));
 const any = computed(() => levels.value.some(isCalibrated));
 
 const columns = [
@@ -74,7 +74,7 @@ const busy = ref(false);
 async function calibrate() {
   busy.value = true;
   try {
-    const w = await dameless.calibrate();
+    const w = await ladderStore.calibrate();
     toast.show({ title: "Calibration queued", message: w.title, tone: "success" });
   } catch (e) {
     toast.show({
@@ -95,7 +95,7 @@ async function calibrate() {
         variant="outline"
         size="sm"
         :loading="busy"
-        :disabled="!!calibrating || !dameless.plan.length"
+        :disabled="!!calibrating || !ladderStore.plan.length"
         @click="calibrate"
       >
         Calibrate levels

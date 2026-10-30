@@ -4,7 +4,7 @@ import { client, ok } from "../api/client";
 import type { ProgressChart } from "../api/types";
 import { listen, reloadOnReconnect } from "./listen";
 
-/** Progress: your rating, accuracy and drill hit rate over time beside Dameless's Elo over its champion versions. */
+/** Progress: your rating, accuracy and drill hit rate over time. */
 export const useProgress = defineStore("progress", () => {
   const chart = ref<ProgressChart | null>(null);
   let wanted = false;

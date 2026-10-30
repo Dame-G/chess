@@ -6,8 +6,7 @@ import { shortDate, timeOfDay } from "../format";
 import type { ChartSeries, ReferenceLine } from "./chart";
 
 /**
- * A small line chart for the sheets: a profile's trend, Dameless's strength, an idea's evidence and a tune's
- * trajectory. One or two vertical scales, steps or lines or bare points, an optional band around a line, reference
+ * A small line chart for the sheets: a profile's trend, your progress, your drill hit rate. One or two vertical scales, steps or lines or bare points, an optional band around a line, reference
  * lines, and a hover that reports which point the pointer is over. It draws on a canvas with the page's tokens and
  * draws again when the colour scheme changes.
  */

@@ -12,7 +12,6 @@ import type {
   Repertoire,
   RepertoireMove,
   RepertoireNode,
-  TrainStep,
 } from "../src/api/types";
 import {
   answerArrow,
@@ -27,7 +26,7 @@ import {
 } from "../src/board/drill";
 import { rematchRequest } from "../src/board/rematch";
 import { readVerb } from "../src/shell/commands";
-import { buildingText, isLevelSeat, seatName } from "../src/format";
+import { isLevelSeat, seatName } from "../src/format";
 import {
   calibrationCost,
   levelOfRating,
@@ -40,20 +39,6 @@ import {
 } from "../src/sheets/levels";
 import { latest, progressData } from "../src/sheets/progress";
 import { departures, mainLineIds, outline, positionKey, repertoireNote } from "../src/sheets/repertoire";
-import {
-  datagenEstimate,
-  datagenText,
-  dataLine,
-  importConfirmText,
-  importNeed,
-  lossCurve,
-  nameFromUrl,
-  presetOf,
-  room,
-  SCHEDULES,
-  trainCost,
-  whyNoRoom,
-} from "../src/sheets/training";
 import { useDrills } from "../src/stores/drills";
 import { usePolicy } from "../src/stores/policy";
 
@@ -559,36 +544,22 @@ describe("the progress chart", () => {
         points: [point("2026-10-01T00:00:00Z", 1800), point("2026-10-10T00:00:00Z", 1840)],
       },
       {
-        player: "dameless",
-        metric: "elo",
-        points: [point("2026-10-05T00:00:00Z", 2100), point("2026-10-10T00:00:00Z", 2160)],
+        player: "you",
+        metric: "accuracy",
+        points: [point("2026-10-05T00:00:00Z", 76), point("2026-10-10T00:00:00Z", 81)],
       },
-      { player: "you", metric: "accuracy", points: [point("2026-10-02T00:00:00Z", 77)] },
       { player: "you", metric: "drill_hit_rate", points: [] },
     ],
   };
 
-  it("puts both players on one time axis, a gap where a line has no point", () => {
-    const d = progressData(chart);
+  it("puts the lines on one time axis, a gap where a line has no point", () => {
+    const d = progressData(chart, ["rating", "accuracy"]);
     expect(d.x).toHaveLength(3);
-    expect(d.lines.map((l) => l.metric)).toEqual(["rating", "elo"]);
+    expect(d.lines.map((l) => l.metric)).toEqual(["rating", "accuracy"]);
     expect(d.lines[0]!.values).toEqual([1800, null, 1840]);
-    expect(d.lines[1]!.values).toEqual([null, 2100, 2160]);
+    expect(d.lines[1]!.values).toEqual([null, 76, 81]);
     expect(latest(d.lines[0]!)).toBe(1840);
-  });
-
-  it("keeps Dameless on the rating scale only once the levels anchor it", () => {
-    expect(progressData(chart).lines[1]!.scale).toBe("rating");
-    const relative: ProgressChart = {
-      series: [
-        {
-          player: "dameless",
-          metric: "elo",
-          points: [point("2026-10-05T00:00:00Z", 12), point("2026-10-09T00:00:00Z", 30)],
-        },
-      ],
-    };
-    expect(progressData(relative).lines[0]!.scale).toBe("elo");
+    expect(progressData(chart).lines.map((l) => l.metric)).toEqual(["rating"]);
   });
 
   it("shows the hit rate as a percentage and leaves out a line of fewer than two points", () => {
@@ -603,119 +574,14 @@ describe("the progress chart", () => {
     };
     expect(progressData(withHits, ["drill_hit_rate"]).lines[0]!.values).toEqual([50, 75]);
     expect(progressData(chart, ["drill_hit_rate"]).lines).toEqual([]);
-    expect(progressData(chart, ["accuracy"]).lines).toEqual([]);
   });
 });
 
-// ---- Data and training
-
-describe("what data costs", () => {
-  it("estimates the size at 4.3 bytes a position and the time at 4 to 5 million an hour", () => {
-    const e = datagenEstimate(20_000_000, 8, 8);
-    expect(e.bytes).toBe(86_000_000);
-    expect(e.seconds[0]).toBeCloseTo(4 * 3600, 0);
-    expect(e.seconds[1]).toBeCloseTo(5 * 3600, 0);
-    expect(datagenText(e)).toBe("86.0 MB on disk, about 4 h to 5 h on this machine, in the background.");
-  });
-
-  it("goes faster with more threads than the default, and not slower with fewer than one", () => {
-    const base = datagenEstimate(10_000_000, 8, 8);
-    const more = datagenEstimate(10_000_000, 16, 8);
-    expect(more.seconds[0]).toBeCloseTo(base.seconds[0] / 2, 3);
-    expect(datagenEstimate(10_000_000, 0, 8).seconds[0]).toBeCloseTo(base.seconds[0] * 8, 3);
-  });
-
-  it("says how much of the cap is used and what room is left under it and the disk", () => {
-    const d = { cap_bytes: 10e9, used_bytes: 1.2e9, disk_free_bytes: 212e9, keep_free_bytes: 15e9 };
-    expect(dataLine(d)).toBe("Data: 1.2 of 10 GB");
-    expect(room(d)).toBe(8.8e9);
-    // The disk is the tighter limit.
-    expect(room({ ...d, disk_free_bytes: 20e9 })).toBe(5e9);
-    expect(room({ ...d, disk_free_bytes: null })).toBe(8.8e9);
-    expect(room({ ...d, used_bytes: 12e9 })).toBe(0);
-  });
-
-  it("explains why something does not fit", () => {
-    const status = { cap_bytes: 10e9, used_bytes: 9e9, disk_free_bytes: 212e9, keep_free_bytes: 15e9, datasets: [] };
-    expect(whyNoRoom(0.5e9, status)).toBeNull();
-    expect(whyNoRoom(2e9, status)).toMatch(/more than the 1\.0 GB left under the 10\.0 GB cap/);
-    expect(whyNoRoom(2e9, { ...status, used_bytes: 0, disk_free_bytes: 16e9 })).toMatch(/under 15\.0 GB free/);
-  });
-
-  it("states an import's size, where it goes and what it needs", () => {
-    const need = importNeed(1.2e9);
-    expect(need.peak).toBe(3.78e9);
-    expect(need.kept).toBe(2.58e9);
-    expect(importConfirmText("shard-03", 1.2e9)).toBe(
-      "Download 1.2 GB into your data folder (data/shard-03). It needs up to 3.8 GB while it converts, and keeps about 2.6 GB.",
-    );
-  });
-
-  it("names a dataset from its address", () => {
-    expect(
-      nameFromUrl("https://huggingface.co/datasets/vondele/x/resolve/main/shard-03.binpack.zst?download=true"),
-    ).toBe("shard-03");
-    expect(nameFromUrl("https://example.com/a/My Data!.vf")).toBe("My-Data");
-    expect(nameFromUrl("")).toBe("");
-  });
-});
-
-describe("a training run", () => {
-  it("costs the positions it trains on, its time at the smoke run's speed and its checkpoints", () => {
-    const quick = trainCost(SCHEDULES.quick.schedule);
-    expect(quick.positions).toBe(20 * 200 * 16_384);
-    expect(quick.seconds).toBeCloseTo(quick.positions / 760_000, 6);
-    expect(quick.checkpointBytes).toBe(3 * 720_000_000);
-    expect(trainCost(SCHEDULES.long.schedule).positions).toBe(40 * 6104 * 16_384);
-  });
-
-  it("knows a preset from its numbers, and a changed one as custom", () => {
-    expect(presetOf(SCHEDULES.quick.schedule)).toBe("quick");
-    expect(presetOf(SCHEDULES.long.schedule)).toBe("long");
-    expect(presetOf({ ...SCHEDULES.quick.schedule, superbatches: 21 })).toBeNull();
-  });
-
-  const step = (seq: number, superbatch: number, batch: number, loss: number): TrainStep => ({
-    seq,
-    superbatch,
-    batch,
-    loss,
-    lr: 1e-4,
-    grad_norm: null,
-    positions_per_sec: 700_000,
-    elapsed_seconds: seq,
-  });
-
-  it("draws the loss against superbatches", () => {
-    const steps = [step(1, 1, 100, 0.04), step(2, 1, 200, 0.03), step(3, 2, 100, 0.028)];
-    expect(lossCurve(steps, 200)).toEqual({ x: [0.5, 1, 1.5], loss: [0.04, 0.03, 0.028] });
-  });
-
-  it("lets a resumed run replace the steps it redid", () => {
-    const steps = [step(1, 1, 100, 0.04), step(2, 1, 200, 0.03), step(3, 1, 150, 0.031), step(4, 1, 200, 0.029)];
-    const c = lossCurve(steps, 200);
-    expect(c.x).toEqual([0.5, 0.75, 1]);
-    expect(c.loss).toEqual([0.04, 0.031, 0.029]);
-  });
-
-  it("thins a long run to the points the chart can draw, keeping the last", () => {
-    const steps = Array.from({ length: 5000 }, (_, i) =>
-      step(i + 1, Math.floor(i / 200) + 1, (i % 200) + 1, 0.05 - i * 1e-6),
-    );
-    const c = lossCurve(steps, 200, 400);
-    expect(c.x.length).toBeLessThanOrEqual(401);
-    expect(c.x.at(-1)).toBeCloseTo(24 + 200 / 200, 6);
-    expect(c.x.every((x, i) => i === 0 || x > c.x[i - 1]!)).toBe(true);
-  });
-});
-
-// ---- Rematch and waiting
+// ---- Rematch
 
 const seat = (player: "you" | "dameless", extra: Partial<GameSummary["white"]> = {}) => ({
   player,
   name: player === "you" ? "You" : "Dameless",
-  version: player === "dameless" ? 14 : null,
-  build: null,
   rating: null,
   title: null,
   ...extra,
@@ -746,7 +612,7 @@ const gameOf = (
 });
 
 describe("a rematch", () => {
-  const cx = { champion: 14, levels: overview };
+  const cx = { levels: overview };
 
   it("swaps the colours and keeps the opponent and the clock", () => {
     expect(rematchRequest(gameOf(), cx)).toEqual({
@@ -758,8 +624,7 @@ describe("a rematch", () => {
     expect(rematchRequest(asBlack, cx)).toMatchObject({ white: "you", black: "dameless" });
   });
 
-  it("asks for the same version, unless it is the champion, and the same level", () => {
-    expect(rematchRequest(gameOf({ black: seat("dameless", { version: 9 }) }), cx)?.white).toBe("dameless:#9");
+  it("asks for the same level", () => {
     const atLevel = gameOf({ black: seat("dameless", { name: "Dameless 742", rating: 742 }) });
     expect(rematchRequest(atLevel, cx)?.white).toBe("dameless@1");
     // A rating that matches no level is full strength.
@@ -787,14 +652,6 @@ describe("a rematch", () => {
   });
 });
 
-describe("waiting for a build", () => {
-  it("says which version is being built and about how long", () => {
-    expect(buildingText("Building v1")).toBe("Building Dameless v1 first (about a minute)…");
-    expect(buildingText("Building reckless/main")).toBe("Building reckless/main first (about a minute)…");
-    expect(buildingText("Building")).toBe("Building the engine first (about a minute)…");
-  });
-});
-
 // ---- The event stream against a server that is down
 
 describe("the event stream with the server down", () => {
@@ -819,77 +676,5 @@ describe("the event stream with the server down", () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-});
-
-describe("the training store", () => {
-  beforeEach(() => setActivePinia(createPinia()));
-
-  it("extends a run with the progress it hears of, and keeps the data total current", async () => {
-    const { dispatch } = await import("../src/api/stream");
-    const { useTraining } = await import("../src/stores/training");
-    serve({
-      "/api/nets": () => [],
-      "/api/datasets": () => ({
-        cap_bytes: 10e9,
-        used_bytes: 1e9,
-        disk_free_bytes: 100e9,
-        keep_free_bytes: 15e9,
-        datasets: [],
-      }),
-      "/api/ideas/9/train": () => ({
-        spec: { datasets: [], schedule: SCHEDULES.quick.schedule },
-        steps: [{ seq: 1, superbatch: 1, batch: 20, loss: 0.04, lr: 1e-4, positions_per_sec: 7e5, elapsed_seconds: 1 }],
-        net: null,
-      }),
-    });
-    const training = useTraining();
-    await training.load();
-    await training.loadRun(9);
-    expect(training.runs[9]?.steps).toHaveLength(1);
-
-    const progress = (superbatch: number) =>
-      ({
-        id: 100 + superbatch,
-        topic: "idea:9",
-        kind: "train.progress",
-        data: {
-          work: 3,
-          idea: 9,
-          superbatch,
-          superbatches: 20,
-          batch: 40,
-          batches_per_superbatch: 200,
-          loss: 0.03,
-          lr: 1e-4,
-          positions_per_sec: 7.4e5,
-          grad_norm: null,
-          elapsed_seconds: 9,
-        },
-      }) as const;
-    dispatch(progress(1));
-    dispatch(progress(2));
-    expect(training.runs[9]?.steps.map((s) => s.seq)).toEqual([1, 2, 3]);
-    // A run of another idea, or outside any idea, is not added to this one.
-    dispatch({ ...progress(3), data: { ...progress(3).data, idea: 4 } } as never);
-    dispatch({ ...progress(3), data: { ...progress(3).data, idea: null } } as never);
-    expect(training.runs[9]?.steps).toHaveLength(3);
-
-    const dataset = {
-      id: 5,
-      name: "dfrc",
-      format: "viriformat",
-      positions: 1000,
-      games: 10,
-      size_bytes: 2e9,
-      source: { type: "datagen", settings: {} },
-      score_units: null,
-      path: "data/dfrc",
-      created_at: "2026-10-27T00:00:00Z",
-      updated_at: "2026-10-27T00:00:00Z",
-    };
-    dispatch({ id: 200, topic: "training", kind: "dataset.upserted", data: dataset } as never);
-    expect(training.datasets.map((d) => d.name)).toEqual(["dfrc"]);
-    expect(training.data?.used_bytes).toBe(2e9);
   });
 });

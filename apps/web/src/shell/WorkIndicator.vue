@@ -17,7 +17,7 @@ import UiSection from "../ui/UiSection.vue";
 import { shortWork } from "./work";
 
 /**
- * Background work in the header: a dot and a short label for what is running ("Trial 412 pairs"), and, when pressed,
+ * Background work in the header: a dot and a short label for what is running ("Review 2 of 20 games"), and, when pressed,
  * the whole queue (running, waiting, recent) with pause and stop. It is the only place background work appears, and it
  * carries the fair-play note while analysis is off. Below 75rem the label gives way to the dot.
  */

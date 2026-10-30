@@ -5,7 +5,7 @@ import { EButton } from "@eos-ui/vue/components/EButton";
 import { useBoard } from "../board/board";
 import { formatNumber } from "../format";
 import { levelChoices } from "../sheets/levels";
-import { useDameless } from "../stores/dameless";
+import { useLevels } from "../stores/levels";
 import UiToolbar from "../ui/UiToolbar.vue";
 import { useRematch } from "./useRematch";
 
@@ -21,7 +21,7 @@ const props = defineProps<{
 defineEmits<{ review: [] }>();
 
 const board = useBoard();
-const dameless = useDameless();
+const ladderStore = useLevels();
 const { strength, easier, harder, starting, start } = useRematch();
 
 const result = computed(() => {
@@ -34,12 +34,12 @@ const result = computed(() => {
 const opponent = computed(() => {
   const level = strength.value;
   if (level === null) return null;
-  const choice = levelChoices(dameless.levels).find((c) => c.value === String(level));
+  const choice = levelChoices(ladderStore.levels).find((c) => c.value === String(level));
   return choice ?? { name: level === "full" ? "Full strength" : `Level ${level}`, text: "" };
 });
 
 onMounted(() => {
-  if (!dameless.levels) void dameless.loadLevels().catch(() => {});
+  if (!ladderStore.levels) void ladderStore.loadLevels().catch(() => {});
 });
 
 /** Who it was: "Dameless Level 6", "Dameless at full strength". */
@@ -63,7 +63,7 @@ const context = computed(() => {
   const parts: string[] = [];
   const them = opponent.value;
   if (them?.text) parts.push(`${them.name} is rated ${them.text}`);
-  const you = dameless.levels?.you;
+  const you = ladderStore.levels?.you;
   if (you) parts.push(`you are about ${formatNumber(Math.round(you.estimate.elo))}`);
   return parts.join(", ");
 });

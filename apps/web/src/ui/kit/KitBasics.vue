@@ -4,7 +4,7 @@ import { PhClockCounterClockwise, PhGameController, PhRobot } from "@phosphor-ic
 import { ref } from "vue";
 import type { Score } from "../../api/types";
 import type { Result } from "../../format";
-import { healthTone, ideaTone, trialTone, workTone, type BadgeTone } from "../badge";
+import { healthTone, workTone, type BadgeTone } from "../badge";
 import UiBadge from "../UiBadge.vue";
 import UiLive from "../UiLive.vue";
 import UiPlayer from "../UiPlayer.vue";
@@ -86,8 +86,6 @@ const manyOptions = ["a", "b", "c", "d", "e", "f", "g", "h"].map((v) => ({
       <UiBadge v-for="t in tones" :key="t" :tone="t" solid>{{ t }}</UiBadge>
     </div>
     <div class="row">
-      <UiBadge v-for="(tone, s) in ideaTone" :key="s" :tone="tone">{{ s }}</UiBadge>
-      <UiBadge v-for="(tone, s) in trialTone" :key="s" :tone="tone">{{ s }}</UiBadge>
       <UiBadge v-for="(tone, s) in workTone" :key="s" :tone="tone">{{ s }}</UiBadge>
       <UiBadge v-for="(h, s) in healthTone" :key="s" :tone="h.tone">{{ h.word }}</UiBadge>
     </div>
