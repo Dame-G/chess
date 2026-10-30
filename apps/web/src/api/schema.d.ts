@@ -3655,7 +3655,8 @@ export interface components {
             background?: boolean;
             /**
              * Format: int32
-             * @description Engines at once; half the machine's cores when none.
+             * @description Engines at once. When none: half the machine's cores; in the background, all of them (it gives them back
+             *     within one search when live play or other work needs them).
              */
             concurrency?: number | null;
             /** @description These games. Or, instead, `player`. */

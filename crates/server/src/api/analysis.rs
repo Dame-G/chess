@@ -206,7 +206,8 @@ pub struct ReviewBody {
     /// Nodes per position; 200,000 when none.
     #[serde(default)]
     pub nodes: Option<u64>,
-    /// Engines at once; half the machine's cores when none.
+    /// Engines at once. When none: half the machine's cores; in the background, all of them (it gives them back
+    /// within one search when live play or other work needs them).
     #[serde(default)]
     pub concurrency: Option<u32>,
 }

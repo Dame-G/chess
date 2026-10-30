@@ -2,29 +2,36 @@
 //!
 //! [`Reviews::prepare`] turns a request (some games, or a player's newest games not yet reviewed) into the work item the
 //! scheduler queues, resolved when queued: the games, the version, the budget. [`Reviews`] is also the work's
-//! [`Executor`]: for each game it takes the positions from `core`'s [`to_search`], has the uncached ones searched on as
-//! many engines as the ledger grants, judges the game with `core`'s [`judge_game`], stores the review and announces it.
-//! It checkpoints after each game, so a restart carries on with the next one, and it stops at a safe point before each
-//! batch of positions, so it pauses while you play on Lichess.
+//! [`Executor`]: it reads the games a few ahead, takes each one's positions from `core`'s [`to_search`], and has the
+//! uncached ones searched in [runs](crate::runs) (each game's positions in the order played, on one engine that keeps
+//! its hash table) on as many engines as the ledger grants, so the next games are already being searched while one
+//! finishes and no engine waits for the end of a game. Each game, once its positions are in, is judged with `core`'s
+//! [`judge_game`], stored and announced, in order. It checkpoints after each game, so a restart carries on with the
+//! next one (positions searched for games after it are in the position cache by then); it waits at a safe point before
+//! each batch, and within one each engine stops before its next position when the review must pause or give way, so it
+//! pauses while you play on Lichess and yields to live play and to work of higher priority within one search.
 
-use std::time::Instant;
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 use async_trait::async_trait;
 use dameless_core::{
     Error, GameId, PlayerKey, Speed, VersionId,
     events::{AssistKind, Payload, ReviewUpserted},
-    game::GameStatus,
-    review::{self, Review, ReviewInput, judge_game, to_search},
-    version::Version,
+    game::{Game, GameStatus},
+    review::{self, PositionEval, Review, ReviewInput, judge_game, to_search},
     work::{Priority, Progress, Subject, Work, WorkKind},
 };
 use dameless_hub::{Executor, WorkContext};
-use dameless_store::{GameFilter, NewWork};
+use dameless_store::{GameFilter, NewWork, positions::SearchKey};
 use dameless_work::Scheduler;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{Eval, drills::Drills, versions::VersionRef};
+use crate::{Eval, Job, drills::Drills, runs::RunQueue, versions::VersionRef};
 
 /// The smallest and largest node budgets a review takes.
 pub const NODES_RANGE: std::ops::RangeInclusive<u64> = 1_000..=100_000_000;
@@ -32,9 +39,13 @@ pub const NODES_RANGE: std::ops::RangeInclusive<u64> = 1_000..=100_000_000;
 /// The most games one review of a player takes.
 pub const MAX_LIMIT: u32 = 1000;
 
-/// Positions searched per batch, per engine: between batches the review may pause, and the ledger may grant more or
-/// fewer cores.
-const POSITIONS_PER_ENGINE: usize = 4;
+/// The longest a batch of searches runs: between batches the review stores what it found, judges the games that are
+/// complete, waits at a safe point and asks for cores again, so the ledger may grant more or fewer.
+const BATCH: Duration = Duration::from_secs(8);
+
+/// Positions kept queued per engine: games are read ahead until this many wait, enough to keep every engine busy for
+/// a whole batch.
+const LOOKAHEAD_PER_ENGINE: usize = 40;
 
 /// `POST /api/reviews`: some games, or a player's newest games not yet reviewed with this version and budget.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -65,7 +76,8 @@ pub struct ReviewRequest {
     /// Nodes per position; 200,000 when none.
     #[serde(default)]
     pub nodes: Option<u64>,
-    /// Engines at once, one thread each; half the machine's cores when none.
+    /// Engines at once, one thread each. When none: half the machine's cores; in the background, all of them (it takes
+    /// only cores nothing else wants, and gives them back within one search when live play or other work needs them).
     #[serde(default)]
     pub concurrency: Option<u32>,
 }
@@ -103,13 +115,6 @@ pub struct ReviewResult {
     pub nodes: u64,
 }
 
-/// What reviewing one game came to.
-enum Outcome {
-    Reviewed { review: Box<Review>, searched: usize, cached: usize },
-    Skipped(&'static str),
-    Stopped,
-}
-
 /// Queues and runs reviews. Cheap to clone; register it with the scheduler as the `review` executor.
 #[derive(Clone)]
 pub struct Reviews {
@@ -138,7 +143,8 @@ impl Reviews {
             return Err(Error::bad_request("nodes must be between 1,000 and 100,000,000"));
         }
         let cores = hub.ledger.total();
-        let concurrency = req.concurrency.unwrap_or((cores / 2).max(1)).clamp(1, cores);
+        let default = if req.background { cores } else { (cores / 2).max(1) };
+        let concurrency = req.concurrency.unwrap_or(default).clamp(1, cores);
         let version = self.eval.binaries().resolve(&req.version.clone().unwrap_or(VersionRef::Champion)).await?;
         let (games, title, subject) = match (&req.player, req.games.is_empty()) {
             (None, false) => {
@@ -255,65 +261,234 @@ impl Reviews {
         Ok(out)
     }
 
-    /// Reviews one game: skips it when it is gone, live, empty or already reviewed with this version and budget;
-    /// otherwise searches its positions in batches (pausing between them as the policy and the scheduler ask),
-    /// judges it and stores the review.
-    async fn review_game(
+    /// Reads the game at `index` into the window: skipped when it is gone, live, empty or already reviewed with this
+    /// version and budget; otherwise its positions, the cached ones filled in, the rest queued as one run in the order
+    /// they were played, or, when a game before it in the window queued them already, waited for.
+    async fn load(&self, window: &mut Window, index: usize, id: GameId, version: VersionId, search: &SearchKey) {
+        let began = Instant::now();
+        let state = match self.read(window, index, id, version, search).await {
+            Ok(state) => state,
+            Err(e) => Pend::Failed(e.message().to_owned()),
+        };
+        window.games.push_back(Pending { id, began, state });
+    }
+
+    async fn read(
         &self,
-        cx: &WorkContext,
+        window: &mut Window,
+        index: usize,
         id: GameId,
-        version: &Version,
-        spec: &ReviewSpec,
-    ) -> Result<Outcome, Error> {
+        version: VersionId,
+        search: &SearchKey,
+    ) -> Result<Pend, Error> {
         let store = &self.eval.hub().store;
-        let Some(game) = store.game(id).await? else { return Ok(Outcome::Skipped("no such game")) };
+        let Some(game) = store.game(id).await? else { return Ok(Pend::Skipped("no such game")) };
         if matches!(game.summary.status, GameStatus::Live | GameStatus::Starting) {
-            return Ok(Outcome::Skipped("still being played"));
+            return Ok(Pend::Skipped("still being played"));
         }
         if game.moves.is_empty() {
-            return Ok(Outcome::Skipped("no moves"));
+            return Ok(Pend::Skipped("no moves"));
         }
-        if store.has_review(id, version.id, spec.nodes).await? {
-            return Ok(Outcome::Skipped("already reviewed"));
+        if store.has_review(id, version, search.nodes).await? {
+            return Ok(Pend::Skipped("already reviewed"));
         }
-        // The binary first, holding no cores: when it must be built, the build is work that needs them.
-        self.eval.binaries().binary(&VersionRef::Id(version.id), &[]).await?;
-        let input = ReviewInput::from(&game);
-        let positions = to_search(input)?;
-        let mut evals = Vec::with_capacity(positions.len());
-        let (mut searched, mut cached) = (0, 0);
-        let mut at = 0;
-        while at < positions.len() {
-            if !cx.safe_point(Some(AssistKind::Review)).await {
-                return Ok(Outcome::Stopped);
+        let positions = to_search(ReviewInput::from(&game))?;
+        let mut keys = Vec::new();
+        let mut seen = HashSet::new();
+        for p in positions.iter().filter(|p| !p.terminal) {
+            if seen.insert(p.key.as_str()) {
+                keys.push(p.key.clone());
             }
-            let Some(grant) = cx.cores(1, spec.concurrency).await else { return Ok(Outcome::Stopped) };
-            let engines = grant.cores() as usize;
-            let end = (at + engines * POSITIONS_PER_ENGINE).min(positions.len());
-            let batch = &positions[at..end];
-            let found = tokio::select! {
-                found = self.eval.evaluate_positions(batch, version, spec.nodes, spec.multipv, engines) => found?,
-                _ = cx.cancel.cancelled() => return Ok(Outcome::Stopped),
-            };
-            drop(grant);
-            searched += found.searched;
-            cached += found.cached;
-            evals.extend(found.evals);
-            at = end;
         }
-        let (summary, plies) = judge_game(input, &evals, version.id, spec.nodes)?;
-        let review = store.put_review(id, summary, plies).await?;
+        let known = store.positions(keys, search).await?;
+        let mut evals = vec![None; positions.len()];
+        let (mut missing, mut searched, mut cached) = (0, 0, 0);
+        let mut run = Vec::new();
+        let mut counted = HashSet::new();
+        for (k, p) in positions.iter().enumerate().filter(|(_, p)| !p.terminal) {
+            let first_here = counted.insert(p.key.as_str());
+            if let Some(eval) = known.get(&p.key) {
+                evals[k] = Some(eval.clone());
+                cached += usize::from(first_here);
+                continue;
+            }
+            missing += 1;
+            match window.waiting.get_mut(&p.key) {
+                Some(waiters) => {
+                    // Queued by a game before this one (cached, as far as this game goes), or earlier in this one.
+                    if first_here && waiters.iter().all(|&(g, _)| g != index) {
+                        cached += 1;
+                    }
+                    waiters.push((index, k));
+                }
+                None => {
+                    window.waiting.insert(p.key.clone(), vec![(index, k)]);
+                    run.push(Job { key: p.key.clone(), fen: p.fen.clone() });
+                    searched += 1;
+                }
+            }
+        }
+        window.lock().push(run);
+        Ok(Pend::Searching { game: Box::new(game), evals, missing, searched, cached })
+    }
+
+    /// Judges a game whose positions are all evaluated, stores its review and announces it.
+    async fn judge(&self, game: &Game, evals: &[Option<PositionEval>], spec: &ReviewSpec) -> Result<Review, Error> {
+        let (summary, plies) = judge_game(ReviewInput::from(game), evals, spec.version, spec.nodes)?;
         let hub = self.eval.hub();
-        hub.bus.emit(Payload::ReviewUpserted(ReviewUpserted { game: id, accuracy: review.summary.accuracy() }));
-        if let Some(summary) = store.game_summary(id).await? {
+        let review = hub.store.put_review(game.summary.id, summary, plies).await?;
+        hub.bus.emit(Payload::ReviewUpserted(ReviewUpserted {
+            game: game.summary.id,
+            accuracy: review.summary.accuracy(),
+        }));
+        if let Some(summary) = hub.store.game_summary(game.summary.id).await? {
             hub.bus.emit(Payload::GameUpserted(Box::new(summary)));
         }
-        Ok(Outcome::Reviewed { review: Box::new(review), searched, cached })
+        Ok(review)
+    }
+
+    /// The game at the front of the window, done with: judged and stored, or counted as skipped or failed, then the
+    /// checkpoint and progress moved past it.
+    async fn finish(
+        &self,
+        cx: &WorkContext,
+        done: Pending,
+        spec: &ReviewSpec,
+        run: &mut RunState,
+    ) -> Result<(), Error> {
+        let RunState { state, total, first, started } = run;
+        let (i, total, id) = (state.next, *total, done.id);
+        match done.state {
+            Pend::Skipped(why) => {
+                state.skipped += 1;
+                cx.log(format!("{}/{total} game {id}: skipped ({why}).", i + 1));
+            }
+            Pend::Failed(why) => {
+                state.failed += 1;
+                cx.log(format!("{}/{total} game {id}: failed: {why}", i + 1));
+            }
+            Pend::Searching { game, evals, searched, cached, .. } => match self.judge(&game, &evals, spec).await {
+                Ok(review) => {
+                    state.reviewed += 1;
+                    state.searched += searched as u64;
+                    state.cached += cached as u64;
+                    cx.log(format!(
+                        "{}/{total} game {id}: accuracy {} / {}, {searched} positions searched, {cached} cached, {:.1} s.",
+                        i + 1,
+                        accuracy_text(review.summary.white.accuracy),
+                        accuracy_text(review.summary.black.accuracy),
+                        done.began.elapsed().as_secs_f64()
+                    ));
+                    if let Some(drills) = &self.drills {
+                        match drills.make_from_game(id).await {
+                            Ok(made) if !made.is_empty() => {
+                                cx.log(format!("{} new drills from game {id}.", made.len()))
+                            }
+                            Ok(_) => {}
+                            Err(e) => cx.log(format!("No drills from game {id}: {}", e.message())),
+                        }
+                    }
+                }
+                Err(e) => {
+                    state.failed += 1;
+                    cx.log(format!("{}/{total} game {id}: failed: {}", i + 1, e.message()));
+                }
+            },
+        }
+        state.next = i + 1;
+        cx.save_checkpoint(&*state).await?;
+        let done_now = (state.next - *first) as u64;
+        cx.progress_now(Progress {
+            done: state.next as u64,
+            total: Some(total as u64),
+            unit: "games".into(),
+            eta_seconds: Progress::eta(done_now, (total - *first) as u64, started.elapsed().as_secs()),
+            text: Some(format!("{} of {total} games, {} positions searched", state.next, state.searched)),
+        })
+        .await
     }
 }
 
 fn accuracy_text(a: Option<f64>) -> String {
     a.map_or_else(|| "-".to_owned(), |a| format!("{a:.1}"))
+}
+
+/// A game of a review between being read and being judged.
+struct Pending {
+    id: GameId,
+    began: Instant,
+    state: Pend,
+}
+
+enum Pend {
+    Skipped(&'static str),
+    Failed(String),
+    /// Waiting for `missing` of its positions.
+    Searching {
+        game: Box<Game>,
+        evals: Vec<Option<PositionEval>>,
+        missing: usize,
+        searched: usize,
+        cached: usize,
+    },
+}
+
+/// The games a review has read and not yet judged, in order from the one at `first` (in the spec's list), the runs
+/// of their positions still to search, and which game and position each queued position is for.
+struct Window {
+    first: usize,
+    games: VecDeque<Pending>,
+    waiting: HashMap<String, Vec<(usize, usize)>>,
+    queue: Mutex<RunQueue<Job>>,
+}
+
+impl Window {
+    fn new(first: usize) -> Self {
+        Self { first, games: VecDeque::new(), waiting: HashMap::new(), queue: Mutex::new(RunQueue::new(0)) }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, RunQueue<Job>> {
+        self.queue.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Positions queued and not yet searched.
+    fn queued(&self) -> usize {
+        self.lock().len()
+    }
+
+    /// Whether the game at the front has nothing left to wait for.
+    fn front_done(&self) -> bool {
+        self.games.front().is_some_and(|g| !matches!(g.state, Pend::Searching { missing, .. } if missing > 0))
+    }
+
+    fn pop_front(&mut self) -> Option<Pending> {
+        let done = self.games.pop_front()?;
+        self.first += 1;
+        Some(done)
+    }
+
+    /// A searched position, for every game waiting for it: its evaluation, or the error that fails those games.
+    fn deliver(&mut self, key: &str, result: Result<PositionEval, Error>) {
+        for (index, k) in self.waiting.remove(key).unwrap_or_default() {
+            let Some(pending) = index.checked_sub(self.first).and_then(|i| self.games.get_mut(i)) else { continue };
+            match (&mut pending.state, &result) {
+                (Pend::Searching { evals, missing, .. }, Ok(eval)) => {
+                    evals[k] = Some(eval.clone());
+                    *missing -= 1;
+                }
+                (Pend::Searching { .. }, Err(e)) => pending.state = Pend::Failed(e.message().to_owned()),
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Where a running review stands, for [`Reviews::finish`].
+struct RunState {
+    state: ReviewCheckpoint,
+    total: usize,
+    first: usize,
+    started: Instant,
 }
 
 #[async_trait]
@@ -322,13 +497,17 @@ impl Executor for Reviews {
         WorkKind::Review
     }
 
+    /// Reads games a few ahead into a window and searches their positions in runs on as many engines as the ledger
+    /// grants, in batches of at most [`BATCH`]: before each batch it waits at a safe point (paused, or while you play
+    /// on Lichess) and asks for cores; within one, each engine stops before its next position as soon as the review is
+    /// stopped, paused, refused by the policy, or work of higher priority waits for cores, so it yields within one
+    /// search. Games are judged and stored in order as their positions come in, with a checkpoint after each.
     async fn run(&self, cx: WorkContext) -> Result<serde_json::Value, Error> {
         let spec: ReviewSpec = cx.spec()?;
-        let mut state: ReviewCheckpoint = cx.checkpoint().unwrap_or_default();
+        let state: ReviewCheckpoint = cx.checkpoint().unwrap_or_default();
         let total = spec.games.len();
-        let version = self
-            .eval
-            .hub()
+        let hub = self.eval.hub().clone();
+        let version = hub
             .store
             .version(spec.version)
             .await?
@@ -345,64 +524,79 @@ impl Executor for Reviews {
         } else if state.next < total {
             cx.log(format!("Carrying on from game {} of {total}.", state.next + 1));
         }
-        let started = Instant::now();
-        let first = state.next;
-        while state.next < total {
-            let i = state.next;
-            let id = spec.games[i];
-            let began = Instant::now();
-            let outcome = self.review_game(&cx, id, &version, &spec).await;
-            match outcome {
-                Ok(Outcome::Stopped) => {
-                    cx.save_checkpoint(&state).await?;
-                    return Err(cx.stopped());
-                }
-                Ok(Outcome::Reviewed { review, searched, cached }) => {
-                    state.reviewed += 1;
-                    state.searched += searched as u64;
-                    state.cached += cached as u64;
-                    cx.log(format!(
-                        "{}/{total} game {id}: accuracy {} / {}, {searched} positions searched, {cached} cached, {:.1} s.",
-                        i + 1,
-                        accuracy_text(review.summary.white.accuracy),
-                        accuracy_text(review.summary.black.accuracy),
-                        began.elapsed().as_secs_f64()
-                    ));
-                    if let Some(drills) = &self.drills {
-                        match drills.make_from_game(id).await {
-                            Ok(made) if !made.is_empty() => {
-                                cx.log(format!("{} new drills from game {id}.", made.len()))
-                            }
-                            Ok(_) => {}
-                            Err(e) => cx.log(format!("No drills from game {id}: {}", e.message())),
-                        }
-                    }
-                }
-                Ok(Outcome::Skipped(why)) => {
-                    state.skipped += 1;
-                    cx.log(format!("{}/{total} game {id}: skipped ({why}).", i + 1));
-                }
-                Err(_) if cx.cancel.is_cancelled() => {
-                    cx.save_checkpoint(&state).await?;
-                    return Err(cx.stopped());
-                }
-                Err(e) => {
-                    state.failed += 1;
-                    cx.log(format!("{}/{total} game {id}: failed: {}", i + 1, e.message()));
-                }
+        let search = SearchKey { commit: version.commit.clone(), nodes: spec.nodes, multipv: spec.multipv };
+        let lookahead = spec.concurrency as usize * LOOKAHEAD_PER_ENGINE;
+        let mut run = RunState { first: state.next, state, total, started: Instant::now() };
+        let mut window = Window::new(run.state.next);
+        let mut next_load = run.state.next;
+        let mut engines = None;
+        loop {
+            while window.front_done() {
+                let done = window.pop_front().expect("a game at the front");
+                self.finish(&cx, done, &spec, &mut run).await?;
             }
-            state.next = i + 1;
-            cx.save_checkpoint(&state).await?;
-            let done_now = (state.next - first) as u64;
-            cx.progress_now(Progress {
-                done: state.next as u64,
-                total: Some(total as u64),
-                unit: "games".into(),
-                eta_seconds: Progress::eta(done_now, (total - first) as u64, started.elapsed().as_secs()),
-                text: Some(format!("{} of {total} games, {} positions searched", state.next, state.searched)),
-            })
-            .await?;
+            if window.games.is_empty() && next_load >= total {
+                break;
+            }
+            while next_load < total && window.queued() < lookahead {
+                if cx.cancel.is_cancelled() {
+                    cx.save_checkpoint(&run.state).await?;
+                    return Err(cx.stopped());
+                }
+                self.load(&mut window, next_load, spec.games[next_load], spec.version, &search).await;
+                next_load += 1;
+            }
+            if window.front_done() {
+                continue;
+            }
+            if window.queued() == 0 {
+                return Err(Error::internal("the review waits for positions it has not queued"));
+            }
+            // The binary first, holding no cores: when it must be built, the build is work that needs them.
+            let engines = match &engines {
+                Some(e) => e,
+                None => engines.insert(self.eval.review_engines(&version, spec.nodes, spec.multipv).await?),
+            };
+            if !cx.safe_point(Some(AssistKind::Review)).await {
+                cx.save_checkpoint(&run.state).await?;
+                return Err(cx.stopped());
+            }
+            let Some(grant) = cx.cores(1, spec.concurrency).await else {
+                cx.save_checkpoint(&run.state).await?;
+                return Err(cx.stopped());
+            };
+            let until = Instant::now() + BATCH;
+            let go_on = || {
+                !cx.cancel.is_cancelled()
+                    && !cx.pause_asked()
+                    && hub.policy.allows(AssistKind::Review)
+                    && !hub.ledger.waiting_ahead_of(cx.priority)
+                    && Instant::now() < until
+            };
+            let found = Mutex::new(Vec::new());
+            let stopped = tokio::select! {
+                _ = self.eval.search_runs(
+                    engines, &window.queue, grant.cores() as usize, &go_on, &found,
+                ) => false,
+                _ = cx.cancel.cancelled() => true,
+            };
+            drop(grant);
+            window.lock().give_back_all();
+            let found = found.into_inner().unwrap_or_else(|p| p.into_inner());
+            let fresh: Vec<(String, PositionEval)> =
+                found.iter().filter_map(|(job, r)| r.as_ref().ok().map(|e| (job.key.clone(), e.clone()))).collect();
+            if !fresh.is_empty() {
+                hub.store.put_positions(fresh, &search).await?;
+            }
+            for (job, result) in found {
+                window.deliver(&job.key, result);
+            }
+            if stopped {
+                cx.save_checkpoint(&run.state).await?;
+                return Err(cx.stopped());
+            }
         }
+        let state = run.state;
         cx.log(format!("Done: {} reviewed, {} skipped, {} failed.", state.reviewed, state.skipped, state.failed));
         if total > 0 && state.failed as usize == total {
             return Err(Error::internal("every game failed"));

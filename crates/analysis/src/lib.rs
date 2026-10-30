@@ -16,11 +16,12 @@ pub mod profiles;
 pub mod progress;
 pub mod repertoire;
 pub mod review;
+pub mod runs;
 pub mod search;
 pub mod versions;
 
 pub use drills::{AnswerRequest, DrillAnswerResult, Drills, DrillsToday, MakeDrillsRequest, SessionRequest};
-pub use eval::{Budget, Eval, EvalRequest, EvalSession, Evaluated, SessionInfo};
+pub use eval::{Budget, Eval, EvalRequest, EvalSession, Evaluated, Job, ReviewEngines, SessionInfo};
 pub use profiles::Profiles;
 pub use repertoire::RepertoireRequest;
 pub use review::{ReviewCheckpoint, ReviewRequest, ReviewResult, ReviewSpec, Reviews};

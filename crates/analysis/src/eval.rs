@@ -6,13 +6,15 @@
 //! session: starting another replaces it. Sessions are assistance, so a session is refused while the fair-play policy
 //! forbids it, and a running one stops the moment the policy turns off (a Lichess game of yours starts).
 //!
-//! **Evaluating positions** ([`Eval::evaluate_positions`]) is what reviews do: each position searched from its bare
-//! FEN to a node budget, through the position cache (`positions`), keyed by the position, the version's commit, the
-//! budget and MultiPV, so a position shared by many games is searched once. Scores are flipped to White's before they
-//! are cached.
+//! **Evaluating positions** is what reviews do: each position searched from its bare FEN to a node budget, through the
+//! position cache (`positions`), keyed by the position, the version's commit, the budget and MultiPV, so a position
+//! shared by many games is searched once. Scores are flipped to White's before they are cached. The searches go in
+//! [runs](crate::runs) ([`Eval::search_runs`]): positions in the order played, on an engine that keeps its table.
+//! [`Eval::evaluate_positions`] does it for one list of positions; the review drives [`Eval::search_runs`] itself, to
+//! keep several games in flight.
 
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::HashSet,
     sync::{
         Arc, Mutex, Weak,
         atomic::{AtomicU64, Ordering},
@@ -28,7 +30,7 @@ use dameless_core::{
     version::Version,
 };
 use dameless_engine::{
-    pool::{EngineSpec, Pool, PooledEngine},
+    pool::{EngineSpec, Pool, PooledEngine, Reset},
     uci::{self, Info, Limits, SearchEvent},
 };
 use dameless_hub::{Hub, Reservation};
@@ -39,6 +41,7 @@ use tokio_util::sync::CancellationToken;
 use utoipa::ToSchema;
 
 use crate::{
+    runs::{Next, RunQueue},
     search::{live_lines, record, review_spec, search_fen},
     versions::{Binaries, VersionRef},
 };
@@ -370,11 +373,19 @@ impl Eval {
                 acc
             });
         if !missing.is_empty() {
-            let (_, path) = self.inner.binaries.binary(&VersionRef::Id(version.id), &[]).await?;
-            let spec = review_spec(&path, multipv);
-            let fens: Vec<String> = missing.iter().map(|(_, f)| f.clone()).collect();
-            let found = self.search_many(&spec, &fens, nodes, multipv, engines).await?;
-            let fresh: Vec<(String, PositionEval)> = missing.iter().map(|(k, _)| k.clone()).zip(found).collect();
+            let searching = self.review_engines(version, nodes, multipv).await?;
+            let queue = Mutex::new(RunQueue::new(0));
+            // The positions in the order given (a game's, as played): one run, which idle engines split.
+            queue
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .push(missing.iter().map(|(key, fen)| Job { key: key.clone(), fen: fen.clone() }));
+            let found = Mutex::new(Vec::new());
+            self.search_runs(&searching, &queue, engines, &|| true, &found).await;
+            let mut fresh = Vec::with_capacity(missing.len());
+            for (job, result) in found.into_inner().unwrap_or_else(|p| p.into_inner()) {
+                fresh.push((job.key, result?));
+            }
             self.inner.hub.store.put_positions(fresh.clone(), &search).await?;
             known.extend(fresh);
         }
@@ -382,46 +393,99 @@ impl Eval {
         Ok(Evaluated { evals, searched: missing.len(), cached })
     }
 
-    /// Searches every FEN on up to `engines` pooled engines sharing one queue; the answers are in the order asked. An
-    /// engine that fails is replaced once and the position tried again on the fresh one.
-    async fn search_many(
-        &self,
-        spec: &EngineSpec,
-        fens: &[String],
-        nodes: u64,
-        multipv: u32,
-        engines: usize,
-    ) -> Result<Vec<PositionEval>, Error> {
-        let pool = &self.inner.pool;
-        let engines = engines.clamp(1, fens.len().max(1));
-        pool.resize(spec, engines);
-        let queue: Mutex<VecDeque<(usize, &str)>> = Mutex::new(fens.iter().map(String::as_str).enumerate().collect());
-        let results: Mutex<Vec<Option<PositionEval>>> = Mutex::new(vec![None; fens.len()]);
-        let checkout =
-            || async { pool.checkout(spec).await.map_err(|e| Error::internal(format!("start the engine: {e:#}"))) };
-        let worker = || async {
-            let mut engine: PooledEngine = checkout().await?;
-            loop {
-                let Some((i, fen)) = queue.lock().unwrap_or_else(|p| p.into_inner()).pop_front() else { break };
-                let eval = match search_fen(&mut engine, fen, nodes, multipv).await {
-                    Ok(eval) => eval,
-                    Err(_) => {
-                        // The engine may be dead or confused: one fresh start, one more try.
-                        engine.discard();
-                        engine = checkout().await?;
-                        search_fen(&mut engine, fen, nodes, multipv)
-                            .await
-                            .map_err(|e| Error::internal(format!("{} at {fen}", e.message())))?
-                    }
-                };
-                results.lock().unwrap_or_else(|p| p.into_inner())[i] = Some(eval);
-            }
-            Ok::<(), Error>(())
-        };
-        futures::future::try_join_all((0..engines).map(|_| worker())).await?;
-        let results = results.into_inner().unwrap_or_else(|p| p.into_inner());
-        results.into_iter().map(|r| r.ok_or_else(|| Error::internal("a position was not searched"))).collect()
+    /// How reviews search with a version: its binary (built first if it must be) with one thread, the review hash and
+    /// `multipv` lines, to `nodes` a position.
+    pub async fn review_engines(&self, version: &Version, nodes: u64, multipv: u32) -> Result<ReviewEngines, Error> {
+        let (_, path) = self.inner.binaries.binary(&VersionRef::Id(version.id), &[]).await?;
+        Ok(ReviewEngines { spec: review_spec(&path, multipv), nodes, multipv })
     }
+
+    /// Searches the queue's runs on up to `engines` pooled engines, each run's positions one after another on one
+    /// engine that keeps its hash table between them (a clean table at the start of each run), until the queue is
+    /// empty or `go_on` says to stop. `go_on` is asked before each position; an engine that stops gives the rest of
+    /// its run back to the queue. Each result is pushed to `found` as it comes, so a caller that drops this future
+    /// (the work was stopped) keeps what was finished. An engine that fails is replaced and the position tried once
+    /// more on the fresh one; a second failure is that position's result.
+    pub async fn search_runs(
+        &self,
+        searching: &ReviewEngines,
+        queue: &Mutex<RunQueue<Job>>,
+        engines: usize,
+        go_on: &(dyn Fn() -> bool + Sync),
+        found: &Mutex<Vec<(Job, Result<PositionEval, Error>)>>,
+    ) {
+        let ReviewEngines { spec, nodes, multipv } = searching;
+        let (nodes, multipv) = (*nodes, *multipv);
+        let lock = || queue.lock().unwrap_or_else(|p| p.into_inner());
+        let engines = {
+            let mut q = lock();
+            let engines = engines.clamp(1, q.len().max(1));
+            q.resize(engines);
+            engines
+        };
+        let pool = &self.inner.pool;
+        pool.resize(spec, engines);
+        let checkout = || async {
+            pool.checkout_with(spec, Reset::NewGame)
+                .await
+                .map_err(|e| Error::internal(format!("start the engine: {e:#}")))
+        };
+        let worker = |i: usize| async move {
+            // Checked out on the first position, with a clean table: that position starts a run anyway.
+            let mut engine: Option<PooledEngine> = None;
+            loop {
+                if !go_on() {
+                    lock().give_back(i);
+                    break;
+                }
+                let Some(Next { job, fresh }) = lock().next(i) else { break };
+                let result = async {
+                    let mut current = match engine.take() {
+                        Some(mut e) if fresh => match e.new_game().await {
+                            Ok(()) => e,
+                            Err(_) => {
+                                e.discard();
+                                checkout().await?
+                            }
+                        },
+                        Some(e) => e,
+                        None => checkout().await?,
+                    };
+                    let eval = match search_fen(&mut current, &job.fen, nodes, multipv).await {
+                        Ok(eval) => eval,
+                        Err(_) => {
+                            // The engine may be dead or confused: one fresh start, one more try.
+                            current.discard();
+                            current = checkout().await?;
+                            search_fen(&mut current, &job.fen, nodes, multipv)
+                                .await
+                                .map_err(|e| Error::internal(format!("{} at {}", e.message(), job.fen)))?
+                        }
+                    };
+                    engine = Some(current);
+                    Ok(eval)
+                }
+                .await;
+                found.lock().unwrap_or_else(|p| p.into_inner()).push((job, result));
+            }
+        };
+        futures::future::join_all((0..engines).map(worker)).await;
+    }
+}
+
+/// How a review searches: [`Eval::review_engines`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewEngines {
+    pub spec: EngineSpec,
+    pub nodes: u64,
+    pub multipv: u32,
+}
+
+/// A position for [`Eval::search_runs`]: its cache key and its FEN.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Job {
+    pub key: String,
+    pub fen: String,
 }
 
 /// Takes a client's sessions out of the list.
