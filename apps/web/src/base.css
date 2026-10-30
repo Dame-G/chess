@@ -103,6 +103,7 @@
   --graph: 3.5rem;
   --transport: 2rem;
   --h-tabbar: 3.5rem; /* the phone's bottom tab bar */
+  --h-movestrip: calc(var(--h-control) + 2 * var(--e-stroke-hair)); /* the phone's row of moves under the board */
 
   /* A sheet that covers the window (below `lg`) stops short of what the host keeps visible: a header above it, the
      tab bar below it. The host sets these; they are 0 when nothing is kept. */

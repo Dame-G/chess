@@ -225,6 +225,8 @@ function goTo(id: number) {
 
   .strip {
     flex: none;
+    box-sizing: border-box;
+    height: var(--h-movestrip);
   }
 
   .body {
