@@ -13,7 +13,8 @@ use dameless_engine::{
     uci::{self, Engine, Info, Limits, Position, SearchEvent},
 };
 
-/// Hash for review searches, in MiB: small, since each position is searched afresh from its bare FEN.
+/// Hash for review searches, in MiB: small, since a search at a review's budget fills little of it, and a run's next
+/// position needs what the search before it found, not every table entry since the run began.
 pub const REVIEW_HASH: u32 = 16;
 
 /// Moves of a line kept in the position cache.

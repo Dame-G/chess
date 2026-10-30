@@ -10109,7 +10109,7 @@
               "null"
             ],
             "format": "int32",
-            "description": "Engines at once; half the machine's cores when none.",
+            "description": "Engines at once. When none: half the machine's cores; in the background, all of them (it gives them back\nwithin one search when live play or other work needs them).",
             "minimum": 0
           },
           "games": {

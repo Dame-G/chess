@@ -7,6 +7,9 @@
 //!
 //! Searches by `depth` or `nodes` report depths 1 to 3 at once; `infinite` (and `movetime`) report a deeper line every
 //! 10 ms until `stop`.
+//!
+//! For tests of the order of searches: with `FAKE_EVAL_LOG` set to a file, each `ucinewgame` and `position` it gets is
+//! appended to it as one line after its process id; with `FAKE_EVAL_DELAY_MS`, a search by `nodes` takes that long.
 
 use std::{
     io::{BufRead, Write},
@@ -95,11 +98,21 @@ fn main() {
         }
     });
 
+    // Opened for each line, so a test may remove it between parts.
+    let log = std::env::var_os("FAKE_EVAL_LOG");
+    let delay = std::env::var("FAKE_EVAL_DELAY_MS").ok().and_then(|ms| ms.parse().ok()).map(Duration::from_millis);
     let mut out = std::io::stdout().lock();
     let mut multipv = 1usize;
     let mut pos = Position::start();
     while let Ok(line) = rx.recv() {
         let words: Vec<&str> = line.split_whitespace().collect();
+        if let Some(path) = &log
+            && matches!(words.first(), Some(&("ucinewgame" | "position")))
+        {
+            let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path).expect("the log");
+            // One write, so engines writing at once do not mix their lines.
+            file.write_all(format!("{} {line}\n", std::process::id()).as_bytes()).unwrap();
+        }
         match words.as_slice() {
             ["uci"] => {
                 writeln!(out, "id name FakeEval 1.0").unwrap();
@@ -157,6 +170,9 @@ fn main() {
                 } else {
                     let depth = value("depth").unwrap_or(3);
                     let nodes = value("nodes").unwrap_or(1000);
+                    if let Some(delay) = delay.filter(|_| value("nodes").is_some()) {
+                        std::thread::sleep(delay);
+                    }
                     for d in 1..=depth {
                         report(&mut out, &found, d, nodes * d / depth);
                     }

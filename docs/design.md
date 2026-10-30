@@ -402,7 +402,7 @@ pub enum Assist { Allowed, ExplorerOnly /* every live game is correspondence */,
 - **Lanes:** the scheduler runs one item at a time per lane — builds; trials, tunes and calibration together; reviews; background reviews (so a review asked for now never waits days behind one); promotions — and starts an item only while a core is free or lower-priority work holds some (it hands them back at its next unit, and the ledger serves the new item first); cores themselves come from the ledger when the item asks (`cx.cores`). So a trial waiting for its build never blocks the build (builds are queued at `Interactive`), and an idea's trials run one after another.
 - **Preemption:** when live play's reservations oversubscribe the ledger, the lowest-priority running CPU work is paused (`paused_for: "A live game"`) at its next safe point, and resumed by the scheduler once at least two cores (or what it held, if less) are free; work a person paused stays paused. After a restart, work paused for live play is queued again.
 - **Network work** (imports) needs no cores and runs at once. Lichess allows one request at a time per token: the `lichess` client holds the token's slot for each plain request and while a stream opens, not for a stream's life, so a long export never holds up the moves of a live game.
-- **Pausing:** a review pauses on the fair-play policy; any CPU work can be paused and resumed (`POST /api/work/{id}/pause|resume`). A trial pauses between rounds; a tune between iterations; a review between positions.
+- **Pausing:** a review pauses on the fair-play policy; any CPU work can be paused and resumed (`POST /api/work/{id}/pause|resume`). A trial pauses between rounds; a tune between iterations; a review between positions (each engine finishes the search it is in).
 - **Restart:** work that was running when the server stopped comes back `Queued` and resumes from its last checkpoint (trials keep their rounds, tunes their iterations, reviews their finished games).
 
 ## The Referee (`crates/play`)
@@ -434,6 +434,7 @@ pub trait SeatController: Send {
 - `evaluate(position_key, version, nodes, multipv) -> EvalResult` for reviews and profiles, through the **position cache** (`positions` table, keyed by FEN without move counters, version's commit, nodes, multipv).
 - A pool of warm engine processes per build, sized by the cores the ledger grants.
 - Reviews are work: `POST /api/reviews {games | player, limit, speeds, rated, version, nodes}`. Defaults: the champion, 200,000 nodes, MultiPV 2.
+- A review searches in **runs** (`analysis::runs`): each game's uncached positions in the order played, on one engine that keeps its hash table between them (`ucinewgame` at a run's start), so each search starts from what the one before found. Engines share one queue; an idle engine takes the next run or splits the longest one left, and games are read a few ahead, so no engine waits for the end of a game. Batches last at most 8 s (cache writes, judging, a safe point and a new grant between them), and within one each engine stops before its next position when the review is stopped or paused, the policy forbids reviews, or higher-priority work waits for cores. Concurrency defaults to half the cores, all of them in the background.
 
 ## Storage (`crates/store`)
 
