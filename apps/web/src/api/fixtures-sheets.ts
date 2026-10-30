@@ -591,13 +591,36 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       });
   }
 
+  /** A regression check that failed: the newest champion against the oldest (the `regression` variant). */
+  function regressions(line: DamelessView["line"], champion: DamelessView["champion"]): DamelessView["regressions"] {
+    const oldest = line.reduce((a, b) =>
+      (b.line.type === "champion" ? b.line.number : 0) < (a.line.type === "champion" ? a.line.number : 0) ? b : a,
+    );
+    return [
+      {
+        idea: 7,
+        champion: champion.id,
+        champion_name: champion.name,
+        against: oldest.id,
+        against_name: oldest.name,
+        passed: false,
+        elo: { elo: -4.2, low: -7.3, high: -1.1 },
+        pairs: 10000,
+        summary: `Regression: ${champion.name} is measurably worse than ${oldest.name}, −4.2 ± 3.1 Elo over 10000 pairs. Nothing was reverted; read the promotions since ${oldest.name}`,
+        at: minutesAgo(60 * 3),
+      },
+    ];
+  }
+
   function overview(): DamelessView {
     const line = ctx.versions.filter((v) => v.line.type === "champion");
     const sorted = [...ctx.ideas].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const champion = line.reduce((a, b) =>
+      (b.line.type === "champion" ? b.line.number : 0) > (a.line.type === "champion" ? a.line.number : 0) ? b : a,
+    );
     return {
-      champion: line.reduce((a, b) =>
-        (b.line.type === "champion" ? b.line.number : 0) > (a.line.type === "champion" ? a.line.number : 0) ? b : a,
-      ),
+      champion,
+      regressions: variant("regression") ? regressions(line, champion) : [],
       line: variant("empty") ? line.slice(0, 1) : line,
       upstream: null,
       ideas: {

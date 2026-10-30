@@ -1931,6 +1931,16 @@ export interface components {
         };
         /** @description A custom idea's single trial (what `chess test` was). */
         CustomTrial: {
+            /**
+             * Format: double
+             * @description The SPRT's false-accept rate (default 0.05).
+             */
+            alpha?: number | null;
+            /**
+             * Format: double
+             * @description The SPRT's false-reject rate (default 0.10, Reckless's; the funnels run at 0.20).
+             */
+            beta?: number | null;
             /** @description SPRT bounds in normalized Elo; with neither these nor `pairs`, [0, 3]. */
             bounds?: number[] | null;
             /**
@@ -1948,8 +1958,14 @@ export interface components {
             /** @description The champion line, newest first. A champion taken from upstream carries `upstream`: the commits it brought. */
             line: components["schemas"]["Version"][];
             /**
+             * @description Finished regression checks (after every fifth promotion, the champion against the champion five promotions
+             *     earlier), newest first. One that did not pass says the champion is measurably worse; nothing was reverted.
+             */
+            regressions: components["schemas"]["RegressionCheck"][];
+            /**
              * @description Each champion version and its cumulative Elo over `v1` (each promotion's deciding estimate added up, the
-             *     errors in quadrature), oldest first.
+             *     errors in quadrature), oldest first. A champion a regression check measured is placed by that check instead
+             *     (`measured`), and those after it add on from there.
              */
             strength: components["schemas"]["ProgressPoint"][];
             upstream?: components["schemas"]["UpstreamSync"] | null;
@@ -3316,6 +3332,11 @@ export interface components {
              * @description A 95 % interval, where the value has one (Dameless's Elo).
              */
             low?: number | null;
+            /**
+             * @description Dameless's point measured by a regression check (games between this champion and one five promotions back)
+             *     rather than added up from promotions' estimates.
+             */
+            measured?: boolean;
             /** Format: double */
             value: number;
             version?: components["schemas"]["VersionId"] | null;
@@ -3366,6 +3387,28 @@ export interface components {
             bullet?: components["schemas"]["Rating"] | null;
             classical?: components["schemas"]["Rating"] | null;
             rapid?: components["schemas"]["Rating"] | null;
+        };
+        /** @description One finished check: `GET /api/dameless` lists them. */
+        RegressionCheck: {
+            /** @description The champion five promotions earlier. */
+            against: components["schemas"]["VersionId"];
+            against_name: string;
+            at: components["schemas"]["Timestamp"];
+            /** @description The new champion, and its name (`v11`). */
+            champion: components["schemas"]["VersionId"];
+            champion_name: string;
+            elo?: components["schemas"]["Estimate"] | null;
+            /** @description The idea that played it. */
+            idea: components["schemas"]["IdeaId"];
+            /**
+             * Format: int64
+             * @description Game pairs played.
+             */
+            pairs: number;
+            /** @description Passed: not measurably worse than `against`. */
+            passed: boolean;
+            /** @description One sentence: "v11 over v6: +12.4 ± 3.1 Elo over 10000 pairs". */
+            summary: string;
         };
         /** @description The `reload` event's payload. */
         Reload: {
@@ -3816,7 +3859,7 @@ export interface components {
          * @description A stage of an idea.
          * @enum {string}
          */
-        Stage: "fingerprint" | "screen" | "short" | "long" | "speed" | "tune" | "confirm" | "custom" | "train";
+        Stage: "fingerprint" | "screen" | "short" | "long" | "speed" | "tune" | "confirm" | "custom" | "train" | "regression";
         /** @description Where a game starts, when not from the standard position. */
         StartFrom: {
             fen: string;
@@ -4093,6 +4136,16 @@ export interface components {
         };
         /** @description One stage of an idea: a set of games (or benches, or SPSA) and a verdict. */
         Trial: {
+            /**
+             * Format: double
+             * @description The SPRT's false-accept rate (with `bounds`).
+             */
+            alpha?: number | null;
+            /**
+             * Format: double
+             * @description The SPRT's false-reject rate (with `bounds`).
+             */
+            beta?: number | null;
             /** @description SPRT bounds in normalized Elo, `[lower, upper]`. */
             bounds?: number[] | null;
             /** @description One sentence for people. */
@@ -4139,6 +4192,10 @@ export interface components {
         TrialStatus: "waiting" | "running" | "passed" | "failed" | "stopped" | "skipped";
         /** @description What an idea shows of each trial. */
         TrialSummary: {
+            /** Format: double */
+            alpha?: number | null;
+            /** Format: double */
+            beta?: number | null;
             bounds?: number[] | null;
             detail?: string | null;
             elo?: components["schemas"]["Estimate"] | null;

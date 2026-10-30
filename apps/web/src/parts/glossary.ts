@@ -10,7 +10,7 @@ export const GLOSSARY = {
   },
   sprt: {
     term: "SPRT",
-    text: "A trial that plays games until the evidence is strong enough either way, instead of a fixed number. It stops early when a change is clearly good or clearly not.",
+    text: "A trial that plays games until the evidence is strong enough either way, instead of a fixed number. It stops early when a change is clearly good or clearly not. α is how often a change at the lower goal is kept by luck, β how often one at the upper goal is dropped: ideas run at α 0.05, β 0.20.",
   },
   llr: {
     term: "LLR",
@@ -42,7 +42,11 @@ export const GLOSSARY = {
   },
   screen: {
     term: "Quick screen",
-    text: "A fast first trial at a very short time control that only throws out changes that are clearly worse. Passing it is not evidence of a gain.",
+    text: "A fast first trial at a very short time control that only threw out changes that were clearly worse. Older ideas ran it; new ones go straight to short games.",
+  },
+  regression: {
+    term: "Regression check",
+    text: "After every fifth promotion the champion plays the champion from five promotions earlier, 10,000 pairs of short games. It catches the small losses the quicker trials let through, and says so loudly; nothing is undone by itself.",
   },
   tune: {
     term: "Tune",

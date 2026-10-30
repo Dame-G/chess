@@ -40,7 +40,7 @@ export const KIND_WORD: Record<IdeaKind, string> = {
   net: "Net",
 };
 
-/** The stages as people read them, capitalised to start a line: `Quick screen`, `Short games` (the rail's words). */
+/** The stages as people read them, capitalised to start a line: `Short games`, `Regression check` (the rail's words). */
 export const STAGE_WORD = Object.fromEntries(
   Object.entries(stageLabel).map(([stage, word]) => [stage, word.charAt(0).toUpperCase() + word.slice(1)]),
 ) as Record<Stage, string>;

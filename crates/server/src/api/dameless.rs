@@ -9,6 +9,7 @@ use dameless_core::{
     ideas::{Idea, IdeaStatus},
     lichess::BotStatus,
     progress::{ProgressPoint, dameless_series},
+    regression::RegressionCheck,
     spsa::{self, Tunable},
     upstream::{UpstreamSettings, UpstreamStatus, UpstreamSync},
     version::{Build, Version},
@@ -43,8 +44,12 @@ pub struct DamelessView {
     /// The bot, when its Lichess account is connected.
     pub connection: Option<BotStatus>,
     /// Each champion version and its cumulative Elo over `v1` (each promotion's deciding estimate added up, the
-    /// errors in quadrature), oldest first.
+    /// errors in quadrature), oldest first. A champion a regression check measured is placed by that check instead
+    /// (`measured`), and those after it add on from there.
     pub strength: Vec<ProgressPoint>,
+    /// Finished regression checks (after every fifth promotion, the champion against the champion five promotions
+    /// earlier), newest first. One that did not pass says the champion is measurably worse; nothing was reverted.
+    pub regressions: Vec<RegressionCheck>,
 }
 
 /// Dameless's logbook: champion, line, ideas, the bot and its strength over versions.
@@ -65,9 +70,10 @@ pub async fn get_dameless(State(app): State<Arc<App>>) -> ApiResult<Json<Dameles
     };
     let bot = app.connections.status(ConnectionKey::Bot);
     let connection = if bot.configured { bot.bot } else { None };
-    let strength = dameless_series(&line, None).points;
+    let regressions = app.regression.checks().await?;
+    let strength = dameless_series(&line, &regressions, None).points;
     let upstream = app.upstream.status().await?.last;
-    Ok(Json(DamelessView { champion, line, upstream, ideas, connection, strength }))
+    Ok(Json(DamelessView { champion, line, upstream, ideas, connection, strength, regressions }))
 }
 
 #[derive(Deserialize, IntoParams)]

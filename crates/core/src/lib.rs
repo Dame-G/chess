@@ -17,6 +17,7 @@ pub mod lichess;
 pub mod profile;
 pub mod progress;
 pub mod referee;
+pub mod regression;
 pub mod repertoire;
 pub mod review;
 pub mod scaling;

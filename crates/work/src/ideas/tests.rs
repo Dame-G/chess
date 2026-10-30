@@ -77,9 +77,10 @@ async fn a_gain_runs_its_funnel_and_is_kept() {
     lab.fake.rounds(WINS);
     let mut sub = lab.hub.bus.subscribe(0, TopicFilter::of(["ideas", "idea:*", "games", "work"]));
     let idea = lab.ideas.create(request("Deeper LMR", IdeaKind::Gain, "deeper-lmr")).await.unwrap();
+    assert_eq!(idea.trials.iter().map(|t| t.stage).collect::<Vec<_>>(), [Stage::Fingerprint, Stage::Short]);
     assert_eq!(
-        idea.trials.iter().map(|t| t.stage).collect::<Vec<_>>(),
-        [Stage::Fingerprint, Stage::Screen, Stage::Short]
+        (idea.trials[1].bounds, idea.trials[1].alpha, idea.trials[1].beta),
+        (Some([0.0, 4.0]), Some(0.05), Some(0.20))
     );
     assert!(idea.version.is_some());
     let idea = ended(&lab, idea.id).await;
@@ -94,7 +95,9 @@ async fn a_gain_runs_its_funnel_and_is_kept() {
     let played = lab.fake.played();
     assert!(played.iter().all(|p| p.pairs == 24 && p.concurrency == 2), "{played:?}");
     // Every game of every round is stored, numbered within its trial, onto the board.
-    let short = lab.ideas.trial(idea.id, idea.trials[2].id).await.unwrap();
+    let short = lab.ideas.trial(idea.id, idea.trials[1].id).await.unwrap();
+    // Its LLR stops at the funnels' rates: ln(0.8 / 0.05).
+    assert!((short.llr.unwrap().upper - 16f64.ln()).abs() < 1e-9);
     assert_eq!(short.played, Some(Preset::Stc.settings().time), "the fake benches at the reference speed");
     assert!(short.scaling.is_some() && short.llr.is_some() && short.elo.is_some());
     let games =
@@ -136,19 +139,16 @@ async fn ideas_are_dropped_by_the_first_stage_that_fails() {
     let same = ended(&lab, same.id).await;
     assert_eq!(same.status, IdeaStatus::Dropped);
     assert!(same.verdict.as_deref().unwrap().starts_with("Dropped at the fingerprint: bench unchanged"));
-    assert_eq!(
-        same.trials.iter().map(|t| t.status).collect::<Vec<_>>(),
-        [TrialStatus::Failed, TrialStatus::Skipped, TrialStatus::Skipped]
-    );
+    assert_eq!(same.trials.iter().map(|t| t.status).collect::<Vec<_>>(), [TrialStatus::Failed, TrialStatus::Skipped]);
 
-    // Losing games: rejected at the screen.
+    // Losing games: rejected at the short games.
     lab.repo.commit("worse", "main", &[("src/search.rs", "fn search() { worse(); }\n")], None);
     lab.fake.rounds(LOSSES);
     let worse = lab.ideas.create(request("Worse", IdeaKind::Gain, "worse")).await.unwrap();
     let worse = ended(&lab, worse.id).await;
     assert_eq!(worse.status, IdeaStatus::Dropped);
     assert!(
-        worse.verdict.as_deref().unwrap().starts_with("Dropped at the quick screen: rejected [-5, 0]"),
+        worse.verdict.as_deref().unwrap().starts_with("Dropped at the short games: rejected [0, 4]"),
         "{:?}",
         worse.verdict
     );
@@ -177,7 +177,7 @@ async fn a_custom_trial_plays_its_pairs_and_requests_are_checked() {
     lab.repo.commit("test/comment", "main", &[("README.md", "x\n")], None);
     lab.fake.rounds(DRAWS);
     let mut req = request("False accepts", IdeaKind::Gain, "test/comment");
-    req.custom = Some(CustomTrial { preset: Preset::Vstc, bounds: None, pairs: Some(50) });
+    req.custom = Some(CustomTrial { preset: Preset::Vstc, bounds: None, pairs: Some(50), alpha: None, beta: None });
     let idea = lab.ideas.create(req).await.unwrap();
     let idea = ended(&lab, idea.id).await;
     assert_eq!(idea.status, IdeaStatus::Kept);
@@ -224,13 +224,13 @@ async fn a_batch_is_tagged_and_runs_one_after_another() {
 async fn a_stopped_idea_resumes_with_the_rounds_it_played() {
     let lab = lab(2).await;
     lab.repo.commit("slow", "main", &[("src/search.rs", "fn search() { slow(); }\n")], None);
-    // Even games hardly move the SPRT: the screen runs until stopped.
+    // Even games hardly move the SPRT: the short games run until stopped.
     lab.fake.rounds(EVEN);
     *lab.fake.round_delay.lock().unwrap() = Duration::from_millis(30);
     let idea = lab.ideas.create(request("Slow", IdeaKind::Gain, "slow")).await.unwrap();
-    let screen = idea.trials[1].id;
-    eventually("two rounds of the screen", || async {
-        lab.ideas.trial(idea.id, screen).await.unwrap().penta.pairs() >= 48
+    let short = idea.trials[1].id;
+    eventually("two rounds of the short games", || async {
+        lab.ideas.trial(idea.id, short).await.unwrap().penta.pairs() >= 48
     })
     .await;
     let stopped = lab.ideas.stop(idea.id).await.unwrap();
@@ -238,21 +238,21 @@ async fn a_stopped_idea_resumes_with_the_rounds_it_played() {
     let stopped = ended(&lab, idea.id).await;
     assert_eq!(stopped.status, IdeaStatus::Stopped);
     assert_eq!(stopped.verdict.as_deref(), Some("Stopped before it was decided"));
-    let t = lab.ideas.trial(idea.id, screen).await.unwrap();
+    let t = lab.ideas.trial(idea.id, short).await.unwrap();
     assert_eq!(t.status, TrialStatus::Stopped);
     let pairs = t.penta.pairs();
-    let games = lab.hub.store.count_trial_games(screen).await.unwrap();
+    let games = lab.hub.store.count_trial_games(short).await.unwrap();
     assert_eq!(u64::from(games), pairs * 2);
 
-    // Resumed with winning rounds: the screen keeps its pairs and is decided, then the rest runs.
+    // Resumed with winning rounds: the short games keep their pairs and is decided, then the rest runs.
     lab.fake.rounds(WINS);
     *lab.fake.round_delay.lock().unwrap() = Duration::ZERO;
     let resumed = lab.ideas.resume(idea.id).await.unwrap();
     assert_eq!((resumed.status, resumed.verdict.clone(), resumed.ended_at.clone()), (IdeaStatus::Queued, None, None));
     let done = ended(&lab, idea.id).await;
     assert_eq!(done.status, IdeaStatus::Kept, "{:?}", done.verdict);
-    let t = lab.ideas.trial(idea.id, screen).await.unwrap();
-    assert!(t.penta.pairs() > pairs, "the screen kept its pairs: {:?}", t.penta);
+    let t = lab.ideas.trial(idea.id, short).await.unwrap();
+    assert!(t.penta.pairs() > pairs, "the short games kept their pairs: {:?}", t.penta);
     assert_eq!(lab.ideas.resume(idea.id).await.unwrap_err().status(), 409);
 }
 
@@ -266,7 +266,6 @@ async fn a_trial_without_fastchess_fails_the_idea_with_the_way_out() {
     assert_eq!(idea.status, IdeaStatus::Failed);
     assert!(idea.verdict.as_deref().unwrap().contains("dameless setup"), "{:?}", idea.verdict);
     assert_eq!(idea.trials[1].status, TrialStatus::Failed);
-    assert_eq!(idea.trials[2].status, TrialStatus::Skipped);
 }
 
 #[tokio::test]
@@ -292,7 +291,7 @@ async fn a_tune_writes_its_branch_and_goes_on_through_the_funnel() {
     assert_eq!(idea.version, None, "a tune's version comes from SPSA");
     assert_eq!(
         idea.trials.iter().map(|t| t.stage).collect::<Vec<_>>(),
-        [Stage::Tune, Stage::Fingerprint, Stage::Screen, Stage::Confirm]
+        [Stage::Tune, Stage::Fingerprint, Stage::Confirm]
     );
     let idea = ended(&lab, idea.id).await;
     assert_eq!(idea.status, IdeaStatus::Kept, "{:?}", idea.verdict);
@@ -374,10 +373,10 @@ async fn a_pause_winds_a_long_round_down_and_keeps_its_finished_pairs() {
     // A round that would take a minute: the pause must not wait for it.
     *lab.fake.round_delay.lock().unwrap() = Duration::from_secs(60);
     let idea = lab.ideas.create(request("Long", IdeaKind::Gain, "long")).await.unwrap();
-    let screen = idea.trials[1].id;
-    let work = running_work(&lab, screen).await;
-    eventually("the screen's first round playing", || async {
-        lab.ideas.trial(idea.id, screen).await.unwrap().status == TrialStatus::Running && lab.fake.played().is_empty()
+    let short = idea.trials[1].id;
+    let work = running_work(&lab, short).await;
+    eventually("the short games' first round playing", || async {
+        lab.ideas.trial(idea.id, short).await.unwrap().status == TrialStatus::Running && lab.fake.played().is_empty()
     })
     .await;
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -385,12 +384,12 @@ async fn a_pause_winds_a_long_round_down_and_keeps_its_finished_pairs() {
     lab.scheduler.pause(work.id, "A live game").await.unwrap();
     // Half of the round's 24 pairs had finished when it was wound down: they are kept, games and all.
     eventually("the wound-down round recorded", || async {
-        lab.ideas.trial(idea.id, screen).await.unwrap().penta.pairs() == 12
+        lab.ideas.trial(idea.id, short).await.unwrap().penta.pairs() == 12
     })
     .await;
     assert!(asked.elapsed() < Duration::from_secs(5), "the pause waited {:?}", asked.elapsed());
-    eventually("its games stored", || async { lab.hub.store.count_trial_games(screen).await.unwrap() == 24 }).await;
-    assert_eq!(lab.hub.store.trial_rounds(screen).await.unwrap().map(|r| r.0), Some(1));
+    eventually("its games stored", || async { lab.hub.store.count_trial_games(short).await.unwrap() == 24 }).await;
+    assert_eq!(lab.hub.store.trial_rounds(short).await.unwrap().map(|r| r.0), Some(1));
     let log = std::fs::read_to_string(lab.hub.config.work_log_path(work.id)).unwrap();
     assert!(log.contains("Ending round 1 early: a pause was asked"), "{log}");
     lab.ideas.stop(idea.id).await.unwrap();
@@ -404,10 +403,10 @@ async fn a_round_ends_early_for_work_of_higher_priority() {
     lab.fake.rounds(EVEN);
     *lab.fake.round_delay.lock().unwrap() = Duration::from_secs(60);
     let idea = lab.ideas.create(request("Busy", IdeaKind::Gain, "busy")).await.unwrap();
-    let screen = idea.trials[1].id;
-    let work = running_work(&lab, screen).await;
-    eventually("the screen playing", || async {
-        lab.ideas.trial(idea.id, screen).await.unwrap().status == TrialStatus::Running && lab.hub.ledger.free() == 0
+    let short = idea.trials[1].id;
+    let work = running_work(&lab, short).await;
+    eventually("the short games playing", || async {
+        lab.ideas.trial(idea.id, short).await.unwrap().status == TrialStatus::Running && lab.hub.ledger.free() == 0
     })
     .await;
     // A build asks for cores: the round winds down and the build is served before the trial's next round.
@@ -416,12 +415,12 @@ async fn a_round_ends_early_for_work_of_higher_priority() {
     eventually("the round wound down", || async { waiting.grant().is_some() }).await;
     let log = std::fs::read_to_string(lab.hub.config.work_log_path(work.id)).unwrap();
     assert!(log.contains("early: work of higher priority waits for cores"), "{log}");
-    assert_eq!(lab.ideas.trial(idea.id, screen).await.unwrap().penta.pairs(), 12);
+    assert_eq!(lab.ideas.trial(idea.id, short).await.unwrap().penta.pairs(), 12);
     drop(waiting);
     lab.ideas.stop(idea.id).await.unwrap();
     assert_eq!(ended(&lab, idea.id).await.status, IdeaStatus::Stopped);
-    let t = lab.ideas.trial(idea.id, screen).await.unwrap();
-    assert_eq!(u64::from(lab.hub.store.count_trial_games(screen).await.unwrap()), t.penta.pairs() * 2);
+    let t = lab.ideas.trial(idea.id, short).await.unwrap();
+    assert_eq!(u64::from(lab.hub.store.count_trial_games(short).await.unwrap()), t.penta.pairs() * 2);
 }
 
 #[tokio::test]
@@ -469,7 +468,7 @@ async fn a_branch_without_a_bench_line_is_refused_then_fixed_on_request() {
     assert!(lab.ideas.list(IdeaFilter::default()).await.unwrap().is_empty());
     // A custom test has no fingerprint stage, so it is not held up.
     let custom = NewIdeaRequest {
-        custom: Some(CustomTrial { preset: Preset::Vstc, bounds: None, pairs: Some(8) }),
+        custom: Some(CustomTrial { preset: Preset::Vstc, bounds: None, pairs: Some(8), alpha: None, beta: None }),
         ..request("Test", IdeaKind::Gain, "no-bench")
     };
     lab.ideas.check(&custom).await.unwrap();

@@ -51,7 +51,7 @@ const KINDS: { value: Kind; label: string; text: string }[] = [
   {
     value: "gain",
     label: "Gain",
-    text: "Should play stronger. The bench must change, then a quick screen, then short games.",
+    text: "Should play stronger. The bench must change, then short games decide: about 20,000 games for a change that does little.",
   },
   {
     value: "neutral",
@@ -71,7 +71,7 @@ const KINDS: { value: Kind; label: string; text: string }[] = [
   {
     value: "net",
     label: "Net",
-    text: "Trains a new network on your data, then tries the champion with it: quick screen, then short games.",
+    text: "Trains a new network on your data, then tries the champion with it in short games.",
   },
   {
     value: "custom",
@@ -175,7 +175,7 @@ watch(
   { deep: true },
 );
 const presets: { value: Preset; label: string }[] = [
-  { value: "vstc", label: "Quick screen, 4+0.04" },
+  { value: "vstc", label: "Very short games, 4+0.04" },
   { value: "stc", label: "Short games, 8+0.08" },
   { value: "ltc", label: "Long games, 40+0.4" },
   { value: "stc_hash", label: "Short games, little hash" },
