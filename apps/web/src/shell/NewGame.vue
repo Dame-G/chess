@@ -12,7 +12,8 @@ import { useDameless } from "../stores/dameless";
 import { useGames } from "../stores/games";
 import { useVersions } from "../stores/versions";
 import { stored } from "../stored";
-import { strengthOptions as optionsOf, suggestedStrength } from "../sheets/levels";
+import { levelChoices, suggestedStrength } from "../sheets/levels";
+import LevelPicker from "../parts/LevelPicker.vue";
 import UiBadge from "../ui/UiBadge.vue";
 import UiDialog from "../ui/UiDialog.vue";
 import UiField from "../ui/UiField.vue";
@@ -39,15 +40,22 @@ type Opponent = "dameless" | "stockfish" | "lichess";
 const UNTIMED = "untimed";
 const CUSTOM = "custom";
 const opponent = stored<Opponent>("new.opponent", "dameless");
-const clock = stored("new.clock", "5+3");
+const clock = stored("new.clock", "10+5");
 /** The custom clock: minutes, and seconds added each move. */
 const customMinutes = stored<number | null>("new.custom.minutes", 5);
 const customIncrement = stored<number | null>("new.custom.increment", 3);
 const color = stored<Color>("new.color", "random");
 const rated = stored("new.rated", true);
 const level = stored("new.level", "5");
-/** Dameless's strength: "full", or a level of its ladder (`dameless@<level>`). */
-const strength = stored("new.strength", "full");
+/**
+ * Dameless's strength as last chosen: "full", or a level of its ladder (`dameless@<level>`). Empty until you choose, and
+ * then the level nearest your rating is the one shown.
+ */
+const strength = stored("new.strength", "");
+const chosenStrength = computed({
+  get: () => strength.value || suggestedStrength(dameless.levels),
+  set: (v: string) => (strength.value = v),
+});
 const version = ref<string>("");
 /** Begin from a random line of the opening book instead of the standard start. */
 const book = ref(false);
@@ -117,7 +125,7 @@ watch(clocks, (options) => {
   if (!options.some((o) => o.value === clock.value))
     clock.value = options.some((o) => o.value === "5+3") ? "5+3" : options[1]!.value;
 });
-const strengthOptions = computed(() => optionsOf(dameless.levels));
+const levelOptions = computed(() => levelChoices(dameless.levels));
 
 /** The clock the game is played on. */
 const time = computed<TimeControl>(() => {
@@ -142,7 +150,7 @@ const clockText = computed(() => {
 /** Dameless's seat: `dameless`, at a version (`:#<id>`) and a level (`@<n>`) when chosen. */
 function damelessSeat(): string {
   const at = version.value && Number(version.value) !== versions.current?.id ? `:#${version.value}` : "";
-  const lvl = strength.value !== "full" ? `@${strength.value}` : "";
+  const lvl = chosenStrength.value !== "full" ? `@${chosenStrength.value}` : "";
   return `dameless${at}${lvl}`;
 }
 const versionOptions = computed(() =>
@@ -162,6 +170,18 @@ const confirmLabel = computed(() => {
 const blocked = computed(
   () => !customOk.value || (opponent.value === "lichess" && lichessHow.value === "challenge" && !username.value.trim()),
 );
+/** What is worth knowing about the strength picked: that its rating may still move. */
+const strengthHint = computed(() => {
+  const picked = levelOptions.value.find((c) => c.value === chosenStrength.value);
+  return picked && picked.standing !== "found" ? "Still being calibrated: this rating may move." : undefined;
+});
+/** Takebacks are only for games with no clock: said where the clock is chosen. */
+const clockHint = computed(() => {
+  if (opponent.value !== "dameless") return undefined;
+  return clock.value === UNTIMED
+    ? "No clock: the engine takes about a second a move, and you can take moves back."
+    : "Taking moves back needs a game with no clock.";
+});
 const hint = computed(() => {
   if (!customOk.value) return "Give the clock some minutes.";
   if (opponent.value === "lichess" && lichessHow.value === "challenge" && !username.value.trim()) {
@@ -249,14 +269,11 @@ async function start() {
       </UiField>
 
       <template v-if="opponent === 'dameless'">
-        <div class="pair">
-          <UiSelect v-if="versionOptions.length > 1" v-model="version" label="Version" :options="versionOptions" />
-          <p v-else-if="versionOptions[0]" class="version">
-            <span class="version-label">Version</span>
-            <span class="version-name">{{ versionOptions[0].label }}</span>
-          </p>
-          <UiSelect v-model="strength" label="Strength" :options="strengthOptions" />
-        </div>
+        <UiSelect v-if="versionOptions.length > 1" v-model="version" label="Version" :options="versionOptions" />
+        <UiField label="Strength" group :hint="strengthHint">
+          <LevelPicker v-if="levelOptions.length" v-model="chosenStrength" label="Strength" :choices="levelOptions" />
+          <span v-else class="skel picker-skel" aria-label="Reading the levels" />
+        </UiField>
       </template>
       <UiSelect
         v-else-if="opponent === 'stockfish'"
@@ -279,7 +296,7 @@ async function start() {
         <ETextField v-if="lichessHow === 'challenge'" v-model="username" label="Lichess username" autocomplete="off" />
       </template>
 
-      <UiField label="Time control" group>
+      <UiField label="Time control" group :hint="clockHint">
         <UiSeg v-model="clock" label="Time control" :options="clocks" full />
         <div v-if="clock === 'custom'" class="pair custom">
           <ENumberField v-model="customMinutes" label="Minutes" :min="0.25" :step="1" suffix="min" />
@@ -355,23 +372,8 @@ async function start() {
   text-underline-offset: 0.2em;
 }
 
-.version {
-  display: grid;
-  gap: var(--sp-1);
-  margin: 0;
-  align-content: end;
-}
-
-.version-label {
-  color: var(--c-ink-2);
-  font: var(--t-meta);
-  font-weight: 500;
-}
-
-.version-name {
-  display: flex;
-  align-items: center;
-  min-height: var(--h-control);
-  font: var(--t-body-strong);
+.picker-skel {
+  display: block;
+  block-size: calc(4 * var(--h-control));
 }
 </style>

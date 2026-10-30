@@ -86,6 +86,7 @@ function strip(side: Side) {
     ...clockOf(side),
     since: games.clocksAt,
     toMove: turnShown.value && board.position.turn === side,
+    mine: live.value && s.value?.you === side,
     material: side === "white" ? material.value : -material.value,
     // The engine's score rides at the end of the bottom strip: the bar is too thin to print it on.
     score: side === bottom.value && evalShown.value ? board.shownScore : null,
@@ -215,6 +216,15 @@ watch(
   (n, before) => {
     if (!live.value || before === undefined || n <= before || !board.following) return;
     playMoveSound(soundOf(g.value?.moves[n - 1]?.san));
+  },
+);
+// A game you are looking at ending says so: a soft chime once, not when a finished game is opened.
+watch(
+  () => [s.value?.id, s.value?.status] as const,
+  ([id, status], [was, before]) => {
+    if (id === was && before && isLive({ status: before }) && status && !isLive({ status }) && board.following) {
+      playMoveSound("end");
+    }
   },
 );
 </script>

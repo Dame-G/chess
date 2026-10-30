@@ -237,6 +237,10 @@ function levels(): LevelRating[] {
     5: [1633, 45, 57],
     6: [1822, 58, 40],
     7: [2037, 96, 18],
+    // Calibration is still running for the top of the ladder: a wide margin, then few games, then nothing yet.
+    8: [2190, 380, 20],
+    9: [2440, 488, 12],
+    10: [2559, 488, 40],
   };
   return LADDER.map(([id, nominal, nodes, multipv, temperature]) => {
     const f = fitted[id];

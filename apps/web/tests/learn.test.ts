@@ -31,9 +31,11 @@ import { buildingText, isLevelSeat, seatName } from "../src/format";
 import {
   calibrationCost,
   levelOfRating,
-  levelRatingText,
+  levelChoices,
+  neighbour,
+  ratingText,
+  standingOf,
   playOutSeat,
-  strengthOptions,
   suggestedStrength,
 } from "../src/sheets/levels";
 import { latest, progressData } from "../src/sheets/progress";
@@ -455,18 +457,40 @@ const overview: LevelsOverview = {
 };
 
 describe("the levels", () => {
-  it("shows a calibrated rating with its margin and a nominal one as a guess", () => {
-    expect(levelRatingText(overview.levels[0]!)).toBe("742 ± 40");
-    expect(levelRatingText(overview.levels[1]!)).toBe("about 1000");
+  it("writes a rating by how well the ladder knows it", () => {
+    // 12 games: found, but too few to call it settled.
+    expect(ratingText(overview.levels[0]!)).toBe("≈ 742 ± 40");
+    expect(ratingText(overview.levels[1]!)).toBe("≈ 1,000");
+    expect(ratingText(level(4, 1400, 800, 40, 1403))).toBe("1,403 ± 40");
+    // Plenty of games but a margin of ±488: still being calibrated.
+    expect(
+      ratingText({ ...level(9, 2400, 40_000, 40, 2440), rating: { elo: 2440.8, low: 1952.5, high: 2929.2 } }),
+    ).toBe("≈ 2,441 ± 488");
   });
 
-  it("offers full strength and each level with its rating, the suggested one marked", () => {
-    const options = strengthOptions(overview);
-    expect(options.map((o) => o.value)).toEqual(["full", "1", "2", "3"]);
-    expect(options[1]!.label).toBe("Level 1 · 742");
-    expect(options[2]!.label).toBe("Level 2 · about 1000");
-    expect(options[3]!.label).toBe("Level 3 · about 1200 (suggested)");
-    expect(strengthOptions(null)).toEqual([{ value: "full", label: "Full strength" }]);
+  it("sorts levels into found, provisional and estimate", () => {
+    expect(standingOf(level(4, 1400, 800, 40, 1403))).toBe("found");
+    expect(standingOf(level(4, 1400, 800, 20, 1403))).toBe("found");
+    expect(standingOf(level(4, 1400, 800, 19, 1403))).toBe("provisional");
+    expect(standingOf(level(9, 2400, 40_000))).toBe("estimate");
+  });
+
+  it("offers each level from weakest to strongest with its rating, the one about yours marked", () => {
+    const options = levelChoices(overview);
+    expect(options.map((o) => o.value)).toEqual(["1", "2", "3", "full"]);
+    expect(options[0]).toMatchObject({ name: "Level 1", text: "≈ 742 ± 40", standing: "provisional", near: false });
+    expect(options[2]).toMatchObject({ name: "Level 3", text: "≈ 1,200", standing: "estimate", near: true });
+    expect(options[3]).toMatchObject({ name: "Full strength", text: "≈ 3,000" });
+    expect(levelChoices(null)).toEqual([]);
+  });
+
+  it("finds the level a step harder or easier, through full strength", () => {
+    expect(neighbour(overview, 1, true)).toMatchObject({ strength: 2, name: "Level 2" });
+    expect(neighbour(overview, 3, true)).toMatchObject({ strength: "full", name: "Full strength" });
+    expect(neighbour(overview, "full", false)).toMatchObject({ strength: 3 });
+    expect(neighbour(overview, 1, false)).toBeNull();
+    expect(neighbour(overview, "full", true)).toBeNull();
+    expect(neighbour(null, 1, true)).toBeNull();
   });
 
   it("practises at the level nearest your rating", () => {

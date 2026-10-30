@@ -9,6 +9,8 @@ import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { EPasswordField } from "@eos-ui/vue/components/EPasswordField";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
+import { ESwitch } from "@eos-ui/vue/components/ESwitch";
+import { playMoveSound, soundOn, soundVolume } from "../board/sound";
 import { connect, connection } from "../api/client";
 import type { ConnectionKey, ConnectionStatus, HealthItem } from "../api/types";
 import { bytes, formatDate, plural } from "../format";
@@ -43,6 +45,23 @@ const toast = useToast();
 const confirm = useConfirm();
 
 const tab = ref("accounts");
+
+/** Sounds: three volumes (the control is the same as the theme's), each heard once when chosen. */
+const volumes = [
+  { value: 0.25, label: "Quiet" },
+  { value: 0.5, label: "Medium" },
+  { value: 0.9, label: "Loud" },
+];
+const volume = computed({
+  get: () =>
+    volumes.reduce((a, b) => (Math.abs(b.value - soundVolume.value) < Math.abs(a.value - soundVolume.value) ? b : a))
+      .value,
+  set: (v: number) => {
+    soundVolume.value = v;
+    playMoveSound("capture");
+  },
+});
+const reducedMotion = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const themes: { value: Choice; label: string }[] = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },
@@ -434,6 +453,20 @@ const tabs = computed(() => [
           <UiSeg v-model="choice" label="Theme" :options="themes" />
         </UiSection>
 
+        <UiSection title="Sounds">
+          <ESwitch
+            v-model="soundOn"
+            label="Play sounds"
+            description="A soft knock for each move, a lower one for captures, a ping for check, a chime when a game ends and ticks when your clock runs low."
+          />
+          <UiField v-if="soundOn" label="Volume" group>
+            <UiSeg v-model="volume" label="Volume" :options="volumes" />
+          </UiField>
+          <p v-if="reducedMotion" class="muted">
+            Your system asks for less motion, so sounds start off until you turn them on.
+          </p>
+        </UiSection>
+
         <UiSection title="The hosted app">
           <UiKeyValue dense>
             <UiKv label="Server" copy><PathText :text="server" /></UiKv>
@@ -502,6 +535,12 @@ const tabs = computed(() => [
 </template>
 
 <style scoped>
+.muted {
+  margin: 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

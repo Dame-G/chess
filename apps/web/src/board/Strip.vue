@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type { Score, Side } from "../api/types";
 import { clock, formatNumber } from "../format";
+import { playMoveSound } from "./sound";
 import type { PlayerRef } from "../ui/player";
 import UiPlayer from "../ui/UiPlayer.vue";
 import UiScore from "../ui/UiScore.vue";
@@ -24,6 +25,8 @@ const props = defineProps<{
   toMove?: boolean;
   /** How many pawns of material this side is ahead by (0 or less shows nothing). */
   material?: number;
+  /** This is your own seat in a game being played: its clock running low is heard and announced. */
+  mine?: boolean;
   /** The engine's score on the board, shown at the end of the strip when asked for. */
   score?: { score: Score; turn: Side } | null;
 }>();
@@ -44,7 +47,19 @@ const left = computed(() => {
   if (props.ms === null) return null;
   return props.running ? props.ms - (now.value - (props.since ?? now.value)) : props.ms;
 });
-const low = computed(() => left.value !== null && left.value < 20_000);
+/** Under twenty seconds, and counting down: the clock turns red. Under ten it also pulses (not for those who asked for less motion). */
+const low = computed(() => left.value !== null && left.value < 20_000 && !!props.running);
+const critical = computed(() => low.value && left.value! < 10_000);
+/** What a screen reader is told when your own clock first runs low. */
+const warning = ref("");
+watch(low, (isLow) => {
+  if (!isLow || !props.mine) {
+    warning.value = "";
+    return;
+  }
+  warning.value = "Your clock is under 20 seconds";
+  playMoveSound("low");
+});
 </script>
 
 <template>
@@ -57,12 +72,13 @@ const low = computed(() => left.value !== null && left.value < 20_000);
       >+{{ material }}</span
     >
     <span v-if="toMove && !running" class="turn">to move</span>
+    <span class="sr-only" role="status">{{ warning }}</span>
     <span class="end">
       <UiScore v-if="score" :score="score.score" :turn="score.turn" size="sm" />
       <span
         v-if="left !== null"
         class="clock num"
-        :class="{ 'clock--run': running, 'clock--low': low && running }"
+        :class="{ 'clock--run': running, 'clock--low': low, 'clock--critical': critical }"
         role="timer"
         :aria-label="`${player.name}'s clock`"
         >{{ clock(left) }}</span
@@ -135,5 +151,22 @@ const low = computed(() => left.value !== null && left.value < 20_000);
 
 .clock--low::after {
   background: var(--c-loss);
+}
+
+/* Under ten seconds the bar under the clock breathes: seen without looking at the figure. */
+.clock--critical::after {
+  animation: breathe 1s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clock--critical::after {
+    animation: none;
+  }
 }
 </style>

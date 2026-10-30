@@ -1,9 +1,27 @@
-/** The sounds of a move, and of a game starting or a clock running low, made with WebAudio so there is nothing to bundle or license. */
-export type MoveSound = "move" | "capture" | "check" | "start" | "low";
+import { stored } from "../stored";
+
+/**
+ * The sounds of a move, of a game ending and of a clock running low, made with WebAudio from a burst of noise and a few
+ * sine notes, so there is nothing to bundle or license. They are quiet by default and can be muted in Settings.
+ */
+export type MoveSound = "move" | "capture" | "check" | "start" | "end" | "low";
+
+/** Whether the person asked the system for less motion: sounds then start muted until they are switched on. */
+const reducedMotion = (): boolean =>
+  typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** Whether sounds play. Remembered in this browser once chosen; until then it follows the reduced-motion preference. */
+export const soundOn = stored<boolean>("sound.on", !reducedMotion());
+/** How loud, from 0 to 1. The default is low: the app is something you sit with for an hour. */
+export const soundVolume = stored<number>("sound.volume", 0.5);
 
 let context: AudioContext | undefined;
+let master: GainNode | undefined;
 let noise: AudioBuffer | undefined;
 let last = 0;
+
+/** The master volume every sound goes through, set when a sound plays. */
+const out = (ctx: AudioContext): AudioNode => master ?? ctx.destination;
 
 /** What a move sounds like, from its SAN. */
 export function soundOf(san: string | undefined): MoveSound {
@@ -18,6 +36,8 @@ function ready(): AudioContext | undefined {
     window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Ctor) return undefined;
   context = new Ctor();
+  master = context.createGain();
+  master.connect(context.destination);
   // A short burst of white noise, shaped below into the knock of a piece on wood.
   noise = context.createBuffer(1, Math.floor(context.sampleRate * 0.12), context.sampleRate);
   const data = noise.getChannelData(0);
@@ -36,7 +56,7 @@ function knock(ctx: AudioContext, at: number, gain: number, pitch: number, lengt
   env.gain.setValueAtTime(0.0001, at);
   env.gain.exponentialRampToValueAtTime(gain, at + 0.004);
   env.gain.exponentialRampToValueAtTime(0.0001, at + length);
-  src.connect(filter).connect(env).connect(ctx.destination);
+  src.connect(filter).connect(env).connect(out(ctx));
   src.start(at);
   src.stop(at + length + 0.02);
   // The body of the knock: a short low note falling away.
@@ -47,7 +67,7 @@ function knock(ctx: AudioContext, at: number, gain: number, pitch: number, lengt
   bodyEnv.gain.setValueAtTime(0.0001, at);
   bodyEnv.gain.exponentialRampToValueAtTime(gain * 0.9, at + 0.004);
   bodyEnv.gain.exponentialRampToValueAtTime(0.0001, at + length);
-  body.connect(bodyEnv).connect(ctx.destination);
+  body.connect(bodyEnv).connect(out(ctx));
   body.start(at);
   body.stop(at + length + 0.02);
 }
@@ -62,23 +82,44 @@ function ping(ctx: AudioContext, at: number) {
     env.gain.setValueAtTime(0.0001, t);
     env.gain.exponentialRampToValueAtTime(0.08, t + 0.008);
     env.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-    osc.connect(env).connect(ctx.destination);
+    osc.connect(env).connect(out(ctx));
     osc.start(t);
     osc.stop(t + 0.18);
   }
 }
 
-/** Plays one. Steps that come faster than the ear can separate are dropped, so held keys do not buzz. */
+/** The end of a game: two soft notes, the second a fourth lower, so it reads as "that is over" and not as an alert. */
+function chime(ctx: AudioContext, at: number) {
+  for (const [i, hz] of [659, 494].entries()) {
+    const osc = ctx.createOscillator();
+    const env = ctx.createGain();
+    const t = at + i * 0.16;
+    osc.type = "triangle";
+    osc.frequency.value = hz;
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(0.12, t + 0.012);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+    osc.connect(env).connect(out(ctx));
+    osc.start(t);
+    osc.stop(t + 0.5);
+  }
+}
+
+/** Plays one, unless sounds are off. Steps that come faster than the ear can separate are dropped, so held keys do not buzz. */
 export function playMoveSound(kind: MoveSound) {
+  if (!soundOn.value) return;
   const now = performance.now();
   if (now - last < 90) return;
   last = now;
   const ctx = ready();
   if (!ctx) return;
   if (ctx.state === "suspended") void ctx.resume();
+  if (master) master.gain.value = Math.min(1, Math.max(0, soundVolume.value));
   const at = ctx.currentTime + 0.005;
   if (kind === "start") {
     ping(ctx, at);
+  } else if (kind === "end") {
+    chime(ctx, at);
   } else if (kind === "low") {
     // Two short, high ticks: a clock running out.
     knock(ctx, at, 0.25, 1800, 0.04);

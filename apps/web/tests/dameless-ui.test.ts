@@ -62,15 +62,28 @@ describe("the ladder of levels", () => {
     you: { estimate: { elo: 1100, low: 1000, high: 1200 }, games: 14 },
   } as unknown as LevelsOverview;
 
-  it("orders the rungs by rating and puts you between the two it falls under and over", () => {
+  it("keeps the levels in order and puts you between the two your rating falls under and over", () => {
     expect(ladder(overview).map((r) => r.id)).toEqual(["level-1", "level-2", "you", "level-3"]);
   });
 
   it("marks a rating that was never played as an estimate and the level nearest you", () => {
     const rungs = ladder(overview);
-    expect(rungs[0]).toMatchObject({ found: false, text: "≈ 800", games: 0 });
-    expect(rungs[1]).toMatchObject({ found: true, text: "968 ± 52" });
-    expect(rungs[3]).toMatchObject({ near: true });
+    expect(rungs[0]).toMatchObject({ standing: "estimate", text: "≈ 800", games: 0, low: null, high: null });
+    expect(rungs[1]).toMatchObject({ standing: "found", text: "968 ± 52", low: 916, high: 1020 });
+    // Ten games: a rating, but provisional, written with its margin.
+    expect(rungs[3]).toMatchObject({ near: true, standing: "provisional", text: "≈ 1,181 ± 47" });
+  });
+
+  it("leaves a level where it is when its provisional rating falls below the level under it", () => {
+    const odd = {
+      ...overview,
+      levels: [
+        { level: level(1, 800), games: 40, rating: { elo: 1500, low: 1400, high: 1600 } },
+        { level: level(2, 1000), games: 4, rating: { elo: 1300, low: 800, high: 1800 } },
+      ],
+      you: null,
+    } as unknown as LevelsOverview;
+    expect(ladder(odd).map((r) => r.id)).toEqual(["level-1", "level-2"]);
   });
 
   it("puts you at the top when you are above every level", () => {

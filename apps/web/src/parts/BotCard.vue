@@ -1,24 +1,29 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ELink } from "@eos-ui/vue/components/ELink";
 import { ENotice } from "@eos-ui/vue/components/ENotice";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
-import type { SeekMode } from "../api/types";
-import { speedName, timeControl, timeOfDay } from "../format";
+import type { SeekMode, Speed } from "../api/types";
+import { formatNumber, formatRelative, speedName, timeControl } from "../format";
 import { useConnections } from "../stores/connections";
+import { useGames } from "../stores/games";
 import UiBadge from "../ui/UiBadge.vue";
 import UiEmpty from "../ui/UiEmpty.vue";
 import UiField from "../ui/UiField.vue";
 import UiKeyValue from "../ui/UiKeyValue.vue";
 import UiKv from "../ui/UiKv.vue";
+import UiLive from "../ui/UiLive.vue";
 import UiMeter from "../ui/UiMeter.vue";
 import UiSection from "../ui/UiSection.vue";
 import UiSeg from "../ui/UiSeg.vue";
+import UiStat from "../ui/UiStat.vue";
+import UiStats from "../ui/UiStats.vue";
 import UiTable from "../ui/UiTable.vue";
-import { declineWords, rulesItems } from "./bot";
+import { botNow, botResults, botTally, botTrend, declineWords, rulesItems } from "./bot";
 import BotSettingsDialog from "./BotSettingsDialog.vue";
+import LineChart from "./LineChart.vue";
 
 /**
  * The bot: Dameless on Lichess as its BOT account. The online switch, whether it is looking for games, how many of the
@@ -26,8 +31,66 @@ import BotSettingsDialog from "./BotSettingsDialog.vue";
  * answered lately. Every control just calls its route; the person clicking is the one deciding.
  */
 const connections = useConnections();
+const games = useGames();
 
 const conn = computed(() => connections.bot);
+
+// ---- Now, and how it has done
+/** The other side of one of the bot's games, as "Alpha-Bot (2251)": what Now says it is playing. */
+function opponentOf(id: number): string | null {
+  const g = games.list.find((x) => x.id === id);
+  if (!g) return null;
+  const them = g.white.player === "dameless" ? g.black : g.white;
+  return them.rating ? `${them.name} (${them.rating})` : them.name;
+}
+const now = computed(() => botNow(conn.value, opponentOf));
+
+const failedGames = ref(false);
+const loadingGames = ref(true);
+/** Brings the bot's games (they are Dameless's games on Lichess) so the results and the trend have something to say. */
+async function readGames() {
+  failedGames.value = false;
+  try {
+    await games.page({ player: "dameless", source: "lichess", limit: 60 });
+  } catch {
+    failedGames.value = true;
+  } finally {
+    loadingGames.value = false;
+  }
+}
+onMounted(() => void readGames());
+// A game ending (or starting) changes what there is to read.
+watch(
+  () => conn.value.playing.length,
+  () => void readGames(),
+);
+
+const finished = computed(() => botResults(games.list, 60));
+const recent = computed(() => finished.value.slice(0, 20));
+const tally = computed(() => botTally(recent.value));
+/** The speed it plays most, which is the rating worth following. */
+const mainSpeed = computed<Speed | null>(() => {
+  const counts = new Map<Speed, number>();
+  for (const g of finished.value) counts.set(g.speed, (counts.get(g.speed) ?? 0) + 1);
+  return [...counts.entries()].toSorted((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+});
+const trend = computed(() => {
+  const speed = mainSpeed.value;
+  if (!speed) return null;
+  return botTrend(
+    finished.value,
+    speed,
+    (conn.value.account?.ratings as Partial<Record<Speed, { rating: number }>> | undefined)?.[speed]?.rating ?? null,
+  );
+});
+const recentColumns = [
+  { key: "result", label: "Result" },
+  { key: "opponent", label: "Opponent" },
+  { key: "game", label: "Game", hide: "sm" as const },
+  { key: "when", label: "When", align: "end" as const },
+];
+const gameText = (g: { rated: boolean; speed: Speed; clock: Parameters<typeof timeControl>[0] }) =>
+  `${g.rated ? "Rated" : "Casual"} ${speedName[g.speed].toLowerCase()} ${timeControl(g.clock)}`;
 const bot = computed(() => conn.value.bot);
 const online = computed(() => bot.value?.online === true);
 const username = computed(() => conn.value.account?.username ?? null);
@@ -63,27 +126,9 @@ const seekOptions = computed(() =>
   ].map((o) => ({ ...o, value: o.value as SeekMode, disabled: !online.value || busy.value })),
 );
 
-const state = computed(() => {
-  const c = conn.value;
-  if (!c.configured) return "No token yet";
-  if (noVersion.value && !online.value) return "Choose the version it plays first";
-  if (c.state === "error") return c.error ?? "Cannot reach Lichess";
-  if (!online.value) return "Offline";
-  if (c.state === "connecting") return "Connecting…";
-  return c.playing.length
-    ? `Playing ${c.playing.length === 1 ? "a game" : `${c.playing.length} games`}`
-    : "Online, waiting for a game";
-});
-
-const seekLine = computed(() => {
-  const s = bot.value?.seek;
-  if (!s || s.mode === "off") return null;
-  if (s.pending) {
-    const p = s.pending;
-    return `Waiting for ${p.opponent.name} (${p.opponent.rating}) to answer a ${p.rated ? "rated" : "casual"} ${timeControl({ type: "clock", initial_ms: p.clock.initial * 1000, increment_ms: p.clock.increment * 1000 })} challenge.`;
-  }
-  return s.note;
-});
+const state = computed(() =>
+  noVersion.value && !online.value ? "Choose the version it plays first" : online.value ? "Online" : "Offline",
+);
 
 const limit = computed(() => {
   const b = bot.value;
@@ -93,9 +138,6 @@ const limit = computed(() => {
     used,
     reached: !!b.bot_limit_until,
     text: `${used} of 100`,
-    note: b.bot_limit_until
-      ? `It played 100 games against bots. It looks again at ${timeOfDay(b.bot_limit_until)}.`
-      : undefined,
   };
 });
 
@@ -156,6 +198,16 @@ const columns = [
       </template>
     </UiEmpty>
     <template v-else-if="bot">
+      <UiSection title="Now">
+        <p class="now" :class="`now--${now.tone}`" role="status">
+          <UiLive v-if="now.tone === 'live'" label="Live" :pulse="now.game ?? 0" />
+          <RouterLink v-if="now.game !== null" :to="{ path: '/', query: { game: String(now.game) } }" class="watch">
+            {{ now.text }}<template v-if="now.more"> and {{ now.more }} more</template> · Watch
+          </RouterLink>
+          <template v-else>{{ now.text }}</template>
+        </p>
+      </UiSection>
+
       <UiSection title="On Lichess">
         <template #aside>
           <span v-if="username" class="who">
@@ -177,7 +229,6 @@ const columns = [
           <UiField group label="Looking for games">
             <UiSeg v-model="seekMode" label="Looking for games" :options="seekOptions" />
           </UiField>
-          <p v-if="seekLine" class="line" role="status">{{ seekLine }}</p>
 
           <UiMeter
             v-if="limit"
@@ -187,8 +238,63 @@ const columns = [
             :text="limit.text"
             :tone="limit.reached ? 'warn' : undefined"
           />
-          <p v-if="limit?.note" class="line">{{ limit.note }}</p>
         </div>
+      </UiSection>
+
+      <UiSection title="Recent games">
+        <UiEmpty v-if="failedGames" dense tone="error" title="Its games did not load">
+          <template #actions><EButton variant="outline" size="sm" @click="readGames">Try again</EButton></template>
+        </UiEmpty>
+        <UiEmpty
+          v-else-if="!loadingGames && !recent.length"
+          dense
+          title="Its games on Lichess show here once it has played some."
+        />
+        <template v-else>
+          <UiStats :columns="2">
+            <UiStat
+              :label="`Last ${recent.length} games`"
+              :value="`${tally.w}–${tally.d}–${tally.l}`"
+              sub="Won, drawn, lost"
+            />
+            <UiStat
+              v-if="mainSpeed"
+              :label="`${speedName[mainSpeed]} rating`"
+              :value="trend?.rating.at(-1) ?? null"
+              :delta="trend?.change ?? null"
+              :sub="trend?.change != null ? `Since ${formatRelative(new Date(trend.x[0]! * 1000))}` : undefined"
+            />
+          </UiStats>
+          <LineChart
+            v-if="trend && trend.rating.length >= 3"
+            :label="`Dameless on Lichess: its ${mainSpeed ? speedName[mainSpeed].toLowerCase() : ''} rating through its games`"
+            :x="trend.x"
+            :series="[{ label: 'Rating', values: trend.rating, color: '--c-ink', width: 2 }]"
+            time
+            :height="110"
+            :format="(v) => formatNumber(Math.round(v))"
+          />
+          <UiTable
+            label="Its recent games"
+            :columns="recentColumns"
+            :rows="recent.slice(0, 8)"
+            row-key="id"
+            :loading="loadingGames"
+          >
+            <template #cell-result="{ row }">
+              <UiBadge :tone="row.result === 'W' ? 'win' : row.result === 'L' ? 'loss' : 'neutral'">
+                {{ { W: "Won", L: "Lost", D: "Drew" }[row.result] }}
+              </UiBadge>
+            </template>
+            <template #cell-opponent="{ row }">
+              <RouterLink :to="{ path: '/', query: { game: String(row.id) } }" class="watch">
+                {{ row.opponent }}<template v-if="row.rating"> ({{ row.rating }})</template>
+              </RouterLink>
+            </template>
+            <template #cell-game="{ row }">{{ gameText(row) }}</template>
+            <template #cell-when="{ row }">{{ formatRelative(row.at) }}</template>
+          </UiTable>
+        </template>
       </UiSection>
 
       <UiSection title="Rules">
@@ -239,6 +345,30 @@ const columns = [
 
 .rating {
   color: var(--c-ink-2);
+}
+
+.now {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  font: var(--t-body-strong);
+}
+
+.now--off,
+.now--warn {
+  color: var(--c-ink-2);
+}
+
+.watch {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--c-line-strong);
+  text-underline-offset: 0.2em;
+}
+
+.watch:hover {
+  text-decoration-color: currentcolor;
 }
 
 .line {
