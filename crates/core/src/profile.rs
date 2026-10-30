@@ -964,7 +964,7 @@ mod tests {
         let theme = &p.themes[0];
         assert_eq!((theme.kind, theme.count, theme.games, theme.swing), (spot.kind, 1, 1, 40.0));
         assert_eq!((theme.share, theme.per_game), (1.0, 40.0 / f64::from(p.reviewed)));
-        assert_eq!(theme.examples, [spot.clone()]);
+        assert_eq!(theme.examples, std::slice::from_ref(spot));
         assert_eq!(theme.openings, [ThemeCount { name: "King's Pawn Game".into(), count: 1, swing: 40.0 }]);
         let alone = profile(you(), ProfileFilter::default(), &games(), false);
         assert!(alone.weak_spots.is_empty() && alone.themes.is_empty());
