@@ -108,6 +108,14 @@ impl App {
         let binaries = Arc::new(versions.clone());
         let eval = Eval::new(hub.clone(), binaries.clone());
         let drills = Drills::new(hub.clone());
+        let classifying = drills.clone();
+        tokio::spawn(async move {
+            match classifying.classify_pending().await {
+                Ok(0) => {}
+                Ok(n) => tracing::info!("found the themes of {n} drills"),
+                Err(e) => tracing::warn!("find the drills' themes: {e}"),
+            }
+        });
         let reviews = Reviews::new(eval.clone()).with_drills(drills.clone());
         scheduler.register(Arc::new(reviews.clone()));
         let profiles = Profiles::new(hub.clone());

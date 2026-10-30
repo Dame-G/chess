@@ -6,16 +6,17 @@ import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import type { Player, ProfileFilter } from "../api/types";
 import ChallengeList from "../parts/ChallengeList.vue";
-import DrillsCard from "../parts/DrillsCard.vue";
+import PrepView from "../parts/PrepView.vue";
 import ProfileFilters from "../parts/ProfileFilters.vue";
 import ProfileHead from "../parts/ProfileHead.vue";
 import ProfileNotice from "../parts/ProfileNotice.vue";
 import ProfileOpenings from "../parts/ProfileOpenings.vue";
 import ProfileStats from "../parts/ProfileStats.vue";
 import ProfileView from "../parts/ProfileView.vue";
-import ProfileWeakSpots from "../parts/ProfileWeakSpots.vue";
 import RepertoireView from "../parts/RepertoireView.vue";
 import ReviewBar from "../parts/ReviewBar.vue";
+import ThemesView from "../parts/ThemesView.vue";
+import TrainCard from "../parts/TrainCard.vue";
 import { useUi } from "../shell/ui";
 import { useConnections } from "../stores/connections";
 import { useDrills } from "../stores/drills";
@@ -28,9 +29,10 @@ import { useImport } from "./useImport";
 
 /**
  * You: your Lichess ratings across the top, then your games added up in tabs. Overview is the figures, the review of
- * your games and how you do against Dameless over time; Openings the openings you have met and your own lines; Drills
- * your mistakes as practice and the positions to play out again; Challenges what waits for you on Lichess. Not linked to
- * Lichess yet: the way to log in comes first. No games at all: one page that says how to get some.
+ * your games and how you do against Dameless over time; Openings the openings you have met, your prep for each line and
+ * your own lines; Train today's drills and your mistakes by theme, each a way to practise it; Challenges what waits for
+ * you on Lichess. Not linked to Lichess yet: the way to log in comes first. No games at all: one page that says how to
+ * get some.
  */
 const connections = useConnections();
 const players = usePlayers();
@@ -106,7 +108,7 @@ const tabs = computed<SheetTab[] | undefined>(() =>
     : [
         { id: "overview", label: "Overview" },
         { id: "openings", label: "Openings" },
-        { id: "drills", label: "Drills" },
+        { id: "train", label: "Train", ...(drills.available && drills.waiting ? { count: drills.waiting } : {}) },
         ...(challenges.value.length ? [{ id: "challenges", label: "Challenges", count: challenges.value.length }] : []),
       ],
 );
@@ -199,13 +201,15 @@ const reviewFirst = computed(() => profile.value?.reviewed === 0);
     <template v-if="profile" #tab-openings>
       <ProfileFilters v-model="filter" :games="profile.games" whose="your" tabs />
       <ProfileOpenings :profile="profile" />
+      <PrepView />
       <RepertoireView />
     </template>
 
-    <template v-if="profile" #tab-drills>
-      <DrillsCard @review="tab = 'overview'" />
+    <template v-if="profile" #tab-train>
+      <TrainCard @review="tab = 'overview'" />
       <UiEmpty v-if="!drills.available" dense title="Drills are off while you play on Lichess." />
-      <ProfileWeakSpots :profile="profile" />
+      <ProfileFilters v-model="filter" :games="profile.games" whose="your" tabs />
+      <ThemesView :profile="profile" />
     </template>
 
     <template #tab-challenges>

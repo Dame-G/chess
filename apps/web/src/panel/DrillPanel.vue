@@ -1,20 +1,28 @@
 <script setup lang="ts">
-import { computed, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
-import { PhCheckCircle, PhXCircle } from "@phosphor-icons/vue";
-import { useToast } from "@eos-ui/vue";
+import { PhCheckCircle, PhLightbulb, PhMinusCircle, PhXCircle } from "@phosphor-icons/vue";
+import { formatShortcut, useShortcuts, useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import { comesBack, prompt, sittingText } from "../board/drill";
+import { EKbd } from "@eos-ui/vue/components/EKbd";
+import { comesBack, prompt, scopeTitle, sittingText } from "../board/drill";
 import { sanLine } from "../board/position";
+import { THEMES, themeText } from "../board/themes";
 import { useBoard } from "../board/board";
+import { plural } from "../format";
 import { stored } from "../stored";
 import { useDrills } from "../stores/drills";
+import UiBadge from "../ui/UiBadge.vue";
 import UiToolbar from "../ui/UiToolbar.vue";
+import DrillSummary from "./DrillSummary.vue";
 
 /**
- * Drill: find the move you missed. One try on the board, with no engine and no eval; then the answer, the line, the
- * game it came from, and the next drill. Nothing of the answer is shown before the try. The board shows the position;
- * the panel is the question, the progress through today's set, and a card for the answer.
+ * Drill: find the move you missed. One try on the board, with no engine and no eval; then the answer, the line, what
+ * the mistake was about, and the next drill. Nothing of the answer is shown before the try, not even the theme: the
+ * hint is the only help, and it counts against the answer. The board shows the position; the panel is the question,
+ * the progress through the sitting, and a card for the answer. The sitting ends in its summary.
+ *
+ * Keys: H hint, S skip, Enter or → on to the next drill, E explore the position, Esc ends the sitting.
  */
 const drills = useDrills();
 const board = useBoard();
@@ -24,41 +32,73 @@ const toast = useToast();
 const q = computed(() => drills.question);
 const r = computed(() => drills.result);
 const line = computed(() => (q.value && r.value ? sanLine(q.value.fen, r.value.line.slice(0, 10)) : ""));
-const done = computed(() => r.value !== null && !hasNext());
 const passed = computed(() => r.value?.outcome === "pass");
+const halved = computed(() => passed.value && r.value?.hinted === true);
+const last = computed(() => !drills.queue.some((d) => d.id !== drills.active?.id && !drills.outcomes.has(d.id)));
 
-/** How far through the set: drills tried, out of all of them. */
+/** How far through the sitting: drills tried, out of all of them. */
 const sitting = computed(() => drills.progress);
-const bar = computed(() => (sitting.value.total ? (sitting.value.tried / sitting.value.total) * 100 : 0));
 const where = computed(() => sittingText(sitting.value, r.value !== null));
+const title = computed(() => scopeTitle(drills.scope));
+const label = computed(() => `${title.value}: ${where.value}`);
+const pipLabel = { pass: "right", half: "right with a hint", fail: "missed", now: "now", todo: "to come" } as const;
+
+const verdict = computed(() => (halved.value ? "Right, with a hint" : passed.value ? "Correct" : "Not this one"));
+const tone = computed(() => (halved.value ? "half" : passed.value ? "pass" : "fail"));
+const theme = computed(() => {
+  const t = r.value?.drill.theme;
+  return t && t.kind !== "other" ? { text: themeText(t.kind, t.detail), evidence: THEMES[t.kind].evidence } : null;
+});
+const canHint = computed(() => !r.value && !drills.answering && drills.hints.length < 2);
 
 /** The instruction is said until a drill has been tried once; after that the board explains itself. */
 const learned = stored("drill.learned", false);
-watch(r, (v) => {
-  if (v) learned.value = true;
+/** The Next button takes focus when the answer comes, so Enter goes on whether or not a key was caught. */
+const nextButton = ref<{ $el?: HTMLElement } | null>(null);
+watch(r, async (v) => {
+  if (!v) return;
+  learned.value = true;
+  await nextTick();
+  nextButton.value?.$el?.focus?.();
 });
 
-function hasNext() {
-  return drills.queue.some((d) => d.id !== drills.active?.id && !drills.outcomes.has(d.id));
+async function hint() {
+  if (!canHint.value) return;
+  try {
+    await drills.hint();
+  } catch (e) {
+    toast.show({
+      title: "No hint",
+      message: e instanceof Error ? e.message : String(e),
+      tone: "warning",
+    });
+  }
 }
-
+/** On to the next drill, or the summary after the last. */
 function next() {
-  if (!drills.next()) leave();
+  if (!r.value) return;
+  if (!drills.next()) drills.finish();
+}
+/** Ends the sitting where it stands: its summary when something was answered, else back to the board. */
+function stop() {
+  drills.finish();
+  if (!drills.finished) leave();
 }
 function leave() {
   drills.leave();
   void router.push({ path: "/", query: board.address });
 }
-/** Leaves the set and looks at the drill's position in Explore. */
+/** Leaves the sitting and looks at the drill's position in Explore. */
 function explore() {
   const fen = q.value?.fen;
   if (!fen) return;
   drills.leave();
   board.openFree(fen);
 }
-async function skip() {
+function skip() {
+  if (r.value) return;
   try {
-    if (!drills.next()) leave();
+    if (!drills.next()) stop();
   } catch (e) {
     toast.show({
       title: "That did not go through",
@@ -67,20 +107,42 @@ async function skip() {
     });
   }
 }
+
+const onButton = (e: KeyboardEvent) => !!(e.target as Element | null)?.closest?.("button, a, [role=button]");
+const dialogOpen = () => !!document.querySelector("[role=dialog], [role=alertdialog]");
+useShortcuts(
+  {
+    enter: (e) => {
+      // A focused button takes Enter itself; anywhere else it goes on.
+      if (!onButton(e)) next();
+    },
+    right: () => next(),
+    h: () => void hint(),
+    s: skip,
+    e: () => r.value && explore(),
+    escape: () => {
+      if (!dialogOpen() && !drills.finished) stop();
+    },
+  },
+  { enabled: () => q.value !== null && !drills.finished, preventDefault: false },
+);
+const keys = { hint: formatShortcut("h"), next: formatShortcut("enter") };
 </script>
 
 <template>
-  <div v-if="q" class="drill">
-    <div
-      class="bar"
-      role="progressbar"
-      :aria-valuenow="sitting.tried"
-      :aria-valuemax="sitting.total"
-      :aria-valuetext="where"
-      aria-label="Today's drills"
-    >
-      <span class="bar-fill" :style="{ inlineSize: `${bar}%` }" />
+  <DrillSummary v-if="drills.finished" />
+  <div v-else-if="q" class="drill">
+    <div class="head">
+      <p class="where" role="status">{{ label }}</p>
+      <p v-if="drills.run >= 2" class="streak">
+        <span class="streak-n num">{{ drills.run }}</span> in a row
+      </p>
     </div>
+    <ol class="pips" :aria-label="`Progress: ${where}`">
+      <li v-for="(p, i) in drills.strip" :key="i" class="pip" :class="`pip--${p}`" :title="`${i + 1}: ${pipLabel[p]}`">
+        <span class="sr">{{ pipLabel[p] }}</span>
+      </li>
+    </ol>
 
     <header class="ask">
       <h2 class="prompt">{{ prompt(q) }}</h2>
@@ -93,16 +155,37 @@ async function skip() {
 
     <template v-if="!r">
       <p v-if="!learned" class="meta">One try: make the move on the board.</p>
+      <ol v-if="drills.hints.length" class="hints" aria-label="Hints" aria-live="polite">
+        <li v-for="h in drills.hints" :key="h.level" class="hint">
+          <PhLightbulb class="hint-icon" aria-hidden="true" />{{ h.text }}
+        </li>
+      </ol>
       <UiToolbar align="between" label="Drill">
-        <EButton variant="outline" @click="skip">Skip</EButton>
-        <template #end><EButton variant="quiet" @click="leave">Stop</EButton></template>
+        <EButton
+          variant="outline"
+          :disabled="!canHint"
+          :loading="drills.hinting"
+          aria-keyshortcuts="H"
+          :title="drills.hints.length >= 2 ? 'No more hints' : 'A right answer with a hint counts half'"
+          @click="hint"
+        >
+          {{ drills.hints.length ? "Another hint" : "Hint" }}
+          <EKbd v-if="canHint" size="sm" class="kbd">{{ keys.hint.join("") }}</EKbd>
+        </EButton>
+        <EButton variant="quiet" aria-keyshortcuts="S" @click="skip">Skip</EButton>
+        <template #end><EButton variant="quiet" @click="stop">Stop</EButton></template>
       </UiToolbar>
+      <p v-if="drills.hints.length" class="meta">A right answer with a hint counts half.</p>
     </template>
     <template v-else>
-      <section class="card" :class="passed ? 'card--pass' : 'card--fail'" aria-label="The answer" aria-live="polite">
+      <section class="card" :class="`card--${tone}`" aria-label="The answer" aria-live="polite">
         <p class="verdict">
-          <component :is="passed ? PhCheckCircle : PhXCircle" class="verdict-icon" aria-hidden="true" />
-          {{ passed ? "Correct" : "Not this one" }}
+          <component
+            :is="halved ? PhMinusCircle : passed ? PhCheckCircle : PhXCircle"
+            class="verdict-icon"
+            aria-hidden="true"
+          />
+          {{ verdict }}
         </p>
         <p class="detail">
           You played <strong class="san">{{ r.played_san }}</strong
@@ -111,21 +194,32 @@ async function skip() {
             Best was <strong class="san">{{ r.best_san.join(" or ") }}</strong
             >.
           </template>
+          <template v-else-if="r.best_san.length > 1">
+            Also good: <strong class="san">{{ r.best_san.join(", ") }}</strong
+            >.
+          </template>
         </p>
         <p class="line num" aria-label="The line">{{ line }}</p>
+        <p v-if="theme" class="theme">
+          <UiBadge>{{ theme.text }}</UiBadge>
+          <span v-if="!passed || halved" class="meta">{{ theme.evidence }}</span>
+        </p>
         <p class="meta">
           It comes back {{ comesBack(r.drill.interval_days) }}.
           <RouterLink class="ui-link" :to="{ path: '/', query: { game: String(q.game), ply: String(q.ply) } }">
             The game it came from, move {{ Math.ceil(q.ply / 2) }}
           </RouterLink>
         </p>
-        <p v-if="done" class="meta">{{ where }}</p>
       </section>
       <UiToolbar align="between" label="Drill">
-        <EButton variant="primary" @click="next">{{ done ? "Finish" : "Next" }}</EButton>
-        <EButton variant="outline" @click="explore">Explore this position</EButton>
-        <template v-if="!done" #end><EButton variant="quiet" @click="leave">Stop</EButton></template>
+        <EButton ref="nextButton" variant="primary" aria-keyshortcuts="Enter" @click="next">
+          {{ last ? "Finish" : "Next" }}
+          <EKbd size="sm" class="kbd">{{ keys.next.join("") }}</EKbd>
+        </EButton>
+        <EButton variant="outline" aria-keyshortcuts="E" @click="explore">Explore this position</EButton>
+        <template v-if="!last" #end><EButton variant="quiet" @click="stop">Stop</EButton></template>
       </UiToolbar>
+      <p v-if="last" class="meta">{{ plural(sitting.total, "drill") }} done.</p>
     </template>
   </div>
 </template>
@@ -137,25 +231,74 @@ async function skip() {
   min-width: 0;
 }
 
-/* A thin bar over the panel: how far through today's set. */
-.bar {
-  block-size: var(--e-stroke-focus);
-  margin-inline: calc(-1 * var(--sp-3));
-  margin-block-start: calc(-1 * var(--sp-3));
-  background: var(--c-sunk);
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-block-end: calc(-1 * var(--sp-2));
 }
 
-.bar-fill {
-  display: block;
-  block-size: 100%;
+.where,
+.streak {
+  margin: 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+}
+
+.streak-n {
+  color: var(--c-ink);
+  font: var(--t-fig);
+  font-weight: 700;
+}
+
+/* One segment for each drill of the sitting: what came of it, the one on the board, and those still to come. */
+.pips {
+  display: flex;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pip {
+  flex: 1 1 0;
+  max-inline-size: var(--sp-6);
+  block-size: var(--sp-1);
+  border-radius: var(--r-1);
+  background: var(--c-sunk);
+  transition: background var(--m-move) var(--m-ease);
+}
+
+.pip--pass {
+  background: var(--c-win);
+}
+
+.pip--half {
+  background: var(--c-warn);
+}
+
+.pip--fail {
+  background: var(--c-loss);
+}
+
+.pip--now {
   background: var(--c-act);
-  transition: inline-size var(--m-move) var(--m-ease);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bar-fill {
+  .pip {
     transition: none;
   }
+}
+
+.sr {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .ask {
@@ -178,6 +321,39 @@ async function skip() {
   text-transform: uppercase;
 }
 
+.kbd {
+  margin-inline-start: var(--sp-1);
+}
+
+@media (pointer: coarse) {
+  .kbd {
+    display: none;
+  }
+}
+
+/* The hints asked for: what kind of move, then which piece. */
+.hints {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-1);
+  background: var(--c-raise);
+  list-style: none;
+}
+
+.hint {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.hint-icon {
+  flex: none;
+  color: var(--c-warn);
+  font-size: var(--i-md);
+}
+
 /* The answer: the verdict first, in the outcome's colour, then what was played and what was best. */
 .card {
   display: grid;
@@ -190,6 +366,10 @@ async function skip() {
 
 .card--pass {
   --tone: var(--c-win);
+}
+
+.card--half {
+  --tone: var(--c-warn);
 }
 
 .card--fail {
@@ -223,5 +403,13 @@ async function skip() {
   margin: 0;
   font: var(--t-fig);
   overflow-wrap: anywhere;
+}
+
+.theme {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  margin: 0;
 }
 </style>

@@ -1,22 +1,30 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { client, ok } from "../api/client";
-import type { Drill, DrillAnswerResult, DrillId, DrillOutcome, DrillsToday, HitRatePoint } from "../api/types";
-import { nextQuestion, questionOf, sitting } from "../board/drill";
+import type {
+  Drill,
+  DrillAnswerResult,
+  DrillHint,
+  DrillId,
+  DrillOutcome,
+  DrillsToday,
+  HitRatePoint,
+} from "../api/types";
+import { nextQuestion, pips, questionOf, scopeQuery, sitting, streak, type Scope } from "../board/drill";
 import { listen, reloadOnReconnect } from "./listen";
 import { usePolicy } from "./policy";
 
 /**
- * Drills: your mistakes as exercises. The set for today, the hit-rate trend, and the drill on the board with its one
- * try. The server sends a drill's answer along with it; this store keeps the drill on the board as a question
- * (`board/drill.ts`) until `answer` returns, and nothing else reads `best_moves`. Hidden, like all analysis, while the
- * policy forbids it: `available` is false and nothing starts.
+ * Drills: your mistakes as exercises. The set for today, the hit-rate trend, and the sitting on the board: a set of
+ * drills (today's, or one theme's, or one opening line's) with one try at each. The server sends a drill as a question,
+ * without its answer or the move you played; `answer` returns them with the line. A hint is asked for here and kept by
+ * the server until the answer, so the page cannot take it back. Hidden, like all analysis, while the policy forbids it:
+ * `available` is false and nothing starts.
  */
 export const useDrills = defineStore("drills", () => {
   const policy = usePolicy();
 
   const today = ref<DrillsToday | null>(null);
-  const all = ref<Drill[]>([]);
   const trend = ref<HitRatePoint[]>([]);
   const loaded = ref(false);
 
@@ -24,26 +32,44 @@ export const useDrills = defineStore("drills", () => {
   const active = ref<Drill | null>(null);
   const result = ref<DrillAnswerResult | null>(null);
   const answering = ref(false);
-  /** This sitting: the set it started with and what came of each drill. */
+  /** The hints asked for at the drill on the board, the kind of move first. */
+  const hints = ref<DrillHint[]>([]);
+  const hinting = ref(false);
+  /** This sitting: what it is of, the set it started with, and what came of each drill. */
+  const scope = ref<Scope>({ type: "day" });
   const queue = ref<Drill[]>([]);
   const outcomes = ref(new Map<DrillId, DrillOutcome>());
+  const results = ref(new Map<DrillId, DrillAnswerResult>());
+  /** The drills answered, in order, for the streak and the summary. */
+  const order = ref<DrillId[]>([]);
+  /** The sitting is over and its summary is on show. */
+  const finished = ref(false);
 
   const available = computed(() => policy.allowed);
   const question = computed(() => (active.value ? questionOf(active.value) : null));
   const progress = computed(() => sitting(queue.value, outcomes.value));
-  /** Whether a drill is on the board now. */
-  const drilling = computed(() => available.value && active.value !== null);
+  const strip = computed(() => pips(queue.value, results.value, active.value?.id ?? null));
+  const run = computed(() => streak(order.value, results.value));
+  const answers = computed(() => order.value.map((id) => results.value.get(id)!).filter(Boolean));
+  /** Whether a sitting is on the board now: a drill, or its summary. */
+  const drilling = computed(() => available.value && (active.value !== null || finished.value));
   /** Drills that exist, to tell "none yet" from "none today". */
-  const total = computed(() => all.value.length);
+  const total = computed(() => today.value?.total ?? 0);
+  /** What the header's Train button counts: the drills waiting today. */
+  const waiting = computed(() => today.value?.drills.length ?? 0);
+
+  /** Reads today's set: cheap, so the header can keep it. */
+  async function loadToday() {
+    today.value = await ok(client.GET("/api/drills/today"));
+    loaded.value = true;
+  }
 
   async function load() {
-    const [t, list, tr] = await Promise.all([
+    const [t, tr] = await Promise.all([
       ok(client.GET("/api/drills/today")),
-      ok(client.GET("/api/drills")),
       ok(client.GET("/api/drills/trend", { params: { query: { window: 50 } } })),
     ]);
     today.value = t;
-    all.value = list;
     trend.value = tr;
     loaded.value = true;
   }
@@ -52,32 +78,66 @@ export const useDrills = defineStore("drills", () => {
   function show(d: Drill | null) {
     active.value = d;
     result.value = null;
+    hints.value = [];
   }
 
-  /** Starts today's drills: the first on the board. `false` when there is nothing to do. */
-  async function start(): Promise<boolean> {
-    if (!available.value) return false;
-    await load();
-    queue.value = [...(today.value?.drills ?? [])];
+  function begin(set: Drill[], of: Scope) {
+    scope.value = of;
+    queue.value = set;
     outcomes.value = new Map();
+    results.value = new Map();
+    order.value = [];
+    finished.value = false;
+  }
+
+  /**
+   * Starts a sitting: today's drills, or the drills of one theme or opening line. The first is on the board. `false`
+   * when there is nothing to do.
+   */
+  async function start(of: Scope = { type: "day" }): Promise<boolean> {
+    if (!available.value) return false;
+    let set: DrillsToday;
+    if (of.type === "day") {
+      await load();
+      set = today.value!;
+    } else {
+      set = await ok(client.GET("/api/drills/today", { params: { query: scopeQuery(of) } }));
+    }
+    begin([...set.drills], of);
     const first = nextQuestion(queue.value, new Set());
     show(first);
     return first !== null;
   }
 
-  /** Opens one drill by id, such as from the address `/?drill=7`. Starts a sitting of today's set when it is in it. */
+  /**
+   * Opens one drill by id, such as from the address `/?drill=7`, in today's set: a sitting that was open when the page
+   * was reloaded starts over from what is still due.
+   */
   async function open(id: DrillId): Promise<boolean> {
     if (!available.value) return false;
-    if (!loaded.value || !all.value.some((d) => d.id === id)) await load();
-    const d = all.value.find((x) => x.id === id) ?? today.value?.drills.find((x) => x.id === id);
-    if (!d) return false;
     if (!queue.value.some((x) => x.id === id)) {
-      queue.value = [...(today.value?.drills ?? [d])];
-      if (!queue.value.some((x) => x.id === id)) queue.value.push(d);
-      outcomes.value = new Map();
+      await load();
+      const d = today.value?.drills.find((x) => x.id === id);
+      if (!d) return false;
+      begin([...(today.value?.drills ?? [])], { type: "day" });
     }
-    show(d);
-    return true;
+    show(queue.value.find((x) => x.id === id) ?? null);
+    return active.value !== null;
+  }
+
+  /** Asks for the next hint at the drill on the board: the kind of move, then the piece. It counts against the answer. */
+  async function hint(): Promise<DrillHint | undefined> {
+    const d = active.value;
+    if (!d || result.value || hinting.value || hints.value.length >= 2) return undefined;
+    hinting.value = true;
+    try {
+      const h = await ok(client.POST("/api/drills/{id}/hint", { params: { path: { id: d.id } } }));
+      if (active.value?.id !== d.id || result.value) return h;
+      hints.value = [...hints.value, h];
+      return h;
+    } finally {
+      hinting.value = false;
+    }
   }
 
   /** Your one try: the move the board played. The answer comes back with the line. */
@@ -90,6 +150,8 @@ export const useDrills = defineStore("drills", () => {
       if (active.value?.id !== d.id) return r;
       result.value = r;
       outcomes.value.set(d.id, r.outcome);
+      results.value.set(d.id, r);
+      order.value = [...order.value.filter((x) => x !== d.id), d.id];
       applyDrill(r.drill);
       return r;
     } finally {
@@ -105,9 +167,20 @@ export const useDrills = defineStore("drills", () => {
     return true;
   }
 
-  /** Leaves the drill: the board returns to what it showed before. */
+  /** Ends the sitting where it stands: its summary is on show, over the last position. */
+  function finish() {
+    if (outcomes.value.size === 0) return leave();
+    finished.value = true;
+  }
+
+  /** Leaves the sitting: the board returns to what it showed before. */
   function leave() {
     show(null);
+    finished.value = false;
+    queue.value = [];
+    outcomes.value = new Map();
+    results.value = new Map();
+    order.value = [];
   }
 
   /** Makes drills from the weak spots of your reviewed games; answers how many are new. */
@@ -118,9 +191,6 @@ export const useDrills = defineStore("drills", () => {
   }
 
   function applyDrill(d: Drill) {
-    const i = all.value.findIndex((x) => x.id === d.id);
-    if (i >= 0) all.value[i] = d;
-    else all.value.push(d);
     if (active.value?.id === d.id && !result.value) active.value = d;
     const q = queue.value.findIndex((x) => x.id === d.id);
     if (q >= 0) queue.value[q] = d;
@@ -140,7 +210,6 @@ export const useDrills = defineStore("drills", () => {
   });
   listen("drill.answered", refresh);
   listen("drill.deleted", (d) => {
-    all.value = all.value.filter((x) => x.id !== d.id);
     queue.value = queue.value.filter((x) => x.id !== d.id);
     if (active.value?.id === d.id) show(null);
     refresh();
@@ -151,24 +220,36 @@ export const useDrills = defineStore("drills", () => {
 
   return {
     today,
-    all,
     trend,
     loaded,
     active,
     result,
     answering,
+    hints,
+    hinting,
+    scope,
     queue,
     outcomes,
+    results,
+    order,
+    finished,
     available,
     question,
     progress,
+    strip,
+    run,
+    answers,
     drilling,
     total,
+    waiting,
+    loadToday,
     load,
     start,
     open,
+    hint,
     answer,
     next,
+    finish,
     leave,
     make,
   };

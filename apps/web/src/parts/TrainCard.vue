@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
+import { EKbd } from "@eos-ui/vue/components/EKbd";
 import { formatDate, formatPercent, plural } from "../format";
 import { useStartDrills } from "../shell/drillFlow";
 import { useDrills } from "../stores/drills";
@@ -15,9 +16,9 @@ import ChartKey from "./ChartKey.vue";
 import LineChart from "./LineChart.vue";
 
 /**
- * Drills on the You sheet: how many wait today and a way to start them, your hit rate over time, and, while there are
- * few, a way to make more from the mistakes in your reviewed games. Local practice; hidden while you play on Lichess.
- * `review` asks the sheet to show where games are reviewed.
+ * Train on the You sheet: how many drills wait today and the one button that starts them on the board, your hit rate
+ * over time, and, while there are few drills, a way to make more from the mistakes in your reviewed games. Local
+ * practice; hidden while you play on Lichess. `review` asks the sheet to show where games are reviewed.
  */
 const emit = defineEmits<{ review: [] }>();
 
@@ -53,7 +54,7 @@ const hover = ref<number | null>(null);
 const readout = computed(() => {
   const p = trend.value[hover.value ?? -1];
   if (!p) return "";
-  return `${formatDate(`${p.date}T12:00:00Z`)} · ${p.passes} of ${plural(p.answers, "answer")} · last 50 answers ${Math.round(p.rolling * 100)}%`;
+  return `${formatDate(`${p.date}T12:00:00Z`)} · ${p.passes + p.hinted} of ${plural(p.answers, "answer")} · last 50 answers ${Math.round(p.rolling * 100)}%`;
 });
 /** Where the hit rate stands now: the rolling rate at the last day with answers. */
 const hitRate = computed(() => {
@@ -89,8 +90,8 @@ async function make() {
 </script>
 
 <template>
-  <UiSection v-if="drills.available" id="y-drills" title="Drills">
-    <template #note>Find the move you missed. They come back as you forget them.</template>
+  <UiSection v-if="drills.available" id="y-train" title="Today's drills">
+    <template #note>Find the move you missed, a few a day. They come back as you forget them.</template>
     <UiEmpty v-if="failed" tone="error" title="Drills did not load" :body="failed">
       <template #actions>
         <EButton variant="outline" @click="load">Try again</EButton>
@@ -106,11 +107,20 @@ async function make() {
       <template v-else>
         <UiStats>
           <UiStat label="Today" :value="count" :sub="dueText" size="lg" />
-          <UiStat label="Hit rate" :value="hitRate" hint="Your share of right answers over the last 50" size="lg" />
+          <UiStat
+            label="Hit rate"
+            :value="hitRate"
+            hint="Your share of right answers over the last 50; a hint counts half"
+            size="lg"
+          />
           <UiStat label="Drills" :value="drills.total" size="lg" />
         </UiStats>
         <UiToolbar>
-          <EButton v-if="count" @click="startDrills">Practice {{ count }}</EButton>
+          <EButton v-if="count" @click="startDrills()">
+            Start {{ plural(count, "drill") }}
+            <EKbd size="sm" class="kbd">D</EKbd>
+          </EButton>
+          <p v-else class="none">Everything is scheduled for later. Drill a theme below to practise now.</p>
           <EButton v-if="few" variant="outline" :loading="making" @click="make">Make more from my mistakes</EButton>
         </UiToolbar>
         <div v-if="trend.length > 1" class="chart">
@@ -142,5 +152,21 @@ async function make() {
 
 .load {
   block-size: calc(var(--sp-6) * 3);
+}
+
+.none {
+  margin: 0;
+  color: var(--c-ink-2);
+  font: var(--t-meta);
+}
+
+.kbd {
+  margin-inline-start: var(--sp-1);
+}
+
+@media (pointer: coarse) {
+  .kbd {
+    display: none;
+  }
 }
 </style>

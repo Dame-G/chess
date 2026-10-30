@@ -14,6 +14,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0003_training.sql"),
     include_str!("../migrations/0004_upstream.sql"),
     include_str!("../migrations/0005_error_rates.sql"),
+    include_str!("../migrations/0006_drill_themes.sql"),
 ];
 
 /// Applies the migrations the database has not seen, each in its own transaction.
@@ -90,6 +91,7 @@ mod tests {
             "builds_cache",
             "work_status",
             "drills_due",
+            "drills_kind",
             "drill_answers_at",
         ] {
             assert!(indexes.iter().any(|i| i == index), "{index} is missing");

@@ -81,7 +81,8 @@ const DESTRUCTIVE: &[&str] = &[
 ];
 
 /// Assistance the fair-play policy refuses (409 `fair_play`) while the user plays on Lichess.
-const FAIR_PLAY: &[&str] = &["start_eval", "explorer", "tablebase", "review_games", "get_repertoire", "import_player"];
+const FAIR_PLAY: &[&str] =
+    &["start_eval", "explorer", "tablebase", "review_games", "get_repertoire", "get_prep", "import_player"];
 
 /// Extra words for operations whose summary alone could mislead an agent.
 const NOTES: &[(&str, &str)] = &[

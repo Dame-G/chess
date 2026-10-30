@@ -90,13 +90,13 @@ dameless player <key> | profile <key> [--speeds --rated --since --limit] | compa
 
 ```bash
 dameless levels | levels plan [--count 3] | levels calibrate [--count --games-per-pair --version] [--wait]
-dameless drills | drills today [--new-per-day --limit] | drills make [--limit 20] | drills answer <id> <move> | drills delete <id> | drills trend
-dameless repertoire --side white [--max-plies 20 --min-games 2 --limit] | progress [--window 10]
+dameless drills | drills today [--new-per-day --limit --theme hanging_piece --games 4,9 --max-ply 24] | drills hint <id> | drills make [--limit 20] | drills answer <id> <move> | drills delete <id> | drills trend
+dameless repertoire --side white [--max-plies 20 --min-games 2 --limit] | prep --side white | progress [--window 10]
 ```
 
 - **Levels**: Dameless from about 800 to full strength. Strength comes from a node budget (300 to 400,000 nodes a move), with a MultiPV softmax at a temperature for levels 1 to 6, so the moves are the engine's own, never random blunders. Level 12 is full strength on the clock. Ratings are calibrated by the app: levels play each other in the background at the lowest priority, and a Bradley–Terry fit under priors is anchored on your Lichess rating and your games against levels. The ladder and the reasons for its numbers are in `docs/roadmap.md` (R3).
-- **Drills**: your mistakes as exercises, on SM-2 (a miss returns in a day; passes in 1, 6, then interval × ease days). Every line within 5 win % of the best counts as right. `drills today` hides the answers; `drills answer` returns them. Reviews of your games make drills.
-- **Repertoire**: your lines as White or Black from your games, how you score, and where you leave theory. It is assistance: refused while you play on Lichess.
+- **Drills**: your mistakes as exercises, on SM-2 (a miss returns in a day; passes in 1, 6, then interval × ease days). Every line within 5 win % of the best counts as right. `drills today` hides the answers; `drills answer` returns them. Reviews of your games make drills. Drills go out as questions (no answer, no move played). Each has a theme (`crates/core/src/themes.rs`: time trouble, king safety, hanging piece, missed tactic, opening error, endgame technique, else other), found from the position and the engine's line; profiles group weak spots by theme with cost per game. `drills hint` gives the kind of move, then the piece; a right answer after a hint is half a miss (back tomorrow, half credit). `--theme` or `--games` makes a session on a theme or opening line.
+- **Repertoire**: your lines as White or Black from your games, how you score, and where you leave theory. It is assistance: refused while you play on Lichess. `prep` lists the named opening lines you play with score and early mistakes, flagged when you score badly or go wrong in the first twelve moves; same refusal.
 - **Progress**: your rating, accuracy (rolling 10 games) and drill hit rate, beside Dameless's cumulative Elo over `v1`.
 
 ## Ideas and trials

@@ -1,11 +1,12 @@
-import type { Drill, DrillAnswerResult, DrillId, DrillsToday, Side } from "../api/types";
+import type { Drill, DrillAnswerResult, DrillId, DrillsToday, GameId, Side, ThemeKind } from "../api/types";
+import { THEMES } from "./themes";
 
 /**
  * What the board needs to run a drill: no engine and no eval, one try at the position, then the answer. These are the
  * pure rules of that flow; `stores/drills.ts` holds the state and talks to the server.
  */
 
-/** A drill before its answer: the server sends the answer with it, and the page must not show it until it is tried. */
+/** A drill before its answer: the server sends the question only, and the page shows nothing more until it is tried. */
 export interface DrillQuestion {
   id: DrillId;
   fen: string;
@@ -19,6 +20,10 @@ export interface DrillQuestion {
   reps: number;
 }
 
+/**
+ * The question is the position, whose move it is, and where it came from: not the theme, which would say what kind of
+ * move to look for.
+ */
 export function questionOf(d: Drill): DrillQuestion {
   return {
     id: d.id,
@@ -97,4 +102,124 @@ export function todayText(t: Pick<DrillsToday, "due" | "new" | "drills">): strin
   if (t.drills.length === 0) return "Nothing due today";
   const parts = [t.due ? `${t.due} due` : "", t.new ? `${t.new} new` : ""].filter(Boolean);
   return parts.length ? `${t.drills.length} today: ${parts.join(", ")}` : `${t.drills.length} today`;
+}
+
+// ---- What a sitting is of
+
+/** What a sitting is made of: the day's own set, one theme, or the games of one opening line. */
+export type Scope =
+  | { type: "day" }
+  | { type: "theme"; theme: ThemeKind }
+  | { type: "line"; name: string; games: GameId[]; maxPly: number };
+
+/** Its name over the board and on the summary: "Today", "Hanging pieces", "Italian Game". */
+export function scopeTitle(s: Scope): string {
+  return s.type === "day" ? "Today" : s.type === "theme" ? THEMES[s.theme].name : s.name;
+}
+
+/** The query the server takes for it. */
+export function scopeQuery(s: Scope): { theme?: ThemeKind; games?: string; max_ply?: number } {
+  if (s.type === "theme") return { theme: s.theme };
+  if (s.type === "line") return { games: s.games.join(","), max_ply: s.maxPly };
+  return {};
+}
+
+// ---- Hints
+
+/** The square to mark on the board: where the piece of the second hint stands, when all the right moves start there. */
+export function hintSquare(hints: readonly { level: number; from?: string | null }[]): string | null {
+  return hints.find((h) => h.level >= 2)?.from ?? null;
+}
+
+// ---- Progress through a sitting
+
+/** One drill of the sitting in the progress strip: what came of it, or that it is on the board or still to come. */
+export type Pip = "pass" | "half" | "fail" | "now" | "todo";
+
+/** Credit an answer is worth in a hit rate: 1 a clean pass, one half a pass with a hint, 0 a miss. */
+function creditOf(r: Pick<DrillAnswerResult, "outcome" | "hinted">): number {
+  return r.outcome === "fail" ? 0 : r.hinted ? 0.5 : 1;
+}
+
+/** A pip for each drill of the queue, in order. */
+export function pips(
+  queue: readonly Drill[],
+  results: ReadonlyMap<DrillId, Pick<DrillAnswerResult, "outcome" | "hinted">>,
+  active: DrillId | null,
+): Pip[] {
+  return queue.map((d) => {
+    const r = results.get(d.id);
+    if (r) return r.outcome === "fail" ? "fail" : r.hinted ? "half" : "pass";
+    return d.id === active ? "now" : "todo";
+  });
+}
+
+/** The run of clean passes at the end of the answers, in the order they were given: a hint or a miss ends it. */
+export function streak(
+  order: readonly DrillId[],
+  results: ReadonlyMap<DrillId, Pick<DrillAnswerResult, "outcome" | "hinted">>,
+): number {
+  let n = 0;
+  for (let i = order.length - 1; i >= 0; i--) {
+    const r = results.get(order[i]!);
+    if (!r || creditOf(r) < 1) break;
+    n++;
+  }
+  return n;
+}
+
+// ---- The summary
+
+/** How a kind of mistake went in a sitting. */
+interface ThemeRow {
+  kind: ThemeKind;
+  total: number;
+  /** Credit earned: clean passes count one, hinted passes a half. */
+  credit: number;
+  /** The soonest any of them comes back, in days. */
+  back: number;
+}
+
+export interface Summary {
+  total: number;
+  clean: number;
+  hinted: number;
+  missed: number;
+  /** Credit per drill, 0 to 1. */
+  rate: number;
+  /** By theme, the ones with the most misses first. */
+  themes: ThemeRow[];
+}
+
+/** A sitting added up, from the answers in the order given. */
+export function summarise(results: readonly DrillAnswerResult[]): Summary {
+  const rows = new Map<ThemeKind, ThemeRow>();
+  let clean = 0;
+  let hinted = 0;
+  let missed = 0;
+  let credit = 0;
+  for (const r of results) {
+    const c = creditOf(r);
+    credit += c;
+    if (c === 1) clean++;
+    else if (c === 0.5) hinted++;
+    else missed++;
+    const kind = r.drill.theme.kind;
+    const row = rows.get(kind) ?? { kind, total: 0, credit: 0, back: Infinity };
+    row.total++;
+    row.credit += c;
+    row.back = Math.min(row.back, Math.max(1, r.drill.interval_days));
+    rows.set(kind, row);
+  }
+  const themes = [...rows.values()].sort(
+    (a, b) => b.total - b.credit - (a.total - a.credit) || b.total - a.total || a.kind.localeCompare(b.kind),
+  );
+  return {
+    total: results.length,
+    clean,
+    hinted,
+    missed,
+    rate: results.length ? credit / results.length : 0,
+    themes,
+  };
 }

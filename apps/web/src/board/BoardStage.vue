@@ -6,7 +6,7 @@ import { useToast } from "@eos-ui/vue";
 import type { Side } from "../api/types";
 import { other, pawns, scoreText, winChance } from "../format";
 import { sideRef, type PlayerRef } from "../ui/player";
-import { answerArrow } from "./drill";
+import { answerArrow, hintSquare } from "./drill";
 import { useDrills } from "../stores/drills";
 import { useGames } from "../stores/games";
 import { usePolicy } from "../stores/policy";
@@ -145,7 +145,10 @@ const arrow = (uci: string, brush: string): DrawShape => ({
 const shapes = computed<DrawShape[]>(() => {
   if (drilling.value) {
     const best = drills.result ? answerArrow(drills.result) : null;
-    return best ? [arrow(best, "green")] : [];
+    if (best) return [arrow(best, "green")];
+    // The second hint marks the piece to move, never where it goes.
+    const from = drills.result ? null : hintSquare(drills.hints);
+    return from ? [{ orig: from as Key, brush: "blue" }] : [];
   }
   if (!analysis.value) return [];
   if (board.exploring) {

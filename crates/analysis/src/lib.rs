@@ -19,7 +19,7 @@ pub mod review;
 pub mod search;
 pub mod versions;
 
-pub use drills::{AnswerRequest, DrillAnswerResult, Drills, DrillsToday, MakeDrillsRequest};
+pub use drills::{AnswerRequest, DrillAnswerResult, Drills, DrillsToday, MakeDrillsRequest, SessionRequest};
 pub use eval::{Budget, Eval, EvalRequest, EvalSession, Evaluated, SessionInfo};
 pub use profiles::Profiles;
 pub use repertoire::RepertoireRequest;

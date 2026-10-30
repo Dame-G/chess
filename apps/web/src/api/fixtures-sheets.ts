@@ -30,6 +30,8 @@ import type {
   ProfileFilter,
   Speed,
   Status,
+  ThemeKind,
+  ThemeStat,
   ProgressPoint,
   LeaderboardEntry,
   TimeControl,
@@ -441,6 +443,8 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       recurring: number,
       opening: string,
       game: GameId,
+      kind: ThemeKind,
+      detail: string | null = null,
     ): WeakSpot => ({
       game,
       ply,
@@ -451,19 +455,95 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       opening,
       phase,
       recurring,
+      kind,
+      detail,
     });
     const L = ctx.lines;
     const weak_spots: WeakSpot[] =
       key === "you" && has
         ? [
-            phase("opening", ctx.fenAfter(L.italian, 9), "h6", "Bb3", 14.2, 10, 4, "Italian Game", 3),
-            phase("opening", ctx.fenAfter(L.italian, 7), "d6", "O-O", 11.6, 8, 4, "Italian Game", 4),
-            phase("opening", ctx.fenAfter(L.sicilian, 7), "a6", "Be2", 12.9, 8, 3, "Sicilian Defense", 7),
-            phase("middlegame", ctx.fenAfter(L.caro, 17), "Qh5", "Nbd2", 45.5, 18, 2, "Caro-Kann Defense", 5),
-            phase("middlegame", ctx.fenAfter(L.qgd, 21), "Rd1", "Bxf6", 28.4, 22, 2, "Queen's Gambit Declined", 5),
-            phase("endgame", ctx.fenAfter(L.london, 31), "Kf2", "Kd2", 17.3, 32, 1, "London System", 7),
+            phase("opening", ctx.fenAfter(L.italian, 9), "h6", "Bb3", 14.2, 10, 4, "Italian Game", 3, "opening_error"),
+            phase("opening", ctx.fenAfter(L.italian, 7), "d6", "O-O", 11.6, 8, 4, "Italian Game", 4, "opening_error"),
+            phase(
+              "opening",
+              ctx.fenAfter(L.sicilian, 7),
+              "a6",
+              "Be2",
+              12.9,
+              8,
+              3,
+              "Sicilian Defense",
+              7,
+              "opening_error",
+            ),
+            phase(
+              "middlegame",
+              ctx.fenAfter(L.caro, 17),
+              "Qh5",
+              "Nbd2",
+              45.5,
+              18,
+              2,
+              "Caro-Kann Defense",
+              5,
+              "hanging_piece",
+              "a queen",
+            ),
+            phase(
+              "middlegame",
+              ctx.fenAfter(L.qgd, 21),
+              "Rd1",
+              "Bxf6",
+              28.4,
+              22,
+              2,
+              "Queen's Gambit Declined",
+              5,
+              "missed_tactic",
+              "winning capture",
+            ),
+            phase(
+              "endgame",
+              ctx.fenAfter(L.london, 31),
+              "Kf2",
+              "Kd2",
+              17.3,
+              32,
+              1,
+              "London System",
+              7,
+              "endgame_technique",
+            ),
+            phase(
+              "middlegame",
+              ctx.fenAfter(L.qgd, 25),
+              "Bd3",
+              "Qc2",
+              22.6,
+              26,
+              2,
+              "Queen's Gambit Declined",
+              6,
+              "time_trouble",
+              "9 s left",
+            ),
+            phase(
+              "middlegame",
+              ctx.fenAfter(L.sicilian, 21),
+              "g4",
+              "O-O-O",
+              19.8,
+              22,
+              3,
+              "Sicilian Defense",
+              7,
+              "king_safety",
+              "mate in 3",
+            ),
+            phase("middlegame", ctx.fenAfter(L.london, 21), "h3", "Ne5", 12.2, 22, 2, "London System", 4, "other"),
           ]
         : [];
+    const themes: ThemeStat[] = key === "you" && has ? themeStats(weak_spots, reviewed) : [];
 
     return {
       player: p,
@@ -507,6 +587,7 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       longest_win_streak: games ? 3 + Math.round(rnd() * 5) : 0,
       moments,
       weak_spots,
+      themes,
     };
   }
 
@@ -1337,6 +1418,93 @@ export function createSheetRoutes(ctx: SheetContext): Handler {
       ratings: { blitz: { rating: 2304, games: 512, provisional: false } },
     };
   }
+}
+
+/** How a hundred reviewed games of yours break down by theme: the figures `themeStats` scales to the games reviewed. */
+const THEME_BASE: {
+  kind: ThemeKind;
+  count: number;
+  games: number;
+  swing: number;
+  causes?: [string, number, number][];
+  openings?: [string, number, number][];
+}[] = [
+  {
+    kind: "hanging_piece",
+    count: 92,
+    games: 61,
+    swing: 2390,
+    causes: [
+      ["a knight", 34, 880],
+      ["a bishop", 27, 690],
+      ["a rook", 19, 520],
+    ],
+  },
+  {
+    kind: "missed_tactic",
+    count: 76,
+    games: 54,
+    swing: 1710,
+    causes: [
+      ["winning capture", 29, 640],
+      ["fork", 22, 520],
+      ["mate", 9, 230],
+    ],
+  },
+  { kind: "time_trouble", count: 66, games: 40, swing: 1580 },
+  {
+    kind: "opening_error",
+    count: 58,
+    games: 44,
+    swing: 880,
+    openings: [
+      ["Italian Game", 21, 330],
+      ["Sicilian Defense", 17, 270],
+      ["Caro-Kann Defense", 9, 120],
+    ],
+  },
+  { kind: "endgame_technique", count: 41, games: 33, swing: 760 },
+  {
+    kind: "king_safety",
+    count: 22,
+    games: 19,
+    swing: 610,
+    causes: [
+      ["mate", 12, 390],
+      ["king moved, castling lost", 10, 220],
+    ],
+  },
+  { kind: "other", count: 105, games: 70, swing: 1450 },
+];
+
+/** Your mistakes grouped by theme as the server groups them, scaled to `reviewed` games, with the weak spots as examples. */
+function themeStats(spots: WeakSpot[], reviewed: number): ThemeStat[] {
+  const k = reviewed / 100;
+  const scaled = (n: number) => Math.max(1, Math.round(n * k));
+  const total = THEME_BASE.reduce((s, t) => s + t.swing, 0);
+  const named = (rows?: [string, number, number][]) =>
+    (rows ?? []).map(([name, count, swing]) => ({
+      name,
+      count: scaled(count),
+      swing: Math.round(swing * k * 10) / 10,
+    }));
+  return THEME_BASE.map((t) => {
+    const swing = Math.round(t.swing * k * 10) / 10;
+    return {
+      kind: t.kind,
+      count: scaled(t.count),
+      games: Math.min(reviewed, scaled(t.games)),
+      swing,
+      per_game: Math.round((swing / reviewed) * 10) / 10,
+      share: Math.round((t.swing / total) * 1000) / 1000,
+      causes: named(t.causes),
+      openings: named(t.openings),
+      examples: spots
+        .filter((s) => s.kind === t.kind)
+        .sort((a, b) => b.swing - a.swing)
+        .slice(0, 3),
+    };
+  });
 }
 
 function filterOf(url: URL): ProfileFilter {

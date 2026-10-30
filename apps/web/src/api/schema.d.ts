@@ -450,8 +450,9 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Today's drills: due ones first, then new ones up to the day's cap. Show only `fen`, `side` and `theme` before
-         *     the answer.
+         * Today's drills: due ones first, then new ones up to the day's cap; or, with `theme` or `games`, a session on that
+         *     theme or opening line. They come as questions: the `fen`, `side` and `theme`, without the answer, which
+         *     `answer_drill` returns.
          */
         get: operations["drills_today"];
         put?: never;
@@ -507,6 +508,26 @@ export interface paths {
         put?: never;
         /** Answers a drill (UCI or SAN): the outcome, the drill rescheduled, and the answer with its line. */
         post: operations["answer_drill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/drills/{id}/hint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The next hint at a drill, without the move: first what kind of move it is, then which piece moves. A hint is
+         *     remembered until the drill is answered, and a right answer after one counts half and comes back tomorrow.
+         */
+        post: operations["hint_drill"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1091,6 +1112,27 @@ export interface paths {
         };
         /** Lichess's leaderboard at a speed. */
         get: operations["top_players"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/players/you/prep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Your opening lines with one colour: the named openings you play, your score in each, and how often you go wrong
+         *     in the first twelve moves, with the games to drill. Refused (409) while you play on Lichess, unless every game
+         *     of yours is correspondence.
+         */
+        get: operations["get_prep"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2161,6 +2203,8 @@ export interface components {
             best_moves: string[];
             best_san: string[];
             drill: components["schemas"]["Drill"];
+            /** @description A hint was asked for first: a pass then counts half and the drill comes back tomorrow. */
+            hinted: boolean;
             line: string[];
             outcome: components["schemas"]["DrillOutcome"];
             played_san: string;
@@ -2175,6 +2219,17 @@ export interface components {
         DrillDeleted: {
             id: components["schemas"]["DrillId"];
         };
+        /** @description A hint at a drill: a nudge that names a property of the right move, never the move. */
+        DrillHint: {
+            /** @description At level 2: the square the piece stands on, when all the right moves start there. */
+            from?: string | null;
+            /**
+             * Format: int32
+             * @description 1 says what kind of move it is, 2 which piece moves.
+             */
+            level: number;
+            text: string;
+        };
         /**
          * Format: int64
          * @description A drill's row id.
@@ -2187,7 +2242,7 @@ export interface components {
         DrillOutcome: "pass" | "fail";
         /** @description `GET /api/drills/today`. */
         DrillsToday: {
-            /** @description In the order to play them. The client shows `fen`, `side` and `theme` only until the drill is answered. */
+            /** @description In the order to play them: questions, without their answers. */
             drills: components["schemas"]["Drill"][];
             /**
              * Format: int32
@@ -2201,6 +2256,11 @@ export interface components {
              * @description New drills started today, counted against the day's cap.
              */
             started_today: number;
+            /**
+             * Format: int32
+             * @description Every drill there is, to tell "none yet" from "none today".
+             */
+            total: number;
         };
         /** @description A game of yours on Lichess that cannot be played here (bullet, a variant): it still turns analysis off. */
         ElsewhereGame: {
@@ -2628,16 +2688,24 @@ export interface components {
             answers: number;
             /** @description `2026-10-25` (UTC). */
             date: string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Passes found with a hint, each worth half in the rates.
+             */
+            hinted: number;
+            /**
+             * Format: int32
+             * @description Passes found without a hint.
+             */
             passes: number;
             /**
              * Format: double
-             * @description Passes per answer that day, 0 to 1.
+             * @description Credit per answer that day, 0 to 1.
              */
             rate: number;
             /**
              * Format: double
-             * @description Passes per answer over the last `window` answers up to the end of that day: the line the UI draws.
+             * @description Credit per answer over the last `window` answers up to the end of that day: the line the UI draws.
              */
             rolling: number;
         };
@@ -3227,6 +3295,63 @@ export interface components {
             /** @description Why, while not `allowed`: "Analysis is off while you're playing on Lichess". */
             reason?: string | null;
         };
+        /** @description Your lines with one colour. */
+        Prep: {
+            /**
+             * Format: int32
+             * @description Finished standard games of yours with this colour that have a named opening.
+             */
+            games: number;
+            /** @description Most played first, then the flagged ones. */
+            lines: components["schemas"]["PrepLine"][];
+            side: components["schemas"]["Side"];
+        };
+        /** @description One opening line you play and how it goes. */
+        PrepLine: {
+            /** Format: int32 */
+            draws: number;
+            /** @description The newest games with an early mistake, to drill (`GET /api/drills/today?games=…&max_ply=24`). */
+            drill_games: components["schemas"]["GameId"][];
+            /** Format: int32 */
+            early_games: number;
+            /**
+             * Format: int32
+             * @description Your early mistakes and blunders in the line, and the win percentage they cost in all.
+             */
+            early_mistakes: number;
+            /** Format: double */
+            early_swing: number;
+            eco?: string | null;
+            /** @description The newest game of the line. */
+            example: components["schemas"]["GameId"];
+            fen: string;
+            /** Format: int32 */
+            games: number;
+            /** @description At least a third of at least three reviewed games had an early mistake. */
+            goes_wrong_early: boolean;
+            /** Format: int32 */
+            losses: number;
+            /** @description The line's moves (UCI) from the start, and as one PGN string (`1. e4 e5 2. Nf3 Nc6`); the position after it. */
+            moves: string[];
+            /** @description The opening's name: `Italian Game: Giuoco Piano`. */
+            name: string;
+            pgn: string;
+            /**
+             * Format: int32
+             * @description Games of the line that are reviewed, and how many of them have a mistake of yours in the first twelve moves.
+             */
+            reviewed: number;
+            /**
+             * Format: double
+             * @description Your points per decided game, 0 to 1.
+             */
+            score?: number | null;
+            /** @description Your score is under 45 % over at least four decided games. */
+            scores_badly: boolean;
+            /** Format: int32 */
+            wins: number;
+            worst?: components["schemas"]["WeakSpot"] | null;
+        };
         /**
          * @description Named game settings, as Reckless names its tests.
          * @enum {string}
@@ -3278,6 +3403,11 @@ export interface components {
             results: components["schemas"]["Results"];
             /** Format: int32 */
             reviewed: number;
+            /**
+             * @description The same mistakes grouped by theme, the costliest first (every one, not just the listed weak spots); filled
+             *     for You only.
+             */
+            themes: components["schemas"]["ThemeStat"][];
             time: components["schemas"]["TimeStats"];
             trend: components["schemas"]["TrendPoint"][];
             /**
@@ -3942,10 +4072,64 @@ export interface components {
          * @enum {string}
          */
         SyncOutcome: "up_to_date" | "merged" | "failed";
-        /** @description What a drill is about: the opening family of its game, and the phase it came from. */
+        /**
+         * @description What a drill is about: the opening family of its game, the phase it came from, and what the mistake was about
+         *     (`core::themes`; `other` until a drill from before themes is classified).
+         */
         Theme: {
+            /** @description The cause the evidence names (`a knight`, `fork`), when it does. */
+            detail?: string | null;
+            kind: components["schemas"]["ThemeKind"];
             opening?: string | null;
             phase: components["schemas"]["Phase"];
+        };
+        /** @description A name counted: a cause of a theme's mistakes, or an opening they came in. */
+        ThemeCount: {
+            /** Format: int32 */
+            count: number;
+            name: string;
+            /**
+             * Format: double
+             * @description Win percentage lost to them.
+             */
+            swing: number;
+        };
+        /**
+         * @description What a mistake was about.
+         * @enum {string}
+         */
+        ThemeKind: "time_trouble" | "king_safety" | "hanging_piece" | "missed_tactic" | "opening_error" | "endgame_technique" | "other";
+        /**
+         * @description Your mistakes of one theme (`core::themes`) added up: how often, how much they cost, and the costliest examples.
+         *     Every mistake and blunder in the games considered has exactly one theme, so the themes add up to all of them.
+         */
+        ThemeStat: {
+            /** @description The causes named most often (`a knight`, `fork`), at most 3; empty when the theme names none. */
+            causes: components["schemas"]["ThemeCount"][];
+            /**
+             * Format: int32
+             * @description Mistakes and blunders of this theme, and the games they were in.
+             */
+            count: number;
+            /** @description The costliest, at most 3, to open on the board. */
+            examples: components["schemas"]["WeakSpot"][];
+            /** Format: int32 */
+            games: number;
+            kind: components["schemas"]["ThemeKind"];
+            /** @description The opening families they came in most often, at most 3. */
+            openings: components["schemas"]["ThemeCount"][];
+            /** Format: double */
+            per_game: number;
+            /**
+             * Format: double
+             * @description Their share of everything lost to mistakes, 0 to 1.
+             */
+            share: number;
+            /**
+             * Format: double
+             * @description Win percentage lost to them in all, and per reviewed game.
+             */
+            swing: number;
         };
         /** @description How long each move may take. */
         TimeControl: {
@@ -4415,9 +4599,12 @@ export interface components {
         /** @description A position before one of the player's mistakes or blunders in a reviewed game, to play out again. */
         WeakSpot: {
             best: string;
+            detail?: string | null;
             /** @description The position before it. */
             fen: string;
             game: components["schemas"]["GameId"];
+            /** @description What the mistake was about (`core::themes`), and the cause when the evidence names one. */
+            kind: components["schemas"]["ThemeKind"];
             opening?: string | null;
             phase: components["schemas"]["Phase"];
             /** @description What was played, and what was better, in SAN. */
@@ -5313,8 +5500,14 @@ export interface operations {
             query?: {
                 /** @description New drills a day (default 10). */
                 new_per_day?: number;
-                /** @description At most this many in all (default 30). */
+                /** @description At most this many in all (default 30; 10 for a theme or a line). */
                 limit?: number;
+                /** @description Only this theme: a session on it, with the day's cap on new drills set aside. */
+                theme?: components["schemas"]["ThemeKind"];
+                /** @description Only drills from these games (comma-separated ids, at most 200): the games of an opening line. */
+                games?: string;
+                /** @description Only mistakes made by this ply (24 is the first twelve moves). */
+                max_ply?: number;
             };
             header?: never;
             path?: never;
@@ -5328,6 +5521,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DrillsToday"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };
@@ -5402,6 +5603,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DrillAnswerResult"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    hint_drill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrillHint"];
                 };
             };
             404: {
@@ -6543,6 +6773,37 @@ export interface operations {
                 };
             };
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_prep: {
+        parameters: {
+            query: {
+                side: components["schemas"]["Side"];
+                /** @description Your newest finished games read, at most (500). */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Prep"];
+                };
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

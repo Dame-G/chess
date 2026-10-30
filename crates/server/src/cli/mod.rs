@@ -154,6 +154,13 @@ pub enum Command {
         #[arg(long)]
         limit: Option<u32>,
     },
+    /// Your opening lines with one colour: how you score in each and where you go wrong early.
+    Prep {
+        #[arg(long, default_value = "white")]
+        side: String,
+        #[arg(long)]
+        limit: Option<u32>,
+    },
     /// Both players' progress: your rating, accuracy and drills, Dameless's Elo.
     Progress {
         #[arg(long)]
@@ -393,12 +400,25 @@ pub struct DrillsArgs {
 
 #[derive(Subcommand)]
 pub enum DrillsAction {
-    /// Today's drills (the answers stay hidden).
+    /// Today's drills (the answers stay hidden); `--theme` or `--games` makes a session on a theme or opening line.
     Today {
         #[arg(long)]
         new_per_day: Option<u32>,
         #[arg(long)]
         limit: Option<usize>,
+        /// time_trouble, king_safety, hanging_piece, missed_tactic, opening_error, endgame_technique or other.
+        #[arg(long)]
+        theme: Option<String>,
+        /// Only drills from these games (comma-separated ids).
+        #[arg(long)]
+        games: Option<String>,
+        /// Only mistakes made by this ply.
+        #[arg(long)]
+        max_ply: Option<u32>,
+    },
+    /// The next hint at a drill: what kind of move, then which piece. A right answer after one counts half.
+    Hint {
+        id: i64,
     },
     /// Make drills from your weak spots.
     Make {
@@ -991,6 +1011,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("compare_players", "dameless compare you lichess:cutemouse83"),
     ("import_player", "dameless import lichess:cutemouse83"),
     ("get_repertoire", "dameless repertoire --side white"),
+    ("get_prep", "dameless prep --side white"),
     ("get_progress", "dameless progress"),
     ("list_levels", "dameless levels"),
     ("plan_levels", "dameless levels plan"),
@@ -998,6 +1019,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("list_drills", "dameless drills"),
     ("make_drills", "dameless drills make"),
     ("drills_today", "dameless drills today"),
+    ("hint_drill", "dameless drills hint 3"),
     ("answer_drill", "dameless drills answer 3 Nf3"),
     ("delete_drill", "dameless drills delete 3"),
     ("drills_trend", "dameless drills trend"),
@@ -1533,6 +1555,30 @@ pub async fn run(c: Client, command: Command, json: bool) -> Result<()> {
                 )
             });
         }
+        Command::Prep { side, limit } => {
+            let mut q = vec![("side", side)];
+            push(&mut q, "limit", limit.map(|n| n.to_string()));
+            let v = c.get(&format!("/api/players/you/prep{}", query(&q))).await?;
+            print(&v, json, |p| {
+                lines(&p["lines"], |l| {
+                    let flags = [("scores_badly", "scores badly"), ("goes_wrong_early", "goes wrong early")]
+                        .iter()
+                        .filter(|(k, _)| l[*k].as_bool() == Some(true))
+                        .map(|(_, w)| *w)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(
+                        "{}  {} games  score {}  early mistakes {}  {}  {}",
+                        str_of(&l["name"]),
+                        l["games"],
+                        l["score"].as_f64().map_or("–".to_owned(), |s| format!("{:.0}%", s * 100.0)),
+                        l["early_mistakes"],
+                        str_of(&l["pgn"]),
+                        flags
+                    )
+                })
+            });
+        }
         Command::Progress { window } => {
             let mut q = Vec::new();
             push(&mut q, "window", window.map(|n| n.to_string()));
@@ -2010,10 +2056,24 @@ async fn levels(c: &Client, a: LevelsArgs, json: bool) -> Result<()> {
 async fn drills(c: &Client, a: DrillsArgs, json: bool) -> Result<()> {
     match a.action {
         None => print(&c.get("/api/drills").await?, json, |v| lines(v, drill_line)),
-        Some(DrillsAction::Today { new_per_day, limit }) => {
+        Some(DrillsAction::Hint { id }) => {
+            let v = c.post(&format!("/api/drills/{id}/hint"), json!({})).await?;
+            print(&v, json, |h| {
+                format!(
+                    "hint {}: {}{}",
+                    h["level"],
+                    str_of(&h["text"]),
+                    h["from"].as_str().map_or(String::new(), |f| format!(" (from {f})"))
+                )
+            });
+        }
+        Some(DrillsAction::Today { new_per_day, limit, theme, games, max_ply }) => {
             let mut q = Vec::new();
             push(&mut q, "new_per_day", new_per_day.map(|n| n.to_string()));
             push(&mut q, "limit", limit.map(|n| n.to_string()));
+            push(&mut q, "theme", theme);
+            push(&mut q, "games", games);
+            push(&mut q, "max_ply", max_ply.map(|n| n.to_string()));
             print(&c.get(&format!("/api/drills/today{}", query(&q))).await?, json, |t| {
                 format!("{} due, {} new\n{}", t["due"], t["new"], lines(&t["drills"], drill_line))
             });

@@ -18,7 +18,7 @@ const groups = [
     rows: [
       { keys: [mod], does: "Open the command bar" },
       { keys: [["N"]], does: "New game" },
-      { keys: [["D"]], does: "Start today's drills" },
+      { keys: [["D"]], does: "Train: start today's drills" },
       { keys: [["?"]], does: "Show these shortcuts" },
       { keys: [["Esc"]], does: "Close what is open" },
     ],
@@ -42,6 +42,16 @@ const groups = [
   {
     title: "Review",
     rows: [{ keys: [["X"], ["Shift", "X"]], does: "Next and previous mistake" }],
+  },
+  {
+    title: "Drills",
+    rows: [
+      { keys: [["H"]], does: "Hint: a right answer then counts half" },
+      { keys: [["S"]], does: "Skip this drill" },
+      { keys: [["Enter"], ["→"]], does: "On to the next drill" },
+      { keys: [["E"]], does: "Explore the position" },
+      { keys: [["Esc"]], does: "End the sitting" },
+    ],
   },
   {
     title: "Sheets",

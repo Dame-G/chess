@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
-import { PhGearSix, PhListBullets, PhMagnifyingGlass, PhPlus } from "@phosphor-icons/vue";
+import { PhBarbell, PhGearSix, PhListBullets, PhMagnifyingGlass, PhPlus } from "@phosphor-icons/vue";
 import { EAppHeader } from "@eos-ui/vue/components/EAppHeader";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { EIconButton } from "@eos-ui/vue/components/EIconButton";
@@ -9,20 +9,33 @@ import { EKbd } from "@eos-ui/vue/components/EKbd";
 import { formatShortcut } from "@eos-ui/vue";
 import { down, up, useMedia } from "../media";
 import { useConnections } from "../stores/connections";
+import { useDrills } from "../stores/drills";
 import { useVersions } from "../stores/versions";
 import UiPlayer from "../ui/UiPlayer.vue";
 import Logo from "./Logo.vue";
 import BotLive from "./BotLive.vue";
 import LiveGame from "./LiveGame.vue";
+import { useStartDrills } from "./drillFlow";
 import { useUi } from "./ui";
 import WorkIndicator from "./WorkIndicator.vue";
 
 /**
- * The header: the wordmark, the command bar, New game, You and Dameless as two chips of one shape that open their
- * sheets, the background work, settings. On a tablet the Games rail is a button here; on a phone the chips live in the
- * tab bar and the header keeps the icons.
+ * The header: the wordmark, the command bar, New game, Train with the drills waiting, You and Dameless as two chips of
+ * one shape that open their sheets, the background work, settings. On a tablet the Games rail is a button here; on a
+ * phone the chips live in the tab bar and the header keeps the icons.
  */
 const ui = useUi();
+const drills = useDrills();
+const startDrills = useStartDrills();
+
+/** Train is offered once there are drills, and not while you play on Lichess. */
+const training = computed(() => drills.available && drills.total > 0);
+const trainLabel = computed(() => (drills.waiting ? `Train: ${drills.waiting} drills waiting` : "Train"));
+const readToday = () => {
+  if (drills.available && !drills.loaded) void drills.loadToday().catch(() => {});
+};
+onMounted(readToday);
+watch(() => drills.available, readToday);
 const route = useRoute();
 const connections = useConnections();
 const versions = useVersions();
@@ -71,6 +84,19 @@ const onDameless = computed(() => route.path.startsWith("/dameless"));
       <BotLive />
       <EButton size="sm" variant="outline" :icon="PhPlus" class="new" aria-label="New game" @click="ui.startNewGame()">
         <span class="new-label">New game</span>
+      </EButton>
+      <EButton
+        v-if="training"
+        size="sm"
+        variant="quiet"
+        :icon="PhBarbell"
+        class="train"
+        :aria-label="trainLabel"
+        :title="`${trainLabel} (D)`"
+        @click="startDrills()"
+      >
+        <span class="train-label">Train</span>
+        <span v-if="drills.waiting" class="train-count num">{{ drills.waiting }}</span>
       </EButton>
       <template v-if="!phone">
         <UiPlayer :seat="you" size="md" link :current="onYou" title="Your profile" class="chip" />
@@ -173,10 +199,26 @@ const onDameless = computed(() => route.path.startsWith("/dameless"));
   }
 }
 
-/* On a phone the button is its plus. */
+/* Train reads "Train · 12": the count is a figure, after the word. */
+.train-count {
+  margin-inline-start: var(--sp-1);
+  color: var(--c-ink-2);
+  font: var(--t-fig);
+}
+
+.train-count::before {
+  content: "· ";
+}
+
+/* On a phone the buttons are their icons; Train keeps its count. */
 @media (width < 48rem) {
-  .new-label {
+  .new-label,
+  .train-label {
     display: none;
+  }
+
+  .train-count::before {
+    content: none;
   }
 }
 </style>

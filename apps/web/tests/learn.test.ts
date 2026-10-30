@@ -108,7 +108,7 @@ const drill = (id: number, patch: Partial<Drill> = {}): Drill => ({
   played: "h2h3",
   played_san: "h3",
   swing: 14,
-  theme: { opening: "Italian Game", phase: "opening" },
+  theme: { opening: "Italian Game", phase: "opening", kind: "other", detail: null },
   due: "2026-10-27T00:00:00Z",
   interval_days: 0,
   ease: 2.5,
@@ -217,6 +217,7 @@ describe("the drills store", () => {
 
   const result = (outcome: "pass" | "fail", d: Drill): DrillAnswerResult => ({
     outcome,
+    hinted: false,
     drill: { ...d, reps: outcome === "pass" ? 1 : 0, interval_days: 1, answered_at: "2026-10-27T10:00:00Z" },
     best_moves: d.best_moves,
     best_san: d.best_san,
@@ -227,7 +228,7 @@ describe("the drills store", () => {
   it("starts today's set, takes one try, and moves on", async () => {
     const set = [drill(1), drill(2)];
     const calls = serve({
-      "/api/drills/today": () => ({ drills: set, due: 0, new: 2, started_today: 0 }),
+      "/api/drills/today": () => ({ drills: set, due: 0, new: 2, started_today: 0, total: 2 }),
       "/api/drills": () => set,
       "/api/drills/trend": () => [],
       "/api/drills/1/answer": () => result("fail", set[0]!),
@@ -255,7 +256,7 @@ describe("the drills store", () => {
   it("finds the set done after the last drill", async () => {
     const set = [drill(1)];
     serve({
-      "/api/drills/today": () => ({ drills: set, due: 0, new: 1, started_today: 0 }),
+      "/api/drills/today": () => ({ drills: set, due: 0, new: 1, started_today: 0, total: 1 }),
       "/api/drills": () => set,
       "/api/drills/trend": () => [],
       "/api/drills/1/answer": () => result("pass", set[0]!),
@@ -281,7 +282,7 @@ describe("the drills store", () => {
 
   it("answers false when there is nothing today", async () => {
     serve({
-      "/api/drills/today": () => ({ drills: [], due: 0, new: 0, started_today: 0 }),
+      "/api/drills/today": () => ({ drills: [], due: 0, new: 0, started_today: 0, total: 0 }),
       "/api/drills": () => [],
       "/api/drills/trend": () => [],
     });

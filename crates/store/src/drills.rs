@@ -7,13 +7,15 @@ use std::collections::HashSet;
 use dameless_core::{
     Error, GameId, Timestamp,
     drills::{Drill, DrillAnswer, DrillId, NewDrill, Theme},
+    themes::ThemeKind,
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::{DbResult, Store, from_json, from_word, now, to_json, word};
 
 const DRILL: &str = "SELECT id, game, ply, fen, key, side, best_moves, best_san, line, played, played_san, swing, \
-                     opening, phase, due, interval_days, ease, reps, lapses, created_at, answered_at FROM drills";
+                     opening, phase, due, interval_days, ease, reps, lapses, created_at, answered_at, kind, detail \
+                     FROM drills";
 
 fn drill_from_row(row: &Row<'_>) -> DbResult<Drill> {
     Ok(Drill {
@@ -29,7 +31,12 @@ fn drill_from_row(row: &Row<'_>) -> DbResult<Drill> {
         played: row.get(9)?,
         played_san: row.get(10)?,
         swing: row.get(11)?,
-        theme: Theme { opening: row.get(12)?, phase: from_word(&row.get::<_, String>(13)?)? },
+        theme: Theme {
+            opening: row.get(12)?,
+            phase: from_word(&row.get::<_, String>(13)?)?,
+            kind: row.get::<_, Option<String>>(21)?.and_then(|k| ThemeKind::from_word(&k)).unwrap_or_default(),
+            detail: row.get(22)?,
+        },
         due: Timestamp(row.get(14)?),
         interval_days: row.get(15)?,
         ease: row.get(16)?,
@@ -56,8 +63,8 @@ impl Store {
             for d in drills {
                 let inserted = tx.execute(
                     "INSERT INTO drills (key, game, ply, fen, side, best_moves, best_san, line, played, played_san, \
-                     swing, opening, phase, due, interval_days, ease, reps, lapses, created_at) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 0, ?15, 0, 0, ?14) \
+                     swing, opening, phase, due, interval_days, ease, reps, lapses, created_at, kind, detail) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 0, ?15, 0, 0, ?14, ?16, ?17) \
                      ON CONFLICT (key) DO NOTHING",
                     params![
                         d.key,
@@ -75,6 +82,8 @@ impl Store {
                         word(&d.theme.phase),
                         created_at.as_str(),
                         dameless_core::drills::START_EASE,
+                        d.theme.kind.word(),
+                        d.theme.detail,
                     ],
                 )?;
                 if inserted == 1 {
@@ -142,8 +151,9 @@ impl Store {
                 .optional()?
                 .is_none();
             tx.execute(
-                "INSERT INTO drill_answers (drill, at, answer, outcome, first) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![answer.drill.0, answer.at.as_str(), answer.answer, word(&answer.outcome), first],
+                "INSERT INTO drill_answers (drill, at, answer, outcome, first, hinted) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![answer.drill.0, answer.at.as_str(), answer.answer, word(&answer.outcome), first, answer.hinted],
             )?;
             Ok(get(tx, graded.id)?.expect("updated above"))
         })
@@ -154,7 +164,8 @@ impl Store {
     pub async fn drill_answers(&self, since: Option<Timestamp>) -> Result<Vec<DrillAnswer>, Error> {
         self.read(move |conn| {
             let mut stmt = conn.prepare_cached(
-                "SELECT drill, at, answer, outcome FROM drill_answers WHERE (?1 IS NULL OR at >= ?1) ORDER BY at, id",
+                "SELECT drill, at, answer, outcome, hinted FROM drill_answers WHERE (?1 IS NULL OR at >= ?1) \
+                 ORDER BY at, id",
             )?;
             let mut rows = stmt.query([since.as_ref().map(Timestamp::as_str)])?;
             let mut out = Vec::new();
@@ -164,6 +175,7 @@ impl Store {
                     at: Timestamp(row.get(1)?),
                     answer: row.get(2)?,
                     outcome: from_word(&row.get::<_, String>(3)?)?,
+                    hinted: row.get(4)?,
                 });
             }
             Ok(out)
@@ -179,6 +191,31 @@ impl Store {
                 [since.as_str()],
                 |r| r.get::<_, u32>(0),
             )?)
+        })
+        .await
+    }
+
+    /// The drills not classified yet (from before themes): their id, game and ply.
+    pub async fn unclassified_drills(&self) -> Result<Vec<(DrillId, GameId, u32)>, Error> {
+        self.read(|conn| {
+            let mut stmt =
+                conn.prepare_cached("SELECT id, game, ply FROM drills WHERE kind IS NULL ORDER BY game, ply")?;
+            let rows = stmt
+                .query_map([], |r| Ok((DrillId(r.get(0)?), GameId(r.get(1)?), r.get::<_, u32>(2)?)))?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .await
+    }
+
+    /// Stores the classified themes of drills, one transaction. Drills that are gone are skipped.
+    pub async fn set_drill_themes(&self, themes: Vec<(DrillId, ThemeKind, Option<String>)>) -> Result<(), Error> {
+        self.write(move |tx| {
+            let mut stmt = tx.prepare_cached("UPDATE drills SET kind = ?2, detail = ?3 WHERE id = ?1")?;
+            for (id, kind, detail) in themes {
+                stmt.execute(params![id.0, kind.word(), detail])?;
+            }
+            Ok(())
         })
         .await
     }
@@ -213,8 +250,50 @@ mod tests {
             played: "a2a3".into(),
             played_san: "a3".into(),
             swing,
-            theme: Theme { opening: Some("Italian Game".into()), phase: Phase::Opening },
+            theme: Theme {
+                opening: Some("Italian Game".into()),
+                phase: Phase::Opening,
+                kind: ThemeKind::OpeningError,
+                detail: None,
+            },
         }
+    }
+
+    #[tokio::test]
+    async fn themes_are_stored_classified_later_and_hints_are_kept_on_answers() {
+        let (store, _dir) = testing::store();
+        let game = store.insert_game(local(PlayerKey::You, PlayerKey::Dameless, 0)).await.unwrap();
+        let mut hung = new(game, START, 10.0);
+        hung.theme.kind = ThemeKind::HangingPiece;
+        hung.theme.detail = Some("a knight".into());
+        let d = store.insert_drills(vec![hung, new(game, OTHER, 5.0)]).await.unwrap();
+        assert_eq!(d[0].theme.detail.as_deref(), Some("a knight"));
+        assert_eq!(store.drill(d[0].id).await.unwrap().unwrap().theme.kind, ThemeKind::HangingPiece);
+
+        // A drill from before themes has no kind until it is classified.
+        let second = d[1].id.0;
+        store
+            .write(move |tx| Ok(tx.execute("UPDATE drills SET kind = NULL, detail = NULL WHERE id = ?1", [second])?))
+            .await
+            .unwrap();
+        assert_eq!(store.unclassified_drills().await.unwrap(), [(d[1].id, game, 7)]);
+        store.set_drill_themes(vec![(d[1].id, ThemeKind::MissedTactic, Some("fork".into()))]).await.unwrap();
+        assert!(store.unclassified_drills().await.unwrap().is_empty());
+        let fork = store.drill(d[1].id).await.unwrap().unwrap();
+        assert_eq!((fork.theme.kind, fork.theme.detail.as_deref()), (ThemeKind::MissedTactic, Some("fork")));
+
+        let t0 = Timestamp::from_unix_ms(1_000_000);
+        let hinted = DrillAnswer {
+            drill: d[0].id,
+            at: t0.clone(),
+            answer: "e2e4".into(),
+            outcome: DrillOutcome::Pass,
+            hinted: true,
+        };
+        store.record_drill_answer(grade(&d[0], hinted.outcome, true, &t0), hinted).await.unwrap();
+        let answers = store.drill_answers(None).await.unwrap();
+        assert_eq!(answers.len(), 1);
+        assert!(answers[0].hinted);
     }
 
     const START: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -";
@@ -255,17 +334,18 @@ mod tests {
             at: at.clone(),
             answer: mv.into(),
             outcome: check(drill, mv),
+            hinted: false,
         };
         let a = answer(&d[0], "e2e4", &t0);
         assert_eq!(a.outcome, DrillOutcome::Pass);
-        let graded = grade(&d[0], a.outcome, &t0);
+        let graded = grade(&d[0], a.outcome, false, &t0);
         let stored = store.record_drill_answer(graded.clone(), a).await.unwrap();
         assert_eq!(stored, graded);
         assert_eq!((stored.reps, stored.interval_days), (1, 1));
 
         let t1 = Timestamp::from_unix_ms(1_000_000 + 86_400_000);
         let b = answer(&stored, "h2h4", &t1);
-        let graded = grade(&stored, b.outcome, &t1);
+        let graded = grade(&stored, b.outcome, false, &t1);
         let stored = store.record_drill_answer(graded, b).await.unwrap();
         assert_eq!((stored.reps, stored.lapses), (0, 1));
 

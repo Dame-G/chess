@@ -129,10 +129,12 @@ fn routes() -> (OpenApiRouter<Arc<App>>, OpenApiRouter<Arc<App>>) {
         .routes(routes!(player_side::calibrate_levels))
         .routes(routes!(player_side::list_drills, player_side::make_drills))
         .routes(routes!(player_side::drills_today))
+        .routes(routes!(player_side::hint_drill))
         .routes(routes!(player_side::answer_drill))
         .routes(routes!(player_side::delete_drill))
         .routes(routes!(player_side::drills_trend))
         .routes(routes!(player_side::get_repertoire))
+        .routes(routes!(player_side::get_prep))
         .routes(routes!(player_side::get_progress))
         // Work
         .routes(routes!(work::list_work))

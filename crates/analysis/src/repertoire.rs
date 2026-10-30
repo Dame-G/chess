@@ -11,6 +11,8 @@ use dameless_core::{
     chess::Position,
     events::AssistKind,
     game::{Game, GameStatus},
+    prep::{self, Prep, PrepRequest},
+    profile::ProfileFilter,
     repertoire::{self, Repertoire, RepertoireGame, RepertoireOptions},
 };
 use dameless_store::GameFilter;
@@ -51,6 +53,24 @@ fn theory_of(game: &Game, into: &mut HashSet<String>) {
 }
 
 impl Profiles {
+    /// Your opening lines with one colour, each with how you score and how often you go wrong early (`core::prep`).
+    /// Assistance like the repertoire: 409 while you play on Lichess (unless every live game is correspondence).
+    pub async fn prep(&self, req: PrepRequest) -> Result<Prep, Error> {
+        let hub = self.hub();
+        hub.policy.check(AssistKind::Explorer)?;
+        let limit = req.limit.unwrap_or(DEFAULT_GAMES).clamp(1, dameless_store::games::MAX_LIMIT);
+        let games =
+            hub.store.profile_games(PlayerKey::You, ProfileFilter { limit, ..ProfileFilter::default() }, true).await?;
+        let (mut prep, plies) = prep::build(req.side, &games);
+        for (line, plies) in prep.lines.iter_mut().zip(plies) {
+            if let Some(game) = hub.store.game(line.example).await? {
+                let moves: Vec<String> = game.moves.iter().map(|m| m.uci.clone()).collect();
+                line.set_moves(&moves, plies);
+            }
+        }
+        Ok(prep)
+    }
+
     /// Your repertoire with one colour. 409 while you play on Lichess (unless every live game is correspondence).
     pub async fn repertoire(&self, req: RepertoireRequest) -> Result<Repertoire, Error> {
         let hub = self.hub();
