@@ -36,7 +36,7 @@ const groups = [
     title: "Playing",
     rows: [
       { keys: [["T"], formatShortcut("mod+z")], does: "Take back your move, in a game with no clock" },
-      { keys: [["R"]], does: "Rematch, when your game against Dameless is over" },
+      { keys: [["R"]], does: "Rematch, when your game against an engine is over" },
     ],
   },
   {
@@ -57,7 +57,6 @@ const groups = [
     title: "Sheets",
     rows: [
       { keys: [["G", "Y"]], does: "Go to You" },
-      { keys: [["G", "D"]], does: "Go to Dameless" },
       { keys: [["G", "S"]], does: "Go to Settings" },
     ],
   },

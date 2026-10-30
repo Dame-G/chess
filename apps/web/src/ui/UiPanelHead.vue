@@ -11,7 +11,7 @@ import UiResult from "./UiResult.vue";
 /**
  * The game card at the top of the board panel, and the one place the panel says who is playing whom: the two players
  * with the result between them, then one muted line (`Opening · 5+3 · rated · Lichess`). `#status` is what is
- * happening now ("Your move", "Dameless is thinking"); `#actions` sit beside it. A finished game with no `#status`
+ * happening now ("Your move", "Stockfish is thinking"); `#actions` sit beside it. A finished game with no `#status`
  * says how it ended. With no game (free analysis) it draws nothing.
  */
 const props = defineProps<{ game: GameSummary | null | undefined; mode: Mode }>();

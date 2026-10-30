@@ -1,11 +1,10 @@
-//! Calibration: Dameless's levels play each other in the background (`WorkKind::Calibrate`, priority Idea), and the
+//! Calibration: the levels play each other in the background (`WorkKind::Calibrate`, priority Background), and the
 //! ladder is refitted after each match.
 //!
 //! The work is queued by [`Levels::prepare_calibration`] with its matches resolved (planned by `core::levels::plan`
 //! when the request names none). Each game is played here, outside the live games: two engine seats at their levels
 //! with fixed nodes (`Level::calibration_nodes`, so full strength plays 1,000,000), levels 1 to 6 choosing among their
-//! MultiPV lines with `core::levels::choose_move` (fastchess cannot), from a random line of the trials' opening book
-//! (or, without one, four random plies), colours alternating. As many games run at once as the ledger grants cores
+//! MultiPV lines with `core::levels::choose_move`, from four random plies, colours alternating. As many games run at once as the ledger grants cores
 //! for, two per game. Games are stored as finished local games, with their entrants in `level_games` marked
 //! `calibration`; they are not announced one by one, only the refit is (`levels.updated`).
 //!
@@ -17,7 +16,7 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use dameless_core::{
-    Error, GameId, PlayerKey, SidePair, TimeControl,
+    Error, GameId, SidePair, TimeControl,
     chess::Position,
     game::{GameEnd, GameStatus, Outcome, Seat, Source, Turn},
     levels::{Entrant, Level, PlannedMatch},
@@ -29,16 +28,16 @@ use dameless_store::{NewGame, now};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
+use dameless_work::EngineBinary;
+
 use crate::{
-    binaries::EngineBinary,
     engine_seat::{EngineOptions, EngineSeat, SplitMix64},
     games::{Games, random_u64, seat_seed},
     levels::CalibrateSpec,
     seat::SeatController,
 };
 
-/// Plies played at random from the start when no opening book is installed, so games between deterministic levels
-/// differ.
+/// Plies played at random from the start, so games between deterministic levels differ.
 const RANDOM_PLIES: usize = 4;
 
 /// Where a calibration stands: games played per match, and failures.
@@ -66,16 +65,6 @@ impl Calibrate {
     pub fn new(games: Games) -> Self {
         Self { games }
     }
-
-    /// The opening lines games start from: the book's, when installed.
-    async fn book(&self) -> Vec<String> {
-        let tools = self.games.hub().config.tools_dir();
-        let Some(book) = dameless_engine::tools::installed(&tools).book else { return Vec::new() };
-        match tokio::fs::read_to_string(&book).await {
-            Ok(text) => text.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_owned).collect(),
-            Err(_) => Vec::new(),
-        }
-    }
 }
 
 /// One calibration game to play.
@@ -86,12 +75,8 @@ struct Pairing {
     start_fen: Option<String>,
 }
 
-/// The start of a game: a random book line, else a few random plies from the start.
-fn opening(book: &[String], rng: &mut SplitMix64) -> Result<Option<String>, Error> {
-    if !book.is_empty() {
-        let pos = Position::from_fen(&book[rng.below(book.len())])?;
-        return Ok((!pos.is_standard_start()).then(|| pos.fen()));
-    }
+/// The start of a game: a few random plies from the start.
+fn opening(rng: &mut SplitMix64) -> Result<Option<String>, Error> {
     let mut pos = Position::start();
     for _ in 0..RANDOM_PLIES {
         let moves = pos.legal_moves();
@@ -116,13 +101,12 @@ async fn play(games: &Games, binary: &EngineBinary, p: Pairing, cancel: &Cancell
             .at_level(level.clone(), Some(level.calibration_nodes()), seat_seed(p.seed, index))
             .await?;
         seats.push(Box::new(engine));
-        let (name, rating) = games.levels().seat_name(level).await;
+        let (name, rating) = games.levels().seat_name(level, &binary.engine.name).await;
         names.push(Seat {
-            version: Some(binary.version.id),
-            build: Some(binary.build),
+            engine: Some(binary.engine.label().to_owned()),
             rating: Some(rating),
             level: Some(level.id),
-            ..Seat::new(PlayerKey::Dameless, name)
+            ..Seat::new(binary.engine.player(), name)
         });
     }
     let time = TimeControl::Nodes { nodes: p.white.calibration_nodes().max(p.black.calibration_nodes()) };
@@ -208,16 +192,14 @@ impl Executor for Calibrate {
         let mut state: CalibrateCheckpoint = cx.checkpoint().unwrap_or_default();
         state.done.resize(spec.matches.len(), 0);
         let total: u32 = spec.matches.iter().map(|m| m.games).sum();
-        // The binary first, holding no cores: a build needs them.
-        let binary = self.games.binaries().binary(&spec.version).await?;
-        let book = self.book().await;
+        let binary = self.games.engines().ready(Some(&spec.engine)).await?;
         let mut rng = SplitMix64::new(random_u64());
         if state.done.iter().all(|d| *d == 0) {
             cx.log(format!(
-                "Calibrating {} with {} games, {}.",
+                "Calibrating {}: {} with {} games, from random openings.",
+                binary.engine.label(),
                 spec.matches.iter().map(|m| format!("levels {} and {}", m.a, m.b)).collect::<Vec<_>>().join(", "),
                 total,
-                if book.is_empty() { "from random openings (no book)" } else { "from the book" },
             ));
         }
         let started = Instant::now();
@@ -241,7 +223,7 @@ impl Executor for Calibrate {
                     let n = state.done[i] + k;
                     let (white, black) =
                         if n.is_multiple_of(2) { (a.clone(), b.clone()) } else { (b.clone(), a.clone()) };
-                    pairings.push(Pairing { white, black, seed: rng.next_u64(), start_fen: opening(&book, &mut rng)? });
+                    pairings.push(Pairing { white, black, seed: rng.next_u64(), start_fen: opening(&mut rng)? });
                 }
                 let results =
                     futures::future::join_all(pairings.into_iter().map(|p| play(&self.games, &binary, p, &cx.cancel)))
@@ -317,13 +299,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn openings_without_a_book_are_random_plies() {
+    fn openings_are_random_plies() {
         let mut rng = SplitMix64::new(7);
-        let fen = opening(&[], &mut rng).unwrap().unwrap();
+        let fen = opening(&mut rng).unwrap().unwrap();
         let pos = Position::from_fen(&fen).unwrap();
         assert!(!pos.is_standard_start());
-        assert_eq!(opening(&[], &mut SplitMix64::new(7)).unwrap().unwrap(), fen, "the same seed, the same opening");
-        let book = vec![Position::start().fen()];
-        assert_eq!(opening(&book, &mut rng).unwrap(), None, "the standard start is no start position");
+        assert_eq!(opening(&mut SplitMix64::new(7)).unwrap().unwrap(), fen, "the same seed, the same opening");
     }
 }

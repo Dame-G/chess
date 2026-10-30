@@ -1,4 +1,4 @@
-//! Game review: every position of a finished game searched by one of our versions at a fixed node budget, and each
+//! Game review: every position of a finished game searched by the analysis engine at a fixed node budget, and each
 //! move judged from the evaluations before and after it (accuracy, centipawn loss, and a classification from brilliant
 //! to blunder), with a summary per side and per phase. The searching is `analysis`'s; this is everything after it.
 //! The formulas are in [`judge`]. Every score stored here is White's.
@@ -14,7 +14,7 @@ use crate::{
     chess::{Position, position_key},
     error::Error,
     game::{Game, Move},
-    ids::{GameId, ReviewId, Side, SidePair, Timestamp, VersionId},
+    ids::{GameId, ReviewId, Side, SidePair, Timestamp},
     score::Score,
     time::TimeControl,
 };
@@ -220,7 +220,8 @@ pub struct SideReview {
 /// A review's summary per side.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ReviewSummary {
-    pub version: VersionId,
+    /// The engine that reviewed it, by the name it reports (its UCI `id name`): `Stockfish 19`.
+    pub engine: String,
     pub nodes: u64,
     pub white: SideReview,
     pub black: SideReview,
@@ -254,7 +255,8 @@ impl ReviewSummary {
 pub struct Review {
     pub id: ReviewId,
     pub game: GameId,
-    pub version: VersionId,
+    /// The engine that reviewed it, by the name it reports (its UCI `id name`): `Stockfish 19`.
+    pub engine: String,
     pub nodes: u64,
     pub summary: ReviewSummary,
     pub plies: Vec<ReviewedMove>,
@@ -374,7 +376,7 @@ fn think_ms(moves: &[Move], i: usize, increment_ms: u64) -> Option<u64> {
 pub fn judge_game(
     input: ReviewInput<'_>,
     evals: &[Option<PositionEval>],
-    version: VersionId,
+    engine: &str,
     nodes: u64,
 ) -> Result<(ReviewSummary, Vec<ReviewedMove>), Error> {
     let moves = input.moves;
@@ -512,7 +514,7 @@ pub fn judge_game(
     let starts = |p: Phase| (0..plies.len()).find(|&i| phases[i] == p).map(|i| i as u32 + 1);
     let [white, black] = sides;
     let summary = ReviewSummary {
-        version,
+        engine: engine.to_owned(),
         nodes,
         white,
         black,

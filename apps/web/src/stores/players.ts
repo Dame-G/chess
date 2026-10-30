@@ -20,7 +20,7 @@ export const profileKey = (key: string, f: ProfileFilter = ALL_GAMES) =>
   `${key}?${new URLSearchParams(Object.entries(query(f)).flatMap(([k, v]) => (v === undefined || v === "" ? [] : [[k, String(v)]])))}`;
 
 /**
- * Players: profiles (yours, Dameless's, anyone's on Lichess), the comparison of several, Lichess's leaderboard, and the
+ * Players: profiles (yours, an engine's, anyone's on Lichess), the comparison of several, Lichess's leaderboard, and the
  * lookups that check a name. A profile or comparison that is on screen is read again when a review lands or an import
  * ends, so "Review them" shows its result without a reload.
  */

@@ -3,7 +3,7 @@
 use std::{net::SocketAddr, path::PathBuf};
 
 use anyhow::{Context, Result};
-use dameless_core::{ConnectionKey, WorkId, scaling::ScalingSettings};
+use dameless_core::{ConnectionKey, WorkId};
 
 /// The hosted UI. It may call a local app with the token.
 pub const HOSTED_ORIGIN: &str = "https://chess.dame.gg";
@@ -13,6 +13,9 @@ pub const DEFAULT_LISTEN: &str = "127.0.0.1:7979";
 
 /// The Lichess the adapters talk to unless `LICHESS_URL` names another (a mock in tests).
 pub const LICHESS_URL: &str = "https://lichess.org";
+
+/// GitHub's REST API, where the built-in engines' releases are listed.
+pub const GITHUB_API: &str = "https://api.github.com";
 
 /// The Lichess services the app talks to.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,30 +53,20 @@ pub struct Config {
     /// The data directory, absolute.
     pub data_dir: PathBuf,
     pub listen: SocketAddr,
-    /// The Reckless fork's checkout, absolute: builds and git work happen beside it, never in it.
-    pub reckless_dir: PathBuf,
     /// Cores the ledger hands out.
     pub cores: u32,
-    pub scaling: ScalingSettings,
     pub lichess: LichessUrls,
     /// The hosted UI's origin, allowed with the token.
     pub hosted_origin: String,
-    /// GPUs the ledger hands out (`DAMELESS_GPUS`; from the environment, one when nvidia-smi finds a GPU).
-    pub gpus: u32,
-    /// What every dataset together may hold on disk (`DAMELESS_DATA_CAP_GB`; 10 GB on Windows, 200 GB elsewhere).
-    pub data_cap_bytes: u64,
+    /// GitHub's API, where the built-in engines' release assets are listed (a mock in tests).
+    pub github_api: String,
 }
 
 impl Config {
-    /// From the process's environment: `DAMELESS_DATA`, `DAMELESS_LISTEN`, `RECKLESS_DIR`, `DAMELESS_CORES`,
-    /// `DAMELESS_SCALE_CLOCKS`, `DAMELESS_REFERENCE_NPS`, `LICHESS_URL`, `LICHESS_EXPLORER_URL`, `LICHESS_TABLEBASE_URL`,
-    /// `DAMELESS_GPUS`, `DAMELESS_DATA_CAP_GB`.
+    /// From the process's environment: `DAMELESS_DATA`, `DAMELESS_LISTEN`, `DAMELESS_CORES`, `LICHESS_URL`,
+    /// `LICHESS_EXPLORER_URL`, `LICHESS_TABLEBASE_URL`.
     pub fn from_env() -> Result<Self> {
-        let mut config = Self::from_vars(|name| std::env::var(name).ok())?;
-        if std::env::var("DAMELESS_GPUS").map_or(true, |v| v.trim().is_empty()) {
-            config.gpus = detect_gpus();
-        }
-        Ok(config)
+        Self::from_vars(|name| std::env::var(name).ok())
     }
 
     /// From any source of variables, so the rules can be tested without touching the environment. Empty values count
@@ -84,7 +77,6 @@ impl Config {
         let listen = var("DAMELESS_LISTEN").unwrap_or_else(|| DEFAULT_LISTEN.to_owned());
         let listen =
             listen.parse().with_context(|| format!("DAMELESS_LISTEN: {listen:?} is not an address and port"))?;
-        let reckless_dir = var("RECKLESS_DIR").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("../reckless"));
         let cores = match var("DAMELESS_CORES") {
             Some(n) => n
                 .parse::<u32>()
@@ -93,8 +85,6 @@ impl Config {
                 .with_context(|| format!("DAMELESS_CORES: {n:?} is not a positive number"))?,
             None => default_cores(),
         };
-        let scaling =
-            ScalingSettings::parse(var("DAMELESS_SCALE_CLOCKS").as_deref(), var("DAMELESS_REFERENCE_NPS").as_deref());
         let mut lichess = LichessUrls::new(&var("LICHESS_URL").unwrap_or_else(|| LICHESS_URL.to_owned()));
         if let Some(explorer) = var("LICHESS_EXPLORER_URL") {
             lichess.explorer = explorer.trim_end_matches('/').to_owned();
@@ -102,37 +92,22 @@ impl Config {
         if let Some(tablebase) = var("LICHESS_TABLEBASE_URL") {
             lichess.tablebase = tablebase.trim_end_matches('/').to_owned();
         }
-        let mut config = Self::new(data_dir, listen, reckless_dir, cores);
-        config.scaling = scaling;
+        let mut config = Self::new(data_dir, listen, cores);
         config.lichess = lichess;
-        if let Some(n) = var("DAMELESS_GPUS") {
-            config.gpus = n.parse().with_context(|| format!("DAMELESS_GPUS: {n:?} is not a number"))?;
-        }
-        if let Some(gb) = var("DAMELESS_DATA_CAP_GB") {
-            let value = gb
-                .parse::<f64>()
-                .ok()
-                .filter(|g| g.is_finite() && *g >= 0.0)
-                .with_context(|| format!("DAMELESS_DATA_CAP_GB: {gb:?} is not a number of GB"))?;
-            config.data_cap_bytes = (value * 1e9) as u64;
-        }
         Ok(config)
     }
 
-    /// Explicit values, for tests and embedding; the rest at their defaults. Paths are made absolute, because builds
-    /// and engines run in other working directories.
-    pub fn new(data_dir: impl Into<PathBuf>, listen: SocketAddr, reckless_dir: impl Into<PathBuf>, cores: u32) -> Self {
-        let absolute = |p: PathBuf| std::path::absolute(&p).unwrap_or(p);
+    /// Explicit values, for tests and embedding; the rest at their defaults. The data directory is made absolute,
+    /// because engines run in other working directories.
+    pub fn new(data_dir: impl Into<PathBuf>, listen: SocketAddr, cores: u32) -> Self {
+        let data_dir = data_dir.into();
         Self {
-            data_dir: absolute(data_dir.into()),
+            data_dir: std::path::absolute(&data_dir).unwrap_or(data_dir),
             listen,
-            reckless_dir: absolute(reckless_dir.into()),
             cores: cores.max(1),
-            scaling: ScalingSettings::default(),
             lichess: LichessUrls::default(),
             hosted_origin: HOSTED_ORIGIN.to_owned(),
-            gpus: 0,
-            data_cap_bytes: dameless_core::training::default_cap_bytes(cfg!(windows)),
+            github_api: GITHUB_API.to_owned(),
         }
     }
 
@@ -143,17 +118,7 @@ impl Config {
 
     /// Creates the data directory and its folders.
     pub fn create_dirs(&self) -> Result<()> {
-        for dir in [
-            self.data_dir.clone(),
-            self.secrets_dir(),
-            self.builds_dir(),
-            self.games_dir(),
-            self.tools_dir(),
-            self.logs_dir(),
-            self.worktrees_dir(),
-            self.nets_dir(),
-            self.datasets_dir(),
-        ] {
+        for dir in [self.data_dir.clone(), self.secrets_dir(), self.games_dir(), self.tools_dir(), self.logs_dir()] {
             std::fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
         }
         Ok(())
@@ -172,22 +137,17 @@ impl Config {
         self.data_dir.join("secrets")
     }
 
-    /// A Lichess connection's token: `secrets/lichess-you`, `secrets/lichess-bot`.
+    /// A Lichess connection's token: `secrets/lichess-you`.
     pub fn lichess_token_path(&self, key: ConnectionKey) -> PathBuf {
         self.secrets_dir().join(format!("lichess-{key}"))
     }
 
-    /// Built engine binaries.
-    pub fn builds_dir(&self) -> PathBuf {
-        self.data_dir.join("builds")
-    }
-
-    /// Archived PGN (zstd), such as trials' fastchess output.
+    /// Archived PGN (zstd).
     pub fn games_dir(&self) -> PathBuf {
         self.data_dir.join("games")
     }
 
-    /// Downloaded tools: fastchess and opening books.
+    /// The built-in engines `dameless setup` installs: `tools/stockfish/`, `tools/lc0/`, `tools/maia/`.
     pub fn tools_dir(&self) -> PathBuf {
         self.data_dir.join("tools")
     }
@@ -200,62 +160,11 @@ impl Config {
     pub fn work_log_path(&self, id: WorkId) -> PathBuf {
         self.logs_dir().join(format!("work-{id}.log"))
     }
-
-    /// Git worktrees of the engine checkout the app works in, so the user's checkout is never touched.
-    pub fn worktrees_dir(&self) -> PathBuf {
-        self.data_dir.join("worktrees")
-    }
-
-    /// The worktree builds happen in.
-    pub fn build_worktree(&self) -> PathBuf {
-        self.worktrees_dir().join("build")
-    }
-
-    /// The scratch worktree a promotion merges in.
-    pub fn promote_worktree(&self) -> PathBuf {
-        self.worktrees_dir().join("promote")
-    }
-
-    /// Network files, each `<sha256>.nnue`.
-    pub fn nets_dir(&self) -> PathBuf {
-        self.data_dir.join("nets")
-    }
-
-    /// Datasets, one directory each (with its `manifest.json`).
-    pub fn datasets_dir(&self) -> PathBuf {
-        self.data_dir.join("data")
-    }
-
-    /// Training runs: one directory per `Train` work item (`runs/<work id>/`), with bullet's checkpoints.
-    pub fn runs_dir(&self) -> PathBuf {
-        self.data_dir.join("runs")
-    }
-
-    /// The trainer's binaries (`data`, `bullet-train`), built from the repository's `trainer/` workspace.
-    pub fn trainer_tools_dir(&self) -> PathBuf {
-        self.tools_dir().join("trainer")
-    }
-
-    /// Downloads in progress (dataset imports), removed when they end.
-    pub fn downloads_dir(&self) -> PathBuf {
-        self.data_dir.join("downloads")
-    }
 }
 
 /// `dameless` in the user's local data folder (`%LOCALAPPDATA%` on Windows).
 pub fn default_data_dir() -> PathBuf {
     dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("dameless")
-}
-
-/// One GPU when `nvidia-smi -L` lists one, else none. Training is the only user; the app never needs CUDA to run.
-pub fn detect_gpus() -> u32 {
-    let out = std::process::Command::new("nvidia-smi").arg("-L").output();
-    match out {
-        Ok(o) if o.status.success() => {
-            u32::from(String::from_utf8_lossy(&o.stdout).lines().any(|l| l.trim_start().starts_with("GPU ")))
-        }
-        _ => 0,
-    }
 }
 
 /// Physical cores less one, so the machine stays usable; at least one.
@@ -282,12 +191,11 @@ mod tests {
         let c = Config::from_vars(vars(&[])).unwrap();
         assert_eq!(c.listen.to_string(), DEFAULT_LISTEN);
         assert!(c.data_dir.ends_with("dameless"));
-        assert!(c.reckless_dir.is_absolute() && c.reckless_dir.ends_with("reckless"));
         assert!(c.cores >= 1);
-        assert_eq!(c.scaling, ScalingSettings::default());
         assert_eq!(c.lichess, LichessUrls::new("https://lichess.org/"));
         assert_eq!(c.lichess.explorer, "https://explorer.lichess.org");
         assert_eq!(c.hosted_origin, HOSTED_ORIGIN);
+        assert_eq!(c.github_api, GITHUB_API);
         assert!(c.is_loopback());
     }
 
@@ -297,44 +205,33 @@ mod tests {
         let c = Config::from_vars(vars(&[
             ("DAMELESS_DATA", dir.path().to_str().unwrap()),
             ("DAMELESS_LISTEN", "0.0.0.0:8000"),
-            ("RECKLESS_DIR", "engine"),
             ("DAMELESS_CORES", "6"),
-            ("DAMELESS_SCALE_CLOCKS", "off"),
-            ("DAMELESS_REFERENCE_NPS", "500000"),
             ("LICHESS_URL", "http://127.0.0.1:9999/"),
             ("LICHESS_TABLEBASE_URL", "http://tb.test/"),
-            ("DAMELESS_GPUS", "1"),
-            ("DAMELESS_DATA_CAP_GB", "2.5"),
         ]))
         .unwrap();
-        assert_eq!((c.gpus, c.data_cap_bytes), (1, 2_500_000_000));
         assert_eq!(c.data_dir, dir.path());
         assert!(!c.is_loopback());
-        assert!(c.reckless_dir.is_absolute() && c.reckless_dir.ends_with("engine"));
         assert_eq!(c.cores, 6);
-        assert_eq!(c.scaling, ScalingSettings { enabled: false, reference_nps: 500_000 });
         assert_eq!(c.lichess.url, "http://127.0.0.1:9999");
         assert_eq!(c.lichess.explorer, "http://127.0.0.1:9999/explorer");
         assert_eq!(c.lichess.tablebase, "http://tb.test");
 
         assert!(Config::from_vars(vars(&[("DAMELESS_CORES", "0")])).is_err());
-        assert!(Config::from_vars(vars(&[("DAMELESS_GPUS", "one")])).is_err());
-        assert!(Config::from_vars(vars(&[("DAMELESS_DATA_CAP_GB", "-1")])).is_err());
         assert!(Config::from_vars(vars(&[("DAMELESS_LISTEN", "nowhere")])).is_err());
     }
 
     #[test]
     fn lays_out_the_data_directory() {
         let dir = tempfile::tempdir().unwrap();
-        let c = Config::new(dir.path(), DEFAULT_LISTEN.parse().unwrap(), "reckless", 2);
+        let c = Config::new(dir.path(), DEFAULT_LISTEN.parse().unwrap(), 2);
         c.create_dirs().unwrap();
         assert_eq!(c.db_path(), dir.path().join("dameless.db"));
         assert_eq!(c.lichess_token_path(ConnectionKey::You), dir.path().join("secrets").join("lichess-you"));
-        assert_eq!(c.lichess_token_path(ConnectionKey::Bot), dir.path().join("secrets").join("lichess-bot"));
         assert_eq!(c.work_log_path(WorkId(7)), dir.path().join("logs").join("work-7.log"));
-        for d in ["secrets", "builds", "games", "tools", "logs", "worktrees", "nets", "data"] {
+        for d in ["secrets", "games", "tools", "logs"] {
             assert!(dir.path().join(d).is_dir(), "{d}");
         }
-        assert_eq!(Config::new(dir.path(), DEFAULT_LISTEN.parse().unwrap(), "r", 0).cores, 1);
+        assert_eq!(Config::new(dir.path(), DEFAULT_LISTEN.parse().unwrap(), 0).cores, 1);
     }
 }

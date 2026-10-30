@@ -470,7 +470,7 @@ dependencies = [
  "process-wrap",
  "reqwest",
  "serde",
- "sha2",
+ "serde_json",
  "tar",
  "tokio",
  "tokio-util",
@@ -555,18 +555,14 @@ dependencies = [
 name = "dameless-work"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "async-trait",
  "dameless-core",
  "dameless-engine",
  "dameless-hub",
  "dameless-store",
  "futures",
- "getrandom 0.4.3",
- "reqwest",
  "serde",
  "serde_json",
- "sha2",
  "sysinfo",
  "tempfile",
  "tokio",

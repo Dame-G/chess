@@ -12,17 +12,14 @@ import type {
   PlayerKey,
   Review,
   SeatAction,
-  StartFrom,
 } from "../api/types";
-import { stored } from "../stored";
 import { listen, reloadOnReconnect } from "./listen";
 
-/** What `GET /api/games` is asked: a player, sources, states, one trial, the page after a game, and how many. */
+/** What `GET /api/games` is asked: a player, sources, states, the page after a game, and how many. */
 export interface GamesQuery {
   player?: string;
   source?: string;
   status?: string;
-  trial?: number;
   before?: number;
   limit?: number;
 }
@@ -56,13 +53,11 @@ export const useGames = defineStore("games", () => {
   let wanted: GameId | null = null;
   /** Games this tab started, which need no "your game started" toast. */
   const startedHere = new Set<GameId>();
-  /** How the games this browser started began (a book line or a position), for a rematch to begin the same way. */
-  const starts = stored<Record<string, StartFrom | null>>("game.starts", {});
 
   const list = computed(() => Object.values(summaries.value).sort(byRailOrder));
 
   /**
-   * The games the rest of the app reads from the held set (the board's first game, the command bar, a trial's evidence):
+   * The games the rest of the app reads from the held set (the board's first game, the command bar):
    * the newest of everything, every game being played, and your newest. The rail pages the rest itself, by its filter.
    */
   async function load() {
@@ -170,7 +165,6 @@ export const useGames = defineStore("games", () => {
     const s = game.summary;
     summaries.value[s.id] = s;
     startedHere.add(s.id);
-    starts.value = { ...Object.fromEntries(Object.entries(starts.value).slice(-99)), [s.id]: request.from ?? null };
     return s;
   }
 
@@ -254,6 +248,5 @@ export const useGames = defineStore("games", () => {
     reviewAll,
     start,
     startedHere,
-    starts,
   };
 });

@@ -5,8 +5,8 @@ import type { TableColumn } from "../table";
 /** Sample data for the kit page: enough to show every state of every component, none of it real. */
 
 export const youSeat: Seat = { player: "you", name: "You", rating: 1840 };
-export const damelessSeat: Seat = { player: "dameless", name: "v14", rating: 3290 };
-export const levelSeat: Seat = { player: "dameless", name: "Dameless 1650", rating: 1650, level: 5 };
+export const engineSeat: Seat = { player: "engine:stockfish", name: "Stockfish 17.1", rating: 3290 };
+export const levelSeat: Seat = { player: "engine:stockfish", name: "Stockfish 1650", rating: 1650, level: 5 };
 export const botSeat: Seat = { player: "lichess:alpha-bot", name: "Alpha-Bot", rating: 2410, title: "BOT" };
 export const masterSeat: Seat = { player: "lichess:knightowl", name: "knightowl", rating: 2105, title: "FM" };
 export const longSeat: Seat = {
@@ -25,7 +25,7 @@ const base = {
 export const liveGame: GameSummary = {
   ...base,
   white: youSeat,
-  black: damelessSeat,
+  black: engineSeat,
   source: { type: "local" },
   status: "live",
   you: "white",

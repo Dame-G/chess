@@ -3,24 +3,19 @@
 //! ```text
 //! hub         = Hub::open(Config::from_env())
 //! scheduler   = Scheduler::new(hub)
-//! versions    = Versions::new(hub, scheduler)        → registers Build
-//! ideas       = Ideas::new(versions)                  → registers Trial, Tune, Promote
-//! upstream    = Upstream::new(versions)               → registers Upstream (its six-hourly sync starts in `serve`)
-//! regression  = Regression::new(ideas)                → after every promotion and upstream sync, a check when due
-//! harness     = Harness::new(ideas); diagnostics = Diagnostics::new(harness)
-//! nets        = Nets::new(hub); datasets = Datasets::new(versions, trainer, probes) → registers Datagen, DatasetImport
-//! training    = Training::new(ideas, datasets, nets, probes) → registers Train
-//! eval        = Eval::new(hub, versions)
+//! engines     = Engines::new(hub)                     (or the test's engine source)
+//! setup       = Setup::new(engines)                   → registers Setup
+//! diagnostics = Diagnostics::new(engines, SystemProbes)
+//! eval        = Eval::new(hub, engines)
 //! drills      = Drills::new(hub)
 //! reviews     = Reviews::new(eval).with_drills(drills) → registers Review (reviews of your games make drills)
 //! profiles    = Profiles::new(hub)
-//! games       = Games::new(hub, versions, timing)     → recover(): games left live by the last run
-//! connections = Connections::new(hub, games, lichess) → start(): your account and the bot, as they were
+//! games       = Games::new(hub, engines, timing)      → recover(): games left live by the last run
+//! connections = Connections::new(hub, games, lichess) → start(): your account, as it was
 //! levels      = games.levels(), anchored on your Lichess rating
 //! calibrate   = Calibrate::new(games)                 → registers Calibrate
 //! import      = ImportExecutor::new(connections)      → registers Import
 //! scheduler.start()                                   → requeues interrupted work, starts the loop
-//! nets.ensure_shipped(versions); datasets.scan()      → the champion's shipped net and datasets already on disk
 //! ```
 //!
 //! [`serve`] binds the address first (so a second app started by mistake stops before touching anything), then
@@ -35,17 +30,14 @@ use dameless_analysis::{Drills, Eval, Profiles, Reviews};
 use dameless_core::ConnectionKey;
 use dameless_hub::{Config, Hub};
 use dameless_play::{Calibrate, Connections, Games, ImportExecutor, Timing, your_anchor};
-use dameless_work::{
-    Datasets, Diagnostics, Harness, Ideas, Nets, Regression, Scheduler, Toolchain, TrainerBuild, Training, Upstream,
-    Versions,
-};
+use dameless_work::{Diagnostics, EngineSource, Engines, Scheduler, Setup, SystemProbes};
 use tokio_util::sync::CancellationToken;
 
 /// What can differ between the real app and a test's.
 #[derive(Default)]
 pub struct Options {
-    /// The engine toolchain: cargo, `reckless bench` and fastchess when `None`; a fake in tests.
-    pub toolchain: Option<Arc<dyn Toolchain>>,
+    /// Where engines come from: the engines list when `None`; fixed fake engines in tests.
+    pub engines: Option<Arc<dyn EngineSource>>,
     /// The Lichess the connections talk to: the hub config's when `None`; a mock with short waits in tests.
     pub lichess: Option<dameless_lichess::Config>,
     /// The waits of games and Lichess connections: the real ones by default, shortened in tests.
@@ -56,17 +48,12 @@ pub struct Options {
 pub struct App {
     pub hub: Arc<Hub>,
     pub scheduler: Scheduler,
-    pub versions: Versions,
-    pub ideas: Ideas,
-    /// Taking upstream Reckless as the next champion.
-    pub upstream: Upstream,
-    pub harness: Harness,
-    /// The regression check after every fifth promotion.
-    pub regression: Regression,
+    /// The engines list: what `/api/engines` shows and changes.
+    pub engines: Engines,
+    /// What play and analysis start engines from: the engines list, or a test's.
+    pub engine_source: Arc<dyn EngineSource>,
+    pub setup: Setup,
     pub diagnostics: Diagnostics,
-    pub nets: Nets,
-    pub datasets: Datasets,
-    pub training: Training,
     pub eval: Eval,
     pub reviews: Reviews,
     pub drills: Drills,
@@ -78,35 +65,22 @@ pub struct App {
 }
 
 impl App {
-    /// Opens the hub on `config` and wires every service. Games left live by the last run are recovered, the Lichess
-    /// connections pick up their stored tokens, and the scheduler starts.
+    /// Opens the hub on `config` and wires every service. Games left live by the last run are recovered, your Lichess
+    /// connection picks up its stored token, and the scheduler starts.
     pub async fn start(config: Config, options: Options) -> Result<Arc<Self>> {
         let lichess = options.lichess.unwrap_or_else(|| lichess_config(&config));
         let hub = Hub::open(config)?;
         let scheduler = Scheduler::new(hub.clone());
-        let versions = match options.toolchain {
-            Some(toolchain) => Versions::with_toolchain(hub.clone(), scheduler.clone(), toolchain),
-            None => Versions::new(hub.clone(), scheduler.clone()),
+        let engines = Engines::new(hub.clone());
+        let engine_source: Arc<dyn EngineSource> = match options.engines {
+            Some(source) => source,
+            None => Arc::new(engines.clone()),
         };
-        scheduler.register(versions.executor());
-        let ideas = Ideas::new(versions.clone());
-        ideas.register();
-        let upstream = Upstream::new(versions.clone());
-        upstream.register();
-        let regression = Regression::new(ideas.clone());
-        regression.register();
-        let harness = Harness::new(ideas.clone());
-        let diagnostics = Diagnostics::new(harness.clone());
-        let probes = harness.probes().clone();
-        let trainer = Arc::new(TrainerBuild::new(TrainerBuild::default_source(), hub.config.trainer_tools_dir()));
-        let nets = Nets::new(hub.clone());
-        let datasets = Datasets::new(versions.clone(), trainer, probes.clone());
-        datasets.register();
-        let training = Training::new(ideas.clone(), datasets.clone(), nets.clone(), probes);
-        training.register();
+        let setup = Setup::new(engines.clone());
+        scheduler.register(setup.executor());
+        let diagnostics = Diagnostics::new(engines.clone(), Arc::new(SystemProbes));
 
-        let binaries = Arc::new(versions.clone());
-        let eval = Eval::new(hub.clone(), binaries.clone());
+        let eval = Eval::new(hub.clone(), engine_source.clone());
         let drills = Drills::new(hub.clone());
         let classifying = drills.clone();
         tokio::spawn(async move {
@@ -120,37 +94,26 @@ impl App {
         scheduler.register(Arc::new(reviews.clone()));
         let profiles = Profiles::new(hub.clone());
 
-        let games = Games::new(hub.clone(), binaries, options.timing);
+        let games = Games::new(hub.clone(), engine_source.clone(), options.timing);
         let recovered = games.recover().await.context("recover the games left live")?;
         if recovered > 0 {
             tracing::info!("{recovered} games were left live by the last run");
         }
         let connections = Connections::new(hub.clone(), games.clone(), lichess);
-        connections.start().await.context("start the Lichess connections")?;
+        connections.start().await.context("start the Lichess connection")?;
         let anchored = connections.clone();
         games.levels().set_anchor(Arc::new(move || your_anchor(&anchored.status(ConnectionKey::You))));
         scheduler.register(Arc::new(Calibrate::new(games.clone())));
         scheduler.register(Arc::new(ImportExecutor::new(connections.clone())));
         scheduler.start().await.context("start the scheduler")?;
-        if let Err(e) = nets.ensure_shipped(&versions).await {
-            tracing::warn!("register the champion's net: {e}");
-        }
-        if let Err(e) = datasets.scan().await {
-            tracing::warn!("scan the datasets: {e}");
-        }
 
         Ok(Arc::new(Self {
             hub,
             scheduler,
-            versions,
-            ideas,
-            upstream,
-            harness,
-            regression,
+            engines,
+            engine_source,
+            setup,
             diagnostics,
-            nets,
-            datasets,
-            training,
             eval,
             reviews,
             drills,
@@ -188,19 +151,15 @@ pub fn lichess_config(config: &Config) -> dameless_lichess::Config {
 /// `dameless serve`: binds, wires the app and serves until Ctrl-C or SIGTERM.
 pub async fn serve(config: Config, options: Options) -> Result<()> {
     let listen = config.listen;
-    // Bound first: a second app started by mistake stops here, before it requeues the first one's work or brings a
-    // second bot online.
+    // Bound first: a second app started by mistake stops here, before it requeues the first one's work.
     let listener = tokio::net::TcpListener::bind(listen).await.with_context(|| format!("listen on {listen}"))?;
     let data = config.data_dir.clone();
-    let reckless = config.reckless_dir.clone();
     let lichess = config.lichess.url.clone();
     let app = App::start(config, options).await?;
-    // The six-hourly look for new upstream commits runs only in the served app, never in tests' apps.
-    app.upstream.spawn_auto(app.shutdown.clone());
     let router = app.router().layer(tower_http::trace::TraceLayer::new_for_http());
 
     tracing::info!("Dameless on http://{listen} (data in {})", data.display());
-    tracing::info!("engine checkout: {}; Lichess: {lichess}", reckless.display());
+    tracing::info!("Lichess: {lichess}");
     let stopping = app.shutdown.clone();
     let served = axum::serve(listener, router).with_graceful_shutdown(async move {
         shutdown_signal().await;

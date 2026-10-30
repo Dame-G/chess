@@ -72,23 +72,11 @@ export function dispatch(event: AppEvent) {
 }
 
 /**
- * The topics every page follows: game summaries and reviews, ideas with their trials, work, versions, fair play, both
- * Lichess connections, your drills, Dameless's levels, nets and datasets. The open game and an evaluation session are
+ * The topics every page follows: game summaries and reviews, work, fair play, your Lichess connection, your drills, and the
+ * engines list with the levels. The open game and an evaluation session are
  * added as they come and go.
  */
-const BASE_TOPICS = [
-  "games",
-  "ideas",
-  "idea:*",
-  "work",
-  "versions",
-  "policy",
-  "connection:you",
-  "connection:bot",
-  "player:you",
-  "player:dameless",
-  "training",
-];
+const BASE_TOPICS = ["games", "work", "policy", "connection:you", "player:you", "engines"];
 
 /**
  * The one connection to `GET /api/events`. A fetch stream rather than EventSource, so the token travels in a header.

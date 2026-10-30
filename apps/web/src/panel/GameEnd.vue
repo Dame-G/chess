@@ -3,16 +3,16 @@ import { computed, onMounted } from "vue";
 import { PhArrowDown, PhArrowUp } from "@phosphor-icons/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { useBoard } from "../board/board";
-import { formatNumber } from "../format";
+import { formatNumber, seatName } from "../format";
 import { levelChoices } from "../sheets/levels";
-import { useDameless } from "../stores/dameless";
+import { useLevels } from "../stores/levels";
 import UiToolbar from "../ui/UiToolbar.vue";
 import { useRematch } from "./useRematch";
 
 /**
- * A finished game of yours against Dameless, played here: how it went for you, who Dameless was and where you stand,
- * and what to do next. Rematch is the one filled button (the colours swap); one level easier or harder plays the same
- * clock against the neighbouring level; Review this game reads it with the engine. Keys: R plays again.
+ * A finished game of yours against an engine, played here: how it went for you, who the engine was and where you
+ * stand, and what to do next. Rematch is the one filled button (the colours swap); against the analysis engine one
+ * level easier or harder plays the same clock against the neighbouring level; Review this game reads it with the engine. Keys: R plays again.
  */
 const props = defineProps<{
   /** Whether the game has been reviewed, is being, or has not been: Review this game shows until it has begun. */
@@ -21,7 +21,7 @@ const props = defineProps<{
 defineEmits<{ review: [] }>();
 
 const board = useBoard();
-const dameless = useDameless();
+const ladderStore = useLevels();
 const { strength, easier, harder, starting, start } = useRematch();
 
 const result = computed(() => {
@@ -34,18 +34,19 @@ const result = computed(() => {
 const opponent = computed(() => {
   const level = strength.value;
   if (level === null) return null;
-  const choice = levelChoices(dameless.levels).find((c) => c.value === String(level));
+  const choice = levelChoices(ladderStore.levels).find((c) => c.value === String(level));
   return choice ?? { name: level === "full" ? "Full strength" : `Level ${level}`, text: "" };
 });
 
 onMounted(() => {
-  if (!dameless.levels) void dameless.loadLevels().catch(() => {});
+  if (!ladderStore.levels) void ladderStore.loadLevels().catch(() => {});
 });
 
-/** Who it was: "Dameless Level 6", "Dameless at full strength". */
+/** Who it was, as the server named the seat: "Stockfish 1650", "Maia 1500", "Stockfish 19". */
 const who = computed(() => {
-  const level = strength.value;
-  return level === null || level === "full" ? "Dameless at full strength" : `Dameless Level ${level}`;
+  const s = board.summary;
+  if (!s?.you) return "the engine";
+  return seatName(s.you === "white" ? s.black : s.white);
 });
 
 const headline = computed(() => {
@@ -58,12 +59,12 @@ const headline = computed(() => {
   }[result.value];
 });
 
-/** Where each side stands: Dameless at this strength, and your own rating as the ladder has it. */
+/** Where each side stands: the engine at this strength, and your own rating as the ladder has it. */
 const context = computed(() => {
   const parts: string[] = [];
   const them = opponent.value;
   if (them?.text) parts.push(`${them.name} is rated ${them.text}`);
-  const you = dameless.levels?.you;
+  const you = ladderStore.levels?.you;
   if (you) parts.push(`you are about ${formatNumber(Math.round(you.estimate.elo))}`);
   return parts.join(", ");
 });

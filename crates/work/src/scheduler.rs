@@ -1,9 +1,9 @@
 //! The scheduler: the one queue every piece of background work goes through.
 //!
 //! Work is stored first (`work` table) and then started by a loop when its executor is free: queued items by priority,
-//! then oldest first. Each kind has a lane that runs one item at a time (builds; trials and tunes together; reviews,
-//! with background reviews in a lane of their own; promotions and upstream syncs, which both merge into `main`), so a
-//! trial waiting for its build never blocks the build, and imports, which only use the network, run at once. Cores are not handed out here: a running item asks the ledger for them itself (`cx.cores`), between units,
+//! then oldest first. Each kind has a lane that runs one item at a time (calibration; reviews, with background reviews
+//! in a lane of their own), and imports and setup, which only use the network, run at once. Cores are not handed out
+//! here: a running item asks the ledger for them itself (`cx.cores`), between units,
 //! and the ledger serves waiting items by priority, then in the order they asked. An item that needs cores starts once
 //! one is free, or when lower-priority work holds some: that work hands them back at its next unit and the item, by
 //! then waiting in line, is served first.
@@ -84,23 +84,16 @@ struct Running {
 /// the one asked for now first.
 fn lane(kind: WorkKind, priority: Priority) -> Option<u8> {
     match kind {
-        WorkKind::Build => Some(0),
-        WorkKind::Trial | WorkKind::Tune | WorkKind::Calibrate => Some(1),
-        WorkKind::Review if priority == Priority::Background => Some(6),
-        WorkKind::Review => Some(2),
-        // Taking upstream merges into main as a promotion does: never both at once.
-        WorkKind::Promote | WorkKind::Upstream => Some(3),
-        WorkKind::Datagen => Some(4),
-        // The GPU's lane: one run at a time.
-        WorkKind::Train => Some(5),
-        WorkKind::Import | WorkKind::DatasetImport => None,
+        WorkKind::Calibrate => Some(0),
+        WorkKind::Review if priority == Priority::Background => Some(2),
+        WorkKind::Review => Some(1),
+        WorkKind::Import | WorkKind::Setup => None,
     }
 }
 
-/// Whether an item waits for a free core before it starts. Promotions and upstream syncs are git work (a sync's build
-/// is a build item of its own), imports network work.
+/// Whether an item waits for a free core before it starts: imports and setup are network work.
 fn needs_a_core(kind: WorkKind) -> bool {
-    kind.uses_cores() && !matches!(kind, WorkKind::Promote | WorkKind::Upstream)
+    kind.uses_cores()
 }
 
 impl Scheduler {
@@ -459,7 +452,7 @@ impl Scheduler {
         match self.inner.hub.store.update_work(id, update).await {
             Ok(work) => {
                 self.emit(&work);
-                // Callbacks first, so whoever waits on this item sees what they did (the next trial queued).
+                // Callbacks first, so whoever waits on this item sees what they did.
                 self.call_hooks(&work, outcome.as_ref().ok()).await;
             }
             Err(e) => eprintln!("scheduler: record the end of work {id}: {e}"),

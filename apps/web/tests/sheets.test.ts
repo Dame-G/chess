@@ -1,14 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { leaders } from "../src/api/leaders";
-import type { BotSettings, Idea, Profile, TrendPoint, TrialSummary } from "../src/api/types";
+import type { Profile, TrendPoint } from "../src/api/types";
 import { bytes, plusMinus, progressText, reviewCost } from "../src/format";
-import { declineWords, rulesItems } from "../src/parts/bot";
-import { blocks, inline } from "../src/parts/markdown";
 import { addressQuery, compareGroups, leads, parseAddress, playerFromInput } from "../src/sheets/compare";
-import { decidingTrial, gaugePosition, ideaElo, progressWord } from "../src/sheets/idea";
 import { trendSeries } from "../src/sheets/trend";
-import { tuneCost, tuneCostText } from "../src/sheets/tune";
 import { profileKey, usePlayers, ALL_GAMES } from "../src/stores/players";
 
 /** A profile with only what a test cares about; the rest is empty. */
@@ -64,30 +60,30 @@ function profile(patch: Partial<Profile> & { score?: number | null; acpl?: numbe
 describe("the compare address", () => {
   it("reads players, speeds, rated and limit, and ignores the rest", () => {
     const a = parseAddress({
-      players: "you,Dameless,lichess:CuteMouse83,nonsense,you",
+      players: "you,engine:Stockfish,lichess:CuteMouse83,nonsense,you",
       speeds: "blitz,bogus,rapid",
       rated: "true",
       limit: "50",
     });
     expect(a).toEqual({
-      players: ["you", "dameless", "lichess:cutemouse83"],
+      players: ["you", "engine:stockfish", "lichess:cutemouse83"],
       speeds: ["blitz", "rapid"],
       rated: true,
       limit: 50,
     });
   });
 
-  it("starts with You and Dameless when nobody valid is named, and caps the count at five", () => {
-    expect(parseAddress({}).players).toEqual(["you", "dameless"]);
-    expect(parseAddress({ players: "?!" }).players).toEqual(["you", "dameless"]);
-    expect(parseAddress({ players: "you,dameless,lichess:aa,lichess:bb,lichess:cc,lichess:dd" }).players).toHaveLength(
+  it("starts with You and the analysis engine when nobody valid is named, and caps the count at five", () => {
+    expect(parseAddress({}).players).toEqual(["you", "engine:stockfish"]);
+    expect(parseAddress({ players: "?!" }, "lc0").players).toEqual(["you", "engine:lc0"]);
+    expect(parseAddress({ players: "you,engine:a,lichess:aa,lichess:bb,lichess:cc,lichess:dd" }).players).toHaveLength(
       5,
     );
   });
 
   it("writes only what differs from the defaults", () => {
-    expect(addressQuery({ players: ["you", "dameless"], speeds: [], rated: null, limit: 200 })).toEqual({
-      players: "you,dameless",
+    expect(addressQuery({ players: ["you", "engine:stockfish"], speeds: [], rated: null, limit: 200 })).toEqual({
+      players: "you,engine:stockfish",
     });
     expect(addressQuery({ players: ["you"], speeds: ["blitz"], rated: false, limit: 100 })).toEqual({
       players: "you",
@@ -103,7 +99,8 @@ describe("the compare address", () => {
     expect(playerFromInput("https://lichess.org/@/CuteMouse83")).toBe("lichess:cutemouse83");
     expect(playerFromInput("lichess.org/@/some_one-1/")).toBe("lichess:some_one-1");
     expect(playerFromInput("lichess:x_y")).toBe("lichess:x_y");
-    expect(playerFromInput("Dameless")).toBe("dameless");
+    expect(playerFromInput("engine:Maia-1500")).toBe("engine:maia-1500");
+    expect(playerFromInput("You")).toBe("you");
     expect(playerFromInput("")).toBeNull();
     expect(playerFromInput("a")).toBeNull();
     expect(playerFromInput("has space")).toBeNull();
@@ -162,22 +159,6 @@ describe("the comparison's rows", () => {
   });
 });
 
-describe("tunes", () => {
-  it("counts two games a pair and spreads them over the cores", () => {
-    const c = tuneCost(100, 8, 10);
-    expect(c.games).toBe(1_600);
-    expect(c.hours).toBeCloseTo(1.11, 1);
-  });
-
-  it("says what it costs in words, and that a short tune is not a finished one", () => {
-    expect(tuneCostText(tuneCost(100, 8, 10))).toMatch(/1,600 games, about 1.1 hours/);
-    expect(tuneCostText(tuneCost(1000, 8, 10))).toMatch(/16,000 games, about 11 hours/);
-    expect(tuneCostText(tuneCost(1000, 8, 10))).toMatch(/95,000/);
-    expect(tuneCostText(tuneCost(5000, 8, 8))).not.toMatch(/95,000/);
-    expect(tuneCostText(tuneCost(10, 8, 15))).toMatch(/minutes/);
-  });
-});
-
 describe("the trend", () => {
   const point = (i: number, accuracy: number | null): TrendPoint => ({
     game: i,
@@ -196,136 +177,6 @@ describe("the trend", () => {
 
   it("has no average where nothing in the window was reviewed", () => {
     expect(trendSeries([point(0, null), point(1, null)]).average).toEqual([null, null]);
-  });
-});
-
-describe("notes in markdown", () => {
-  it("reads inline bold, italics and code", () => {
-    expect(inline("a **b** `c` *d*")).toEqual([
-      { kind: "text", text: "a " },
-      { kind: "bold", text: "b" },
-      { kind: "text", text: " " },
-      { kind: "code", text: "c" },
-      { kind: "text", text: " " },
-      { kind: "italic", text: "d" },
-    ]);
-  });
-
-  it("splits paragraphs and lists, and never makes HTML", () => {
-    const b = blocks("First line\nsecond line\n\n- one\n- two\n\n1. a\n2. b\n\n## Head\n<b>raw</b>");
-    expect(b.map((x) => x.type)).toEqual(["p", "ul", "ol", "h", "p"]);
-    expect(b[0]).toEqual({ type: "p", spans: [{ kind: "text", text: "First line second line" }] });
-    expect(b[1]).toMatchObject({ type: "ul", items: [[{ text: "one" }], [{ text: "two" }]] });
-    expect(b.at(-1)).toEqual({ type: "p", spans: [{ kind: "text", text: "<b>raw</b>" }] });
-  });
-});
-
-describe("ideas", () => {
-  const trial = (patch: Partial<TrialSummary> & Pick<TrialSummary, "id" | "stage" | "status">): TrialSummary => ({
-    pairs: 0,
-    llr: null,
-    elo: null,
-    detail: null,
-    ...patch,
-  });
-  const idea = (trials: TrialSummary[], status: Idea["status"] = "kept"): Pick<Idea, "trials" | "status"> => ({
-    trials,
-    status,
-  });
-
-  it("takes the last trial with an estimate as the one that decided", () => {
-    const i = idea([
-      trial({ id: 1, stage: "screen", status: "passed", elo: { elo: 3, low: -2, high: 8 } }),
-      trial({ id: 2, stage: "short", status: "passed", elo: { elo: 1.2, low: -0.8, high: 3.2 } }),
-    ]);
-    expect(decidingTrial(i)?.id).toBe(2);
-    expect(ideaElo(i)).toBe("+1.2 ± 2.0");
-  });
-
-  it("has no Elo when no games decided it", () => {
-    const i = idea([trial({ id: 1, stage: "fingerprint", status: "failed" })]);
-    expect(decidingTrial(i)?.id).toBe(1);
-    expect(ideaElo(i)).toBe("");
-  });
-
-  it("says where a running idea is", () => {
-    expect(progressWord(idea([], "queued"))).toBe("Waiting its turn");
-    expect(progressWord(idea([trial({ id: 1, stage: "short", status: "running" })], "running"))).toBe("Short games");
-    expect(progressWord(idea([], "running"))).toBe("Starting");
-  });
-
-  it("puts the evidence between its lines", () => {
-    expect(gaugePosition({ value: 0, lower: -2.94, upper: 2.94 })).toBeCloseTo(0.5);
-    expect(gaugePosition({ value: 2.94, lower: -2.94, upper: 2.94 })).toBe(1);
-    expect(gaugePosition({ value: -9, lower: -2.94, upper: 2.94 })).toBe(0);
-  });
-});
-
-describe("the bot's rules as rows", () => {
-  const settings: BotSettings = {
-    version: "champion",
-    hash: 64,
-    threads: 1,
-    move_overhead: 300,
-    ponder: true,
-    accept_rated: true,
-    accept_casual: true,
-    speeds: ["bullet", "blitz", "rapid"],
-    min_initial: 60,
-    max_initial: 1800,
-    min_increment: 0,
-    max_increment: 30,
-    from_position: false,
-    accept_people: true,
-    accept_bots: true,
-    max_games: 1,
-    seek_clocks: ["3+0"],
-    seek_rated: true,
-    seek_range: 300,
-  };
-
-  const rows = (s: BotSettings) => rulesItems(s).map((r) => `${r.label}: ${r.value}`);
-
-  it("names what it takes", () => {
-    expect(rows(settings)).toEqual([
-      "Plays: The champion, as of each game",
-      "Speeds: Bullet, Blitz and Rapid",
-      "Takes: Rated and casual games from people and bots",
-      "Clock: 1 min to 30 min, up to 30 s added a move",
-      "At once: 1",
-    ]);
-  });
-
-  it("says no version is chosen rather than naming the champion", () => {
-    const plays = rulesItems({ ...settings, version: null })[0]!;
-    expect(plays).toEqual({ label: "Plays", value: "No version chosen", tone: "warn" });
-  });
-
-  it("follows the settings", () => {
-    expect(
-      rows({
-        ...settings,
-        accept_casual: false,
-        accept_bots: false,
-        speeds: ["rapid"],
-        max_increment: 0,
-        max_games: 2,
-        version: "v13",
-      }),
-    ).toEqual([
-      "Plays: v13",
-      "Speeds: Rapid",
-      "Takes: Rated games from people only",
-      "Clock: 1 min to 30 min, no added time",
-      "At once: 2",
-    ]);
-  });
-
-  it("writes Lichess's decline keys in words", () => {
-    expect(declineWords("tooFast")).toBe("too fast");
-    expect(declineWords("later")).toBe("busy right now");
-    expect(declineWords("odd")).toBe("odd");
-    expect(declineWords(null)).toBe("");
   });
 });
 
@@ -380,30 +231,5 @@ describe("the players store", () => {
     expect(seen[0]).toContain("/api/players/lichess%3Ax/profile?speeds=blitz&limit=200");
     expect(players.profileOf("lichess:x", { ...ALL_GAMES, speeds: ["blitz"] })).toBeDefined();
     expect(players.profileOf("lichess:x")).toBeUndefined();
-  });
-});
-
-describe("an idea's evidence over time", () => {
-  it("collects the evidence at each pair count from trial progress", async () => {
-    setActivePinia(createPinia());
-    const { dispatch } = await import("../src/api/stream");
-    const { useIdeas } = await import("../src/stores/ideas");
-    const ideas = useIdeas();
-    const llr = (value: number) => ({ value, lower: -2.94, upper: 2.94 });
-    let id = 1;
-    const progress = (penta: [number, number, number, number, number], value: number) =>
-      dispatch({
-        id: id++,
-        topic: "ideas",
-        kind: "trial.progress",
-        data: { id: 7, idea: 1, penta, wdl: [0, 0, 0], llr: llr(value), elo: null },
-      });
-    progress([1, 2, 3, 2, 1], 0.1);
-    progress([1, 2, 3, 2, 1], 0.1);
-    progress([2, 2, 3, 2, 1], 0.3);
-    expect(ideas.llrHistory[7]).toEqual([
-      [9, 0.1],
-      [10, 0.3],
-    ]);
   });
 });

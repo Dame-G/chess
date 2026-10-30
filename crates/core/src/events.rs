@@ -8,17 +8,13 @@ use utoipa::ToSchema;
 
 use crate::{
     drills::{Drill, DrillId, DrillOutcome},
+    engines::EnginesOverview,
     error::FAIR_PLAY_REASON,
     game::{GameSummary, Move, Offers, SeatAction},
-    ideas::{Idea, Trial},
-    ids::{ConnectionKey, GameId, IdeaId, PlayerKey, Side, SidePair, Timestamp, TrialId, WorkId},
+    ids::{ConnectionKey, GameId, PlayerKey, Side, SidePair, Timestamp, WorkId},
     levels::EntrantRating,
     lichess::{ChallengeEvent, ConnectionStatus},
     score::Score,
-    stats::Pentanomial,
-    training::{Dataset, Net},
-    upstream::UpstreamSync,
-    version::{Estimate, Llr, Version},
     work::Work,
 };
 
@@ -40,27 +36,12 @@ pub enum EventKind {
     /// [`GameThinking`], at most five a second, never replayed.
     #[serde(rename = "game.thinking")]
     GameThinking,
-    /// [`Idea`].
-    #[serde(rename = "idea.upserted")]
-    IdeaUpserted,
-    /// [`Trial`].
-    #[serde(rename = "trial.upserted")]
-    TrialUpserted,
-    /// [`TrialProgress`], at most once a second.
-    #[serde(rename = "trial.progress")]
-    TrialProgress,
-    /// [`TuneProgress`].
-    #[serde(rename = "tune.progress")]
-    TuneProgress,
     /// [`Work`].
     #[serde(rename = "work.upserted")]
     WorkUpserted,
     /// [`WorkLog`], never replayed.
     #[serde(rename = "work.log")]
     WorkLog,
-    /// [`Version`].
-    #[serde(rename = "version.upserted")]
-    VersionUpserted,
     /// [`ReviewUpserted`].
     #[serde(rename = "review.upserted")]
     ReviewUpserted,
@@ -88,34 +69,20 @@ pub enum EventKind {
     /// [`LevelsUpdated`].
     #[serde(rename = "levels.updated")]
     LevelsUpdated,
-    /// [`TrainProgress`], at most once a second.
-    #[serde(rename = "train.progress")]
-    TrainProgress,
-    /// [`Dataset`].
-    #[serde(rename = "dataset.upserted")]
-    DatasetUpserted,
-    /// [`Net`].
-    #[serde(rename = "net.upserted")]
-    NetUpserted,
-    /// [`UpstreamSync`]: a sync with upstream Reckless ended (merged, up to date, or failed).
-    #[serde(rename = "upstream.synced")]
-    UpstreamSynced,
+    /// [`EnginesOverview`]: an engine was added, installed or removed, or the analysis engine changed.
+    #[serde(rename = "engines.changed")]
+    EnginesChanged,
 }
 
 impl EventKind {
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 17] = [
         Self::GameUpserted,
         Self::GameMoved,
         Self::GameUndone,
         Self::GameChanged,
         Self::GameThinking,
-        Self::IdeaUpserted,
-        Self::TrialUpserted,
-        Self::TrialProgress,
-        Self::TuneProgress,
         Self::WorkUpserted,
         Self::WorkLog,
-        Self::VersionUpserted,
         Self::ReviewUpserted,
         Self::ConnectionUpserted,
         Self::Challenge,
@@ -125,10 +92,7 @@ impl EventKind {
         Self::DrillAnswered,
         Self::DrillDeleted,
         Self::LevelsUpdated,
-        Self::TrainProgress,
-        Self::DatasetUpserted,
-        Self::NetUpserted,
-        Self::UpstreamSynced,
+        Self::EnginesChanged,
     ];
 
     /// The name on the wire: `game.upserted`.
@@ -139,13 +103,8 @@ impl EventKind {
             Self::GameUndone => "game.undone",
             Self::GameChanged => "game.changed",
             Self::GameThinking => "game.thinking",
-            Self::IdeaUpserted => "idea.upserted",
-            Self::TrialUpserted => "trial.upserted",
-            Self::TrialProgress => "trial.progress",
-            Self::TuneProgress => "tune.progress",
             Self::WorkUpserted => "work.upserted",
             Self::WorkLog => "work.log",
-            Self::VersionUpserted => "version.upserted",
             Self::ReviewUpserted => "review.upserted",
             Self::ConnectionUpserted => "connection.upserted",
             Self::Challenge => "challenge",
@@ -155,10 +114,7 @@ impl EventKind {
             Self::DrillAnswered => "drill.answered",
             Self::DrillDeleted => "drill.deleted",
             Self::LevelsUpdated => "levels.updated",
-            Self::TrainProgress => "train.progress",
-            Self::DatasetUpserted => "dataset.upserted",
-            Self::NetUpserted => "net.upserted",
-            Self::UpstreamSynced => "upstream.synced",
+            Self::EnginesChanged => "engines.changed",
         }
     }
 
@@ -196,17 +152,14 @@ pub enum Topic {
     Game(GameId),
     /// Summaries of every game.
     Games,
-    Idea(IdeaId),
-    Ideas,
     Work,
     Player(PlayerKey),
     Connection(ConnectionKey),
-    Versions,
+    /// The engines list and the levels of the ladder.
+    Engines,
     Policy,
     /// One live evaluation session.
     Eval(String),
-    /// Nets and datasets.
-    Training,
 }
 
 impl Topic {
@@ -215,7 +168,7 @@ impl Topic {
         !matches!(self, Self::Eval(_) | Self::Game(_))
     }
 
-    /// Whether a subscription to `pattern` (a topic, or `game:*`, `eval:*`, `idea:*`, `player:*` for every one of
+    /// Whether a subscription to `pattern` (a topic, or `game:*`, `eval:*`, `player:*` for every one of
     /// a kind) covers this topic.
     pub fn matches(&self, pattern: &str) -> bool {
         let text = self.to_string();
@@ -231,15 +184,12 @@ impl fmt::Display for Topic {
         match self {
             Self::Game(id) => write!(f, "game:{id}"),
             Self::Games => f.write_str("games"),
-            Self::Idea(id) => write!(f, "idea:{id}"),
-            Self::Ideas => f.write_str("ideas"),
             Self::Work => f.write_str("work"),
             Self::Player(key) => write!(f, "player:{key}"),
             Self::Connection(key) => write!(f, "connection:{key}"),
-            Self::Versions => f.write_str("versions"),
+            Self::Engines => f.write_str("engines"),
             Self::Policy => f.write_str("policy"),
             Self::Eval(session) => write!(f, "eval:{session}"),
-            Self::Training => f.write_str("training"),
         }
     }
 }
@@ -299,30 +249,6 @@ pub struct GameThinking {
     pub pv: Vec<String>,
 }
 
-/// `trial.progress`: a trial's running totals.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct TrialProgress {
-    pub id: TrialId,
-    /// The trial's idea, which is the topic it is published on.
-    pub idea: IdeaId,
-    pub penta: Pentanomial,
-    pub wdl: [u32; 3],
-    pub llr: Option<Llr>,
-    pub elo: Option<Estimate>,
-}
-
-/// `tune.progress`: an SPSA update was applied.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct TuneProgress {
-    pub idea: IdeaId,
-    /// Counted from 1, in the order updates were applied.
-    pub iteration: u32,
-    /// Every parameter after it, in the tune's order.
-    pub values: Vec<f64>,
-    /// θ+'s games won minus games lost.
-    pub result: i64,
-}
-
 /// `work.log`: one line of a work item's log.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct WorkLog {
@@ -375,23 +301,6 @@ pub struct LevelsUpdated {
     pub updated_at: Timestamp,
 }
 
-/// `train.progress`: a training run's latest reading (throttled to one a second). Published on `idea:<id>` when the
-/// run is a net idea's, else on `work`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct TrainProgress {
-    pub work: WorkId,
-    pub idea: Option<IdeaId>,
-    pub superbatch: u32,
-    pub superbatches: u32,
-    pub batch: u32,
-    pub batches_per_superbatch: u32,
-    pub loss: f64,
-    pub lr: f64,
-    pub positions_per_sec: f64,
-    pub grad_norm: Option<f64>,
-    pub elapsed_seconds: f64,
-}
-
 /// Every payload, typed, for building events without mixing kinds and payloads up.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Payload {
@@ -400,13 +309,8 @@ pub enum Payload {
     GameUndone(GameUndone),
     GameChanged(GameChanged),
     GameThinking(GameThinking),
-    IdeaUpserted(Box<Idea>),
-    TrialUpserted(Box<Trial>),
-    TrialProgress(TrialProgress),
-    TuneProgress(TuneProgress),
     WorkUpserted(Box<Work>),
     WorkLog(WorkLog),
-    VersionUpserted(Box<Version>),
     ReviewUpserted(ReviewUpserted),
     ConnectionUpserted(Box<ConnectionStatus>),
     Challenge(Box<ChallengeEvent>),
@@ -416,10 +320,7 @@ pub enum Payload {
     DrillAnswered(DrillAnswered),
     DrillDeleted(DrillDeleted),
     LevelsUpdated(LevelsUpdated),
-    TrainProgress(TrainProgress),
-    DatasetUpserted(Box<Dataset>),
-    NetUpserted(Box<Net>),
-    UpstreamSynced(Box<UpstreamSync>),
+    EnginesChanged(Box<EnginesOverview>),
 }
 
 impl Payload {
@@ -430,13 +331,8 @@ impl Payload {
             Self::GameUndone(_) => EventKind::GameUndone,
             Self::GameChanged(_) => EventKind::GameChanged,
             Self::GameThinking(_) => EventKind::GameThinking,
-            Self::IdeaUpserted(_) => EventKind::IdeaUpserted,
-            Self::TrialUpserted(_) => EventKind::TrialUpserted,
-            Self::TrialProgress(_) => EventKind::TrialProgress,
-            Self::TuneProgress(_) => EventKind::TuneProgress,
             Self::WorkUpserted(_) => EventKind::WorkUpserted,
             Self::WorkLog(_) => EventKind::WorkLog,
-            Self::VersionUpserted(_) => EventKind::VersionUpserted,
             Self::ReviewUpserted(_) => EventKind::ReviewUpserted,
             Self::ConnectionUpserted(_) => EventKind::ConnectionUpserted,
             Self::Challenge(_) => EventKind::Challenge,
@@ -446,10 +342,7 @@ impl Payload {
             Self::DrillAnswered(_) => EventKind::DrillAnswered,
             Self::DrillDeleted(_) => EventKind::DrillDeleted,
             Self::LevelsUpdated(_) => EventKind::LevelsUpdated,
-            Self::TrainProgress(_) => EventKind::TrainProgress,
-            Self::DatasetUpserted(_) => EventKind::DatasetUpserted,
-            Self::NetUpserted(_) => EventKind::NetUpserted,
-            Self::UpstreamSynced(_) => EventKind::UpstreamSynced,
+            Self::EnginesChanged(_) => EventKind::EnginesChanged,
         }
     }
 
@@ -461,22 +354,14 @@ impl Payload {
             Self::GameUndone(p) => Topic::Game(p.id),
             Self::GameChanged(p) => Topic::Game(p.id),
             Self::GameThinking(p) => Topic::Game(p.id),
-            Self::IdeaUpserted(_) => Topic::Ideas,
-            Self::TrialUpserted(t) => Topic::Idea(t.idea),
-            Self::TrialProgress(p) => Topic::Idea(p.idea),
-            Self::TuneProgress(p) => Topic::Idea(p.idea),
             Self::WorkUpserted(_) | Self::WorkLog(_) => Topic::Work,
-            Self::VersionUpserted(_) => Topic::Versions,
             Self::ReviewUpserted(_) => Topic::Games,
             Self::ConnectionUpserted(p) => Topic::Connection(p.key),
             Self::Challenge(p) => Topic::Connection(p.challenge.connection),
             Self::PolicyChanged(_) => Topic::Policy,
             Self::EvalInfo(p) => Topic::Eval(p.session.clone()),
             Self::DrillUpserted(_) | Self::DrillAnswered(_) | Self::DrillDeleted(_) => Topic::Player(PlayerKey::You),
-            Self::LevelsUpdated(_) => Topic::Player(PlayerKey::Dameless),
-            Self::TrainProgress(p) => p.idea.map_or(Topic::Work, Topic::Idea),
-            Self::DatasetUpserted(_) | Self::NetUpserted(_) => Topic::Training,
-            Self::UpstreamSynced(_) => Topic::Versions,
+            Self::LevelsUpdated(_) | Self::EnginesChanged(_) => Topic::Engines,
         }
     }
 
@@ -488,13 +373,8 @@ impl Payload {
             Self::GameUndone(p) => serde_json::to_value(p),
             Self::GameChanged(p) => serde_json::to_value(p),
             Self::GameThinking(p) => serde_json::to_value(p),
-            Self::IdeaUpserted(p) => serde_json::to_value(p),
-            Self::TrialUpserted(p) => serde_json::to_value(p),
-            Self::TrialProgress(p) => serde_json::to_value(p),
-            Self::TuneProgress(p) => serde_json::to_value(p),
             Self::WorkUpserted(p) => serde_json::to_value(p),
             Self::WorkLog(p) => serde_json::to_value(p),
-            Self::VersionUpserted(p) => serde_json::to_value(p),
             Self::ReviewUpserted(p) => serde_json::to_value(p),
             Self::ConnectionUpserted(p) => serde_json::to_value(p),
             Self::Challenge(p) => serde_json::to_value(p),
@@ -504,10 +384,7 @@ impl Payload {
             Self::DrillAnswered(p) => serde_json::to_value(p),
             Self::DrillDeleted(p) => serde_json::to_value(p),
             Self::LevelsUpdated(p) => serde_json::to_value(p),
-            Self::TrainProgress(p) => serde_json::to_value(p),
-            Self::DatasetUpserted(p) => serde_json::to_value(p),
-            Self::NetUpserted(p) => serde_json::to_value(p),
-            Self::UpstreamSynced(p) => serde_json::to_value(p),
+            Self::EnginesChanged(p) => serde_json::to_value(p),
         };
         // Every payload is plain data with string keys and finite numbers, which always serializes.
         v.unwrap_or(serde_json::Value::Null)
@@ -602,7 +479,8 @@ mod tests {
     fn topics_read_and_match() {
         assert_eq!(Topic::Game(GameId(4)).to_string(), "game:4");
         assert_eq!(Topic::Player(PlayerKey::Lichess("bob".into())).to_string(), "player:lichess:bob");
-        assert_eq!(Topic::Connection(ConnectionKey::Bot).to_string(), "connection:bot");
+        assert_eq!(Topic::Connection(ConnectionKey::You).to_string(), "connection:you");
+        assert_eq!(Topic::Engines.to_string(), "engines");
         assert!(Topic::Game(GameId(4)).matches("game:*"));
         assert!(Topic::Game(GameId(4)).matches("game:4"));
         assert!(!Topic::Game(GameId(4)).matches("game:5"));

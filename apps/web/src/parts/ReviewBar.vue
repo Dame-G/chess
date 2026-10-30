@@ -12,8 +12,8 @@ import ProfileNotice from "./ProfileNotice.vue";
 
 /**
  * What a profile can do next with its games, as one banner row with one filled button: import the player's games when
- * none are here, else review every one not reviewed yet. The review runs in the background, newest first, below ideas,
- * so trials keep playing; while it runs the bar shows how far it is and can stop it. Both are analysis, so they are off
+ * none are here, else review every one not reviewed yet. The review runs in the background, newest first, below
+ * other work; while it runs the bar shows how far it is and can stop it. Both are analysis, so they are off
  * (with one calm line why) while you play on Lichess. `mine` is You, whose games are already here; with `importable`
  * it also offers to bring in what is new on Lichess, as a quiet button beside the review.
  */
@@ -78,7 +78,7 @@ const note = computed(() => {
   if (!w) return "";
   const paused = w.status === "paused" && w.paused_for ? `Paused: ${w.paused_for}. ` : "";
   const background =
-    w.priority === "background" ? "Trials go first; each game shows here as soon as it is reviewed." : "";
+    w.priority === "background" ? "Other work goes first; each game shows here as soon as it is reviewed." : "";
   return `${paused}${background}`;
 });
 

@@ -87,14 +87,11 @@ export const useBoard = defineStore("board", () => {
     return view(pos, p?.uci);
   });
 
-  /** You at the bottom in your games, the bot's side in its own; flipping turns that round. */
+  /** You at the bottom in your games, White otherwise; flipping turns that round. */
   const orientation = computed<Color>(() => {
     if (drilling.value && drills.active) return drills.active.side;
     const s = summary.value;
-    let base: Side = "white";
-    if (s?.you) base = s.you;
-    else if (s?.source.type === "lichess" && s.source.connection === "bot")
-      base = s.white.player === "dameless" ? "white" : "black";
+    const base: Side = s?.you ?? "white";
     return flipped.value ? (base === "white" ? "black" : "white") : base;
   });
 
@@ -240,7 +237,7 @@ export const useBoard = defineStore("board", () => {
       const line = tree.value.line(node.value);
       void evaluation.start({ fen: line.fen, moves: line.moves });
     },
-    // Also at once: a page opened straight onto a sheet (`/dameless`) explores the start position and never moves it.
+    // Also at once: a page opened straight onto a sheet (`/settings`) explores the start position and never moves it.
     { immediate: true },
   );
 

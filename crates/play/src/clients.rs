@@ -13,19 +13,17 @@ use dameless_lichess::{Config, Lichess, User, events};
 pub(crate) struct Clients {
     pub config: Config,
     you: RwLock<Option<Lichess>>,
-    bot: RwLock<Option<Lichess>>,
     anonymous: Lichess,
 }
 
 impl Clients {
     pub fn new(config: Config) -> Self {
-        Self { anonymous: Lichess::anonymous(config.clone()), config, you: RwLock::new(None), bot: RwLock::new(None) }
+        Self { anonymous: Lichess::anonymous(config.clone()), config, you: RwLock::new(None) }
     }
 
     fn slot(&self, key: ConnectionKey) -> &RwLock<Option<Lichess>> {
         match key {
             ConnectionKey::You => &self.you,
-            ConnectionKey::Bot => &self.bot,
         }
     }
 

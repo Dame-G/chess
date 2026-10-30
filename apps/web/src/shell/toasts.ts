@@ -10,8 +10,8 @@ import { useConnections } from "../stores/connections";
 import { useGames } from "../stores/games";
 
 /**
- * The toasts the app raises by itself, from the stream: a game of yours starting elsewhere (Open), an incoming
- * challenge to You (Accept · Decline; the bot answers its own by its rules) and an idea finishing. Call once, in the app's root.
+ * The toasts the app raises by itself, from the stream: a game of yours starting elsewhere (Open) and an incoming
+ * challenge to You (Accept · Decline). Call once, in the app's root.
  */
 export function useEventToasts() {
   const toast = useToast();
@@ -58,29 +58,17 @@ export function useEventToasts() {
       const rating = c.opponent.rating ? ` (${c.opponent.rating})` : "";
       const id = toast.show({
         key: `challenge-${c.id}`,
-        title: `${c.opponent.name}${rating} challenges ${c.connection === "you" ? "you" : "Dameless"}`,
+        title: `${c.opponent.name}${rating} challenges you`,
         message: `${c.rated ? "Rated" : "Casual"} ${c.speed.replace("_", " ")}`,
         tone: "info",
         duration: 0,
         action: () =>
           h("span", { class: "toast-actions" }, [
-            button("Accept", () => void connections.accept(c.connection, c.id).catch(() => {}), "secondary"),
-            button("Decline", () => void connections.decline(c.connection, c.id).catch(() => {})),
+            button("Accept", () => void connections.accept(c.id).catch(() => {}), "secondary"),
+            button("Decline", () => void connections.decline(c.id).catch(() => {})),
           ]),
       });
       challengeToasts.set(c.id, id);
-    }),
-  );
-  onScopeDispose(
-    onEvent("idea.upserted", (i) => {
-      if (i.status !== "kept" && i.status !== "dropped") return;
-      toast.show({
-        key: `idea-${i.id}-${i.status}`,
-        title: i.status === "kept" ? `Kept: ${i.title}` : `Dropped: ${i.title}`,
-        message: i.verdict ?? undefined,
-        tone: i.status === "kept" ? "success" : "neutral",
-        action: () => button("Open", () => void router.push(`/dameless/ideas/${i.id}`)),
-      });
     }),
   );
 }

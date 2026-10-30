@@ -1,180 +1,134 @@
-//! External tools and data, downloaded once into a tools directory, each pinned to a version and a SHA-256 so every
-//! machine tests with the same bits: fastchess v1.8.2 (the match runner) and the UHO opening book.
+//! Downloads for the built-in engines: GitHub release assets (with their sizes, read from the release's asset list),
+//! plain files, and unpacking zip and tar archives into a directory.
 //!
-//! Nothing downloads unless the caller calls [`setup`] (the `dameless setup` command). Everything else only looks at
-//! what is installed.
+//! Nothing downloads unless the caller asks (the `setup` work, which `dameless setup` queues after showing the sizes).
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use futures::StreamExt;
-use sha2::{Digest, Sha256};
+use serde::Deserialize;
 use tokio::io::AsyncWriteExt;
 
-/// A pinned download: an archive, its hash, and the one file taken out of it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Asset {
-    pub url: &'static str,
-    pub sha256: &'static str,
-    /// The file to take out of the archive.
-    pub member: &'static str,
-    /// Where it goes, under the tools directory.
-    pub name: &'static str,
+/// GitHub's REST API, where release asset lists come from.
+pub const GITHUB_API: &str = "https://api.github.com";
+
+/// What GitHub asks every API client to send.
+const USER_AGENT: &str = concat!("dameless/", env!("CARGO_PKG_VERSION"));
+
+/// One file of a GitHub release.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct ReleaseAsset {
+    pub name: String,
+    #[serde(rename = "browser_download_url")]
+    pub url: String,
+    pub size: u64,
 }
 
-/// fastchess for this platform, when there is a release build of it.
-#[cfg(all(windows, target_arch = "x86_64"))]
-pub const FASTCHESS: Option<Asset> = Some(Asset {
-    url: "https://github.com/Disservin/fastchess/releases/download/v1.8.2-alpha/fastchess-windows-x86-64.zip",
-    sha256: "007ce550dc809510b34622a1aeb43fd443d40284045bef5c1bc39c8941114143",
-    member: "fastchess-windows-x86-64/fastchess.exe",
-    name: "fastchess-1.8.2.exe",
-});
-
-/// fastchess for this platform, when there is a release build of it.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-pub const FASTCHESS: Option<Asset> = Some(Asset {
-    url: "https://github.com/Disservin/fastchess/releases/download/v1.8.2-alpha/fastchess-linux-x86-64.tar",
-    sha256: "1003f920bebe841acdab5e6d7871e93171a4586857b3ec91c21ef5777f26ff96",
-    member: "fastchess-linux-x86-64/fastchess",
-    name: "fastchess-1.8.2",
-});
-
-/// fastchess for this platform, when there is a release build of it.
-#[cfg(not(any(all(windows, target_arch = "x86_64"), all(target_os = "linux", target_arch = "x86_64"))))]
-pub const FASTCHESS: Option<Asset> = None;
-
-/// The book Reckless and Fishtest test with: unbalanced human openings, so fewer games end in draws.
-pub const BOOK: Asset = Asset {
-    url: "https://github.com/official-stockfish/books/raw/426eca422c202ef381a1380ada1873a7f185c4b9/UHO_Lichess_4852_v1.epd.zip",
-    sha256: "4e298f11e8acfa106babe02968f2e61582145e7874c59284690b20b9650e0e07",
-    member: "UHO_Lichess_4852_v1.epd",
-    name: "UHO_Lichess_4852_v1.epd",
-};
-
-/// What is installed in a tools directory.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Installed {
-    pub fastchess: Option<PathBuf>,
-    pub book: Option<PathBuf>,
+#[derive(Deserialize)]
+struct Release {
+    assets: Vec<ReleaseAsset>,
 }
 
-impl Installed {
-    pub fn complete(&self) -> bool {
-        self.fastchess.is_some() && self.book.is_some()
+fn client() -> Result<reqwest::Client> {
+    Ok(reqwest::Client::builder().user_agent(USER_AGENT).build()?)
+}
+
+/// The assets of a release, by its tag: `release_assets(GITHUB_API, "official-stockfish/Stockfish", "sf_19")`.
+pub async fn release_assets(api: &str, repo: &str, tag: &str) -> Result<Vec<ReleaseAsset>> {
+    let url = format!("{}/repos/{repo}/releases/tags/{tag}", api.trim_end_matches('/'));
+    let release: Release = client()?
+        .get(&url)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .with_context(|| format!("ask GitHub for {repo} {tag}"))?
+        .error_for_status()
+        .with_context(|| format!("ask GitHub for {repo} {tag}"))?
+        .json()
+        .await?;
+    Ok(release.assets)
+}
+
+/// A file's size from a `HEAD` request (redirects followed), when the server says.
+pub async fn content_length(url: &str) -> Option<u64> {
+    let res = client().ok()?.head(url).send().await.ok()?.error_for_status().ok()?;
+    res.headers().get(reqwest::header::CONTENT_LENGTH)?.to_str().ok()?.parse().ok()
+}
+
+/// Downloads a URL to a file (written beside it and renamed when complete), telling `progress` the bytes so far.
+pub async fn download(url: &str, to: &Path, progress: &mut (dyn FnMut(u64) + Send)) -> Result<u64> {
+    if let Some(dir) = to.parent() {
+        tokio::fs::create_dir_all(dir).await?;
     }
-}
-
-/// What is installed, without downloading anything.
-pub fn installed(dir: &Path) -> Installed {
-    let present = |a: &Asset| Some(dir.join(a.name)).filter(|p| p.is_file());
-    Installed { fastchess: FASTCHESS.as_ref().and_then(present), book: present(&BOOK) }
-}
-
-/// Downloads and installs whatever is missing, checking each archive's SHA-256. Each step goes to `log`.
-pub async fn setup(dir: &Path, log: &mut (dyn FnMut(&str) + Send)) -> Result<Installed> {
-    let fastchess = FASTCHESS.context(
-        "fastchess has no release build for this platform: build v1.8.2 yourself and put it in the tools directory",
-    )?;
-    let fastchess = ensure(dir, &fastchess, log).await?;
-    let book = ensure(dir, &BOOK, log).await?;
-    Ok(Installed { fastchess: Some(fastchess), book: Some(book) })
-}
-
-async fn ensure(dir: &Path, a: &Asset, log: &mut (dyn FnMut(&str) + Send)) -> Result<PathBuf> {
-    let path = dir.join(a.name);
-    if path.is_file() {
-        return Ok(path);
-    }
-    std::fs::create_dir_all(dir)?;
-    log(&format!("downloading {}", a.url));
-    let archive = dir.join(format!("{}.download", a.name));
-    download(a.url, &archive).await?;
-    let path = install(dir, a, &archive).await?;
-    log(&format!("installed {}", path.display()));
-    Ok(path)
-}
-
-/// Downloads a URL to a file.
-async fn download(url: &str, to: &Path) -> Result<()> {
-    let res = reqwest::get(url).await?.error_for_status().with_context(|| format!("download {url}"))?;
-    let mut file = tokio::fs::File::create(to).await?;
+    let res = client()?.get(url).send().await?.error_for_status().with_context(|| format!("download {url}"))?;
+    let partial = to.with_extension("partial");
+    let mut file = tokio::fs::File::create(&partial).await?;
     let mut body = res.bytes_stream();
+    let mut done = 0u64;
     while let Some(chunk) = body.next().await {
-        file.write_all(&chunk?).await?;
+        let chunk = chunk.with_context(|| format!("download {url}"))?;
+        file.write_all(&chunk).await?;
+        done += chunk.len() as u64;
+        progress(done);
     }
-    // Written out before the archive is opened again to be checked and extracted.
     file.flush().await?;
-    Ok(())
+    drop(file);
+    tokio::fs::rename(&partial, to).await?;
+    Ok(done)
 }
 
-/// Checks a downloaded archive against its pinned hash and takes its file out into the tools directory. The archive
-/// is removed either way.
-pub async fn install(dir: &Path, a: &Asset, archive: &Path) -> Result<PathBuf> {
-    let checked = verify_sha256(archive, a.sha256);
-    if let Err(e) = checked {
-        let _ = std::fs::remove_file(archive);
-        return Err(e.context(a.url));
-    }
-    let out = dir.join(a.name);
-    let (archive, member, target) = (archive.to_owned(), a.member.to_owned(), out.clone());
-    tokio::task::spawn_blocking(move || extract(&archive, &member, &target)).await??;
-    Ok(out)
+/// Unpacks a zip or tar archive into `dir` (created if missing), keeping its layout, then removes the archive. Files on
+/// Unix are made executable, since an engine is one of them.
+pub async fn unpack(archive: &Path, dir: &Path) -> Result<()> {
+    let (archive, dir) = (archive.to_owned(), dir.to_owned());
+    tokio::task::spawn_blocking(move || unpack_blocking(&archive, &dir)).await?
 }
 
-/// A file's SHA-256, in lowercase hex.
-pub fn sha256_file(path: &Path) -> Result<String> {
-    let mut file = std::fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
-    let mut hash = Sha256::new();
-    let mut buf = vec![0u8; 64 * 1024];
-    loop {
-        let n = std::io::Read::read(&mut file, &mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hash.update(&buf[..n]);
-    }
-    Ok(hash.finalize().iter().map(|b| format!("{b:02x}")).collect())
-}
-
-/// Fails unless a file has the expected SHA-256.
-pub fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
-    let got = sha256_file(path)?;
-    if !got.eq_ignore_ascii_case(expected) {
-        bail!("{} has SHA-256 {got}, expected {expected}", path.display());
-    }
-    Ok(())
-}
-
-/// Takes `member` out of a zip or tar archive into `out` (executable on Unix), then removes the archive.
-fn extract(archive: &Path, member: &str, out: &Path) -> Result<()> {
-    let partial = out.with_extension("partial");
-    let mut dest = std::fs::File::create(&partial)?;
-    let file = std::fs::File::open(archive)?;
+fn unpack_blocking(archive: &Path, dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let file = std::fs::File::open(archive).with_context(|| format!("open {}", archive.display()))?;
     if zip_magic(archive) {
         let mut zip = zip::ZipArchive::new(file)?;
-        let mut entry = zip.by_name(member).with_context(|| format!("{member} is not in the archive"))?;
-        std::io::copy(&mut entry, &mut dest)?;
+        for i in 0..zip.len() {
+            let mut entry = zip.by_index(i)?;
+            let Some(name) = entry.enclosed_name() else { bail!("{} has an unsafe path", archive.display()) };
+            let out = dir.join(name);
+            if entry.is_dir() {
+                std::fs::create_dir_all(&out)?;
+                continue;
+            }
+            if let Some(parent) = out.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let mut dest = std::fs::File::create(&out)?;
+            std::io::copy(&mut entry, &mut dest)?;
+            executable(&out)?;
+        }
     } else {
         let mut tar = tar::Archive::new(file);
-        // Taken by its file name wherever it sits (`./` or not), since the Linux archive's layout was never checked
-        // on the Windows machine this was written on.
-        let name = Path::new(member).file_name();
-        let mut entry = tar
-            .entries()?
-            .filter_map(Result::ok)
-            .find(|e| e.header().entry_type().is_file() && e.path().is_ok_and(|p| p.file_name() == name))
-            .with_context(|| format!("{member} is not in the archive"))?;
-        std::io::copy(&mut entry, &mut dest)?;
+        // `unpack_in` refuses entries that would land outside `dir`.
+        for entry in tar.entries()? {
+            let mut entry = entry?;
+            entry.unpack_in(dir)?;
+        }
+        for path in files(dir) {
+            executable(&path)?;
+        }
     }
-    drop(dest);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&partial, std::fs::Permissions::from_mode(0o755))?;
-    }
-    std::fs::rename(&partial, out)?;
     std::fs::remove_file(archive)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn executable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn executable(_: &Path) -> Result<()> {
     Ok(())
 }
 
@@ -184,98 +138,92 @@ fn zip_magic(path: &Path) -> bool {
     std::fs::File::open(path).and_then(|mut f| f.read_exact(&mut magic)).is_ok() && magic == *b"PK\x03\x04"
 }
 
+/// Every file under a directory, at any depth.
+pub fn files(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_owned()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else { continue };
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// The largest file under `dir` whose name `matches`: how an engine binary is found in an unpacked release, whatever
+/// folder it sits in.
+pub fn find_binary(dir: &Path, matches: impl Fn(&str) -> bool) -> Option<PathBuf> {
+    files(dir)
+        .into_iter()
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(&matches))
+        .max_by_key(|p| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::testing::TempDir;
 
-    fn leak(s: String) -> &'static str {
-        Box::leak(s.into_boxed_str())
+    fn zip_archive(path: &Path) {
+        use std::io::Write;
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        let options = zip::write::SimpleFileOptions::default();
+        zip.start_file("stockfish/stockfish-windows-x86-64.exe", options).unwrap();
+        zip.write_all(b"the engine, much larger than the readme").unwrap();
+        zip.start_file("stockfish/README.md", options).unwrap();
+        zip.write_all(b"readme").unwrap();
+        zip.finish().unwrap();
     }
 
     fn tar_archive(path: &Path) {
         let mut tar = tar::Builder::new(std::fs::File::create(path).unwrap());
-        for (name, body) in
-            [("./fastchess-linux-x86-64/LICENSE", "license"), ("./fastchess-linux-x86-64/fastchess", "binary")]
-        {
+        for (name, body) in [("./stockfish/stockfish-ubuntu-x86-64", "binary"), ("./stockfish/AUTHORS", "a")] {
             let mut header = tar::Header::new_gnu();
             header.set_size(body.len() as u64);
-            header.set_mode(0o755);
+            header.set_mode(0o644);
             header.set_cksum();
             tar.append_data(&mut header, name, body.as_bytes()).unwrap();
         }
         tar.finish().unwrap();
     }
 
-    fn zip_archive(path: &Path) {
-        use std::io::Write;
-        let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
-        zip.start_file("book/UHO.epd", zip::write::SimpleFileOptions::default()).unwrap();
-        zip.write_all(b"rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -\n").unwrap();
-        zip.finish().unwrap();
-    }
-
-    #[test]
-    fn takes_a_member_out_of_a_tar_wherever_it_sits() {
-        let dir = TempDir::new("tools-tar");
-        let archive = dir.path().join("fastchess.download");
-        tar_archive(&archive);
-        let out = dir.path().join("fastchess-1.8.2");
-        extract(&archive, "fastchess-linux-x86-64/fastchess", &out).unwrap();
-        assert_eq!(std::fs::read_to_string(&out).unwrap(), "binary");
-        assert!(!archive.exists());
-    }
-
     #[tokio::test]
-    async fn installs_an_archive_with_the_right_hash() {
+    async fn unpacks_a_zip_and_finds_the_engine_in_it() {
         let dir = TempDir::new("tools-zip");
-        let archive = dir.path().join("book.download");
+        let archive = dir.path().join("sf.zip");
         zip_archive(&archive);
-        let asset = Asset {
-            url: "https://example.invalid/book.zip",
-            sha256: leak(sha256_file(&archive).unwrap()),
-            member: "book/UHO.epd",
-            name: "UHO.epd",
-        };
-        let out = install(dir.path(), &asset, &archive).await.unwrap();
-        assert!(std::fs::read_to_string(out).unwrap().starts_with("rnbqkbnr"));
+        let out = dir.path().join("stockfish");
+        unpack(&archive, &out).await.unwrap();
         assert!(!archive.exists());
+        let found = find_binary(&out, |n| n.starts_with("stockfish")).unwrap();
+        assert!(found.ends_with("stockfish/stockfish-windows-x86-64.exe"), "{}", found.display());
+        assert_eq!(files(&out).len(), 2);
     }
 
     #[tokio::test]
-    async fn refuses_an_archive_with_the_wrong_hash() {
-        let dir = TempDir::new("tools-bad");
-        let archive = dir.path().join("book.download");
-        zip_archive(&archive);
-        let asset = Asset {
-            url: "https://example.invalid/book.zip",
-            sha256: BOOK.sha256,
-            member: "book/UHO.epd",
-            name: "UHO.epd",
-        };
-        let err = format!("{:#}", install(dir.path(), &asset, &archive).await.unwrap_err());
-        assert!(err.contains("expected"), "{err}");
-        assert!(!archive.exists() && !dir.path().join("UHO.epd").exists());
+    async fn unpacks_a_tar_wherever_its_files_sit() {
+        let dir = TempDir::new("tools-tar");
+        let archive = dir.path().join("sf.tar");
+        tar_archive(&archive);
+        let out = dir.path().join("stockfish");
+        unpack(&archive, &out).await.unwrap();
+        let found = find_binary(&out, |n| n.starts_with("stockfish")).unwrap();
+        assert_eq!(std::fs::read_to_string(found).unwrap(), "binary");
     }
 
     #[test]
-    fn hashes_files() {
-        let dir = TempDir::new("tools-hash");
-        let file = dir.path().join("abc");
-        std::fs::write(&file, b"abc").unwrap();
-        let abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-        assert_eq!(sha256_file(&file).unwrap(), abc);
-        verify_sha256(&file, &abc.to_uppercase()).unwrap();
-        assert!(verify_sha256(&file, BOOK.sha256).is_err());
-    }
-
-    #[test]
-    fn says_what_is_installed() {
-        let dir = TempDir::new("tools-installed");
-        assert_eq!(installed(dir.path()), Installed { fastchess: None, book: None });
-        std::fs::write(dir.path().join(BOOK.name), "x").unwrap();
-        let i = installed(dir.path());
-        assert_eq!(i.book, Some(dir.path().join(BOOK.name)));
-        assert!(!i.complete());
+    fn reads_release_assets() {
+        let release: Release = serde_json::from_str(
+            r#"{ "tag_name": "sf_19", "assets": [{ "name": "a.zip", "size": 12, "browser_download_url": "https://x/a.zip" }] }"#,
+        )
+        .unwrap();
+        assert_eq!(release.assets, [ReleaseAsset { name: "a.zip".into(), url: "https://x/a.zip".into(), size: 12 }]);
     }
 }

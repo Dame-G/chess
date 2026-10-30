@@ -83,15 +83,16 @@ async fn tools_are_the_api() {
             ops += 1;
         }
     }
-    assert_eq!(names.len(), ops - dameless::mcp::tools::EXCLUDED.len() + 2);
-    assert!(names.contains(&"wait_for_work") && names.contains(&"wait_for_idea"));
+    assert_eq!(names.len(), ops - dameless::mcp::tools::EXCLUDED.len() + 1);
+    assert!(names.contains(&"wait_for_work"));
     let tool = |name: &str| tools.iter().find(|t| t["name"] == name).unwrap();
     assert_eq!(tool("status")["annotations"]["readOnlyHint"], true);
     let challenge = tool("challenge");
     assert_eq!(challenge["annotations"]["openWorldHint"], true);
     assert!(challenge["description"].as_str().unwrap().contains("real Lichess account"));
-    assert_eq!(tool("push")["annotations"]["destructiveHint"], true);
-    assert_eq!(tool("create_idea")["inputSchema"]["required"], json!(["body"]));
+    assert_eq!(tool("remove_engine")["annotations"]["destructiveHint"], true);
+    assert_eq!(tool("setup")["annotations"]["openWorldHint"], true);
+    assert_eq!(tool("add_engine")["inputSchema"]["required"], json!(["body"]));
     t.stop().await;
 }
 
@@ -116,25 +117,10 @@ async fn calls_read_and_write_through_the_routes() {
     // A bad call says what is wrong.
     let bad = call(&t, "get_game", json!({})).await;
     assert_eq!(bad["isError"], true);
-    // Waiting: a version's build, which the fake toolchain finishes at once.
-    let (code, version) = t.post("/api/versions", json!({ "ref": "deeper" })).await;
-    assert_eq!(code, 201, "{version}");
-    // The build is queued just after the version is answered: wait until it is listed.
-    let has_build = |w: &Value| {
-        ["running", "queued", "recent"]
-            .iter()
-            .any(|k| w[*k].as_array().is_some_and(|a| a.iter().any(|w| w["kind"] == "build")))
-    };
-    let work = t.until("the build queued", "/api/work", has_build).await;
-    let build = work["running"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .chain(work["queued"].as_array().unwrap())
-        .chain(work["recent"].as_array().unwrap())
-        .find(|w| w["kind"] == "build")
-        .map(|w| w["id"].as_i64().unwrap())
-        .expect("a build was queued");
+    // Waiting: a review of the pasted game on the analysis engine.
+    let (code, review) = t.post("/api/reviews", json!({ "games": [id] })).await;
+    assert_eq!(code, 202, "{review}");
+    let build = review["id"].as_i64().unwrap();
     let waited = text(&call(&t, "wait_for_work", json!({ "id": build, "timeout_seconds": 30 })).await);
     assert_eq!(waited["finished"], true, "{waited}");
     assert_eq!(waited["work"]["status"], "done");

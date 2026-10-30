@@ -19,7 +19,7 @@ use std::{
 
 use async_trait::async_trait;
 use dameless_core::{
-    Error, GameId, PlayerKey, Speed, VersionId,
+    Error, GameId, PlayerKey, Speed,
     events::{AssistKind, Payload, ReviewUpserted},
     game::{Game, GameStatus},
     review::{self, PositionEval, Review, ReviewInput, judge_game, to_search},
@@ -31,7 +31,7 @@ use dameless_work::Scheduler;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{Eval, Job, drills::Drills, runs::RunQueue, versions::VersionRef};
+use crate::{Eval, Job, drills::Drills, runs::RunQueue};
 
 /// The smallest and largest node budgets a review takes.
 pub const NODES_RANGE: std::ops::RangeInclusive<u64> = 1_000..=100_000_000;
@@ -47,20 +47,19 @@ const BATCH: Duration = Duration::from_secs(8);
 /// a whole batch.
 const LOOKAHEAD_PER_ENGINE: usize = 40;
 
-/// `POST /api/reviews`: some games, or a player's newest games not yet reviewed with this version and budget.
+/// `POST /api/reviews`: some games, or a player's newest games no engine has reviewed yet.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ReviewRequest {
     /// These games. Or, instead, `player`.
     #[serde(default)]
     pub games: Vec<GameId>,
-    /// This player's newest finished games not yet reviewed with this version and budget.
+    /// This player's newest finished games no engine has reviewed yet.
     #[serde(default)]
     pub player: Option<PlayerKey>,
     /// How many of the player's games; 20 when none, at most 1000. In the background: every one when none.
     #[serde(default)]
     pub limit: Option<u32>,
-    /// Review in the background: at the lowest priority, below ideas, so trials keep their cores, and in a lane of its
-    /// own, so a review asked for meanwhile runs at once. For long reviews: with `player` and no `limit`, every game
+    /// Review in the background: at the lowest priority, beside calibration, and in a lane of its own, so a review asked for meanwhile runs at once. For long reviews: with `player` and no `limit`, every game
     /// of theirs not reviewed yet, newest first.
     #[serde(default)]
     pub background: bool,
@@ -70,9 +69,9 @@ pub struct ReviewRequest {
     /// Only the player's rated (true) or casual (false) games.
     #[serde(default)]
     pub rated: Option<bool>,
-    /// The version to review with; the champion when none.
+    /// The engine to review with, by id; the analysis engine when none.
     #[serde(default)]
-    pub version: Option<VersionRef>,
+    pub engine: Option<String>,
     /// Nodes per position; 200,000 when none.
     #[serde(default)]
     pub nodes: Option<u64>,
@@ -86,7 +85,9 @@ pub struct ReviewRequest {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ReviewSpec {
     pub games: Vec<GameId>,
-    pub version: VersionId,
+    /// The engine's id, resolved when queued; empty (a review queued before engines) is the analysis engine.
+    #[serde(default)]
+    pub engine: String,
     pub nodes: u64,
     pub multipv: u32,
     pub concurrency: u32,
@@ -111,7 +112,8 @@ pub struct ReviewResult {
     pub failed: u32,
     pub positions_searched: u64,
     pub positions_cached: u64,
-    pub version: VersionId,
+    /// The engine that reviewed, by what it calls itself.
+    pub engine: String,
     pub nodes: u64,
 }
 
@@ -133,7 +135,7 @@ impl Reviews {
         self
     }
 
-    /// The work item for a request, resolved now: the games (checked to exist), the version, the budget and the
+    /// The work item for a request, resolved now: the games (checked to exist), the engine, the budget and the
     /// engines. Refused (409, fair play) while you play on Lichess. The caller queues it with the scheduler.
     pub async fn prepare(&self, req: ReviewRequest) -> Result<NewWork, Error> {
         let hub = self.eval.hub();
@@ -145,7 +147,10 @@ impl Reviews {
         let cores = hub.ledger.total();
         let default = if req.background { cores } else { (cores / 2).max(1) };
         let concurrency = req.concurrency.unwrap_or(default).clamp(1, cores);
-        let version = self.eval.binaries().resolve(&req.version.clone().unwrap_or(VersionRef::Champion)).await?;
+        let engine = self.eval.engines().ready(req.engine.as_deref()).await?.engine;
+        if engine.nodes.is_some() {
+            return Err(Error::bad_request(format!("{} plays a fixed budget: it cannot review", engine.name)));
+        }
         let (games, title, subject) = match (&req.player, req.games.is_empty()) {
             (None, false) => {
                 let mut first = None;
@@ -167,10 +172,9 @@ impl Reviews {
                     (None, true) => u32::MAX,
                     (limit, _) => limit.unwrap_or(review::DEFAULT_LIMIT).clamp(1, MAX_LIMIT),
                 };
-                let games = self.unreviewed(player, &req.speeds, req.rated, version.id, nodes, limit).await?;
+                let games = self.unreviewed(player, &req.speeds, req.rated, limit).await?;
                 let whose = match player {
                     PlayerKey::You => "your".to_owned(),
-                    PlayerKey::Dameless => "Dameless's".to_owned(),
                     other => format!("{other}'s"),
                 };
                 let n = games.len();
@@ -183,7 +187,7 @@ impl Reviews {
             }
             _ => return Err(Error::bad_request("give games, or a player")),
         };
-        let spec = ReviewSpec { games, version: version.id, nodes, multipv: review::MULTIPV, concurrency };
+        let spec = ReviewSpec { games, engine: engine.id, nodes, multipv: review::MULTIPV, concurrency };
         Ok(NewWork {
             kind: WorkKind::Review,
             priority: if req.background { Priority::Background } else { Priority::Review },
@@ -193,11 +197,10 @@ impl Reviews {
         })
     }
 
-    /// How many of the player's games a background review (`background` with no `limit`, the default version and
-    /// budget) would review now: the same query that picks its games, so the count and the work agree.
+    /// How many of the player's games a background review (`background` with no `limit`) would review now: those no
+    /// engine has reviewed, by the same query that picks its games, so the count and the work agree.
     pub async fn unreviewed_count(&self, player: &PlayerKey) -> Result<u32, Error> {
-        let version = self.eval.binaries().resolve(&VersionRef::Champion).await?;
-        Ok(self.unreviewed(player, &[], None, version.id, review::DEFAULT_NODES, u32::MAX).await?.len() as u32)
+        Ok(self.unreviewed(player, &[], None, u32::MAX).await?.len() as u32)
     }
 
     /// Prepares a review and queues it: what `POST /api/reviews` does.
@@ -205,28 +208,21 @@ impl Reviews {
         scheduler.submit(self.prepare(req).await?).await
     }
 
-    /// A game's newest review, or the one with this version and budget.
-    pub async fn get(
-        &self,
-        game: GameId,
-        version: Option<&VersionRef>,
-        nodes: Option<u64>,
-    ) -> Result<Option<Review>, Error> {
-        let version = match version {
-            Some(r) => Some(self.eval.binaries().resolve(r).await?.id),
+    /// A game's newest review, or the one by this engine (its id) and budget.
+    pub async fn get(&self, game: GameId, engine: Option<&str>, nodes: Option<u64>) -> Result<Option<Review>, Error> {
+        let engine = match engine {
+            Some(id) => Some(self.eval.engines().ready(Some(id)).await?.engine.cache_key()),
             None => None,
         };
-        self.eval.hub().store.review(game, version, nodes).await
+        self.eval.hub().store.review(game, engine, nodes).await
     }
 
-    /// The player's newest finished games with moves and no review with this version and budget, newest first.
+    /// The player's newest finished games with moves that no engine has reviewed, newest first.
     async fn unreviewed(
         &self,
         player: &PlayerKey,
         speeds: &[Speed],
         rated: Option<bool>,
-        version: VersionId,
-        nodes: u64,
         limit: u32,
     ) -> Result<Vec<GameId>, Error> {
         let store = &self.eval.hub().store;
@@ -247,7 +243,7 @@ impl Reviews {
             let Some(last) = page.last() else { break };
             before = Some(last.id);
             for g in &page {
-                if g.plies > 0 && !store.has_review(g.id, version, nodes).await? {
+                if g.plies > 0 && !store.has_any_review(g.id).await? {
                     out.push(g.id);
                     if out.len() as u32 >= limit {
                         return Ok(out);
@@ -262,25 +258,18 @@ impl Reviews {
     }
 
     /// Reads the game at `index` into the window: skipped when it is gone, live, empty or already reviewed with this
-    /// version and budget; otherwise its positions, the cached ones filled in, the rest queued as one run in the order
+    /// engine and budget; otherwise its positions, the cached ones filled in, the rest queued as one run in the order
     /// they were played, or, when a game before it in the window queued them already, waited for.
-    async fn load(&self, window: &mut Window, index: usize, id: GameId, version: VersionId, search: &SearchKey) {
+    async fn load(&self, window: &mut Window, index: usize, id: GameId, search: &SearchKey) {
         let began = Instant::now();
-        let state = match self.read(window, index, id, version, search).await {
+        let state = match self.read(window, index, id, search).await {
             Ok(state) => state,
             Err(e) => Pend::Failed(e.message().to_owned()),
         };
         window.games.push_back(Pending { id, began, state });
     }
 
-    async fn read(
-        &self,
-        window: &mut Window,
-        index: usize,
-        id: GameId,
-        version: VersionId,
-        search: &SearchKey,
-    ) -> Result<Pend, Error> {
+    async fn read(&self, window: &mut Window, index: usize, id: GameId, search: &SearchKey) -> Result<Pend, Error> {
         let store = &self.eval.hub().store;
         let Some(game) = store.game(id).await? else { return Ok(Pend::Skipped("no such game")) };
         if matches!(game.summary.status, GameStatus::Live | GameStatus::Starting) {
@@ -289,7 +278,7 @@ impl Reviews {
         if game.moves.is_empty() {
             return Ok(Pend::Skipped("no moves"));
         }
-        if store.has_review(id, version, search.nodes).await? {
+        if store.has_review(id, &search.engine, search.nodes).await? {
             return Ok(Pend::Skipped("already reviewed"));
         }
         let positions = to_search(ReviewInput::from(&game))?;
@@ -333,10 +322,17 @@ impl Reviews {
     }
 
     /// Judges a game whose positions are all evaluated, stores its review and announces it.
-    async fn judge(&self, game: &Game, evals: &[Option<PositionEval>], spec: &ReviewSpec) -> Result<Review, Error> {
-        let (summary, plies) = judge_game(ReviewInput::from(game), evals, spec.version, spec.nodes)?;
+    async fn judge(
+        &self,
+        game: &Game,
+        evals: &[Option<PositionEval>],
+        spec: &ReviewSpec,
+        search: &SearchKey,
+        label: &str,
+    ) -> Result<Review, Error> {
+        let (summary, plies) = judge_game(ReviewInput::from(game), evals, label, spec.nodes)?;
         let hub = self.eval.hub();
-        let review = hub.store.put_review(game.summary.id, summary, plies).await?;
+        let review = hub.store.put_review(game.summary.id, search.engine.clone(), summary, plies).await?;
         hub.bus.emit(Payload::ReviewUpserted(ReviewUpserted {
             game: game.summary.id,
             accuracy: review.summary.accuracy(),
@@ -354,6 +350,7 @@ impl Reviews {
         cx: &WorkContext,
         done: Pending,
         spec: &ReviewSpec,
+        (search, label): (&SearchKey, &str),
         run: &mut RunState,
     ) -> Result<(), Error> {
         let RunState { state, total, first, started } = run;
@@ -367,33 +364,35 @@ impl Reviews {
                 state.failed += 1;
                 cx.log(format!("{}/{total} game {id}: failed: {why}", i + 1));
             }
-            Pend::Searching { game, evals, searched, cached, .. } => match self.judge(&game, &evals, spec).await {
-                Ok(review) => {
-                    state.reviewed += 1;
-                    state.searched += searched as u64;
-                    state.cached += cached as u64;
-                    cx.log(format!(
+            Pend::Searching { game, evals, searched, cached, .. } => {
+                match self.judge(&game, &evals, spec, search, label).await {
+                    Ok(review) => {
+                        state.reviewed += 1;
+                        state.searched += searched as u64;
+                        state.cached += cached as u64;
+                        cx.log(format!(
                         "{}/{total} game {id}: accuracy {} / {}, {searched} positions searched, {cached} cached, {:.1} s.",
                         i + 1,
                         accuracy_text(review.summary.white.accuracy),
                         accuracy_text(review.summary.black.accuracy),
                         done.began.elapsed().as_secs_f64()
                     ));
-                    if let Some(drills) = &self.drills {
-                        match drills.make_from_game(id).await {
-                            Ok(made) if !made.is_empty() => {
-                                cx.log(format!("{} new drills from game {id}.", made.len()))
+                        if let Some(drills) = &self.drills {
+                            match drills.make_from_game(id).await {
+                                Ok(made) if !made.is_empty() => {
+                                    cx.log(format!("{} new drills from game {id}.", made.len()))
+                                }
+                                Ok(_) => {}
+                                Err(e) => cx.log(format!("No drills from game {id}: {}", e.message())),
                             }
-                            Ok(_) => {}
-                            Err(e) => cx.log(format!("No drills from game {id}: {}", e.message())),
                         }
                     }
+                    Err(e) => {
+                        state.failed += 1;
+                        cx.log(format!("{}/{total} game {id}: failed: {}", i + 1, e.message()));
+                    }
                 }
-                Err(e) => {
-                    state.failed += 1;
-                    cx.log(format!("{}/{total} game {id}: failed: {}", i + 1, e.message()));
-                }
-            },
+            }
         }
         state.next = i + 1;
         cx.save_checkpoint(&*state).await?;
@@ -507,24 +506,22 @@ impl Executor for Reviews {
         let state: ReviewCheckpoint = cx.checkpoint().unwrap_or_default();
         let total = spec.games.len();
         let hub = self.eval.hub().clone();
-        let version = hub
-            .store
-            .version(spec.version)
-            .await?
-            .ok_or_else(|| Error::not_found(format!("No version {}", spec.version)))?;
+        let binary =
+            self.eval.engines().ready(Some(&spec.engine).filter(|e| !e.is_empty()).map(String::as_str)).await?;
+        let label = binary.engine.label().to_owned();
         let plural = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
         if state.next == 0 {
             cx.log(format!(
                 "Reviewing {} with {} at {} nodes a position, up to {}.",
                 plural(total, "game"),
-                version.name,
+                label,
                 spec.nodes,
                 plural(spec.concurrency as usize, "engine")
             ));
         } else if state.next < total {
             cx.log(format!("Carrying on from game {} of {total}.", state.next + 1));
         }
-        let search = SearchKey { commit: version.commit.clone(), nodes: spec.nodes, multipv: spec.multipv };
+        let search = SearchKey { engine: binary.engine.cache_key(), nodes: spec.nodes, multipv: spec.multipv };
         let lookahead = spec.concurrency as usize * LOOKAHEAD_PER_ENGINE;
         let mut run = RunState { first: state.next, state, total, started: Instant::now() };
         let mut window = Window::new(run.state.next);
@@ -533,7 +530,7 @@ impl Executor for Reviews {
         loop {
             while window.front_done() {
                 let done = window.pop_front().expect("a game at the front");
-                self.finish(&cx, done, &spec, &mut run).await?;
+                self.finish(&cx, done, &spec, (&search, &label), &mut run).await?;
             }
             if window.games.is_empty() && next_load >= total {
                 break;
@@ -543,7 +540,7 @@ impl Executor for Reviews {
                     cx.save_checkpoint(&run.state).await?;
                     return Err(cx.stopped());
                 }
-                self.load(&mut window, next_load, spec.games[next_load], spec.version, &search).await;
+                self.load(&mut window, next_load, spec.games[next_load], &search).await;
                 next_load += 1;
             }
             if window.front_done() {
@@ -552,11 +549,7 @@ impl Executor for Reviews {
             if window.queued() == 0 {
                 return Err(Error::internal("the review waits for positions it has not queued"));
             }
-            // The binary first, holding no cores: when it must be built, the build is work that needs them.
-            let engines = match &engines {
-                Some(e) => e,
-                None => engines.insert(self.eval.review_engines(&version, spec.nodes, spec.multipv).await?),
-            };
+            let engines = engines.get_or_insert_with(|| self.eval.review_engines(&binary, spec.nodes, spec.multipv));
             if !cx.safe_point(Some(AssistKind::Review)).await {
                 cx.save_checkpoint(&run.state).await?;
                 return Err(cx.stopped());
@@ -607,7 +600,7 @@ impl Executor for Reviews {
             failed: state.failed,
             positions_searched: state.searched,
             positions_cached: state.cached,
-            version: version.id,
+            engine: label,
             nodes: spec.nodes,
         };
         serde_json::to_value(result).map_err(|e| Error::internal(e.to_string()))
@@ -624,11 +617,15 @@ mod tests {
             serde_json::from_value(serde_json::json!({ "player": "you", "speeds": ["blitz"] })).unwrap();
         assert_eq!(req.player, Some(PlayerKey::You));
         assert_eq!(req.speeds, [Speed::Blitz]);
-        assert!(req.games.is_empty() && req.version.is_none());
+        assert!(req.games.is_empty() && req.engine.is_none());
         let req: ReviewRequest =
-            serde_json::from_value(serde_json::json!({ "games": [3, 4], "version": { "type": "id", "value": 2 } }))
-                .unwrap();
+            serde_json::from_value(serde_json::json!({ "games": [3, 4], "engine": "stockfish" })).unwrap();
         assert_eq!(req.games, [GameId(3), GameId(4)]);
-        assert_eq!(req.version, Some(VersionRef::Id(VersionId(2))));
+        assert_eq!(req.engine.as_deref(), Some("stockfish"));
+        let old: ReviewSpec = serde_json::from_value(serde_json::json!({
+            "games": [1], "version": 3, "nodes": 200000, "multipv": 2, "concurrency": 1
+        }))
+        .unwrap();
+        assert_eq!(old.engine, "", "a review queued before engines runs on the analysis engine");
     }
 }

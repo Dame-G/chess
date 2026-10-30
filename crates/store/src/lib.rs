@@ -6,9 +6,8 @@
 //! are on tokio: [`Store`]'s methods are async and do their blocking work off the runtime's threads.
 //!
 //! Repositories are typed with `core`'s types; no SQL leaves this crate. Each repository is a module of `impl Store`
-//! methods: [`games`], [`reviews`], [`positions`], [`versions`] (and builds), [`ideas`] (and trials and tune steps),
-//! [`work`], [`records`] (connections, players, meta), and for the player side [`drills`] (and their answers) and
-//! [`levels`] (games at a level, calibrated ratings).
+//! methods: [`games`], [`reviews`], [`positions`], [`engines`], [`work`], [`records`] (connections, players, meta), and
+//! for the player side [`drills`] (and their answers) and [`levels`] (games at a level, calibrated ratings).
 
 use std::{
     path::{Path, PathBuf},
@@ -22,22 +21,18 @@ use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::{Semaphore, oneshot};
 
 pub mod drills;
+pub mod engines;
 pub mod games;
-pub mod ideas;
 pub mod levels;
 mod migrate;
 pub mod positions;
 pub mod records;
 pub mod reviews;
-pub mod training;
-pub mod versions;
 pub mod work;
 
+pub use engines::EngineRecord;
 pub use games::{GameFilter, GameUpdate, NewGame, SourceKind};
-pub use ideas::{IdeaFilter, IdeaUpdate, NewIdea, NewTrial};
 pub use records::{ConnectionField, ConnectionRecord};
-pub use training::{NewDataset, NewNet};
-pub use versions::{NewBuild, NewVersion};
 pub use work::{NewWork, WorkLists, WorkUpdate};
 
 /// Read connections kept open beside the writer.

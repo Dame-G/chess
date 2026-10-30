@@ -2,7 +2,7 @@
 //! client. Each game you play that the Board API can play (blitz and slower, standard chess) becomes a game here,
 //! played on the board; games it cannot play (bullet, variants, started on lichess.org) are listed as elsewhere. Any
 //! game of yours running on Lichess turns the fair-play policy on. Also: seeks (rapid and slower), challenges (a
-//! player, Stockfish 1–8, your bot; blitz and slower), and answering challenges.
+//! player or Stockfish 1–8; blitz and slower), and answering challenges.
 
 use std::{
     collections::HashMap,
@@ -34,7 +34,7 @@ use crate::{
     clients::{Clients, account_of, challenge_of, clock_seconds, lichess_color},
     error,
     games::Games,
-    lichess_game::{self, Api, LichessGame, LichessYou},
+    lichess_game::{self, LichessGame, LichessYou},
     timing::Timing,
 };
 
@@ -51,16 +51,13 @@ pub struct SeekRequestBody {
     pub rating_range: Option<String>,
 }
 
-/// `POST /api/connections/{key}/challenge`: exactly one of `username`, `ai_level` (yours only) and `my_bot` (yours
-/// only).
+/// `POST /api/connections/{key}/challenge`: exactly one of `username` and `ai_level`.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ChallengeBody {
     #[serde(default)]
     pub username: Option<String>,
     #[serde(default)]
     pub ai_level: Option<u8>,
-    #[serde(default)]
-    pub my_bot: bool,
     pub time: Option<TimeControl>,
     #[serde(default)]
     pub rated: bool,
@@ -188,7 +185,6 @@ impl You {
                 seek: s.seek.as_ref().map(|(seek, _, _)| seek.clone()),
                 seek_note: s.seek_note.clone(),
             }),
-            bot: None,
         }
     }
 
@@ -451,7 +447,7 @@ impl You {
     }
 
     async fn play_inner(&self, client: Lichess, account: &Account, id: &str) -> Result<(), Error> {
-        let (stream, full) = lichess_game::prepare(&client, Api::Board, id, &self.inner.timing).await?;
+        let (stream, full) = lichess_game::prepare(&client, id, &self.inner.timing).await?;
         let Some(our) = full.side_of(&account.id).map(lichess_game::side) else {
             return Err(Error::internal(format!("{} plays neither side", account.username)));
         };
@@ -471,7 +467,6 @@ impl You {
             games: self.inner.games.clone(),
             connection: ConnectionKey::You,
             client: client.clone(),
-            api: Api::Board,
             full,
             stream,
             mirror,
@@ -572,14 +567,11 @@ impl You {
         self.status()
     }
 
-    /// Challenges a player (blitz or slower), Lichess's AI (`ai_level`, casual) or your bot (`bot_name`, given by the
-    /// caller from the bot's connection when `my_bot` is asked).
-    pub async fn challenge(&self, req: ChallengeBody, bot_name: Option<String>) -> Result<ChallengeSent, Error> {
+    /// Challenges a player (blitz or slower) or Lichess's AI (`ai_level`, casual).
+    pub async fn challenge(&self, req: ChallengeBody) -> Result<ChallengeSent, Error> {
         let client = self.need_client()?;
-        let picked =
-            usize::from(req.username.is_some()) + usize::from(req.ai_level.is_some()) + usize::from(req.my_bot);
-        if picked != 1 {
-            return Err(Error::bad_request("give exactly one of username, ai_level and my_bot"));
+        if req.username.is_some() == req.ai_level.is_some() {
+            return Err(Error::bad_request("give exactly one of username and ai_level"));
         }
         let time = req.time.ok_or_else(|| Error::bad_request("a challenge needs a clock, such as 5+3"))?;
         let (initial, increment) = clock_seconds(&time)?;
@@ -598,10 +590,7 @@ impl You {
                 color: req.color,
             });
         }
-        let username = match (req.username, req.my_bot) {
-            (Some(name), _) => name.trim().to_owned(),
-            (None, _) => bot_name.ok_or_else(|| Error::conflict("your bot is not connected: connect it first"))?,
-        };
+        let username = req.username.unwrap_or_default().trim().to_owned();
         if !dameless_core::ids::valid_lichess_name(&username) {
             return Err(Error::bad_request("that is not a Lichess username"));
         }

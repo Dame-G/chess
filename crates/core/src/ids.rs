@@ -1,6 +1,6 @@
 //! Identity: typed ids, the two sides of a board, who sits at it, which Lichess connection, and timestamps.
 //!
-//! Ids are plain database row ids wrapped in their own types, so a game id can never be passed where an idea id is
+//! Ids are plain database row ids wrapped in their own types, so a game id can never be passed where a work id is
 //! wanted. They serialize as bare numbers.
 
 use std::{borrow::Cow, fmt, str::FromStr};
@@ -41,28 +41,12 @@ macro_rules! id {
 }
 
 id!(
-    /// A game: played here, on Lichess, imported, or a trial's.
+    /// A game: played here, on Lichess, or imported.
     GameId
-);
-id!(
-    /// An idea: a hypothesis and a change to try.
-    IdeaId
-);
-id!(
-    /// One stage of an idea.
-    TrialId
 );
 id!(
     /// Anything running in the background.
     WorkId
-);
-id!(
-    /// A commit of Dameless that matters.
-    VersionId
-);
-id!(
-    /// One binary of a version (a cache keyed by commit and features).
-    BuildId
 );
 id!(
     /// A review of a game.
@@ -188,19 +172,18 @@ impl<T: Clone> SidePair<T> {
 // Players and connections
 // ---------------------------------------------------------------------------------------------------------------------
 
-/// Who sits at a board. Serialized as a string key: `you`, `dameless`, `lichess:<id>` (Lichess's lower-case user id)
-/// and `stockfish:<1-8>` (Lichess's AI at that level).
+/// Who sits at a board. Serialized as a string key: `you`, `engine:<id>` (an engine of the engines list, by its id)
+/// and `lichess:<id>` (Lichess's lower-case user id).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum PlayerKey {
     You,
-    Dameless,
+    Engine(String),
     Lichess(String),
-    Stockfish(u8),
 }
 
 /// Why a player key does not read.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("{0:?} is not a player: use you, dameless, lichess:<username> or stockfish:<1-8>")]
+#[error("{0:?} is not a player: use you, engine:<id> or lichess:<username>")]
 pub struct BadPlayerKey(pub String);
 
 impl PlayerKey {
@@ -208,6 +191,20 @@ impl PlayerKey {
     pub fn lichess(username: &str) -> Result<Self, BadPlayerKey> {
         let id = username.trim().to_lowercase();
         if valid_lichess_name(&id) { Ok(Self::Lichess(id)) } else { Err(BadPlayerKey(username.to_owned())) }
+    }
+
+    /// An engine by its id, which must be a slug ([`valid_engine_id`]).
+    pub fn engine(id: &str) -> Result<Self, BadPlayerKey> {
+        let id = id.trim();
+        if valid_engine_id(id) { Ok(Self::Engine(id.to_owned())) } else { Err(BadPlayerKey(id.to_owned())) }
+    }
+
+    /// The engine's id for an engine player.
+    pub fn engine_id(&self) -> Option<&str> {
+        match self {
+            Self::Engine(id) => Some(id),
+            _ => None,
+        }
     }
 
     /// The Lichess username (lower case) for a Lichess player.
@@ -219,6 +216,15 @@ impl PlayerKey {
     }
 }
 
+/// An engine's id: 1 to 40 lower-case letters, digits and `-`, starting with a letter or digit (`stockfish`,
+/// `maia-1500`).
+pub fn valid_engine_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 40
+        && !id.starts_with('-')
+        && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 /// A Lichess username: 1 to 30 letters, digits, `_` and `-`.
 pub fn valid_lichess_name(name: &str) -> bool {
     !name.is_empty() && name.len() <= 30 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
@@ -228,9 +234,8 @@ impl fmt::Display for PlayerKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::You => f.write_str("you"),
-            Self::Dameless => f.write_str("dameless"),
+            Self::Engine(id) => write!(f, "engine:{id}"),
             Self::Lichess(id) => write!(f, "lichess:{id}"),
-            Self::Stockfish(level) => write!(f, "stockfish:{level}"),
         }
     }
 }
@@ -242,13 +247,9 @@ impl FromStr for PlayerKey {
         let bad = || BadPlayerKey(s.to_owned());
         match s.trim() {
             "you" => Ok(Self::You),
-            "dameless" => Ok(Self::Dameless),
             other => match other.split_once(':') {
                 Some(("lichess", name)) => Self::lichess(name).map_err(|_| bad()),
-                Some(("stockfish", level)) => match level.parse::<u8>() {
-                    Ok(level @ 1..=8) => Ok(Self::Stockfish(level)),
-                    _ => Err(bad()),
-                },
+                Some(("engine", id)) => Self::engine(id).map_err(|_| bad()),
                 _ => Err(bad()),
             },
         }
@@ -272,27 +273,26 @@ impl PartialSchema for PlayerKey {
     fn schema() -> RefOr<Schema> {
         ObjectBuilder::new()
             .schema_type(Type::String)
-            .description(Some("`you`, `dameless`, `lichess:<id>` or `stockfish:<1-8>`"))
-            .examples(["you", "dameless", "lichess:cutemouse83", "stockfish:5"])
+            .description(Some("`you`, `engine:<id>` or `lichess:<id>`"))
+            .examples(["you", "engine:stockfish", "lichess:cutemouse83"])
             .into()
     }
 }
 
 impl ToSchema for PlayerKey {}
 
-/// A Lichess account linked to the app: yours, or Dameless's BOT account.
+/// A Lichess account linked to the app: yours, through the Board API. It is the only one, and stays an enum so games
+/// and routes name it the same way everywhere.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectionKey {
     You,
-    Bot,
 }
 
 impl ConnectionKey {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::You => "you",
-            Self::Bot => "bot",
         }
     }
 
@@ -300,7 +300,6 @@ impl ConnectionKey {
     pub fn player(self) -> PlayerKey {
         match self {
             Self::You => PlayerKey::You,
-            Self::Bot => PlayerKey::Dameless,
         }
     }
 }
@@ -317,8 +316,7 @@ impl FromStr for ConnectionKey {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim() {
             "you" => Ok(Self::You),
-            "bot" => Ok(Self::Bot),
-            other => Err(format!("{other:?} is not a connection: use you or bot")),
+            other => Err(format!("{other:?} is not a connection: use you")),
         }
     }
 }
@@ -427,9 +425,9 @@ mod tests {
     fn player_keys_read_and_write_as_strings() {
         for (text, key) in [
             ("you", PlayerKey::You),
-            ("dameless", PlayerKey::Dameless),
+            ("engine:stockfish", PlayerKey::Engine("stockfish".into())),
+            ("engine:maia-1500", PlayerKey::Engine("maia-1500".into())),
             ("lichess:cutemouse83", PlayerKey::Lichess("cutemouse83".into())),
-            ("stockfish:5", PlayerKey::Stockfish(5)),
         ] {
             assert_eq!(text.parse::<PlayerKey>().unwrap(), key);
             assert_eq!(key.to_string(), text);
@@ -438,7 +436,9 @@ mod tests {
         }
         // Lichess ids are lower case.
         assert_eq!("lichess:CuteMouse83".parse::<PlayerKey>().unwrap(), PlayerKey::Lichess("cutemouse83".into()));
-        for bad in ["", "me", "lichess:", "lichess:a b", "stockfish:0", "stockfish:9", "stockfish:x", "bot:1"] {
+        for bad in
+            ["", "me", "lichess:", "lichess:a b", "engine:", "engine:Big", "engine:-x", "dameless", "stockfish:5"]
+        {
             assert!(bad.parse::<PlayerKey>().is_err(), "{bad}");
         }
         assert!(serde_json::from_value::<PlayerKey>(serde_json::json!("nobody")).is_err());
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn ids_are_bare_numbers() {
         assert_eq!(serde_json::to_value(GameId(7)).unwrap(), serde_json::json!(7));
-        assert_eq!("12".parse::<IdeaId>().unwrap(), IdeaId(12));
+        assert_eq!("12".parse::<GameId>().unwrap(), GameId(12));
         assert_eq!(serde_json::to_value(SidePair::new(1, 2)).unwrap(), serde_json::json!({ "white": 1, "black": 2 }));
     }
 
@@ -457,7 +457,7 @@ mod tests {
         assert_eq!(serde_json::to_value(Side::Black).unwrap(), serde_json::json!("black"));
         assert_eq!(Color::Random.resolve(true), Side::White);
         assert_eq!(Color::Black.resolve(true), Side::Black);
-        assert_eq!("bot".parse::<ConnectionKey>().unwrap(), ConnectionKey::Bot);
+        assert!("bot".parse::<ConnectionKey>().is_err());
         assert_eq!(ConnectionKey::You.player(), PlayerKey::You);
     }
 

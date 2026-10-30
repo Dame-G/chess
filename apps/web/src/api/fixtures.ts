@@ -14,20 +14,20 @@ import { error, reply } from "./fixtures-http";
 import { createLearnRoutes } from "./fixtures-learn";
 import { createSheetRoutes } from "./fixtures-sheets";
 import { shellVariant } from "./fixtures-shell";
-import { variantResponse } from "./fixtures-variants";
 import { fixtureMode } from "./mode";
 import type {
   AppEvent,
   Classification,
   ClassCounts,
   Connections,
+  Engine,
+  EnginesOverview,
   EvalInfo,
   EventKind,
   EventPayloads,
   Game,
   GameId,
   GameSummary,
-  Idea,
   Judgement,
   Move,
   NewGameRequest,
@@ -37,14 +37,12 @@ import type {
   Score,
   Seat,
   SeatAction,
+  SetupPlan,
   Side,
   SideReview,
   Source,
   Status,
   TimeControl,
-  Trial,
-  TrialSummary,
-  Version,
   Work,
 } from "./types";
 
@@ -70,38 +68,25 @@ const clockTc = (minutes: number, inc: number): TimeControl => ({
   increment_ms: inc * 1000,
 });
 
-const you = (rating: number | null = 1840): Seat => ({
-  player: "you",
-  name: "dame_g",
-  version: null,
-  build: null,
+const you = (rating: number | null = 1840): Seat => ({ player: "you", name: "dame_g", rating, title: null });
+/** An engine's seat: `engine:<id>`, named as the server names it ("Stockfish 1404" at a level, else the engine's name). */
+const engine = (id: string, name: string, level: number | null = null, rating: number | null = null): Seat => ({
+  player: `engine:${id}`,
+  name,
+  engine: id === "stockfish" ? "Stockfish 17.1" : name,
+  level,
   rating,
   title: null,
 });
-const dameless = (version: number, rating: number | null = null): Seat => ({
-  player: "dameless",
-  name: "Dameless",
-  version,
-  build: version + 100,
-  rating,
-  title: rating ? "BOT" : null,
-});
+const sf = () => engine("stockfish", "Stockfish 17.1");
 const lichess = (name: string, rating: number, title: string | null = null): Seat => ({
   player: `lichess:${name.toLowerCase()}`,
   name,
-  version: null,
-  build: null,
   rating,
   title,
 });
-const stockfish = (level: number): Seat => ({
-  player: `stockfish:${level}`,
-  name: `Stockfish level ${level}`,
-  version: null,
-  build: null,
-  rating: null,
-  title: null,
-});
+/** Lichess's AI: Stockfish at one of its eight levels, played on Lichess. */
+const lichessAi = (level: number): Seat => engine("stockfish", `Stockfish level ${level}`, level);
 
 /** The moves of a game: SAN as far as it is legal, then (to `plies`) a seeded walk that likes captures and checks. */
 function moves(san: string, plies: number, seed: number): string[] {
@@ -188,301 +173,6 @@ const QGD = "1. d4 d5 2. c4 e6 3. Nc3 Nf6 4. Bg5 Be7 5. e3 O-O 6. Nf3 h6 7. Bh4 
 const LONDON = "1. d4 Nf6 2. Bf4 d5 3. e3 c5 4. c3 Nc6 5. Nd2 e6 6. Ngf3 Bd6 7. Bg3 O-O 8. Bd3 b6 9. Ne5 Bb7";
 const CARO = "1. e4 c6 2. d4 d5 3. e5 Bf5 4. Nf3 e6 5. Be2 Nd7 6. O-O Ne7 7. Nbd2 h6 8. Nb3 g5 9. Ne1 Bg7";
 
-// ---- Versions
-
-const versions: Version[] = [];
-for (let n = 1; n <= 14; n++) {
-  versions.push({
-    id: n,
-    name: `v${n}`,
-    commit: `${(0xa1b2c3d + n * 7919).toString(16)}e0f${n}`.padEnd(40, "0"),
-    branch: n === 14 ? "main" : null,
-    line: { type: "champion", number: n },
-    parent: n > 1 ? n - 1 : null,
-    bench: 1_480_000 + n * 13_771,
-    elo: n > 1 ? { elo: 2 + ((n * 37) % 9) / 2, low: 0.4, high: 7.5 } : null,
-    created_at: minutesAgo((15 - n) * 60 * 24 * 4),
-  });
-}
-versions.push(
-  {
-    id: 20,
-    name: "deeper-lmr",
-    commit: "d33p3r1mr".padEnd(40, "0"),
-    branch: "deeper-lmr",
-    line: { type: "idea", idea: 1 },
-    parent: 14,
-    bench: 1_702_118,
-    elo: null,
-    created_at: minutesAgo(95),
-  },
-  {
-    id: 21,
-    name: "qsearch-evasions",
-    commit: "9e3a5e".padEnd(40, "0"),
-    branch: "qsearch-evasions",
-    line: { type: "idea", idea: 2 },
-    parent: 13,
-    bench: 1_655_302,
-    elo: { elo: 0.8, low: -1.3, high: 2.9 },
-    created_at: minutesAgo(60 * 30),
-  },
-  {
-    id: 30,
-    name: "reckless/main",
-    commit: "7ec4e55".padEnd(40, "0"),
-    branch: "upstream/main",
-    line: { type: "upstream" },
-    parent: null,
-    bench: 1_690_455,
-    elo: null,
-    created_at: minutesAgo(60 * 50),
-  },
-);
-
-// ---- Ideas and trials
-
-const trial = (t: Partial<Trial> & Pick<Trial, "id" | "idea" | "stage" | "status">): Trial => ({
-  preset: null,
-  time: null,
-  played: null,
-  scaling: null,
-  bounds: null,
-  penta: [0, 0, 0, 0, 0],
-  wdl: [0, 0, 0],
-  llr: null,
-  elo: null,
-  nelo: null,
-  detail: null,
-  started_at: null,
-  ended_at: null,
-  ...t,
-});
-
-const stc: TimeControl = { type: "clock", initial_ms: 8000, increment_ms: 80 };
-const vstc: TimeControl = { type: "clock", initial_ms: 4000, increment_ms: 40 };
-const scaling = {
-  copies: 14,
-  dev_nps: 482_000,
-  base_nps: 478_000,
-  measured_nps: 478_000,
-  reference_nps: 660_000,
-  scale: 1.38,
-};
-
-const trials: Trial[] = [
-  trial({
-    id: 1,
-    idea: 1,
-    stage: "fingerprint",
-    status: "passed",
-    detail: "Bench changed: 1,702,118 nodes (v14 has 1,672,794).",
-    started_at: minutesAgo(95),
-    ended_at: minutesAgo(93),
-  }),
-  trial({
-    id: 2,
-    idea: 1,
-    stage: "screen",
-    status: "passed",
-    preset: "vstc",
-    time: vstc,
-    played: { type: "clock", initial_ms: 5520, increment_ms: 55 },
-    scaling,
-    bounds: [-5, 0],
-    penta: [21, 160, 402, 171, 26],
-    wdl: [1310, 1940, 1350],
-    llr: { value: 2.96, lower: -2.94, upper: 2.94 },
-    elo: { elo: 3.0, low: -2.1, high: 8.1 },
-    nelo: { elo: 4.4, low: -3.0, high: 11.8 },
-    detail: "Passed the screen after 780 pairs: +3.0 ± 5.1 Elo.",
-    started_at: minutesAgo(93),
-    ended_at: minutesAgo(61),
-  }),
-  trial({
-    id: 3,
-    idea: 1,
-    stage: "short",
-    status: "running",
-    preset: "stc",
-    time: stc,
-    played: { type: "clock", initial_ms: 11_040, increment_ms: 110 },
-    scaling,
-    bounds: [0, 3],
-    penta: [9, 88, 214, 92, 9],
-    wdl: [702, 1003, 707],
-    llr: { value: 0.61, lower: -2.94, upper: 2.94 },
-    elo: { elo: 0.7, low: -5.2, high: 6.6 },
-    nelo: { elo: 1.1, low: -8.0, high: 10.2 },
-    detail: "412 pairs so far: +0.7 ± 5.9 Elo.",
-    started_at: minutesAgo(61),
-  }),
-  trial({
-    id: 4,
-    idea: 2,
-    stage: "fingerprint",
-    status: "passed",
-    detail: "Bench changed.",
-    started_at: minutesAgo(60 * 30),
-    ended_at: minutesAgo(60 * 30 - 2),
-  }),
-  trial({
-    id: 5,
-    idea: 2,
-    stage: "screen",
-    status: "passed",
-    preset: "vstc",
-    time: vstc,
-    bounds: [-5, 0],
-    penta: [30, 190, 455, 186, 29],
-    wdl: [1510, 2280, 1500],
-    llr: { value: 2.95, lower: -2.94, upper: 2.94 },
-    elo: { elo: -0.5, low: -5.0, high: 4.0 },
-    detail: "Passed the screen after 890 pairs.",
-    started_at: minutesAgo(60 * 30),
-    ended_at: minutesAgo(60 * 29),
-  }),
-  trial({
-    id: 6,
-    idea: 2,
-    stage: "short",
-    status: "passed",
-    preset: "stc",
-    time: stc,
-    bounds: [-2.75, 0.25],
-    penta: [80, 640, 1622, 650, 84],
-    wdl: [5320, 7890, 5420],
-    llr: { value: 2.97, lower: -2.94, upper: 2.94 },
-    elo: { elo: 0.8, low: -1.3, high: 2.9 },
-    nelo: { elo: 1.3, low: -2.0, high: 4.6 },
-    detail: "No worse after 3,076 pairs: +0.8 ± 2.1 Elo.",
-    started_at: minutesAgo(60 * 29),
-    ended_at: minutesAgo(60 * 22),
-  }),
-  trial({
-    id: 7,
-    idea: 3,
-    stage: "fingerprint",
-    status: "passed",
-    detail: "Bench changed.",
-    started_at: minutesAgo(60 * 50),
-    ended_at: minutesAgo(60 * 50 - 2),
-  }),
-  trial({
-    id: 8,
-    idea: 3,
-    stage: "screen",
-    status: "failed",
-    preset: "vstc",
-    time: vstc,
-    bounds: [-5, 0],
-    penta: [44, 190, 360, 140, 22],
-    wdl: [1420, 1690, 1210],
-    llr: { value: -2.95, lower: -2.94, upper: 2.94 },
-    elo: { elo: -9.6, low: -15.0, high: -4.2 },
-    detail: "Lost clearly at the screen: −9.6 ± 5.4 Elo.",
-    started_at: minutesAgo(60 * 50),
-    ended_at: minutesAgo(60 * 49),
-  }),
-];
-
-trials.push(
-  trial({
-    id: 30,
-    idea: 9,
-    stage: "train",
-    status: "running",
-    detail: "Superbatch 7 of 20.",
-    started_at: minutesAgo(11),
-  }),
-);
-
-const summaryOf = (t: Trial): TrialSummary => ({
-  id: t.id,
-  stage: t.stage,
-  status: t.status,
-  preset: t.preset ?? null,
-  bounds: t.bounds ?? null,
-  pairs: t.penta.reduce((a, b) => a + b, 0),
-  llr: t.llr ?? null,
-  elo: t.elo ?? null,
-  detail: t.detail ?? null,
-});
-
-const ideas: Idea[] = [
-  {
-    id: 1,
-    title: "Deeper LMR at high depth",
-    hypothesis:
-      "Late moves at depth 12 and more are rarely best; reducing them one ply more saves time for the main line.",
-    kind: "gain",
-    author: "claude",
-    branch: "deeper-lmr",
-    base: 14,
-    version: 20,
-    status: "running",
-    verdict: null,
-    trials: [],
-    tags: ["search-oct"],
-    notes: "The reduction table already grows with depth; this adds one ply past depth 12 for quiet late moves.",
-    created_at: minutesAgo(96),
-    ended_at: null,
-  },
-  {
-    id: 2,
-    title: "Check evasions in quiescence",
-    hypothesis: "Searching every evasion when in check in qsearch is simpler and should be no weaker.",
-    kind: "neutral",
-    author: "you",
-    branch: "qsearch-evasions",
-    base: 13,
-    version: 21,
-    status: "kept",
-    verdict: "Kept: +0.8 ± 2.1 Elo at short games, no worse.",
-    trials: [],
-    tags: [],
-    notes: null,
-    created_at: minutesAgo(60 * 30),
-    ended_at: minutesAgo(60 * 22),
-  },
-  {
-    id: 3,
-    title: "Wider aspiration windows",
-    hypothesis: "Starting the window at 20 cp instead of 12 re-searches less often.",
-    kind: "gain",
-    author: "claude",
-    branch: "wide-aspiration",
-    base: 13,
-    version: null,
-    status: "dropped",
-    verdict: "Dropped at the quick screen: −9.6 ± 5.4 Elo.",
-    trials: [],
-    tags: ["search-oct"],
-    notes: null,
-    created_at: minutesAgo(60 * 50),
-    ended_at: minutesAgo(60 * 49),
-  },
-  {
-    id: 9,
-    title: "Fine-tune the champion on our own games",
-    hypothesis:
-      "A short fine-tune of the shipped network on self-play positions should fit this engine's own search better.",
-    kind: "net",
-    author: "you",
-    branch: "",
-    base: 14,
-    version: null,
-    status: "running",
-    verdict: null,
-    trials: [],
-    tags: ["nets"],
-    notes: null,
-    created_at: minutesAgo(12),
-    ended_at: null,
-  },
-];
-for (const idea of ideas) idea.trials = trials.filter((t) => t.idea === idea.id).map(summaryOf);
-
 // ---- Games
 
 interface Stored {
@@ -527,7 +217,7 @@ function add(s: GameSummary, ms: Move[], extra: Partial<Game> = {}) {
 
 const fairplay = fixtureMode() === "fairplay";
 
-// Your live game: against Dameless here, or (fair-play mode) on Lichess.
+// Your live game: against Stockfish here, or (fair-play mode) on Lichess.
 {
   const tc = clockTc(5, 3);
   const ms = record(moves(ITALIAN, 18, 11), { tc, engine: fairplay ? [] : ["black"], seed: 11 });
@@ -538,7 +228,7 @@ const fairplay = fixtureMode() === "fairplay";
     summary({
       id: 1,
       white: you(),
-      black: fairplay ? lichess("cutemouse83", 1871) : dameless(14),
+      black: fairplay ? lichess("cutemouse83", 1871) : engine("maia-1500", "Maia 1500", null, 1500),
       source,
       time: tc,
       status: "live",
@@ -552,27 +242,6 @@ const fairplay = fixtureMode() === "fairplay";
   );
 }
 
-// Dameless on Lichess, live: played out move by move from a script.
-const botScript = moves(SICILIAN, 70, 22);
-{
-  const tc = clockTc(3, 2);
-  add(
-    summary({
-      id: 2,
-      white: lichess("Alpha-Bot", 2251, "BOT"),
-      black: dameless(14, 2304),
-      source: { type: "lichess", connection: "bot", id: "Qx7pLm2R", rated: true, speed: "blitz" },
-      time: tc,
-      status: "live",
-      opening: { eco: "B90", name: "Sicilian Defense: Najdorf Variation, English Attack", ply: 12 },
-      started_at: minutesAgo(2),
-      url: "https://lichess.org/Qx7pLm2R",
-    }),
-    record(botScript.slice(0, 16), { tc, engine: ["black"], seed: 22 }),
-    { clocks: { white: 162_000, black: 171_500 } },
-  );
-}
-
 const finished: [
   Partial<GameSummary> & Pick<GameSummary, "id" | "white" | "black" | "source" | "time">,
   string,
@@ -583,7 +252,7 @@ const finished: [
     {
       id: 3,
       white: you(),
-      black: dameless(13),
+      black: sf(),
       source: { type: "local" },
       time: clockTc(10, 5),
       outcome: "white_wins",
@@ -619,7 +288,7 @@ const finished: [
   [
     {
       id: 5,
-      white: stockfish(5),
+      white: lichessAi(5),
       black: you(1846),
       source: { type: "lichess", connection: "you", id: "s7FiSh55", rated: false, speed: "rapid" },
       time: clockTc(15, 10),
@@ -634,24 +303,6 @@ const finished: [
     QGD,
     54,
     5,
-  ],
-  [
-    {
-      id: 6,
-      white: dameless(14, 2298),
-      black: lichess("Bot-Sam", 2190, "BOT"),
-      source: { type: "lichess", connection: "bot", id: "bS4mPl3x", rated: true, speed: "blitz" },
-      time: clockTc(3, 0),
-      outcome: "white_wins",
-      ending: "timeout",
-      opening: { eco: "D02", name: "London System", ply: 6 },
-      started_at: minutesAgo(40),
-      ended_at: minutesAgo(33),
-      url: "https://lichess.org/bS4mPl3x",
-    },
-    LONDON,
-    88,
-    6,
   ],
   [
     {
@@ -673,10 +324,10 @@ const finished: [
     7,
   ],
   [
-    // A game against Dameless at a level, not reviewed yet: what the game's end card offers.
+    // A game against Stockfish at a level, not reviewed yet: what the game's end card offers.
     {
       id: 8,
-      white: { ...dameless(14, 1404), name: "Dameless 1404", level: 4, title: null },
+      white: engine("stockfish", "Stockfish 1404", 4, 1404),
       black: you(1846),
       source: { type: "local" },
       time: clockTc(10, 5),
@@ -694,8 +345,9 @@ const finished: [
 ];
 for (const [s, san, plies, seed] of finished) {
   const engine: Side[] = [];
-  if (s.white.player === "dameless") engine.push("white");
-  if (s.black.player === "dameless") engine.push("black");
+  const isEngine = (seat: Seat) => seat.player.startsWith("engine:") && s.source.type === "local";
+  if (isEngine(s.white)) engine.push("white");
+  if (isEngine(s.black)) engine.push("black");
   add(
     summary(s),
     record(moves(san, plies, seed), {
@@ -705,81 +357,6 @@ for (const [s, san, plies, seed] of finished) {
       drift: s.outcome === "white_wins" ? 6 : s.outcome === "black_wins" ? -6 : 0,
     }),
   );
-}
-
-// More of the bot's games on Lichess, for its recent results and its rating trend (its rating going in is on its seat).
-{
-  const run: [string, number, Side, "white_wins" | "black_wins" | "draw", number, number][] = [
-    ["Beta-Bot", 2230, "white", "white_wins", 2304, 70],
-    ["Gamma-Bot", 2275, "black", "draw", 2298, 120],
-    ["knightowl", 1802, "white", "white_wins", 2291, 60 * 5],
-    ["Alpha-Bot", 2251, "black", "black_wins", 2283, 60 * 9],
-    ["Delta-Bot", 2340, "white", "black_wins", 2290, 60 * 14],
-    ["cutemouse83", 1871, "black", "white_wins", 2299, 60 * 26],
-    ["Beta-Bot", 2230, "white", "white_wins", 2288, 60 * 30],
-  ];
-  const openings = [LONDON, CARO, SICILIAN, ITALIAN, QGD];
-  for (const [i, [name, rating, botSide, outcome, own, ago]] of run.entries()) {
-    const botSeat = dameless(14, own);
-    const theirs = lichess(name, rating, name.endsWith("-Bot") ? "BOT" : null);
-    const id = 20 + i;
-    add(
-      summary({
-        id,
-        white: botSide === "white" ? botSeat : theirs,
-        black: botSide === "white" ? theirs : botSeat,
-        source: { type: "lichess", connection: "bot", id: `bT${id}xYz1`, rated: true, speed: "blitz" },
-        time: clockTc(3, 2),
-        outcome,
-        ending: outcome === "draw" ? "repetition" : "resignation",
-        opening: null,
-        started_at: minutesAgo(ago),
-        ended_at: minutesAgo(ago - 6),
-        url: `https://lichess.org/bT${id}xYz1`,
-      }),
-      record(moves(openings[i % openings.length]!, 50 + i * 3, 300 + i), {
-        tc: clockTc(3, 2),
-        engine: [botSide],
-        seed: 300 + i,
-      }),
-    );
-  }
-}
-
-// A trial's games: the version under test against the champion, colours alternating by pair.
-function trialGames(trialId: number, first: GameId, count: number, dev: number, base: number, minutes: number) {
-  const outcomes = ["white_wins", "draw", "black_wins", "draw", "white_wins", "draw"] as const;
-  for (let i = 0; i < count; i++) {
-    const devWhite = i % 2 === 0;
-    const openings = [ITALIAN, SICILIAN, QGD, LONDON, CARO];
-    const san = openings[Math.floor(i / 2) % openings.length]!;
-    const tc = { type: "clock", initial_ms: 11_040, increment_ms: 110 } as const;
-    const outcome = outcomes[i % outcomes.length]!;
-    add(
-      summary({
-        id: first + i,
-        white: dameless(devWhite ? dev : base),
-        black: dameless(devWhite ? base : dev),
-        source: { type: "trial", trial: trialId, index: i },
-        time: tc,
-        outcome,
-        ending: outcome === "draw" ? "adjudication" : "adjudication",
-        started_at: minutesAgo(minutes - i),
-        ended_at: minutesAgo(minutes - i - 1),
-      }),
-      record(moves(san, 60 + ((i * 17) % 50), 100 + first + i), {
-        tc,
-        engine: ["white", "black"],
-        seed: 100 + first + i,
-        drift: outcome === "white_wins" ? 8 : outcome === "black_wins" ? -8 : 0,
-      }),
-    );
-  }
-}
-// The `empty` variant has no ideas, so it has no trial games either (a trial's row is named from its idea).
-if (!(fixtureMode() ?? "").split("+").includes("empty")) {
-  trialGames(3, 101, 8, 20, 14, 40);
-  trialGames(6, 201, 6, 21, 13, 60 * 25);
 }
 
 // ---- Reviews
@@ -890,10 +467,10 @@ function synthReview(stored: Stored): Review {
   return {
     id: id + 1000,
     game: id,
-    version: 14,
+    engine: "Stockfish 17.1",
     nodes: 200_000,
     summary: {
-      version: 14,
+      engine: "Stockfish 17.1",
       nodes: 200_000,
       white: sides.white,
       black: sides.black,
@@ -912,31 +489,141 @@ function reviewGame(id: GameId) {
   const { white, black } = stored.review.summary;
   stored.game.summary.accuracy = { white: Math.round(white.accuracy ?? 0), black: Math.round(black.accuracy ?? 0) };
 }
-for (const id of [3, 4, 6, 101, 102]) reviewGame(id);
+for (const id of [3, 4]) reviewGame(id);
+
+// ---- Engines
+
+const builtin = (e: Partial<Engine> & Pick<Engine, "id" | "name">): Engine => ({
+  kind: "builtin",
+  args: [],
+  options: {},
+  installed: true,
+  analysis: false,
+  levels: false,
+  ...e,
+});
+/** The engines list: Stockfish analyses, two Maias are installed and the rest are not, and one engine you added. */
+const engines: EnginesOverview = {
+  analysis: "stockfish",
+  engines: [
+    builtin({
+      id: "stockfish",
+      name: "Stockfish",
+      path: "C:\\Users\\you\\AppData\\Local\\dameless\\tools\\stockfish\\stockfish.exe",
+      id_name: "Stockfish 17.1",
+      analysis: true,
+      levels: true,
+    }),
+    ...[1100, 1300, 1500, 1700, 1900].map((rating) =>
+      builtin({
+        id: `maia-${rating}`,
+        name: `Maia ${rating}`,
+        installed: rating === 1500 || rating === 1700,
+        nodes: 1,
+        rating,
+        ...(rating === 1500 || rating === 1700 ? { id_name: "Lc0 v0.31.2", path: "tools\\lc0\\lc0.exe" } : {}),
+      }),
+    ),
+    {
+      id: "berserk",
+      name: "Berserk",
+      kind: "custom",
+      path: "C:\\engines\\berserk-13.exe",
+      args: [],
+      options: { Threads: "2", Hash: "128" },
+      id_name: "Berserk 13",
+      installed: true,
+      analysis: false,
+      levels: false,
+      created_at: minutesAgo(60 * 24 * 3),
+    },
+  ],
+};
+const overviewOf = (): EnginesOverview => {
+  for (const e of engines.engines) {
+    e.analysis = e.id === engines.analysis;
+    e.levels = e.analysis;
+  }
+  return clone(engines);
+};
+const enginesChanged = () => {
+  const o = overviewOf();
+  emit("engines.changed", "engines", o);
+  return o;
+};
+
+/** What setup would download: the Maia nets not here yet and lc0 to play them (Stockfish is installed). */
+function setupPlan(): SetupPlan {
+  const missing = engines.engines.filter((e) => e.kind === "builtin" && !e.installed);
+  const downloads: SetupPlan["downloads"] = missing.length
+    ? [
+        ...missing.map((e) => ({
+          package: "maia" as const,
+          name: `${e.name} net`,
+          url: `https://github.com/CSSLab/maia-chess/releases/download/v1.0/${e.id}.pb.gz`,
+          bytes: 1_300_000,
+        })),
+      ]
+    : [];
+  return {
+    downloads,
+    bytes: downloads.reduce((n, d) => n + (d.bytes ?? 0), 0),
+    installed: ["stockfish", ...(missing.length < 5 ? ["maia" as const] : [])] as SetupPlan["installed"],
+    notes: missing.length ? ["Maia plays through lc0, which is already installed."] : [],
+  };
+}
+
+/** Downloads what setup lists, as work; the engines arrive installed when it is done. */
+function runSetup(): Work {
+  const id = Math.max(...work.map((w) => w.id)) + 1;
+  const total = setupPlan().bytes;
+  const w: Work = {
+    id,
+    kind: "setup",
+    status: "running",
+    priority: "background",
+    title: "Downloading the engines",
+    subject: { type: "engines" },
+    cores: 0,
+    progress: { done: 0, total, unit: "bytes", eta_seconds: 8, text: null },
+    paused_for: null,
+    error: null,
+    created_at: new Date().toISOString(),
+    started_at: new Date().toISOString(),
+    ended_at: null,
+  };
+  work.push(w);
+  emit("work.upserted", "work", { ...w });
+  let step = 0;
+  const timer = setInterval(() => {
+    step++;
+    w.progress = {
+      done: Math.round((total * step) / 4),
+      total,
+      unit: "bytes",
+      eta_seconds: (4 - step) * 2,
+      text: null,
+    };
+    if (step >= 4) {
+      clearInterval(timer);
+      for (const e of engines.engines) e.installed = true;
+      enginesChanged();
+      w.status = "done";
+      w.ended_at = new Date().toISOString();
+    }
+    emit("work.upserted", "work", { ...w });
+  }, 2000);
+  return { ...w };
+}
 
 // ---- Work, connections, policy
 
 const work: Work[] = [
   {
-    id: 1,
-    kind: "trial",
-    status: "running",
-    priority: "idea",
-    title: "Trying deeper-lmr · short games",
-    subject: { type: "trial", id: 3 },
-    cores: 14,
-    progress: { done: 412, total: null, unit: "pairs", eta_seconds: 2400, text: "412 pairs · +0.7 ± 5.9 Elo" },
-    paused_for: null,
-    error: null,
-    created_at: minutesAgo(61),
-    started_at: minutesAgo(61),
-    ended_at: null,
-  },
-  {
     id: 2,
     kind: "import",
     status: "queued",
-    priority: "interactive",
+    priority: "background",
     title: "Importing cutemouse83's games",
     subject: { type: "player", key: "lichess:cutemouse83" },
     cores: 0,
@@ -961,21 +648,6 @@ const work: Work[] = [
     created_at: minutesAgo(14),
     started_at: minutesAgo(14),
     ended_at: minutesAgo(12),
-  },
-  {
-    id: 4,
-    kind: "build",
-    status: "done",
-    priority: "interactive",
-    title: "Building deeper-lmr",
-    subject: { type: "version", id: 20 },
-    cores: 0,
-    progress: null,
-    paused_for: null,
-    error: null,
-    created_at: minutesAgo(96),
-    started_at: minutesAgo(96),
-    ended_at: minutesAgo(95),
   },
 ];
 
@@ -1031,56 +703,6 @@ const connections: Connections = {
       seek: null,
       seek_note: null,
     },
-    bot: null,
-  },
-  bot: {
-    key: "bot",
-    configured: true,
-    account: {
-      id: "damelessbot",
-      username: "DamelessBot",
-      title: "BOT",
-      ratings: {
-        bullet: { rating: 2281, games: 340, provisional: false },
-        blitz: { rating: 2304, games: 512, provisional: false },
-      },
-    },
-    state: "online",
-    error: null,
-    playing: [2],
-    challenges: [],
-    you: null,
-    bot: {
-      online: true,
-      settings: {
-        version: "champion",
-        hash: 64,
-        threads: 1,
-        move_overhead: 300,
-        ponder: true,
-        accept_rated: true,
-        accept_casual: true,
-        speeds: ["bullet", "blitz", "rapid"],
-        min_initial: 60,
-        max_initial: 1800,
-        min_increment: 0,
-        max_increment: 30,
-        from_position: false,
-        accept_people: true,
-        accept_bots: true,
-        max_games: 1,
-        seek_clocks: ["3+0", "3+2", "5+3"],
-        seek_rated: true,
-        seek_range: 300,
-      },
-      seek: {
-        mode: "always",
-        pending: null,
-        note: "Alpha-Bot declined (too fast). Trying another bot.",
-      },
-      bot_games_today: 37,
-      bot_limit_until: null,
-    },
   },
 };
 
@@ -1097,19 +719,15 @@ const status: Status = {
     logical_cores: 16,
     memory_bytes: 34_359_738_368,
     data_dir: "C:\\Users\\you\\AppData\\Local\\dameless",
-    engine: { dir: "C:\\dev\\reckless", found: true, branch: "main", commit: "4f1c2a9e", dirty: false },
-    builds: { count: 9, bytes: 412_000_000 },
   },
   ledger: {
     total: 15,
-    granted: 12,
+    granted: 0,
     reserved: 0,
-    free: 3,
+    free: 15,
     oversubscribed: false,
-    grants: [{ work: 1, cores: 12 }],
+    grants: [],
     reservations: [],
-    gpus: 1,
-    gpu_grants: [],
   },
   lichess_url: "https://lichess.org",
   next_event: 1,
@@ -1120,7 +738,6 @@ const learnRoutes = createLearnRoutes({
   emit,
   work,
   status,
-  ideas,
   yourGames: () => [...games.values()].filter((s) => s.game.summary.you).map((s) => s.game.summary.id),
 });
 
@@ -1128,14 +745,10 @@ const sheetRoutes = createSheetRoutes({
   minutesAgo,
   rng,
   emit,
-  ideas,
-  trials,
-  versions,
   work,
   connections,
   status,
   games,
-  summaryOf,
   fenAfter: (san, plies) => {
     const pos = setup("startpos")!;
     for (const uci of moves(san, plies, 1).slice(0, plies)) playUci(pos, uci);
@@ -1288,65 +901,6 @@ function think(g: Game, side: Side, ms: number, then: () => void) {
   }, ms);
 }
 
-function botLoop() {
-  const g = games.get(2)?.game;
-  if (!g || g.summary.status !== "live") return;
-  const next = botScript[g.moves.length];
-  if (!next) {
-    finish(g, "black_wins", "resignation");
-    return;
-  }
-  const side: Side = g.moves.length % 2 === 0 ? "white" : "black";
-  const engine = side === "black";
-  const delay = 1500 + (g.moves.length % 5) * 600;
-  const go = () => {
-    const base = (g.moves.at(-1)?.eval as { cp: number } | null)?.cp ?? 0;
-    playMove(g, next, delay, engine ? { cp: base - 15 + (g.moves.length % 7) * 6 } : null);
-    setTimeout(botLoop, 400);
-  };
-  if (engine) think(g, side, delay, go);
-  else setTimeout(go, delay);
-}
-
-function trialLoop() {
-  const t = trials.find((x) => x.id === 3)!;
-  if (t.status !== "running") return;
-  const w = work.find((x) => x.id === 1)!;
-  if (w.status === "running") {
-    const r = rng(t.penta.reduce((a, b) => a + b, 0));
-    const k = Math.floor(r() * 5);
-    t.penta[k] = (t.penta[k] ?? 0) + 1;
-    const pairs = t.penta.reduce((a, b) => a + b, 0);
-    t.llr = { value: Math.round((t.llr!.value + (r() - 0.45) * 0.05) * 100) / 100, lower: -2.94, upper: 2.94 };
-    t.detail = `${pairs} pairs so far: ${t.elo!.elo >= 0 ? "+" : "−"}${Math.abs(t.elo!.elo).toFixed(1)} ± 5.9 Elo.`;
-    emit("trial.progress", `idea:${t.idea}`, {
-      id: 3,
-      idea: t.idea,
-      penta: t.penta,
-      wdl: t.wdl,
-      llr: t.llr,
-      elo: t.elo,
-    });
-    w.progress = {
-      done: pairs,
-      total: null,
-      unit: "pairs",
-      eta_seconds: Math.max(60, (w.progress?.eta_seconds ?? 2400) - 3),
-      text: `${pairs} pairs · +0.7 ± 5.9 Elo`,
-    };
-    emit("work.upserted", "work", { ...w });
-  }
-  setTimeout(trialLoop, 3000);
-}
-
-let started = false;
-function startLive() {
-  if (started) return;
-  started = true;
-  setTimeout(botLoop, 1500);
-  setTimeout(trialLoop, 3000);
-}
-
 const sessions = new Map<string, ReturnType<typeof setInterval>>();
 
 function startEval(body: { fen: string; moves: string[]; multipv?: number }): string {
@@ -1440,7 +994,7 @@ function act(g: Game, action: SeatAction, body: { uci?: string }): Response | un
     if (pos.turn !== yourSide) return error(409, "conflict", "It is not your turn.");
     if (!body.uci || !playMove(g, body.uci, 4000, null)) return error(400, "bad_request", "That move is not legal.");
     if (g.summary.status === "live") {
-      const engine = g.summary.white.player === "dameless" || g.summary.black.player === "dameless";
+      const engine = g.summary.source.type === "local";
       think(g, pos.turn === "white" ? "black" : "white", engine ? 1600 : 2600, () => {
         const pick = choices(g);
         const r = rng(g.moves.length);
@@ -1476,12 +1030,22 @@ function act(g: Game, action: SeatAction, body: { uci?: string }): Response | un
   return undefined;
 }
 
+/** The seat a new game's request names (`stockfish@5`, `maia-1500`, `stockfish`), as the server would write it. */
+function seatOf(request: string): Seat {
+  const [id = "stockfish", at] = request.split("@");
+  const known = engines.engines.find((e) => e.id === id);
+  const name = known?.name ?? id;
+  if (at) {
+    const rating = 800 + Number(at) * 150;
+    return engine(id, `${name} ${rating}`, Number(at), rating);
+  }
+  return engine(id, name, null, known?.rating ?? null);
+}
+
 let nextGameId = 500;
 function newGame(body: NewGameRequest): Game {
   const tc = body.time;
   const side: Side = body.white === "you" ? "white" : "black";
-  // `dameless`, `dameless:#<id>`, `dameless@<level>`: the fixtures play v14 whatever is asked.
-  const version = 14;
   let startFen: string | null = null;
   if (body.from?.type === "position") {
     const pos = setup(body.from.fen);
@@ -1493,8 +1057,8 @@ function newGame(body: NewGameRequest): Game {
   const id = nextGameId++;
   const s = summary({
     id,
-    white: side === "white" ? you() : dameless(version),
-    black: side === "white" ? dameless(version) : you(),
+    white: side === "white" ? you() : seatOf(body.white),
+    black: side === "white" ? seatOf(body.black) : you(),
     source: { type: "local" },
     time: tc,
     status: "live",
@@ -1528,14 +1092,11 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
   const method = (init?.method ?? "GET").toUpperCase();
   const path = url.pathname;
   const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
-  startLive();
   if (path === "/api/events") return streamResponse(url, init?.signal);
   await new Promise((r) => setTimeout(r, 40 + Math.random() * 80));
 
   const variant = await shellVariant(method, path, url, () => [...games.values()].map((s) => clone(s.game.summary)));
   if (variant) return variant;
-  const varied = variantResponse(method, path);
-  if (varied) return varied;
   const learn = learnRoutes(method, path, url, body);
   if (learn) return learn;
   const sheet = await sheetRoutes(method, path, url, body);
@@ -1543,6 +1104,8 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
 
   let m: RegExpMatchArray | null;
   if (method === "GET") {
+    if (path === "/api/engines") return reply("/api/engines", "get", overviewOf());
+    if (path === "/api/setup") return reply("/api/setup", "get", setupPlan());
     if (path === "/api/health") return reply("/api/health", "get", { ok: true, version: status.version });
     if (path === "/api/status") return reply("/api/status", "get", clone(status));
     if (path === "/api/games")
@@ -1561,15 +1124,6 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
         ? reply("/api/games/{id}/review", "get", clone(s.review))
         : error(404, "not_found", "This game has not been reviewed.");
     }
-    if (path === "/api/ideas") return reply("/api/ideas", "get", clone(ideas));
-    if ((m = path.match(/^\/api\/ideas\/(\d+)$/))) {
-      const idea = ideas.find((i) => i.id === Number(m![1]));
-      return idea ? reply("/api/ideas/{id}", "get", clone(idea)) : error(404, "not_found", "No such idea.");
-    }
-    if ((m = path.match(/^\/api\/ideas\/(\d+)\/trials\/(\d+)$/))) {
-      const t = trials.find((x) => x.id === Number(m![2]));
-      return t ? reply("/api/ideas/{id}/trials/{trial}", "get", clone(t)) : error(404, "not_found", "No such trial.");
-    }
     if (path === "/api/work") {
       const ended = (w: Work) => w.status === "done" || w.status === "failed" || w.status === "stopped";
       return reply("/api/work", "get", {
@@ -1579,9 +1133,34 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
       });
     }
     if (path === "/api/connections") return reply("/api/connections", "get", clone(connections));
-    if (path === "/api/versions") return reply("/api/versions", "get", clone(versions));
   }
   if (method === "POST") {
+    if (path === "/api/setup") return reply("/api/setup", "post", runSetup(), 201);
+    if (path === "/api/engines") {
+      const name = String(body["name"] ?? "").trim();
+      const file = String(body["path"] ?? "").trim();
+      if (!name || !file) return error(400, "bad_request", "An engine needs a name and a program.");
+      if (!/\.(exe|bin)$|\/[^/.]+$/i.test(file))
+        return error(400, "bad_request", `${file} did not answer as a UCI engine.`);
+      const id = String(body["id"] ?? "") || name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      if (engines.engines.some((e) => e.id === id)) return error(409, "conflict", `There is already an engine ${id}.`);
+      const made: Engine = {
+        id,
+        name,
+        kind: "custom",
+        path: file,
+        args: [],
+        options: (body["options"] as Record<string, string>) ?? {},
+        id_name: name,
+        installed: true,
+        analysis: false,
+        levels: false,
+        created_at: new Date().toISOString(),
+      };
+      engines.engines.push(made);
+      enginesChanged();
+      return reply("/api/engines", "post", clone(made), 201);
+    }
     if (path === "/api/games") return reply("/api/games", "post", newGame(body as unknown as NewGameRequest), 201);
     if ((m = path.match(/^\/api\/games\/(\d+)\/actions\/(\w+)$/))) {
       const s = games.get(Number(m[1]));
@@ -1598,7 +1177,7 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
     if (path === "/api/eval") {
       if (status.policy.assist !== "allowed") return error(409, "fair_play", status.policy.reason ?? "");
       const at = body as { fen: string; moves: string[] };
-      return reply("/api/eval", "post", { session: startEval(at), version: 14, fen: at.fen });
+      return reply("/api/eval", "post", { engine: "Stockfish 17.1", session: startEval(at), fen: at.fen });
     }
     if ((m = path.match(/^\/api\/work\/(\d+)\/(stop|pause|resume)$/))) {
       const w = work.find((x) => x.id === Number(m![1]));
@@ -1609,6 +1188,20 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
       emit("work.upserted", "work", { ...w });
       return reply("/api/work/{id}/stop", "post", clone(w));
     }
+  }
+  if (method === "PUT" && path === "/api/engines/analysis") {
+    const id = String(body["engine"] ?? "");
+    const e = engines.engines.find((x) => x.id === id);
+    if (!e?.installed) return error(409, "conflict", "Only an installed engine can analyse.");
+    engines.analysis = id;
+    return reply("/api/engines/analysis", "put", enginesChanged());
+  }
+  if (method === "DELETE" && (m = path.match(/^\/api\/engines\/([^/]+)$/))) {
+    const id = decodeURIComponent(m[1]!);
+    if (!engines.engines.some((e) => e.id === id)) return error(404, "not_found", "No such engine.");
+    engines.engines = engines.engines.filter((e) => e.id !== id);
+    if (engines.analysis === id) engines.analysis = "stockfish";
+    return reply("/api/engines/{id}", "delete", enginesChanged());
   }
   if (method === "DELETE" && (m = path.match(/^\/api\/eval\/(\w+)$/))) {
     clearInterval(sessions.get(m[1]!));

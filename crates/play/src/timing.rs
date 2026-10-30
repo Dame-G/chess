@@ -3,12 +3,8 @@
 
 use std::time::Duration;
 
-use dameless_core::lichess::seek;
-
 #[derive(Clone, Debug)]
 pub struct Timing {
-    /// The bot's search for games: pauses between challenges, how long a challenge may go unanswered.
-    pub seek: seek::Timing,
     /// A broken stream is reopened after this, doubling up to `reconnect_max`.
     pub reconnect_min: Duration,
     pub reconnect_max: Duration,
@@ -31,7 +27,6 @@ pub struct Timing {
 impl Default for Timing {
     fn default() -> Self {
         Self {
-            seek: seek::Timing::default(),
             reconnect_min: Duration::from_secs(1),
             reconnect_max: Duration::from_secs(60),
             rate_limited: Duration::from_secs(61),
@@ -49,7 +44,6 @@ impl Timing {
     /// Every wait shortened, for tests against the mock Lichess.
     pub fn fast() -> Self {
         Self {
-            seek: seek::Timing { polite: 50, answer: 1_000, rate_limited: 300, retry: 300, accepted_for: 2_000 },
             reconnect_min: Duration::from_millis(20),
             reconnect_max: Duration::from_millis(200),
             rate_limited: Duration::from_millis(300),

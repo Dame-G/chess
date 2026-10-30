@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { PhCheckerboard, PhCpu, PhListBullets, PhUser } from "@phosphor-icons/vue";
+import { PhCheckerboard, PhListBullets, PhUser } from "@phosphor-icons/vue";
 import { useBoard } from "../board/board";
 import { useUi } from "./ui";
 
 /**
- * Navigation on a phone: Board, Games, You, Dameless. The Games rail is its own full screen; You and Dameless are
- * sheets, which stop short of this bar so it stays. The current tab has the action colour's bar under it. Settings
+ * Navigation on a phone: Board, Games, You. The Games rail is its own full screen; You is a sheet, which stops short
+ * of this bar so it stays. The current tab has the action colour's bar under it. Settings
  * stays in the header, with the work indicator.
  */
 const ui = useUi();
@@ -15,11 +15,10 @@ const route = useRoute();
 const router = useRouter();
 const board = useBoard();
 
-type Tab = "board" | "games" | "you" | "dameless";
+type Tab = "board" | "games" | "you";
 const current = computed<Tab | null>(() => {
   if (ui.railOpen) return "games";
   if (route.path === "/you") return "you";
-  if (route.path.startsWith("/dameless")) return "dameless";
   return route.path === "/" ? "board" : null;
 });
 
@@ -27,7 +26,6 @@ const tabs: { id: Tab; label: string; icon: typeof PhCheckerboard }[] = [
   { id: "board", label: "Board", icon: PhCheckerboard },
   { id: "games", label: "Games", icon: PhListBullets },
   { id: "you", label: "You", icon: PhUser },
-  { id: "dameless", label: "Dameless", icon: PhCpu },
 ];
 
 function go(id: Tab) {
@@ -35,7 +33,7 @@ function go(id: Tab) {
   if (id === "board" || id === "games") {
     // The board as it was: what is on it is its address, and the Games tab sits over it.
     if (route.path !== "/") void router.push({ path: "/", query: board.address });
-  } else void router.push(id === "you" ? "/you" : "/dameless");
+  } else void router.push("/you");
 }
 </script>
 

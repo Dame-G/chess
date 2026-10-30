@@ -2,17 +2,17 @@
 import { computed, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { useToast } from "@eos-ui/vue";
-import { EDisclosure } from "@eos-ui/vue/components/EDisclosure";
 import { ENumberField } from "@eos-ui/vue/components/ENumberField";
 import { ESwitch } from "@eos-ui/vue/components/ESwitch";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import type { Color, Side, TimeControl } from "../api/types";
 import { useConnections } from "../stores/connections";
-import { useDameless } from "../stores/dameless";
 import { useGames } from "../stores/games";
-import { useVersions } from "../stores/versions";
+import { useLevels } from "../stores/levels";
+import { useEngines } from "../stores/engines";
 import { stored } from "../stored";
-import { levelChoices, suggestedStrength } from "../sheets/levels";
+import { levelSeat, suggestedStrength } from "../sheets/levels";
+import { opponentChoices } from "../sheets/opponents";
 import LevelPicker from "../parts/LevelPicker.vue";
 import UiBadge from "../ui/UiBadge.vue";
 import UiDialog from "../ui/UiDialog.vue";
@@ -23,23 +23,28 @@ import { useUi } from "./ui";
 import UiSelect from "../ui/UiSelect.vue";
 
 /**
- * New game: the opponent (Dameless at a version, Lichess, Stockfish N), the time control, the colour, rated. One
- * dialog, showing only the choices that apply to the opponent, and a Start button that says what it will start. From a
- * position ("Play from here"), against Dameless.
+ * New game: the opponent (an engine from the engines list, someone on Lichess, or Lichess's AI), the time control, the
+ * colour, rated. One dialog, showing only the choices that apply to the opponent, and a Start button that says what it
+ * will start. From a position ("Play from here"), against an engine.
  */
 const ui = useUi();
 const router = useRouter();
 const toast = useToast();
 const games = useGames();
 const connections = useConnections();
-const versions = useVersions();
-const dameless = useDameless();
+const ladder = useLevels();
+const engines = useEngines();
 
-type Opponent = "dameless" | "stockfish" | "lichess";
+type Opponent = "engine" | "ai" | "lichess";
 /** The clock choices that are not a preset. */
 const UNTIMED = "untimed";
 const CUSTOM = "custom";
-const opponent = stored<Opponent>("new.opponent", "dameless");
+const savedOpponent = stored<string>("new.opponent", "engine");
+/** The opponent kind as last chosen; one remembered from before the engines list (`dameless`, `stockfish`) maps over. */
+const opponent = computed<Opponent>({
+  get: () => (savedOpponent.value === "lichess" ? "lichess" : savedOpponent.value === "ai" ? "ai" : "engine"),
+  set: (v) => (savedOpponent.value = v),
+});
 const clock = stored("new.clock", "10+5");
 /** The custom clock: minutes, and seconds added each move. */
 const customMinutes = stored<number | null>("new.custom.minutes", 5);
@@ -47,66 +52,61 @@ const customIncrement = stored<number | null>("new.custom.increment", 3);
 const color = stored<Color>("new.color", "random");
 const rated = stored("new.rated", true);
 const level = stored("new.level", "5");
+/** Every engine to play, grouped: the analysis engine's levels, the human-like engines, the rest. */
+const engineOptions = computed(() => opponentChoices(engines.list, engines.analysisId, ladder.levels));
+/** The analysis engine at the level nearest your rating: the seat chosen until you choose another. */
+const suggestedSeat = () => levelSeat(engines.analysisId, suggestedStrength(ladder.levels));
 /**
- * Dameless's strength as last chosen: "full", or a level of its ladder (`dameless@<level>`). Empty until you choose, and
- * then the level nearest your rating is the one shown.
+ * The engine as last chosen, as the seat the server reads (`stockfish@5`, `maia-1500`, `stockfish`). Empty until you
+ * choose, and then the level nearest your rating is the one shown; a seat no longer offered falls back to it too.
  */
-const strength = stored("new.strength", "");
-const chosenStrength = computed({
-  get: () => strength.value || suggestedStrength(dameless.levels),
-  set: (v: string) => (strength.value = v),
+const seat = stored("new.engine", "");
+const chosenSeat = computed({
+  get: () => {
+    const open = engineOptions.value.filter((c) => !c.disabled);
+    return open.some((c) => c.value === seat.value) ? seat.value : suggestedSeat();
+  },
+  set: (v: string) => (seat.value = v),
 });
-const version = ref<string>("");
-/** Begin from a random line of the opening book instead of the standard start. */
-const book = ref(false);
-/** The book is not installed yet (Settings › Health says how), so a book start would be refused. */
-const noBook = computed(() => dameless.health?.items.some((i) => i.key === "book" && !i.ok) ?? false);
+const chosen = computed(() => engineOptions.value.find((c) => c.value === chosenSeat.value));
+/** Some engine in the list is not installed: Settings sets it up. */
+const missing = computed(() => engineOptions.value.some((c) => c.disabled));
 const lichessHow = ref<"seek" | "challenge">("seek");
 const username = ref("");
 const busy = ref(false);
 
 const fromPosition = computed(() => ui.newGameFrom);
-/** The strength remembered for New game while a practice position borrows the dialog. */
+/** The engine remembered for New game while a practice position borrows the dialog. */
 let remembered: string | null = null;
-// The version is the champion's until chosen; it may arrive after the dialog was first opened.
-watch(
-  () => versions.current?.id,
-  (id) => {
-    if (id != null && !version.value) version.value = String(id);
-  },
-  { immediate: true },
-);
 watch(
   () => ui.newGame,
   async (open) => {
     if (!open) {
-      if (remembered !== null) strength.value = remembered;
+      if (remembered !== null) seat.value = remembered;
       remembered = null;
       return;
     }
-    book.value = false;
-    if (fromPosition.value) opponent.value = "dameless";
-    if (!version.value && versions.current) version.value = String(versions.current.id);
-    if (!dameless.levels) await dameless.loadLevels().catch(() => {});
-    if (!dameless.health) void dameless.loadHealth().catch(() => {});
+    if (fromPosition.value) opponent.value = "engine";
+    if (!engines.loaded) void engines.load().catch(() => {});
+    if (!ladder.levels) await ladder.loadLevels().catch(() => {});
     // Practising a position ("Play this out") starts at the level nearest your rating.
     if (ui.newGame && fromPosition.value) {
-      remembered ??= strength.value;
-      strength.value = suggestedStrength(dameless.levels);
+      remembered ??= seat.value;
+      seat.value = suggestedSeat();
     }
   },
 );
 
 const linked = computed(() => connections.you.configured);
 const opponents = computed(() => [
-  { value: "dameless" as const, label: "Dameless" },
+  { value: "engine" as const, label: "Engine" },
   { value: "lichess" as const, label: "Lichess", disabled: !linked.value },
-  { value: "stockfish" as const, label: "Stockfish", disabled: !linked.value },
+  { value: "ai" as const, label: "Lichess AI", disabled: !linked.value },
 ]);
 
 /**
- * Lichess's Board API plays no bullet; a seek must be rapid or slower (initial + 40 × increment ≥ 8 min). Against
- * Dameless a game can have no clock (the engine takes a second a move), and only such a game allows takebacks.
+ * Lichess's Board API plays no bullet; a seek must be rapid or slower (initial + 40 × increment ≥ 8 min). Against an
+ * engine here a game can have no clock (the engine takes a second a move), and only such a game allows takebacks.
  */
 const seeking = computed(() => opponent.value === "lichess" && lichessHow.value === "seek");
 const clocks = computed(() => {
@@ -116,7 +116,7 @@ const clocks = computed(() => {
   }));
   if (seeking.value) return presets;
   return [
-    ...(opponent.value === "dameless" ? [{ value: UNTIMED, label: "No clock" }] : []),
+    ...(opponent.value === "engine" ? [{ value: UNTIMED, label: "No clock" }] : []),
     ...presets,
     { value: CUSTOM, label: "Custom" },
   ];
@@ -125,7 +125,6 @@ watch(clocks, (options) => {
   if (!options.some((o) => o.value === clock.value))
     clock.value = options.some((o) => o.value === "5+3") ? "5+3" : options[1]!.value;
 });
-const levelOptions = computed(() => levelChoices(dameless.levels));
 
 /** The clock the game is played on. */
 const time = computed<TimeControl>(() => {
@@ -147,37 +146,27 @@ const clockText = computed(() => {
   return clock.value;
 });
 
-/** Dameless's seat: `dameless`, at a version (`:#<id>`) and a level (`@<n>`) when chosen. */
-function damelessSeat(): string {
-  const at = version.value && Number(version.value) !== versions.current?.id ? `:#${version.value}` : "";
-  const lvl = chosenStrength.value !== "full" ? `@${chosenStrength.value}` : "";
-  return `dameless${at}${lvl}`;
-}
-const versionOptions = computed(() =>
-  [...versions.line]
-    .reverse()
-    .map((v) => ({ value: String(v.id), label: v.id === versions.current?.id ? `${v.name} (champion)` : v.name })),
-);
-
 /** What Start will start, in the button's own words. */
 const confirmLabel = computed(() => {
-  if (opponent.value === "stockfish") return `Start vs Stockfish ${level.value}`;
+  if (opponent.value === "ai") return `Start vs Lichess AI level ${level.value}`;
   if (opponent.value === "lichess") {
     return lichessHow.value === "seek" ? "Find a game" : `Challenge ${username.value.trim() || "someone"}`;
   }
-  return `Start ${clockText.value ? `${clockText.value} ` : ""}vs Dameless`;
+  return `Start ${clockText.value ? `${clockText.value} ` : ""}vs ${chosen.value?.label ?? "the engine"}`;
 });
 const blocked = computed(
-  () => !customOk.value || (opponent.value === "lichess" && lichessHow.value === "challenge" && !username.value.trim()),
+  () =>
+    !customOk.value ||
+    (opponent.value === "engine" && !chosen.value) ||
+    (opponent.value === "lichess" && lichessHow.value === "challenge" && !username.value.trim()),
 );
-/** What is worth knowing about the strength picked: that its rating may still move. */
-const strengthHint = computed(() => {
-  const picked = levelOptions.value.find((c) => c.value === chosenStrength.value);
-  return picked && picked.standing !== "found" ? "Still being calibrated: this rating may move." : undefined;
-});
+/** What is worth knowing about the engine picked: that its rating may still move. */
+const strengthHint = computed(() =>
+  chosen.value && chosen.value.standing !== "found" ? "Still being calibrated: this rating may move." : undefined,
+);
 /** Takebacks are only for games with no clock: said where the clock is chosen. */
 const clockHint = computed(() => {
-  if (opponent.value !== "dameless") return undefined;
+  if (opponent.value !== "engine") return undefined;
   return clock.value === UNTIMED
     ? "No clock: the engine takes about a second a move, and you can take moves back."
     : "Taking moves back needs a game with no clock.";
@@ -193,32 +182,28 @@ const hint = computed(() => {
 async function start() {
   busy.value = true;
   try {
-    if (opponent.value === "dameless") {
+    if (opponent.value === "engine") {
       const you: Side = color.value === "random" ? (Math.random() < 0.5 ? "white" : "black") : color.value;
-      const seat = damelessSeat();
+      const them = chosenSeat.value;
       const from = fromPosition.value;
       const s = await games.start({
-        white: you === "white" ? "you" : seat,
-        black: you === "white" ? seat : "you",
+        white: you === "white" ? "you" : them,
+        black: you === "white" ? them : "you",
         time: time.value,
-        ...(from
-          ? { from: { type: "position" as const, fen: from.fen, moves: from.moves } }
-          : book.value
-            ? { from: { type: "book" as const } }
-            : {}),
+        ...(from ? { from: { type: "position" as const, fen: from.fen, moves: from.moves } } : {}),
       });
       ui.newGame = false;
       ui.railOpen = false;
       await router.push({ path: "/", query: { game: String(s.id) } });
-    } else if (opponent.value === "stockfish") {
-      await connections.challenge("you", {
+    } else if (opponent.value === "ai") {
+      await connections.challenge({
         ai_level: Number(level.value),
         time: time.value,
         rated: false,
         color: color.value,
       });
       ui.newGame = false;
-      toast.show({ title: `Starting a game against Stockfish level ${level.value}`, tone: "info" });
+      toast.show({ title: `Starting a game against Lichess AI level ${level.value}`, tone: "info" });
     } else if (lichessHow.value === "seek") {
       await connections.seek({ time: time.value, rated: rated.value, color: color.value });
       ui.newGame = false;
@@ -228,7 +213,7 @@ async function start() {
         tone: "info",
       });
     } else {
-      await connections.challenge("you", {
+      await connections.challenge({
         username: username.value.trim(),
         time: time.value,
         rated: rated.value,
@@ -263,20 +248,23 @@ async function start() {
         <UiSeg v-model="opponent" label="Opponent" :options="opponents" full />
         <p v-if="connections.loaded && !linked" class="login">
           <UiBadge>Log in first</UiBadge>
-          Lichess and Stockfish need your Lichess account.
+          Lichess and its AI need your Lichess account.
           <RouterLink to="/settings" @click="ui.newGame = false">Open Settings</RouterLink>
         </p>
       </UiField>
 
-      <template v-if="opponent === 'dameless'">
-        <UiSelect v-if="versionOptions.length > 1" v-model="version" label="Version" :options="versionOptions" />
-        <UiField label="Strength" group :hint="strengthHint">
-          <LevelPicker v-if="levelOptions.length" v-model="chosenStrength" label="Strength" :choices="levelOptions" />
-          <span v-else class="skel picker-skel" aria-label="Reading the levels" />
+      <template v-if="opponent === 'engine'">
+        <UiField label="Engine" group :hint="strengthHint">
+          <LevelPicker v-if="engineOptions.length" v-model="chosenSeat" label="Engine" :choices="engineOptions" />
+          <span v-else class="skel picker-skel" aria-label="Reading the engines" />
+          <p v-if="missing" class="login">
+            Engines not installed yet are set up in
+            <RouterLink to="/settings?tab=engines" @click="ui.newGame = false">Settings</RouterLink>.
+          </p>
         </UiField>
       </template>
       <UiSelect
-        v-else-if="opponent === 'stockfish'"
+        v-else-if="opponent === 'ai'"
         v-model="level"
         label="Level"
         :options="['1', '2', '3', '4', '5', '6', '7', '8']"
@@ -318,15 +306,6 @@ async function start() {
       </UiField>
 
       <ESwitch v-if="opponent === 'lichess'" v-model="rated" label="Rated" />
-
-      <EDisclosure v-if="opponent === 'dameless' && !fromPosition" title="Options" title-style="text">
-        <ESwitch
-          v-model="book"
-          label="Start from a book line"
-          :disabled="noBook"
-          :description="noBook ? 'The opening book is not installed yet: Settings › Health says how.' : undefined"
-        />
-      </EDisclosure>
     </div>
     <template #footer-start>{{ hint }}</template>
   </UiDialog>

@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{SCHOLARS_MATE, finished_game, harness, moves};
+use common::{SCHOLARS_MATE, fake, finished_game, harness, moves};
 use dameless_analysis::{Drills, Profiles, RepertoireRequest, ReviewRequest, Reviews, SessionRequest};
 use dameless_core::{
     GameId, PlayerKey, Side, TimeControl, Timestamp,
@@ -53,7 +53,7 @@ async fn drills_come_from_your_reviewed_mistakes_and_repeat_on_a_schedule() {
     )
     .await;
     let theirs =
-        finished_game(&h.hub, PlayerKey::Dameless, PlayerKey::Stockfish(1), &QUEEN_BLUNDER, Outcome::BlackWins, 2)
+        finished_game(&h.hub, fake(), PlayerKey::Engine("maia-1500".into()), &QUEEN_BLUNDER, Outcome::BlackWins, 2)
             .await;
     let drills = Drills::new(h.hub.clone());
     // The review makes drills from your game, and only yours.
@@ -200,9 +200,9 @@ async fn your_repertoire_is_built_from_your_games_and_off_while_you_play() {
 }
 
 #[tokio::test]
-async fn progress_has_your_lines_and_dameless_s() {
+async fn progress_has_your_lines() {
     let h = harness(2).await;
-    let mate = finished_game(&h.hub, PlayerKey::You, PlayerKey::Dameless, &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
+    let mate = finished_game(&h.hub, PlayerKey::You, fake(), &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
     let drills = Drills::new(h.hub.clone());
     let reviews = Reviews::new(h.eval.clone()).with_drills(drills.clone());
     review(&h, &reviews, vec![mate]).await;
@@ -212,7 +212,5 @@ async fn progress_has_your_lines_and_dameless_s() {
     assert_eq!(metric(PlayerKey::You, Metric::Rating).unwrap().points.len(), 1, "your seat's rating");
     assert_eq!(metric(PlayerKey::You, Metric::Accuracy).unwrap().points.len(), 1);
     assert!(metric(PlayerKey::You, Metric::DrillHitRate).is_none(), "no drills answered yet");
-    let dameless = metric(PlayerKey::Dameless, Metric::Elo).unwrap();
-    assert_eq!(dameless.points.len(), 1, "the champion v1");
-    assert_eq!(dameless.points[0].value, 0.0, "no anchor: Elo over v1");
+    assert!(p.series.iter().all(|s| s.player == PlayerKey::You));
 }

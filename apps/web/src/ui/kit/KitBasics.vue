@@ -4,7 +4,7 @@ import { PhClockCounterClockwise, PhGameController, PhRobot } from "@phosphor-ic
 import { ref } from "vue";
 import type { Score } from "../../api/types";
 import type { Result } from "../../format";
-import { healthTone, ideaTone, trialTone, workTone, type BadgeTone } from "../badge";
+import { healthTone, workTone, type BadgeTone } from "../badge";
 import UiBadge from "../UiBadge.vue";
 import UiLive from "../UiLive.vue";
 import UiPlayer from "../UiPlayer.vue";
@@ -14,7 +14,7 @@ import UiSection from "../UiSection.vue";
 import UiSeg, { type SegOption } from "../UiSeg.vue";
 import UiStat from "../UiStat.vue";
 import UiStats from "../UiStats.vue";
-import { botSeat, damelessSeat, levelSeat, longSeat, masterSeat, nameOnly, youSeat } from "./data";
+import { botSeat, engineSeat, levelSeat, longSeat, masterSeat, nameOnly, youSeat } from "./data";
 
 const tones: BadgeTone[] = ["neutral", "win", "loss", "warn", "info", "act"];
 
@@ -64,7 +64,7 @@ const manyOptions = ["a", "b", "c", "d", "e", "f", "g", "h"].map((v) => ({
     </UiStats>
     <UiStats :columns="3" dense>
       <UiStat label="Dense" :value="88" unit="min" />
-      <UiStat label="Plain tooltip" value="v14" hint="The version Dameless plays now." />
+      <UiStat label="Plain tooltip" value="Stockfish" hint="The engine that analyses." />
       <UiStat label="Custom value"><UiScore :score="{ cp: 62 }" /></UiStat>
     </UiStats>
     <UiStats :columns="3">
@@ -86,8 +86,6 @@ const manyOptions = ["a", "b", "c", "d", "e", "f", "g", "h"].map((v) => ({
       <UiBadge v-for="t in tones" :key="t" :tone="t" solid>{{ t }}</UiBadge>
     </div>
     <div class="row">
-      <UiBadge v-for="(tone, s) in ideaTone" :key="s" :tone="tone">{{ s }}</UiBadge>
-      <UiBadge v-for="(tone, s) in trialTone" :key="s" :tone="tone">{{ s }}</UiBadge>
       <UiBadge v-for="(tone, s) in workTone" :key="s" :tone="tone">{{ s }}</UiBadge>
       <UiBadge v-for="(h, s) in healthTone" :key="s" :tone="h.tone">{{ h.word }}</UiBadge>
     </div>
@@ -136,18 +134,18 @@ const manyOptions = ["a", "b", "c", "d", "e", "f", "g", "h"].map((v) => ({
     <template #note>One way to name a player: side, name, title, rating (a "?" only while provisional).</template>
     <div class="kit-list">
       <UiPlayer :seat="youSeat" colour="white" />
-      <UiPlayer :seat="damelessSeat" colour="black" />
+      <UiPlayer :seat="engineSeat" colour="black" />
       <UiPlayer :seat="levelSeat" />
       <UiPlayer :seat="botSeat" colour="white" />
       <UiPlayer :seat="masterSeat" colour="black" :rating="2105" provisional />
       <UiPlayer :seat="nameOnly" :rating="null" />
       <UiPlayer :seat="botSeat" link />
-      <UiPlayer :seat="damelessSeat" live colour="white" />
+      <UiPlayer :seat="engineSeat" live colour="white" />
       <div class="kit-narrow"><UiPlayer :seat="longSeat" colour="black" /></div>
     </div>
     <div class="row">
       <UiPlayer :seat="{ name: 'You', key: 'you', rating: 1840 }" size="md" link current />
-      <UiPlayer :seat="{ name: 'Dameless v14', key: 'dameless', rating: 3290 }" size="md" link />
+      <UiPlayer :seat="{ name: 'Stockfish 17.1', key: 'engine:stockfish', rating: 3290 }" size="md" link />
     </div>
   </UiSection>
 
@@ -192,7 +190,7 @@ const manyOptions = ["a", "b", "c", "d", "e", "f", "g", "h"].map((v) => ({
         :options="[
           { value: 'all', label: 'All' },
           { value: 'you', label: 'You' },
-          { value: 'dameless', label: 'Dameless' },
+          { value: 'engine', label: 'Engine' },
           { value: 'lichess', label: 'Lichess' },
           { value: 'trials', label: 'Trials' },
         ]"

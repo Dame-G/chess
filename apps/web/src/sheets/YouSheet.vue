@@ -6,6 +6,7 @@ import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import type { Player, ProfileFilter } from "../api/types";
 import ChallengeList from "../parts/ChallengeList.vue";
+import LevelsCard from "../parts/LevelsCard.vue";
 import PrepView from "../parts/PrepView.vue";
 import ProfileFilters from "../parts/ProfileFilters.vue";
 import ProfileHead from "../parts/ProfileHead.vue";
@@ -20,6 +21,7 @@ import TrainCard from "../parts/TrainCard.vue";
 import { useUi } from "../shell/ui";
 import { useConnections } from "../stores/connections";
 import { useDrills } from "../stores/drills";
+import { useEngines } from "../stores/engines";
 import { usePolicy } from "../stores/policy";
 import { ALL_GAMES, usePlayers } from "../stores/players";
 import { useProgress } from "../stores/progress";
@@ -29,8 +31,9 @@ import { useImport } from "./useImport";
 
 /**
  * You: your Lichess ratings across the top, then your games added up in tabs. Overview is the figures, the review of
- * your games and how you do against Dameless over time; Openings the openings you have met, your prep for each line and
- * your own lines; Train today's drills and your mistakes by theme, each a way to practise it; Challenges what waits for
+ * your games and how you do over time; Openings the openings you have met, your prep for each line and
+ * your own lines; Train today's drills, your mistakes by theme, each a way to practise it, and the
+ * levels the analysis engine plays at with where you stand among them; Challenges what waits for
  * you on Lichess. Not linked to Lichess yet: the way to log in comes first. No games at all: one page that says how to
  * get some.
  */
@@ -38,6 +41,7 @@ const connections = useConnections();
 const players = usePlayers();
 const progress = useProgress();
 const drills = useDrills();
+const engines = useEngines();
 const router = useRouter();
 const toast = useToast();
 const ui = useUi();
@@ -88,7 +92,7 @@ async function login() {
 }
 
 const challenges = computed(() => connections.you.challenges);
-const compare = () => router.push({ path: "/compare", query: { players: "you,dameless" } });
+const compare = () => router.push({ path: "/compare", query: { players: `you,engine:${engines.analysisId}` } });
 const lichessUrl = computed(() =>
   linked.value && player.value?.lichess ? `https://lichess.org/@/${player.value.lichess}` : null,
 );
@@ -99,7 +103,7 @@ const subtitle = computed(() =>
 const firstRunBody = computed(
   () =>
     importing.line.value ||
-    `Play one against Dameless${linked.value ? ", or bring in your Lichess history" : ""}. Your profile, drills and openings are built from your games.`,
+    `Play one against an engine${linked.value ? ", or bring in your Lichess history" : ""}. Your profile, drills and openings are built from your games.`,
 );
 const loading = computed(() => !profile.value && !failed.value);
 const tabs = computed<SheetTab[] | undefined>(() =>
@@ -210,10 +214,11 @@ const reviewFirst = computed(() => profile.value?.reviewed === 0);
       <UiEmpty v-if="!drills.available" dense title="Drills are off while you play on Lichess." />
       <ProfileFilters v-model="filter" :games="profile.games" whose="your" tabs />
       <ThemesView :profile="profile" />
+      <LevelsCard />
     </template>
 
     <template #tab-challenges>
-      <ChallengeList :challenges="challenges" connection="you" />
+      <ChallengeList :challenges="challenges" />
     </template>
   </UiSheetPage>
 </template>

@@ -14,9 +14,7 @@ use dameless_core::{
     work::{Priority, WorkKind},
 };
 use dameless_hub::{Config, Executor, Hub, Next, TopicFilter, WorkContext};
-use dameless_play::{
-    Calibrate, CalibrateRequest, CalibrateResult, FixedBinaries, Games, Levels, NewGameRequest, SeatRequest, Timing,
-};
+use dameless_play::{Calibrate, CalibrateRequest, CalibrateResult, Games, Levels, NewGameRequest, SeatRequest, Timing};
 
 fn request(white: &str, black: &str, time: TimeControl, seed: Option<u64>) -> NewGameRequest {
     NewGameRequest {
@@ -47,15 +45,15 @@ struct LevelSetup {
 
 fn level_setup() -> LevelSetup {
     let dir = tempfile::tempdir().unwrap();
-    let config = Config::new(dir.path().join("data"), "127.0.0.1:0".parse().unwrap(), dir.path().join("reckless"), 4);
+    let config = Config::new(dir.path().join("data"), "127.0.0.1:0".parse().unwrap(), 4);
     let hub = Hub::open(config).unwrap();
     let levels = Levels::with_ladder(hub.clone(), ladder());
-    let games = Games::with_levels(hub.clone(), binaries(), Timing::fast(), levels);
+    let games = Games::with_levels(hub.clone(), engines(), Timing::fast(), levels);
     LevelSetup { hub, games, _dir: dir }
 }
 
 fn player_events(hub: &Hub) -> dameless_hub::Subscription {
-    hub.bus.subscribe(0, TopicFilter::of(["player:*", "work"]))
+    hub.bus.subscribe(0, TopicFilter::of(["engines", "work"]))
 }
 
 fn levels_updated(sub: &mut dameless_hub::Subscription) -> Vec<LevelsUpdated> {
@@ -77,21 +75,19 @@ fn levels_updated(sub: &mut dameless_hub::Subscription) -> Vec<LevelsUpdated> {
 
 #[test]
 fn level_seats_read_and_write() {
-    assert_eq!("dameless@5".parse::<SeatRequest>().unwrap(), SeatRequest::at_level(5));
-    let s: SeatRequest = "dameless:v14@3".parse().unwrap();
-    assert_eq!((s.version(), s.level()), (Some("v14"), Some(3)));
-    assert_eq!(s.to_string(), "dameless:v14@3");
-    let s: SeatRequest = "dameless:me@home".parse().unwrap();
-    assert_eq!((s.version(), s.level()), (Some("me@home"), None), "a name with an @ stays a name");
-    assert!("dameless@".parse::<SeatRequest>().is_err());
+    assert_eq!("fake@5".parse::<SeatRequest>().unwrap(), SeatRequest::at_level("fake", 5));
+    let s: SeatRequest = "engine:stockfish@3".parse().unwrap();
+    assert_eq!((s.engine_id(), s.level()), (Some("stockfish"), Some(3)));
+    assert_eq!(s.to_string(), "stockfish@3");
+    assert!("fake@".parse::<SeatRequest>().is_err());
     assert!("you@3".parse::<SeatRequest>().is_err());
     let req: NewGameRequest = serde_json::from_value(serde_json::json!({
-        "white": "you", "black": { "player": "dameless", "level": 5 }, "time": { "type": "movetime", "ms": 100 }
+        "white": "you", "black": { "player": "fake", "level": 5 }, "time": { "type": "movetime", "ms": 100 }
     }))
     .unwrap();
-    assert_eq!(req.black, SeatRequest::at_level(5));
+    assert_eq!(req.black, SeatRequest::at_level("fake", 5));
     assert_eq!(req.seed, None);
-    assert_eq!(serde_json::to_value(&req.black).unwrap(), "dameless@5");
+    assert_eq!(serde_json::to_value(&req.black).unwrap(), "fake@5");
 }
 
 #[tokio::test]
@@ -100,16 +96,14 @@ async fn a_level_chooses_among_its_lines_the_same_way_for_the_same_seed() {
     let play = |seed: u64| {
         let games = s.games.clone();
         async move {
-            let g = games
-                .start(request("dameless@1", "dameless@1", TimeControl::Nodes { nodes: 1000 }, Some(seed)))
-                .await
-                .unwrap();
+            let g =
+                games.start(request("fake@1", "fake@1", TimeControl::Nodes { nodes: 1000 }, Some(seed))).await.unwrap();
             games.wait_finished(g.summary.id, Duration::from_secs(60)).await.unwrap()
         }
     };
     let first = play(42).await;
     assert_eq!(first.summary.status, GameStatus::Finished);
-    assert_eq!(first.summary.white.name, "Dameless 800");
+    assert_eq!(first.summary.white.name, "Fake 800");
     assert_eq!(first.summary.white.rating, Some(800));
     let again = play(42).await;
     let moves = |g: &dameless_core::game::Game| g.moves.iter().map(|m| m.uci.clone()).collect::<Vec<_>>();
@@ -118,7 +112,7 @@ async fn a_level_chooses_among_its_lines_the_same_way_for_the_same_seed() {
     assert_ne!(moves(&first), moves(&other), "another seed, another game");
 
     // The engine alone always plays its first line; at level 1 the softmax often picks another.
-    let plain = s.games.start(request("dameless", "dameless", TimeControl::Nodes { nodes: 1000 }, None)).await.unwrap();
+    let plain = s.games.start(request("fake", "fake", TimeControl::Nodes { nodes: 1000 }, None)).await.unwrap();
     let plain = s.games.wait_finished(plain.summary.id, Duration::from_secs(60)).await.unwrap();
     assert_ne!(moves(&first)[..8], moves(&plain)[..8]);
     // A level's move carries its own line's score: some are worse than the best line's 20 cp.
@@ -135,12 +129,12 @@ async fn your_games_against_a_level_refit_the_ladder() {
     let s = level_setup();
     s.games.levels().set_anchor(Arc::new(|| Some((1000, None))));
     let mut events = player_events(&s.hub);
-    let unknown = s.games.start(request("you", "dameless@9", TimeControl::Movetime { ms: 50 }, None)).await;
+    let unknown = s.games.start(request("you", "fake@9", TimeControl::Movetime { ms: 50 }, None)).await;
     assert_eq!(unknown.unwrap_err().status(), 400);
 
-    let g = s.games.start(request("you", "dameless@2", TimeControl::Movetime { ms: 50 }, None)).await.unwrap();
+    let g = s.games.start(request("you", "fake@2", TimeControl::Movetime { ms: 50 }, None)).await.unwrap();
     let id = g.summary.id;
-    assert_eq!(g.summary.black.name, "Dameless 1200");
+    assert_eq!(g.summary.black.name, "Fake 1200");
     assert_eq!(s.hub.store.level_seats(id).await.unwrap(), Some((Entrant::You, Entrant::Level(2))));
     s.games.act(id, SeatAction::Move, Some("e4".into())).await.unwrap();
     until_async!("the level's reply", s.games.game(id).await.unwrap().moves.len() == 2);
@@ -179,11 +173,11 @@ async fn calibration_plays_levels_against_each_other_and_fits_them() {
     let levels = s.games.levels().clone();
     let plan = levels.plan(3).await.unwrap();
     assert_eq!(plan.len(), 1, "two levels make one pair");
-    let binaries = FixedBinaries::empty().with("champion", fake(), &[]);
+    let engines = engines();
     let bad = CalibrateRequest { games_per_pair: Some(0), ..Default::default() };
-    assert_eq!(levels.prepare_calibration(&binaries, bad).await.unwrap_err().status(), 400);
+    assert_eq!(levels.prepare_calibration(engines.as_ref(), bad).await.unwrap_err().status(), 400);
     let new = levels
-        .prepare_calibration(&binaries, CalibrateRequest { games_per_pair: Some(3), ..Default::default() })
+        .prepare_calibration(engines.as_ref(), CalibrateRequest { games_per_pair: Some(3), ..Default::default() })
         .await
         .unwrap();
     assert_eq!((new.kind, new.priority), (WorkKind::Calibrate, Priority::Background));
@@ -205,8 +199,8 @@ async fn calibration_plays_levels_against_each_other_and_fits_them() {
     // The games are stored, finished, with the levels at their seats.
     let any = s.hub.store.games(Default::default()).await.unwrap();
     assert_eq!(any.len(), 3);
-    assert!(any.iter().all(|g| g.status == GameStatus::Finished && g.white.player == PlayerKey::Dameless));
-    assert!(any.iter().all(|g| g.white.level.is_some() && g.white.name.starts_with("Dameless ")));
+    assert!(any.iter().all(|g| g.status == GameStatus::Finished && g.white.player == PlayerKey::Engine("fake".into())));
+    assert!(any.iter().all(|g| g.white.level.is_some() && g.white.name.starts_with("Fake ")));
     // Every engine was let go, and none reserved cores outside the grant.
     assert_eq!(s.hub.ledger.snapshot().reserved, 0);
 }

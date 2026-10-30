@@ -7,7 +7,8 @@
 //! forbids it, and a running one stops the moment the policy turns off (a Lichess game of yours starts).
 //!
 //! **Evaluating positions** is what reviews do: each position searched from its bare FEN to a node budget, through the
-//! position cache (`positions`), keyed by the position, the version's commit, the budget and MultiPV, so a position
+//! position cache (`positions`), keyed by the position, the engine (its id and what it calls itself), the budget and
+//! MultiPV, so a position
 //! shared by many games is searched once. Scores are flipped to White's before they are cached. The searches go in
 //! [runs](crate::runs) ([`Eval::search_runs`]): positions in the order played, on an engine that keeps its table.
 //! [`Eval::evaluate_positions`] does it for one list of positions; the review drives [`Eval::search_runs`] itself, to
@@ -23,11 +24,10 @@ use std::{
 };
 
 use dameless_core::{
-    Error, Side, VersionId,
+    Error, Side,
     chess::{Position, position_key},
     events::{AssistKind, EvalInfo, Payload, Topic},
     review::{PositionEval, ToSearch},
-    version::Version,
 };
 use dameless_engine::{
     pool::{EngineSpec, Pool, PooledEngine, Reset},
@@ -35,6 +35,7 @@ use dameless_engine::{
 };
 use dameless_hub::{Hub, Reservation};
 use dameless_store::positions::SearchKey;
+use dameless_work::{EngineBinary, EngineSource};
 use serde::{Deserialize, Serialize};
 use tokio::{task::JoinHandle, time::Instant};
 use tokio_util::sync::CancellationToken;
@@ -42,8 +43,7 @@ use utoipa::ToSchema;
 
 use crate::{
     runs::{Next, RunQueue},
-    search::{live_lines, record, review_spec, search_fen},
-    versions::{Binaries, VersionRef},
+    search::{engine_spec, live_lines, record, review_spec, search_fen},
 };
 
 /// `eval.info` is sent at most this often (five a second); the newest report always goes out in the end.
@@ -102,9 +102,9 @@ pub struct EvalRequest {
     /// Moves from it, UCI or SAN. The engine gets the whole history, so it sees repetitions.
     #[serde(default)]
     pub moves: Vec<String>,
-    /// The version to search with; the champion when none.
+    /// The engine to search with, by id; the analysis engine when none.
     #[serde(default)]
-    pub version: Option<VersionRef>,
+    pub engine: Option<String>,
     /// Lines to report, 1 to 10.
     #[serde(default = "one")]
     pub multipv: u32,
@@ -125,7 +125,8 @@ fn one() -> u32 {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct EvalSession {
     pub session: String,
-    pub version: VersionId,
+    /// The engine searching, by what it calls itself: `Stockfish 19`.
+    pub engine: String,
     /// The position searched, after the moves.
     pub fen: String,
 }
@@ -155,7 +156,7 @@ struct Running {
 
 struct Inner {
     hub: Arc<Hub>,
-    binaries: Arc<dyn Binaries>,
+    engines: Arc<dyn EngineSource>,
     pool: Pool,
     sessions: Mutex<Vec<Running>>,
     next: AtomicU64,
@@ -181,12 +182,12 @@ pub struct Eval {
 impl Eval {
     /// The service, with a pool of warm engines sized by the machine's cores. Called within the tokio runtime: it
     /// starts a task that kills engines left idle for a while.
-    pub fn new(hub: Arc<Hub>, binaries: Arc<dyn Binaries>) -> Self {
+    pub fn new(hub: Arc<Hub>, engines: Arc<dyn EngineSource>) -> Self {
         let pool = Pool::new(hub.ledger.total() as usize);
         let seed =
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64);
         let inner =
-            Arc::new(Inner { hub, binaries, pool, sessions: Mutex::new(Vec::new()), next: AtomicU64::new(seed) });
+            Arc::new(Inner { hub, engines, pool, sessions: Mutex::new(Vec::new()), next: AtomicU64::new(seed) });
         if tokio::runtime::Handle::try_current().is_ok() {
             tokio::spawn(reap(Arc::downgrade(&inner)));
         }
@@ -197,8 +198,8 @@ impl Eval {
         &self.inner.hub
     }
 
-    pub fn binaries(&self) -> &Arc<dyn Binaries> {
-        &self.inner.binaries
+    pub fn engines(&self) -> &Arc<dyn EngineSource> {
+        &self.inner.engines
     }
 
     /// The warm engines, shared with nothing else: reviews and sessions check out of it.
@@ -241,15 +242,17 @@ impl Eval {
 
         self.stop_client(&client).await;
 
-        let version_ref = req.version.clone().unwrap_or(VersionRef::Champion);
-        let version = self.inner.binaries.resolve(&version_ref).await?;
-        let (_, path) = self.inner.binaries.binary(&VersionRef::Id(version.id), &[]).await?;
+        let binary = self.inner.engines.ready(req.engine.as_deref()).await?;
+        if let Some(nodes) = binary.engine.nodes {
+            return Err(Error::bad_request(format!(
+                "{} plays a fixed {nodes} node(s) a move: it cannot analyse",
+                binary.engine.name
+            )));
+        }
         let session = format!("{:012x}", self.inner.next.fetch_add(1, Ordering::Relaxed) & 0xffff_ffff_ffff);
         let reservation = hub.ledger.reserve(format!("eval:{session}"), threads);
-        let spec = EngineSpec::new(&path)
-            .option("Threads", threads)
-            .option("Hash", SESSION_HASH)
-            .option("MultiPV", req.multipv);
+        let spec =
+            engine_spec(&binary).option("Threads", threads).option("Hash", SESSION_HASH).option("MultiPV", req.multipv);
         let mut engine =
             self.inner.pool.checkout(&spec).await.map_err(|e| Error::internal(format!("start the engine: {e:#}")))?;
         // A Lichess game that started while the engine loaded: nothing was running yet to stop.
@@ -276,7 +279,7 @@ impl Eval {
         for r in replaced {
             r.cancel.cancel();
         }
-        Ok(EvalSession { session, version: version.id, fen: pos.fen() })
+        Ok(EvalSession { session, engine: binary.engine.label().to_owned(), fen: pos.fen() })
     }
 
     /// Stops a session and waits until its engine has stopped. `false` when there was no such session (it ended).
@@ -323,12 +326,12 @@ impl Eval {
     // Positions, through the cache
     // -----------------------------------------------------------------------------------------------------------------
 
-    /// One position, searched from its bare FEN to `nodes` with `version`, through the position cache. Not gated by
+    /// One position, searched from its bare FEN to `nodes` with `engine`, through the position cache. Not gated by
     /// the fair-play policy: the work that calls it (a review) waits at its safe points instead.
     pub async fn evaluate(
         &self,
         fen: &str,
-        version: &Version,
+        engine: &EngineBinary,
         nodes: u64,
         multipv: u32,
     ) -> Result<PositionEval, Error> {
@@ -338,7 +341,7 @@ impl Eval {
         }
         let fen = pos.fen();
         let position = ToSearch { key: position_key(&fen), fen, terminal: false };
-        let mut found = self.evaluate_positions(std::slice::from_ref(&position), version, nodes, multipv, 1).await?;
+        let mut found = self.evaluate_positions(std::slice::from_ref(&position), engine, nodes, multipv, 1).await?;
         found.evals.pop().flatten().ok_or_else(|| Error::internal("the search found nothing"))
     }
 
@@ -348,12 +351,12 @@ impl Eval {
     pub async fn evaluate_positions(
         &self,
         positions: &[ToSearch],
-        version: &Version,
+        engine: &EngineBinary,
         nodes: u64,
         multipv: u32,
         engines: usize,
     ) -> Result<Evaluated, Error> {
-        let search = SearchKey { commit: version.commit.clone(), nodes, multipv };
+        let search = SearchKey { engine: engine.engine.cache_key(), nodes, multipv };
         let mut keys: Vec<String> = Vec::new();
         let mut seen = HashSet::new();
         for p in positions.iter().filter(|p| !p.terminal) {
@@ -373,7 +376,7 @@ impl Eval {
                 acc
             });
         if !missing.is_empty() {
-            let searching = self.review_engines(version, nodes, multipv).await?;
+            let searching = self.review_engines(engine, nodes, multipv);
             let queue = Mutex::new(RunQueue::new(0));
             // The positions in the order given (a game's, as played): one run, which idle engines split.
             queue
@@ -393,11 +396,9 @@ impl Eval {
         Ok(Evaluated { evals, searched: missing.len(), cached })
     }
 
-    /// How reviews search with a version: its binary (built first if it must be) with one thread, the review hash and
-    /// `multipv` lines, to `nodes` a position.
-    pub async fn review_engines(&self, version: &Version, nodes: u64, multipv: u32) -> Result<ReviewEngines, Error> {
-        let (_, path) = self.inner.binaries.binary(&VersionRef::Id(version.id), &[]).await?;
-        Ok(ReviewEngines { spec: review_spec(&path, multipv), nodes, multipv })
+    /// How reviews search with an engine: one thread, the review hash and `multipv` lines, to `nodes` a position.
+    pub fn review_engines(&self, engine: &EngineBinary, nodes: u64, multipv: u32) -> ReviewEngines {
+        ReviewEngines { spec: review_spec(engine, multipv), nodes, multipv }
     }
 
     /// Searches the queue's runs on up to `engines` pooled engines, each run's positions one after another on one
@@ -613,14 +614,14 @@ mod tests {
     #[test]
     fn requests_read_with_defaults() {
         let req: EvalRequest = serde_json::from_value(serde_json::json!({ "client": "tab-1" })).unwrap();
-        assert_eq!((req.multipv, req.budget, req.fen, req.version), (1, Budget::Infinite, None, None));
+        assert_eq!((req.multipv, req.budget, req.fen, req.engine), (1, Budget::Infinite, None, None));
         let req: EvalRequest = serde_json::from_value(serde_json::json!({
-            "client": "tab-1", "fen": "startpos", "moves": ["e4"], "version": { "type": "name", "value": "v3" },
+            "client": "tab-1", "fen": "startpos", "moves": ["e4"], "engine": "stockfish",
             "budget": { "type": "depth", "depth": 20 }, "multipv": 3
         }))
         .unwrap();
         assert_eq!(req.budget, Budget::Depth { depth: 20 });
-        assert_eq!(req.version, Some(VersionRef::Name("v3".into())));
+        assert_eq!(req.engine.as_deref(), Some("stockfish"));
         assert_eq!(Budget::Nodes { nodes: 5 }.limits().command(), "go nodes 5");
     }
 }

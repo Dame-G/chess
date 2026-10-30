@@ -30,7 +30,7 @@ struct Lichess {
 }
 
 async fn lichess() -> Lichess {
-    let s = setup(binaries());
+    let s = setup(engines());
     let mock = MockLichess::start().await;
     mock.add_account("you-tok", MockAccount::user("Dame").rating("rapid", 1800));
     let connections = Connections::new(s.hub.clone(), s.games.clone(), mock.config());
@@ -253,7 +253,8 @@ async fn seeks_and_challenges() {
     };
     let sent = l.connections.challenge(ConnectionKey::You, ai).await.unwrap();
     let id = l.game_of(&sent.id).await;
-    assert_eq!(l.game(id).await.summary.black.player, PlayerKey::Stockfish(3));
+    let black = l.game(id).await.summary.black;
+    assert_eq!((black.player, black.level), (PlayerKey::Engine("stockfish".into()), Some(3)));
     l.s.games.act(id, SeatAction::Move, Some("e2e4".into())).await.unwrap();
     until_async!("Stockfish's reply", l.game(id).await.moves.len() == 2);
     l.s.games.stop(id).await.unwrap();
@@ -298,15 +299,13 @@ async fn seeks_and_challenges() {
 #[tokio::test]
 async fn tokens_are_checked_and_logins_go_through_oauth() {
     let l = lichess().await;
-    l.mock.add_account("bot-tok", MockAccount::bot("DamelessBot"));
+    l.mock.add_account("bot-tok", MockAccount::bot("SomeBot"));
     l.mock.add_account("watch-only", MockAccount::user("Dame").scopes(&["challenge:read"]));
     let e = l.connections.set_token(ConnectionKey::You, "bot-tok").await.unwrap_err();
     assert_eq!(e.status(), 400, "a BOT account is not yours");
     let e = l.connections.set_token(ConnectionKey::You, "watch-only").await.unwrap_err();
     assert!(e.message().contains("board:play"), "{e}");
     assert_eq!(l.connections.set_token(ConnectionKey::You, "unknown").await.unwrap_err().status(), 400);
-    let e = l.connections.set_token(ConnectionKey::Bot, "you-tok").await.unwrap_err();
-    assert!(e.message().contains("not a BOT account"), "{e}");
     assert!(!l.connections.status(ConnectionKey::You).configured);
 
     // A login: the link, Lichess's answer, the token stored.

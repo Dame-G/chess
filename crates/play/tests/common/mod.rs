@@ -6,7 +6,8 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use dameless_core::events::{Event, EventKind};
 use dameless_hub::{Config, Hub, Next, Subscription, TopicFilter};
-use dameless_play::{Binaries, FixedBinaries, Games, Timing};
+use dameless_play::{Games, Timing};
+use dameless_work::{EngineSource, FixedEngines};
 
 /// The fake UCI engine (`tests/support/fake_engine.rs`).
 pub fn fake() -> PathBuf {
@@ -20,21 +21,23 @@ pub struct Setup {
 }
 
 /// A hub with four cores in a fresh data directory, and the games, with the waits shortened.
-pub fn setup(binaries: Arc<dyn Binaries>) -> Setup {
+pub fn setup(engines: Arc<dyn EngineSource>) -> Setup {
     let dir = tempfile::tempdir().unwrap();
-    let config = Config::new(dir.path().join("data"), "127.0.0.1:0".parse().unwrap(), dir.path().join("reckless"), 4);
+    let config = Config::new(dir.path().join("data"), "127.0.0.1:0".parse().unwrap(), 4);
     let hub = Hub::open(config).unwrap();
-    let games = Games::new(hub.clone(), binaries, Timing::fast());
+    let games = Games::new(hub.clone(), engines, Timing::fast());
     Setup { hub, games, _dir: dir }
 }
 
-/// The fake engine as the champion, and as `dying` (exits on its first search) and `slow` (half a second a move).
-pub fn binaries() -> Arc<dyn Binaries> {
-    FixedBinaries::empty()
-        .with("champion", fake(), &[])
+/// The fake engine as `fake` (the analysis engine, with the ladder), as `dying` (exits on its first search), `slow`
+/// (half a second a move) and `illegal`, and as `maia-1500` (one node a move, rated 1500).
+pub fn engines() -> Arc<dyn EngineSource> {
+    FixedEngines::new()
+        .with("fake", fake(), &[])
         .with("dying", fake(), &["--die"])
         .with("slow", fake(), &["--delay", "500"])
         .with("illegal", fake(), &["--illegal"])
+        .with_engine("maia-1500", fake(), &[], Some(1), Some(1500))
         .shared()
 }
 

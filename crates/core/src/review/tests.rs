@@ -182,7 +182,7 @@ fn a_sound_bishop_sacrifice_is_brilliant() {
         // Black to move, but scores are White's: +2.40 after the sacrifice.
         eval(vec![line("g8h7", 240, &["g8h7", "f3g5", "h7g8", "d1h5"]), line("g8h8", 500, &["g8h8"])]),
     ];
-    let (summary, plies) = judge_game(input, &evals, VersionId(1), 200_000).unwrap();
+    let (summary, plies) = judge_game(input, &evals, "Stockfish 19", 200_000).unwrap();
     let p = &plies[0];
     assert_eq!(p.sacrifice, 2, "a bishop for a pawn");
     assert_eq!(p.classification, Classification::Brilliant);
@@ -198,7 +198,7 @@ fn a_sound_bishop_sacrifice_is_brilliant() {
         eval(vec![line("e1g1", 40, &["e1g1"]), line("d3h7", -200, &["d3h7", "g8h7"])]),
         eval(vec![line("g8h7", -200, &["g8h7", "f3g5", "h7g8"])]),
     ];
-    let (summary, plies) = judge_game(input, &evals, VersionId(1), 200_000).unwrap();
+    let (summary, plies) = judge_game(input, &evals, "Stockfish 19", 200_000).unwrap();
     assert_eq!(plies[0].classification, Classification::Blunder);
     assert_eq!(plies[0].judgement, Some(Judgement::Blunder));
     assert_eq!(plies[0].best_san, "O-O");
@@ -228,7 +228,7 @@ fn checkmate_ends_the_review_with_mate_zero() {
         eval(vec![EvalLine { uci: "d8h4".into(), score: Score::Mate(-1), pv: vec!["d8h4".into()] }]),
         None,
     ];
-    let (summary, plies) = judge_game(input, &evals, VersionId(1), 200_000).unwrap();
+    let (summary, plies) = judge_game(input, &evals, "Stockfish 19", 200_000).unwrap();
     assert_eq!(plies[3].eval_after, Score::Mate(0));
     assert_eq!(plies[3].eval_before, Score::Mate(-1));
     assert_eq!(plies[3].classification, Classification::Best);
@@ -251,8 +251,8 @@ fn checkmate_ends_the_review_with_mate_zero() {
 fn a_review_needs_every_position() {
     let moves = [Move::new("e2e4", "e4")];
     let input = ReviewInput { start_fen: None, moves: &moves, time: blitz(), opening_ply: None };
-    assert!(judge_game(input, &[eval(vec![line("e2e4", 20, &["e2e4"])])], VersionId(1), 1).is_err());
-    assert!(judge_game(input, &[None, None], VersionId(1), 1).is_err());
+    assert!(judge_game(input, &[eval(vec![line("e2e4", 20, &["e2e4"])])], "Stockfish 19", 1).is_err());
+    assert!(judge_game(input, &[None, None], "Stockfish 19", 1).is_err());
     let bad = [Move::new("e2e5", "e5")];
     assert!(to_search(ReviewInput { moves: &bad, ..input }).is_err());
 }

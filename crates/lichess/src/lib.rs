@@ -1,8 +1,8 @@
-//! Adapter: Lichess's HTTP API with its rate rules, OAuth PKCE, NDJSON streams, Bot and Board API, import, explorer.
+//! Adapter: Lichess's HTTP API with its rate rules, OAuth PKCE, NDJSON streams, the Board API, import, explorer.
 //!
 //! This crate knows Lichess's wire format and nothing else. Its types are Lichess's JSON as typed structs (times in
 //! milliseconds since 1970 as Lichess sends them, scores from White's side as Lichess sends them), and it holds no
-//! rules of ours: which challenges the bot takes, how it seeks, the daily bot-game limit and fair play belong to
+//! rules of ours: what the Board API lets you play and fair play belong to
 //! `core` and `play`, which map these types to their own.
 //!
 //! One [`Lichess`] client is made per token (or one anonymous client), and cloned wherever that token is used: the
@@ -12,7 +12,7 @@
 
 pub mod account;
 pub mod board;
-pub mod bot;
+
 pub mod challenge;
 mod client;
 mod config;
@@ -31,7 +31,7 @@ mod time;
 pub use account::{Account, Counts, Perf, TokenInfo, User};
 pub use client::Lichess;
 pub use config::{Config, LICHESS_URL, Timing};
-pub use error::{BotDailyLimit, Error, LichessError, RateLimitInfo};
+pub use error::{Error, LichessError, RateLimitInfo};
 pub use ndjson::{Backoff, Ndjson};
 pub use time::{now_ms, parse_iso};
 

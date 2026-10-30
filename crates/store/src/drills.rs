@@ -262,7 +262,7 @@ mod tests {
     #[tokio::test]
     async fn themes_are_stored_classified_later_and_hints_are_kept_on_answers() {
         let (store, _dir) = testing::store();
-        let game = store.insert_game(local(PlayerKey::You, PlayerKey::Dameless, 0)).await.unwrap();
+        let game = store.insert_game(local(PlayerKey::You, PlayerKey::Engine("stockfish".into()), 0)).await.unwrap();
         let mut hung = new(game, START, 10.0);
         hung.theme.kind = ThemeKind::HangingPiece;
         hung.theme.detail = Some("a knight".into());
@@ -302,7 +302,7 @@ mod tests {
     #[tokio::test]
     async fn drills_are_stored_once_per_position() {
         let (store, _dir) = testing::store();
-        let game = store.insert_game(local(PlayerKey::You, PlayerKey::Dameless, 0)).await.unwrap();
+        let game = store.insert_game(local(PlayerKey::You, PlayerKey::Engine("stockfish".into()), 0)).await.unwrap();
         let first = store.insert_drills(vec![new(game, START, 10.0), new(game, START, 20.0)]).await.unwrap();
         assert_eq!(first.len(), 1);
         let again = store.insert_drills(vec![new(game, START, 30.0), new(game, OTHER, 5.0)]).await.unwrap();
@@ -325,7 +325,7 @@ mod tests {
     #[tokio::test]
     async fn answers_move_the_schedule_and_count_new_drills_started() {
         let (store, _dir) = testing::store();
-        let game = store.insert_game(local(PlayerKey::You, PlayerKey::Dameless, 0)).await.unwrap();
+        let game = store.insert_game(local(PlayerKey::You, PlayerKey::Engine("stockfish".into()), 0)).await.unwrap();
         let d = store.insert_drills(vec![new(game, START, 10.0), new(game, OTHER, 5.0)]).await.unwrap();
         let t0 = Timestamp::from_unix_ms(1_000_000);
 

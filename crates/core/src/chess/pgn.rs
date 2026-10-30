@@ -55,7 +55,6 @@ pub fn write(game: &Game) -> String {
             format!("Lichess {} {} game", if *rated { "rated" } else { "casual" }, speed.lichess_key()),
             s.url.clone().unwrap_or_else(|| "https://lichess.org".into()),
         ),
-        Source::Trial { trial, index } => (format!("Dameless trial {trial}, game {}", index + 1), "Dameless".into()),
         Source::Local => ("Dameless game".into(), "Dameless".into()),
     };
     header("Event", &event);
@@ -502,7 +501,7 @@ mod tests {
     }
 
     fn game(start_fen: Option<&str>) -> Game {
-        let seat = |name: &str| Seat::new(PlayerKey::Dameless, name);
+        let seat = |name: &str| Seat::new(PlayerKey::Engine("stockfish".into()), name);
         Game {
             summary: GameSummary {
                 id: GameId(7),
@@ -557,7 +556,7 @@ mod tests {
     fn a_lichess_game_names_its_site_ratings_and_opponent() {
         let mut g = game(None);
         g.summary.source =
-            Source::Lichess { connection: ConnectionKey::Bot, id: "q7ZvsdUF".into(), rated: true, speed: Speed::Blitz };
+            Source::Lichess { connection: ConnectionKey::You, id: "q7ZvsdUF".into(), rated: true, speed: Speed::Blitz };
         g.summary.url = Some("https://lichess.org/q7ZvsdUF".into());
         g.summary.black = Seat {
             rating: Some(1873),

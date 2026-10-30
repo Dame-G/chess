@@ -1,11 +1,11 @@
-//! Games: two seats, moves, clocks, a result, wherever the game was played. Local games, Lichess games (yours and the
-//! bot's), imported history and trial games are all this one record.
+//! Games: two seats, moves, clocks, a result, wherever the game was played. Local games, your Lichess games and
+//! imported history are all this one record.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
-    ids::{BuildId, ConnectionKey, GameId, PlayerKey, Side, SidePair, Timestamp, TrialId, VersionId},
+    ids::{ConnectionKey, GameId, PlayerKey, Side, SidePair, Timestamp},
     score::Score,
     time::{Speed, TimeControl},
 };
@@ -14,16 +14,15 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Seat {
     pub player: PlayerKey,
-    /// What to show: "You" is shown as the Lichess username when linked; a Dameless seat by its version's name, or
-    /// at a level of its ladder by its rating ("Dameless 1650").
+    /// What to show: "You" is shown as the Lichess username when linked; an engine seat by the engine's name, or at a
+    /// level of the ladder by its rating ("Stockfish 1650").
     pub name: String,
-    /// The level of the ladder a Dameless seat played at; none at full strength.
+    /// The level of the ladder an engine seat played at (or Lichess's AI level); none at full strength.
     #[serde(default)]
     pub level: Option<u32>,
-    /// The version a Dameless seat played.
-    pub version: Option<VersionId>,
-    /// The exact binary a Dameless seat played.
-    pub build: Option<BuildId>,
+    /// What an engine seat's engine called itself (its UCI `id name`): `Stockfish 19`, `Lc0 v0.32.1`.
+    #[serde(default)]
+    pub engine: Option<String>,
     pub rating: Option<u32>,
     pub title: Option<String>,
 }
@@ -31,13 +30,7 @@ pub struct Seat {
 impl Seat {
     /// A seat with just a player and a name.
     pub fn new(player: PlayerKey, name: impl Into<String>) -> Self {
-        Self { player, name: name.into(), level: None, version: None, build: None, rating: None, title: None }
-    }
-
-    /// Dameless at a version, named as everyone shows it: `Dameless v14`, `Dameless deeper-lmr`. (At a level of its
-    /// ladder it is named by its rating instead, `Dameless 1650`.)
-    pub fn dameless(version_name: &str) -> Self {
-        Self::new(PlayerKey::Dameless, format!("Dameless {version_name}"))
+        Self { player, name: name.into(), level: None, engine: None, rating: None, title: None }
     }
 
     pub fn is_you(&self) -> bool {
@@ -51,12 +44,10 @@ impl Seat {
 pub enum Source {
     /// Played here, or pasted in as PGN.
     Local,
-    /// Played through one of the Lichess connections.
+    /// Played through your Lichess connection.
     Lichess { connection: ConnectionKey, id: String, rated: bool, speed: Speed },
     /// History read from Lichess: `owner` is whose history it is (you, or another player).
     Import { owner: PlayerKey, id: String, rated: bool, speed: Speed },
-    /// A trial's game, read from fastchess's PGN: its trial and its index there.
-    Trial { trial: TrialId, index: u32 },
 }
 
 impl Source {
@@ -66,7 +57,6 @@ impl Source {
             Self::Local => "local",
             Self::Lichess { .. } => "lichess",
             Self::Import { .. } => "import",
-            Self::Trial { .. } => "trial",
         }
     }
 
@@ -470,10 +460,10 @@ mod tests {
     #[test]
     fn sources_are_tagged() {
         let s =
-            Source::Lichess { connection: ConnectionKey::Bot, id: "q7ZvsdUF".into(), rated: true, speed: Speed::Blitz };
+            Source::Lichess { connection: ConnectionKey::You, id: "q7ZvsdUF".into(), rated: true, speed: Speed::Blitz };
         let json = serde_json::to_value(&s).unwrap();
         assert_eq!(json["type"], "lichess");
-        assert_eq!(json["connection"], "bot");
+        assert_eq!(json["connection"], "you");
         assert_eq!(s.url("https://lichess.org/"), Some("https://lichess.org/q7ZvsdUF".into()));
         assert_eq!(serde_json::to_value(Source::Local).unwrap(), serde_json::json!({ "type": "local" }));
     }

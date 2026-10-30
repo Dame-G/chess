@@ -15,7 +15,7 @@ import { agoShort } from "./rail";
  * the result from your side, or a dot while the game is on; the second is the clock, the speed and whether it was
  * rated, with each side's accuracy once the game has been reviewed, and when it started at its end.
  */
-const props = defineProps<{ game: GameSummary; nested?: boolean }>();
+const props = defineProps<{ game: GameSummary }>();
 
 const who = (side: Side): PlayerRef => {
   const seat = props.game[side];
@@ -47,7 +47,7 @@ const accuracy = computed(() => {
 </script>
 
 <template>
-  <EListRow :value="game.id" trailing-stack class="game-row" :class="{ nested }">
+  <EListRow :value="game.id" trailing-stack class="game-row">
     <template #title>
       <UiPlayer :seat="who('white')" class="side" />
       <span class="vs">vs</span>

@@ -15,11 +15,10 @@ use axum::{
     response::sse::{Event as SseEvent, KeepAlive, Sse},
 };
 use dameless_core::{
+    engines::EnginesOverview,
     events::{self as ev, EventKind},
     game::GameSummary,
-    ideas::{Idea, Trial},
     lichess::{ChallengeEvent, ConnectionStatus},
-    version::Version,
     work::Work,
 };
 use dameless_hub::{Next, TopicFilter};
@@ -96,8 +95,8 @@ pub const RELOAD_TOPIC: &str = "stream";
 pub struct Event {
     /// Monotonic; pass the last one seen as `since` (or `Last-Event-ID`) to resume. 0 on `reload`.
     pub id: u64,
-    /// `game:<id>`, `games`, `idea:<id>`, `ideas`, `work`, `player:<key>`, `connection:you|bot`, `versions`,
-    /// `policy`, `eval:<session>`; `stream` on `reload`.
+    /// `game:<id>`, `games`, `work`, `player:<key>`, `connection:you`, `engines`, `policy`, `eval:<session>`; `stream`
+    /// on `reload`.
     pub topic: String,
     #[serde(flatten)]
     pub event: EventData,
@@ -118,21 +117,11 @@ pub enum EventData {
     /// At most five a second, never replayed.
     #[serde(rename = "game.thinking")]
     GameThinking(ev::GameThinking),
-    #[serde(rename = "idea.upserted")]
-    IdeaUpserted(Box<Idea>),
-    #[serde(rename = "trial.upserted")]
-    TrialUpserted(Box<Trial>),
-    #[serde(rename = "trial.progress")]
-    TrialProgress(ev::TrialProgress),
-    #[serde(rename = "tune.progress")]
-    TuneProgress(ev::TuneProgress),
     #[serde(rename = "work.upserted")]
     WorkUpserted(Box<Work>),
     /// Never replayed.
     #[serde(rename = "work.log")]
     WorkLog(ev::WorkLog),
-    #[serde(rename = "version.upserted")]
-    VersionUpserted(Box<Version>),
     #[serde(rename = "review.upserted")]
     ReviewUpserted(ev::ReviewUpserted),
     #[serde(rename = "connection.upserted")]
@@ -152,14 +141,8 @@ pub enum EventData {
     DrillDeleted(ev::DrillDeleted),
     #[serde(rename = "levels.updated")]
     LevelsUpdated(ev::LevelsUpdated),
-    #[serde(rename = "train.progress")]
-    TrainProgress(ev::TrainProgress),
-    #[serde(rename = "dataset.upserted")]
-    DatasetUpserted(Box<dameless_core::training::Dataset>),
-    #[serde(rename = "net.upserted")]
-    NetUpserted(Box<dameless_core::training::Net>),
-    #[serde(rename = "upstream.synced")]
-    UpstreamSynced(Box<dameless_core::upstream::UpstreamSync>),
+    #[serde(rename = "engines.changed")]
+    EnginesChanged(Box<EnginesOverview>),
     /// Not a domain event: the stream has a hole, so fetch what is shown again.
     #[serde(rename = "reload")]
     Reload(Reload),

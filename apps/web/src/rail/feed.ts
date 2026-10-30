@@ -1,11 +1,11 @@
 import { ref } from "vue";
 import { defineStore } from "pinia";
 import type { GameId } from "../api/types";
-import { useGames, type GamesQuery } from "../stores/games";
-import { queryOf, type GameFilter } from "./rail";
+import { useGames } from "../stores/games";
+import { queryOf, type RailFilter } from "./rail";
 
 /** How many games one request brings. */
-export const PAGE = 50;
+const PAGE = 50;
 
 /** Where a list stands in the server's games: the last game it holds (the next page starts after it) and whether that is all. */
 export interface Feed {
@@ -23,16 +23,13 @@ export interface Feed {
 const fresh = (): Feed => ({ started: false, loading: false, done: false, floor: null, cursor: null, error: null });
 const NEW: Readonly<Feed> = Object.freeze(fresh());
 
-/** A list's name: a rail filter, or one trial's games. */
-export type FeedKey = GameFilter | `trial:${number}`;
-
-const queryFor = (key: FeedKey): GamesQuery =>
-  key.startsWith("trial:") ? { trial: Number(key.slice(6)) } : queryOf(key as GameFilter);
+/** A list's name: a rail filter. */
+export type FeedKey = RailFilter;
 
 /**
- * What the Games rail has asked the server for. Each filter (and each open trial) is its own list, paged `PAGE` at a
- * time after its last game, so the filter you pick is answered by the server and never by what happens to be held:
- * a long history is reached by scrolling, and a trial's thousands of games cannot crowd out the rest. The games
+ * What the Games rail has asked the server for. Each filter is its own list, paged `PAGE` at a time after its last
+ * game, so the filter you pick is answered by the server and never by what happens to be held: a long history is
+ * reached by scrolling. The games
  * themselves are held in the games store; this keeps only where each list has got to.
  */
 export const useRailFeed = defineStore("rail-feed", () => {
@@ -57,7 +54,7 @@ export const useRailFeed = defineStore("rail-feed", () => {
     feed.error = null;
     try {
       const page = await games.page({
-        ...queryFor(key),
+        ...queryOf(key),
         limit: PAGE,
         ...(feed.cursor !== null ? { before: feed.cursor } : {}),
       });

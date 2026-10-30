@@ -1,4 +1,4 @@
-//! A Lichess of its own, on 127.0.0.1, for tests: accounts by token, event streams, Bot and Board API games with a
+//! A Lichess of its own, on 127.0.0.1, for tests: accounts by token, event streams, Board API games with a
 //! scripted opponent, challenges, seeks, the games export (including one that breaks), the explorer, the tablebase,
 //! profiles, leaderboards, OAuth, and failures on demand (a 429, a 503). Every request it receives is recorded.
 //! Nothing leaves the machine.
@@ -444,7 +444,6 @@ struct Inner {
     seeks: Vec<Seek>,
     exports: HashMap<String, Vec<Value>>,
     export_break: Option<usize>,
-    online_bots: Vec<Value>,
     users: HashMap<String, Value>,
     leaderboards: HashMap<String, Vec<Value>>,
     explorer: HashMap<String, Vec<Value>>,
@@ -925,19 +924,6 @@ impl MockLichess {
         self.fail_next(prefix, 429, json!({ "error": "Too many requests. Try again later." }));
     }
 
-    /// Answers the next challenge to `prefix` as Lichess does when the day's games between bots are used up: ours
-    /// (`ours`) or the challenged bot's.
-    pub fn bot_daily_limit_next(&self, prefix: &str, ours: bool, seconds: u64) {
-        let body = if ours {
-            json!({ "error": "You played 100 games against other bots today, please wait before challenging another bot.",
-                "ratelimit": { "key": "bot.vsBot.day", "seconds": seconds } })
-        } else {
-            json!({ "error": "They played 100 games against other bots today, please wait to challenge them.",
-                "ratelimit": { "key": "bot.vsBot.day", "seconds": seconds } })
-        };
-        self.fail_next(prefix, if ours { 429 } else { 400 }, body);
-    }
-
     /// Slows every request to `prefix` by `delay`.
     pub fn delay(&self, prefix: &str, delay: Duration) {
         self.inner().delays.push((prefix.to_owned(), delay));
@@ -1167,11 +1153,6 @@ impl MockLichess {
 
     // Everything else
 
-    /// What `GET /api/bot/online` lists.
-    pub fn set_online_bots(&self, bots: Vec<Value>) {
-        self.inner().online_bots = bots;
-    }
-
     /// The games `GET /api/games/user/{username}` exports (see [`exported_game`]). Unknown users are a 404.
     pub fn set_games_export(&self, username: &str, games: Vec<Value>) {
         self.inner().exports.insert(username.to_lowercase(), games);
@@ -1251,14 +1232,9 @@ fn router(shared: Shared) -> Router {
         .route("/api/token/test", post(token_test))
         .route("/api/account", get(account))
         .route("/api/account/playing", get(playing))
-        .route("/api/bot/account/upgrade", post(upgrade))
-        .route("/api/bot/online", get(online_bots))
         .route("/api/stream/event", get(event_stream))
-        .route("/api/bot/game/stream/{id}", get(game_stream))
         .route("/api/board/game/stream/{id}", get(game_stream))
-        .route("/api/bot/game/{id}/{action}", post(game_action))
         .route("/api/board/game/{id}/{action}", post(game_action))
-        .route("/api/bot/game/{id}/{action}/{arg}", post(game_action_arg))
         .route("/api/board/game/{id}/{action}/{arg}", post(game_action_arg))
         .route("/api/board/seek", post(seek))
         .route("/api/challenge", get(list_challenges))
@@ -1475,26 +1451,6 @@ async fn playing(State(shared): State<Shared>, headers: HeaderMap) -> Response {
         .filter_map(|g| g.side_of(&me.id).map(|s| inner.info_json(g, s)))
         .collect();
     Json(json!({ "nowPlaying": now })).into_response()
-}
-
-async fn upgrade(State(shared): State<Shared>, headers: HeaderMap) -> Response {
-    let mut inner = shared.lock().unwrap();
-    let Some(token) = bearer(&headers).filter(|t| inner.accounts.contains_key(t)) else {
-        return refuse(401, "No such token");
-    };
-    let account = inner.accounts.get_mut(&token).expect("checked");
-    if account.played {
-        return refuse(400, "This account has already played games and cannot become a bot account.");
-    }
-    account.title = Some("BOT".into());
-    ok()
-}
-
-async fn online_bots(State(shared): State<Shared>, Query(q): Query<HashMap<String, String>>) -> Response {
-    let inner = shared.lock().unwrap();
-    let nb = q.get("nb").and_then(|n| n.parse().ok()).unwrap_or(usize::MAX);
-    let body: String = inner.online_bots.iter().take(nb).map(|b| format!("{b}\n")).collect();
-    ([(header::CONTENT_TYPE, "application/x-ndjson")], body).into_response()
 }
 
 async fn event_stream(State(shared): State<Shared>, headers: HeaderMap) -> Response {
@@ -1954,19 +1910,17 @@ mod tests {
     #[tokio::test]
     async fn a_test_s_failures_come_once_and_streams_are_counted() {
         let mock = MockLichess::start().await;
-        mock.add_account("tok", MockAccount::bot("RecklessBot"));
-        mock.bot_daily_limit_next("/api/challenge/", true, 600);
+        mock.add_account("tok", MockAccount::user("Dame"));
+        mock.rate_limit_next("/api/challenge/");
         let client = mock.client(Some("tok"));
         let req = ChallengeRequest::clock(true, 180, 0);
         let e = client.challenge_user("alpha", &req).await.unwrap_err();
-        let limit = e.bot_daily_limit(0).unwrap();
-        assert!(limit.ours);
-        assert_eq!(limit.retry_after, Duration::from_secs(600));
+        assert!(matches!(e, crate::Error::RateLimited { .. }));
         mock.until("the pause", |_| client.rate_limited_for().is_none()).await;
         client.challenge_user("alpha", &req).await.unwrap();
         let events = client.events().await.unwrap();
-        mock.until("the event stream", |m| m.event_streams("recklessbot") == 1).await;
+        mock.until("the event stream", |m| m.event_streams("dame") == 1).await;
         drop(events);
-        mock.until("the stream to go", |m| m.event_streams("recklessbot") == 0).await;
+        mock.until("the stream to go", |m| m.event_streams("dame") == 0).await;
     }
 }

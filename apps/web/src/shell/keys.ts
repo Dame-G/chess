@@ -13,8 +13,8 @@ const OWN_ARROWS =
 
 /**
  * The app's keys, as docs/design.md lists them: ←/→, Home/End, F, Space (Explore's engine), X and Shift X (Review's
- * mistakes), T or ⌘Z (take back, in a game against Dameless), R (play the finished game again), N, D (today's drills),
- * G Y / G D / G S and `?`. ⌘K belongs to the command bar. Call once, in the app's root.
+ * mistakes), T or ⌘Z (take back, in a game against an engine), R (play the finished game again), N, D (today's drills),
+ * G Y / G S and `?`. ⌘K belongs to the command bar. Call once, in the app's root.
  */
 export function useKeys() {
   const board = useBoard();
@@ -59,13 +59,6 @@ export function useKeys() {
     if (Date.now() - g < 1000) void router.push(to);
     g = 0;
   };
-  /** D alone starts today's drills; G then D goes to Dameless. */
-  const drillsOrDameless = () => {
-    if (Date.now() - g < 1000) {
-      g = 0;
-      void router.push("/dameless");
-    } else void startDrills();
-  };
 
   useShortcuts({
     left: arrows(() => board.step("back")),
@@ -83,7 +76,7 @@ export function useKeys() {
     },
     g: () => (g = Date.now()),
     y: after("/you"),
-    d: drillsOrDameless,
+    d: () => void startDrills(),
     s: after("/settings"),
     "?": () => (ui.shortcuts = true),
   });

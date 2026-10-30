@@ -1,12 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { dispatch } from "../src/api/stream";
-import type { AppEvent, Game, GameSummary, Idea, Move, Trial, Version, Work } from "../src/api/types";
+import type { AppEvent, Game, GameSummary, Move, Work } from "../src/api/types";
 import { useConnections } from "../src/stores/connections";
 import { useGames } from "../src/stores/games";
-import { useIdeas } from "../src/stores/ideas";
 import { usePolicy } from "../src/stores/policy";
-import { useVersions } from "../src/stores/versions";
 import { useWork } from "../src/stores/work";
 
 /** A server that answers each path with the given body. */
@@ -26,11 +24,9 @@ let nextId = 1;
 const event = <K extends AppEvent["kind"]>(kind: K, data: Extract<AppEvent, { kind: K }>["data"]) =>
   dispatch({ id: nextId++, topic: "", kind, data } as AppEvent);
 
-const seat = (player: "you" | "dameless") => ({
+const seat = (player: "you" | "engine:stockfish") => ({
   player,
-  name: player === "you" ? "You" : "Dameless",
-  version: player === "dameless" ? 14 : null,
-  build: null,
+  name: player === "you" ? "You" : "Stockfish",
   rating: null,
   title: null,
 });
@@ -39,7 +35,7 @@ function summary(id: number, patch: Partial<GameSummary> = {}): GameSummary {
   return {
     id,
     white: seat("you"),
-    black: seat("dameless"),
+    black: seat("engine:stockfish"),
     source: { type: "local" },
     time: { type: "clock", initial_ms: 300_000, increment_ms: 3000 },
     status: "live",
@@ -178,80 +174,14 @@ describe("games", () => {
   });
 });
 
-describe("ideas", () => {
-  const idea: Idea = {
-    id: 1,
-    title: "Deeper LMR",
-    hypothesis: "h",
-    kind: "gain",
-    author: "claude",
-    branch: "deeper-lmr",
-    base: 14,
-    version: 20,
-    status: "running",
-    verdict: null,
-    trials: [],
-    tags: [],
-    notes: null,
-    created_at: "2026-10-01T00:00:00Z",
-    ended_at: null,
-  };
-  const trial: Trial = {
-    id: 3,
-    idea: 1,
-    stage: "short",
-    status: "running",
-    preset: "stc",
-    time: null,
-    played: null,
-    scaling: null,
-    bounds: [0, 3],
-    penta: [1, 2, 3, 2, 1],
-    wdl: [10, 10, 10],
-    llr: null,
-    elo: null,
-    nelo: null,
-    detail: null,
-    started_at: null,
-    ended_at: null,
-  };
-
-  it("adds a trial to its idea and patches it with progress", () => {
-    const ideas = useIdeas();
-    event("idea.upserted", idea);
-    event("trial.upserted", trial);
-    expect(ideas.ideas[1]?.trials.map((t) => t.id)).toEqual([3]);
-    event("trial.progress", {
-      id: 3,
-      idea: 1,
-      penta: [2, 2, 3, 2, 2],
-      wdl: [11, 10, 11],
-      llr: { value: 1, lower: -2.94, upper: 2.94 },
-      elo: null,
-    });
-    expect(ideas.ideas[1]?.trials[0]?.pairs).toBe(11);
-    expect(ideas.trials[3]?.wdl).toEqual([11, 10, 11]);
-    expect(ideas.ofTrial(3)?.idea.title).toBe("Deeper LMR");
-    event("trial.upserted", { ...trial, status: "passed" });
-    expect(ideas.ideas[1]?.trials).toHaveLength(1);
-    expect(ideas.ideas[1]?.trials[0]?.status).toBe("passed");
-  });
-
-  it("keeps each tune's latest step", () => {
-    const ideas = useIdeas();
-    event("tune.progress", { idea: 4, iteration: 10, values: [1, 2], result: 3 });
-    expect(ideas.tunes[4]?.iteration).toBe(10);
-  });
-});
-
 describe("work", () => {
   const work = (id: number, patch: Partial<Work>): Work => ({
     id,
-    kind: "trial",
+    kind: "review",
     status: "queued",
-    priority: "idea",
+    priority: "background",
     title: `w${id}`,
-    subject: { type: "idea", id: 1 },
+    subject: { type: "player", key: "you" },
     cores: 0,
     progress: null,
     paused_for: null,
@@ -265,7 +195,7 @@ describe("work", () => {
   it("sorts running, queued by priority then age, and recent", () => {
     const w = useWork();
     event("work.upserted", work(1, { status: "running" }));
-    event("work.upserted", work(2, { priority: "idea" }));
+    event("work.upserted", work(2, { priority: "background" }));
     event("work.upserted", work(3, { priority: "review" }));
     event("work.upserted", work(4, { status: "done", ended_at: "2026-10-02T00:00:00Z" }));
     expect(w.running.map((x) => x.id)).toEqual([1]);
@@ -276,7 +206,7 @@ describe("work", () => {
   });
 });
 
-describe("connections, policy and versions", () => {
+describe("connections and policy", () => {
   it("replaces a connection and tracks incoming challenges", () => {
     const c = useConnections();
     event("connection.upserted", {
@@ -293,7 +223,6 @@ describe("connections, policy and versions", () => {
       playing: [],
       challenges: [],
       you: null,
-      bot: null,
     });
     expect(c.youRating).toBe(1840);
     const challenge = {
@@ -313,7 +242,6 @@ describe("connections, policy and versions", () => {
     expect(c.challenges.map((x) => x.id)).toEqual(["abc"]);
     event("challenge", { challenge, event: "declined", reason: "later", detail: null });
     expect(c.challenges).toEqual([]);
-    expect(c.recent.map((x) => x.reason)).toEqual(["later"]);
   });
 
   it("follows the fair-play policy", () => {
@@ -327,24 +255,5 @@ describe("connections, policy and versions", () => {
     expect(p.allowed).toBe(false);
     expect(p.explorer).toBe(false);
     expect(p.reason).toContain("Lichess");
-  });
-
-  it("knows the champion from the line", () => {
-    const v = useVersions();
-    const version = (id: number, n: number): Version => ({
-      id,
-      name: `v${n}`,
-      commit: "x",
-      branch: null,
-      line: { type: "champion", number: n },
-      parent: null,
-      bench: null,
-      elo: null,
-      created_at: `2026-10-0${n}T00:00:00Z`,
-    });
-    event("version.upserted", version(1, 1));
-    event("version.upserted", version(2, 2));
-    expect(v.current?.name).toBe("v2");
-    expect(v.name(1)).toBe("v1");
   });
 });

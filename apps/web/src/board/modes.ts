@@ -29,16 +29,14 @@ export function modesFor(game: Pick<GameSummary, "status" | "you"> | null): Mode
 }
 
 /**
- * What opens first at `/` with nothing chosen: a live game (yours first, then the bot's, then a local game between engines, then a trial's), else your last
- * finished game, else nothing (the start position in Explore). `games` is newest first.
+ * What opens first at `/` with nothing chosen: a live game (yours first, then a local game between engines), else your
+ * last finished game, else nothing (the start position in Explore). `games` is newest first.
  */
 export function firstGame(games: readonly GameSummary[]): GameSummary | undefined {
   const live = games.filter(isLive);
   return (
     live.find((g) => g.you) ??
-    live.find((g) => g.source.type === "lichess" && g.source.connection === "bot") ??
     live.find((g) => g.source.type === "local") ??
-    live.find((g) => g.source.type === "trial") ??
     games.find((g) => g.you && g.status === "finished")
   );
 }

@@ -12,7 +12,6 @@ import type {
   Repertoire,
   RepertoireMove,
   RepertoireNode,
-  TrainStep,
 } from "../src/api/types";
 import {
   answerArrow,
@@ -27,10 +26,9 @@ import {
 } from "../src/board/drill";
 import { rematchRequest } from "../src/board/rematch";
 import { readVerb } from "../src/shell/commands";
-import { buildingText, isLevelSeat, seatName } from "../src/format";
+import { isLevelSeat, seatName } from "../src/format";
 import {
   calibrationCost,
-  levelOfRating,
   levelChoices,
   neighbour,
   ratingText,
@@ -40,20 +38,6 @@ import {
 } from "../src/sheets/levels";
 import { latest, progressData } from "../src/sheets/progress";
 import { departures, mainLineIds, outline, positionKey, repertoireNote } from "../src/sheets/repertoire";
-import {
-  datagenEstimate,
-  datagenText,
-  dataLine,
-  importConfirmText,
-  importNeed,
-  lossCurve,
-  nameFromUrl,
-  presetOf,
-  room,
-  SCHEDULES,
-  trainCost,
-  whyNoRoom,
-} from "../src/sheets/training";
 import { useDrills } from "../src/stores/drills";
 import { usePolicy } from "../src/stores/policy";
 
@@ -496,17 +480,10 @@ describe("the levels", () => {
 
   it("practises at the level nearest your rating", () => {
     expect(suggestedStrength(overview)).toBe("3");
-    expect(playOutSeat(overview)).toBe("dameless@3");
-    expect(playOutSeat({ ...overview, suggested: 12 })).toBe("dameless");
-    expect(playOutSeat({ ...overview, suggested: null })).toBe("dameless");
-    expect(playOutSeat(null)).toBe("dameless");
-  });
-
-  it("finds the level a seat played at from the rating the server wrote on it", () => {
-    expect(levelOfRating(overview, 742)).toBe(1);
-    expect(levelOfRating(overview, 1000)).toBe(2);
-    expect(levelOfRating(overview, 2222)).toBeNull();
-    expect(levelOfRating(overview, null)).toBeNull();
+    expect(playOutSeat("stockfish", overview)).toBe("stockfish@3");
+    expect(playOutSeat("stockfish", { ...overview, suggested: 12 })).toBe("stockfish");
+    expect(playOutSeat("stockfish", { ...overview, suggested: null })).toBe("stockfish");
+    expect(playOutSeat("lc0", null)).toBe("lc0");
   });
 
   it("puts the cost of calibrating in words", () => {
@@ -522,20 +499,11 @@ describe("the levels", () => {
   });
 
   it("names a level seat by its rating", () => {
-    const seat = {
-      player: "dameless",
-      name: "Dameless 1650",
-      level: 5,
-      version: 14,
-      build: null,
-      rating: 1650,
-      title: null,
-    };
+    const seat = { player: "engine:stockfish", name: "Stockfish 1650", level: 5, rating: 1650, title: null };
     expect(isLevelSeat(seat)).toBe(true);
-    expect(seatName(seat)).toBe("Dameless 1650");
-    expect(seatName({ ...seat, name: "v14", level: null })).toBe("Dameless v14");
-    expect(seatName({ ...seat, name: "Dameless v14", level: null })).toBe("Dameless v14");
-    expect(isLevelSeat({ ...seat, player: "you", name: "Dameless 12" })).toBe(false);
+    expect(seatName(seat)).toBe("Stockfish 1650");
+    expect(isLevelSeat({ ...seat, level: null })).toBe(false);
+    expect(isLevelSeat({ ...seat, player: "you", name: "Stockfish 12" })).toBe(false);
   });
 });
 
@@ -559,36 +527,22 @@ describe("the progress chart", () => {
         points: [point("2026-10-01T00:00:00Z", 1800), point("2026-10-10T00:00:00Z", 1840)],
       },
       {
-        player: "dameless",
-        metric: "elo",
-        points: [point("2026-10-05T00:00:00Z", 2100), point("2026-10-10T00:00:00Z", 2160)],
+        player: "you",
+        metric: "accuracy",
+        points: [point("2026-10-05T00:00:00Z", 76), point("2026-10-10T00:00:00Z", 81)],
       },
-      { player: "you", metric: "accuracy", points: [point("2026-10-02T00:00:00Z", 77)] },
       { player: "you", metric: "drill_hit_rate", points: [] },
     ],
   };
 
-  it("puts both players on one time axis, a gap where a line has no point", () => {
-    const d = progressData(chart);
+  it("puts the lines on one time axis, a gap where a line has no point", () => {
+    const d = progressData(chart, ["rating", "accuracy"]);
     expect(d.x).toHaveLength(3);
-    expect(d.lines.map((l) => l.metric)).toEqual(["rating", "elo"]);
+    expect(d.lines.map((l) => l.metric)).toEqual(["rating", "accuracy"]);
     expect(d.lines[0]!.values).toEqual([1800, null, 1840]);
-    expect(d.lines[1]!.values).toEqual([null, 2100, 2160]);
+    expect(d.lines[1]!.values).toEqual([null, 76, 81]);
     expect(latest(d.lines[0]!)).toBe(1840);
-  });
-
-  it("keeps Dameless on the rating scale only once the levels anchor it", () => {
-    expect(progressData(chart).lines[1]!.scale).toBe("rating");
-    const relative: ProgressChart = {
-      series: [
-        {
-          player: "dameless",
-          metric: "elo",
-          points: [point("2026-10-05T00:00:00Z", 12), point("2026-10-09T00:00:00Z", 30)],
-        },
-      ],
-    };
-    expect(progressData(relative).lines[0]!.scale).toBe("elo");
+    expect(progressData(chart).lines.map((l) => l.metric)).toEqual(["rating"]);
   });
 
   it("shows the hit rate as a percentage and leaves out a line of fewer than two points", () => {
@@ -603,119 +557,14 @@ describe("the progress chart", () => {
     };
     expect(progressData(withHits, ["drill_hit_rate"]).lines[0]!.values).toEqual([50, 75]);
     expect(progressData(chart, ["drill_hit_rate"]).lines).toEqual([]);
-    expect(progressData(chart, ["accuracy"]).lines).toEqual([]);
   });
 });
 
-// ---- Data and training
+// ---- Rematch
 
-describe("what data costs", () => {
-  it("estimates the size at 4.3 bytes a position and the time at 4 to 5 million an hour", () => {
-    const e = datagenEstimate(20_000_000, 8, 8);
-    expect(e.bytes).toBe(86_000_000);
-    expect(e.seconds[0]).toBeCloseTo(4 * 3600, 0);
-    expect(e.seconds[1]).toBeCloseTo(5 * 3600, 0);
-    expect(datagenText(e)).toBe("86.0 MB on disk, about 4 h to 5 h on this machine, in the background.");
-  });
-
-  it("goes faster with more threads than the default, and not slower with fewer than one", () => {
-    const base = datagenEstimate(10_000_000, 8, 8);
-    const more = datagenEstimate(10_000_000, 16, 8);
-    expect(more.seconds[0]).toBeCloseTo(base.seconds[0] / 2, 3);
-    expect(datagenEstimate(10_000_000, 0, 8).seconds[0]).toBeCloseTo(base.seconds[0] * 8, 3);
-  });
-
-  it("says how much of the cap is used and what room is left under it and the disk", () => {
-    const d = { cap_bytes: 10e9, used_bytes: 1.2e9, disk_free_bytes: 212e9, keep_free_bytes: 15e9 };
-    expect(dataLine(d)).toBe("Data: 1.2 of 10 GB");
-    expect(room(d)).toBe(8.8e9);
-    // The disk is the tighter limit.
-    expect(room({ ...d, disk_free_bytes: 20e9 })).toBe(5e9);
-    expect(room({ ...d, disk_free_bytes: null })).toBe(8.8e9);
-    expect(room({ ...d, used_bytes: 12e9 })).toBe(0);
-  });
-
-  it("explains why something does not fit", () => {
-    const status = { cap_bytes: 10e9, used_bytes: 9e9, disk_free_bytes: 212e9, keep_free_bytes: 15e9, datasets: [] };
-    expect(whyNoRoom(0.5e9, status)).toBeNull();
-    expect(whyNoRoom(2e9, status)).toMatch(/more than the 1\.0 GB left under the 10\.0 GB cap/);
-    expect(whyNoRoom(2e9, { ...status, used_bytes: 0, disk_free_bytes: 16e9 })).toMatch(/under 15\.0 GB free/);
-  });
-
-  it("states an import's size, where it goes and what it needs", () => {
-    const need = importNeed(1.2e9);
-    expect(need.peak).toBe(3.78e9);
-    expect(need.kept).toBe(2.58e9);
-    expect(importConfirmText("shard-03", 1.2e9)).toBe(
-      "Download 1.2 GB into your data folder (data/shard-03). It needs up to 3.8 GB while it converts, and keeps about 2.6 GB.",
-    );
-  });
-
-  it("names a dataset from its address", () => {
-    expect(
-      nameFromUrl("https://huggingface.co/datasets/vondele/x/resolve/main/shard-03.binpack.zst?download=true"),
-    ).toBe("shard-03");
-    expect(nameFromUrl("https://example.com/a/My Data!.vf")).toBe("My-Data");
-    expect(nameFromUrl("")).toBe("");
-  });
-});
-
-describe("a training run", () => {
-  it("costs the positions it trains on, its time at the smoke run's speed and its checkpoints", () => {
-    const quick = trainCost(SCHEDULES.quick.schedule);
-    expect(quick.positions).toBe(20 * 200 * 16_384);
-    expect(quick.seconds).toBeCloseTo(quick.positions / 760_000, 6);
-    expect(quick.checkpointBytes).toBe(3 * 720_000_000);
-    expect(trainCost(SCHEDULES.long.schedule).positions).toBe(40 * 6104 * 16_384);
-  });
-
-  it("knows a preset from its numbers, and a changed one as custom", () => {
-    expect(presetOf(SCHEDULES.quick.schedule)).toBe("quick");
-    expect(presetOf(SCHEDULES.long.schedule)).toBe("long");
-    expect(presetOf({ ...SCHEDULES.quick.schedule, superbatches: 21 })).toBeNull();
-  });
-
-  const step = (seq: number, superbatch: number, batch: number, loss: number): TrainStep => ({
-    seq,
-    superbatch,
-    batch,
-    loss,
-    lr: 1e-4,
-    grad_norm: null,
-    positions_per_sec: 700_000,
-    elapsed_seconds: seq,
-  });
-
-  it("draws the loss against superbatches", () => {
-    const steps = [step(1, 1, 100, 0.04), step(2, 1, 200, 0.03), step(3, 2, 100, 0.028)];
-    expect(lossCurve(steps, 200)).toEqual({ x: [0.5, 1, 1.5], loss: [0.04, 0.03, 0.028] });
-  });
-
-  it("lets a resumed run replace the steps it redid", () => {
-    const steps = [step(1, 1, 100, 0.04), step(2, 1, 200, 0.03), step(3, 1, 150, 0.031), step(4, 1, 200, 0.029)];
-    const c = lossCurve(steps, 200);
-    expect(c.x).toEqual([0.5, 0.75, 1]);
-    expect(c.loss).toEqual([0.04, 0.031, 0.029]);
-  });
-
-  it("thins a long run to the points the chart can draw, keeping the last", () => {
-    const steps = Array.from({ length: 5000 }, (_, i) =>
-      step(i + 1, Math.floor(i / 200) + 1, (i % 200) + 1, 0.05 - i * 1e-6),
-    );
-    const c = lossCurve(steps, 200, 400);
-    expect(c.x.length).toBeLessThanOrEqual(401);
-    expect(c.x.at(-1)).toBeCloseTo(24 + 200 / 200, 6);
-    expect(c.x.every((x, i) => i === 0 || x > c.x[i - 1]!)).toBe(true);
-  });
-});
-
-// ---- Rematch and waiting
-
-const seat = (player: "you" | "dameless", extra: Partial<GameSummary["white"]> = {}) => ({
+const seat = (player: string, extra: Partial<GameSummary["white"]> = {}) => ({
   player,
-  name: player === "you" ? "You" : "Dameless",
-  version: player === "dameless" ? 14 : null,
-  build: null,
+  name: player === "you" ? "You" : "Stockfish",
   rating: null,
   title: null,
   ...extra,
@@ -728,7 +577,7 @@ const gameOf = (
   summary: {
     id: 3,
     white: seat("you"),
-    black: seat("dameless"),
+    black: seat("engine:stockfish"),
     source: { type: "local" },
     time: { type: "clock", initial_ms: 300_000, increment_ms: 3000 },
     status: "finished",
@@ -746,35 +595,32 @@ const gameOf = (
 });
 
 describe("a rematch", () => {
-  const cx = { champion: 14, levels: overview };
+  const cx = { analysis: "stockfish" };
 
   it("swaps the colours and keeps the opponent and the clock", () => {
     expect(rematchRequest(gameOf(), cx)).toEqual({
-      white: "dameless",
+      white: "stockfish",
       black: "you",
       time: { type: "clock", initial_ms: 300_000, increment_ms: 3000 },
     });
-    const asBlack = gameOf({ you: "black", white: seat("dameless"), black: seat("you") });
-    expect(rematchRequest(asBlack, cx)).toMatchObject({ white: "you", black: "dameless" });
+    const asBlack = gameOf({ you: "black", white: seat("engine:stockfish"), black: seat("you") });
+    expect(rematchRequest(asBlack, cx)).toMatchObject({ white: "you", black: "stockfish" });
   });
 
-  it("asks for the same version, unless it is the champion, and the same level", () => {
-    expect(rematchRequest(gameOf({ black: seat("dameless", { version: 9 }) }), cx)?.white).toBe("dameless:#9");
-    const atLevel = gameOf({ black: seat("dameless", { name: "Dameless 742", rating: 742 }) });
-    expect(rematchRequest(atLevel, cx)?.white).toBe("dameless@1");
-    // A rating that matches no level is full strength.
-    const unknown = gameOf({ black: seat("dameless", { name: "Dameless 1234", rating: 1234 }) });
-    expect(rematchRequest(unknown, cx)?.white).toBe("dameless");
+  it("asks for the same engine at the same level", () => {
+    const atLevel = gameOf({ black: seat("engine:stockfish", { name: "Stockfish 742", rating: 742, level: 1 }) });
+    expect(rematchRequest(atLevel, cx)?.white).toBe("stockfish@1");
+    const maia = gameOf({ black: seat("engine:maia-1500", { name: "Maia 1500", rating: 1500 }) });
+    expect(rematchRequest(maia, cx)?.white).toBe("maia-1500");
   });
 
-  it("starts from a new book line for a book start, and from the same position otherwise", () => {
+  it("starts from the same position", () => {
     const fen = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3";
-    expect(rematchRequest(gameOf({}, fen), { ...cx, started: { type: "book" } })?.from).toEqual({ type: "book" });
     expect(rematchRequest(gameOf({}, fen), cx)?.from).toEqual({ type: "position", fen, moves: [] });
     expect(rematchRequest(gameOf(), cx)?.from).toBeUndefined();
   });
 
-  it("is only for a finished local game of yours against Dameless", () => {
+  it("is only for a finished local game of yours against an engine", () => {
     expect(rematchRequest(gameOf({ status: "live" }), cx)).toBeNull();
     expect(rematchRequest(gameOf({ you: null }), cx)).toBeNull();
     expect(
@@ -784,14 +630,6 @@ describe("a rematch", () => {
       ),
     ).toBeNull();
     expect(rematchRequest(gameOf({ black: seat("you"), white: seat("you") }), cx)).toBeNull();
-  });
-});
-
-describe("waiting for a build", () => {
-  it("says which version is being built and about how long", () => {
-    expect(buildingText("Building v1")).toBe("Building Dameless v1 first (about a minute)…");
-    expect(buildingText("Building reckless/main")).toBe("Building reckless/main first (about a minute)…");
-    expect(buildingText("Building")).toBe("Building the engine first (about a minute)…");
   });
 });
 
@@ -819,77 +657,5 @@ describe("the event stream with the server down", () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-});
-
-describe("the training store", () => {
-  beforeEach(() => setActivePinia(createPinia()));
-
-  it("extends a run with the progress it hears of, and keeps the data total current", async () => {
-    const { dispatch } = await import("../src/api/stream");
-    const { useTraining } = await import("../src/stores/training");
-    serve({
-      "/api/nets": () => [],
-      "/api/datasets": () => ({
-        cap_bytes: 10e9,
-        used_bytes: 1e9,
-        disk_free_bytes: 100e9,
-        keep_free_bytes: 15e9,
-        datasets: [],
-      }),
-      "/api/ideas/9/train": () => ({
-        spec: { datasets: [], schedule: SCHEDULES.quick.schedule },
-        steps: [{ seq: 1, superbatch: 1, batch: 20, loss: 0.04, lr: 1e-4, positions_per_sec: 7e5, elapsed_seconds: 1 }],
-        net: null,
-      }),
-    });
-    const training = useTraining();
-    await training.load();
-    await training.loadRun(9);
-    expect(training.runs[9]?.steps).toHaveLength(1);
-
-    const progress = (superbatch: number) =>
-      ({
-        id: 100 + superbatch,
-        topic: "idea:9",
-        kind: "train.progress",
-        data: {
-          work: 3,
-          idea: 9,
-          superbatch,
-          superbatches: 20,
-          batch: 40,
-          batches_per_superbatch: 200,
-          loss: 0.03,
-          lr: 1e-4,
-          positions_per_sec: 7.4e5,
-          grad_norm: null,
-          elapsed_seconds: 9,
-        },
-      }) as const;
-    dispatch(progress(1));
-    dispatch(progress(2));
-    expect(training.runs[9]?.steps.map((s) => s.seq)).toEqual([1, 2, 3]);
-    // A run of another idea, or outside any idea, is not added to this one.
-    dispatch({ ...progress(3), data: { ...progress(3).data, idea: 4 } } as never);
-    dispatch({ ...progress(3), data: { ...progress(3).data, idea: null } } as never);
-    expect(training.runs[9]?.steps).toHaveLength(3);
-
-    const dataset = {
-      id: 5,
-      name: "dfrc",
-      format: "viriformat",
-      positions: 1000,
-      games: 10,
-      size_bytes: 2e9,
-      source: { type: "datagen", settings: {} },
-      score_units: null,
-      path: "data/dfrc",
-      created_at: "2026-10-27T00:00:00Z",
-      updated_at: "2026-10-27T00:00:00Z",
-    };
-    dispatch({ id: 200, topic: "training", kind: "dataset.upserted", data: dataset } as never);
-    expect(training.datasets.map((d) => d.name)).toEqual(["dfrc"]);
-    expect(training.data?.used_bytes).toBe(2e9);
   });
 });

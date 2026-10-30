@@ -196,7 +196,7 @@ const doubled = [...levelRows, ...levelRows].map((r, id) => ({ ...r, id }));
   <UiSection id="empty" title="UiEmpty">
     <template #note>One sentence that teaches the next action, one button. Errors are red in the icon only.</template>
     <div class="kit-pair">
-      <UiEmpty :icon="PhTray" title="No games yet" body="Play one against Dameless and it shows up here.">
+      <UiEmpty :icon="PhTray" title="No games yet" body="Play one against an engine and it shows up here.">
         <template #actions>
           <EButton size="sm">New game</EButton><EButton size="sm" variant="quiet">Import</EButton>
         </template>

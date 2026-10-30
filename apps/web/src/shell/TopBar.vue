@@ -10,19 +10,17 @@ import { formatShortcut } from "@eos-ui/vue";
 import { down, up, useMedia } from "../media";
 import { useConnections } from "../stores/connections";
 import { useDrills } from "../stores/drills";
-import { useVersions } from "../stores/versions";
 import UiPlayer from "../ui/UiPlayer.vue";
 import Logo from "./Logo.vue";
-import BotLive from "./BotLive.vue";
 import LiveGame from "./LiveGame.vue";
 import { useStartDrills } from "./drillFlow";
 import { useUi } from "./ui";
 import WorkIndicator from "./WorkIndicator.vue";
 
 /**
- * The header: the wordmark, the command bar, New game, Train with the drills waiting, You and Dameless as two chips of
- * one shape that open their sheets, the background work, settings. On a tablet the Games rail is a button here; on a
- * phone the chips live in the tab bar and the header keeps the icons.
+ * The header: the wordmark, the command bar, New game, Train with the drills waiting, You as a chip that opens your
+ * sheet, the background work, settings. On a tablet the Games rail is a button here; on a phone the chip lives in the
+ * tab bar and the header keeps the icons.
  */
 const ui = useUi();
 const drills = useDrills();
@@ -38,7 +36,6 @@ onMounted(readToday);
 watch(() => drills.available, readToday);
 const route = useRoute();
 const connections = useConnections();
-const versions = useVersions();
 
 const keys = formatShortcut("mod+k");
 
@@ -46,9 +43,7 @@ const phone = useMedia(down("md"));
 const wide = useMedia(up("lg"));
 
 const you = computed(() => ({ name: "You", key: "you", rating: connections.youRating }));
-const dameless = computed(() => ({ name: "Dameless", key: "dameless" }));
 const onYou = computed(() => route.path === "/you");
-const onDameless = computed(() => route.path.startsWith("/dameless"));
 </script>
 
 <template>
@@ -81,7 +76,6 @@ const onDameless = computed(() => route.path.startsWith("/dameless"));
     </template>
     <template #actions>
       <LiveGame />
-      <BotLive />
       <EButton size="sm" variant="outline" :icon="PhPlus" class="new" aria-label="New game" @click="ui.startNewGame()">
         <span class="new-label">New game</span>
       </EButton>
@@ -98,18 +92,7 @@ const onDameless = computed(() => route.path.startsWith("/dameless"));
         <span class="train-label">Train</span>
         <span v-if="drills.waiting" class="train-count num">{{ drills.waiting }}</span>
       </EButton>
-      <template v-if="!phone">
-        <UiPlayer :seat="you" size="md" link :current="onYou" title="Your profile" class="chip" />
-        <UiPlayer
-          :seat="dameless"
-          :rating="versions.current?.name ?? null"
-          size="md"
-          link
-          :current="onDameless"
-          title="Dameless: ideas, strength, the bot"
-          class="chip"
-        />
-      </template>
+      <UiPlayer v-if="!phone" :seat="you" size="md" link :current="onYou" title="Your profile" class="chip" />
       <WorkIndicator />
       <EIconButton
         :icon="PhGearSix"

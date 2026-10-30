@@ -1,5 +1,5 @@
 //! Times reviews of a fixed set of games with a real engine, and writes what they came to, so two methods (or two
-//! versions of this crate) can be compared on speed and on results.
+//! revisions of this crate) can be compared on speed and on results.
 //!
 //! ```text
 //! cargo run --release -p dameless-analysis --example review_bench -- \
@@ -20,52 +20,18 @@
 //!
 //! The output has, per game, both accuracies and each move's judgement, classification and score before it.
 
-use std::{
-    collections::VecDeque,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::{collections::VecDeque, sync::Mutex, time::Instant};
 
-use async_trait::async_trait;
-use dameless_analysis::{Binaries, Eval, ReviewRequest, ReviewResult, Reviews, VersionRef, search};
+use dameless_analysis::{Eval, ReviewRequest, ReviewResult, Reviews, search};
 use dameless_core::{
-    BuildId, Error, VersionId,
     game::Game,
     review::{PositionEval, ReviewInput, ReviewedMove, judge_game, to_search},
-    version::{Build, BuildStatus, Line, Version},
 };
 use dameless_engine::pool::{EngineSpec, Pool, Reset};
 use dameless_hub::{Config, Executor, Hub, WorkContext};
-use dameless_store::{NewGame, NewVersion, Store};
+use dameless_store::NewGame;
+use dameless_work::FixedEngines;
 use serde::Serialize;
-
-struct Engine {
-    store: Store,
-    path: PathBuf,
-}
-
-#[async_trait]
-impl Binaries for Engine {
-    async fn resolve(&self, _: &VersionRef) -> Result<Version, Error> {
-        self.store.champion().await?.ok_or_else(|| Error::not_found("no champion"))
-    }
-
-    async fn binary(&self, version: &VersionRef, features: &[&str]) -> Result<(Build, PathBuf), Error> {
-        let v = self.resolve(version).await?;
-        let build = Build {
-            id: BuildId(1),
-            version: v.id,
-            features: features.iter().map(|f| (*f).to_owned()).collect(),
-            net: None,
-            bench: None,
-            nps: None,
-            path: self.path.display().to_string(),
-            status: BuildStatus::Ready,
-        };
-        Ok((build, self.path.clone()))
-    }
-}
 
 #[derive(Serialize)]
 struct Ply {
@@ -153,12 +119,9 @@ async fn main() {
 /// The app's own review, end to end, in a fresh data directory.
 async fn app(engine: &std::path::Path, games: &[Game], cores: usize, nodes: u64) -> (Vec<GameOut>, u64) {
     let dir = tempfile::tempdir().unwrap();
-    let config =
-        Config::new(dir.path().join("data"), "127.0.0.1:0".parse().unwrap(), dir.path().join("reckless"), cores as u32);
+    let config = Config::new(dir.path().join("data"), "127.0.0.1:0".parse().unwrap(), cores as u32);
     let hub = Hub::open(config).unwrap();
-    hub.store.upsert_version(NewVersion::new("v1", "bench", Line::Champion { number: 1 })).await.unwrap();
-    let binaries = Arc::new(Engine { store: hub.store.clone(), path: engine.to_path_buf() });
-    let eval = Eval::new(hub.clone(), binaries);
+    let eval = Eval::new(hub.clone(), FixedEngines::new().with("bench", engine, &[]).shared());
     let mut ids = Vec::new();
     for g in games {
         let s = &g.summary;
@@ -240,7 +203,7 @@ async fn engine_only(
         .iter()
         .zip(found)
         .map(|(g, evals)| {
-            let (summary, ps) = judge_game(ReviewInput::from(g), &evals, VersionId(1), nodes).unwrap();
+            let (summary, ps) = judge_game(ReviewInput::from(g), &evals, "bench", nodes).unwrap();
             GameOut {
                 id: g.summary.id.0,
                 white: summary.white.accuracy,

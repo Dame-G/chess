@@ -1,9 +1,8 @@
 import { stream } from "../api/stream";
 import { useConnections } from "./connections";
+import { useEngines } from "./engines";
 import { useGames } from "./games";
-import { useIdeas } from "./ideas";
 import { usePolicy } from "./policy";
-import { useVersions } from "./versions";
 import { useWork } from "./work";
 
 /**
@@ -14,7 +13,7 @@ import { useWork } from "./work";
  */
 export async function startStores() {
   const policy = usePolicy();
-  const stores = [useGames(), useIdeas(), useWork(), useConnections(), useVersions()];
+  const stores = [useGames(), useWork(), useConnections(), useEngines()];
   const status = await policy.load().then(
     () => policy.status,
     () => null,

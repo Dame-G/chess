@@ -1,8 +1,8 @@
 //! Profiles of players and comparisons: a player's stored games (and their newest reviews) added up by `core`'s
 //! [`profile`], and profiles side by side by `core`'s [`compare`]. These only read; the searching was the reviews'.
 //!
-//! Players are You, Dameless as a player of games, people on Lichess and Stockfish levels. Weak spots (positions from
-//! your mistakes, to play out again) are found for You only. Dameless's logbook (its versions and strength) is `work`'s.
+//! Players are You, engines of the engines list (and engines that played here before, such as Reckless) and people on
+//! Lichess. Weak spots (positions from your mistakes, to play out again) are found for You only.
 
 use std::sync::Arc;
 
@@ -13,6 +13,17 @@ use dameless_core::{
 };
 use dameless_hub::Hub;
 use dameless_store::ConnectionField;
+
+/// An engine's name from its id, for one no longer on the list: `reckless` is Reckless.
+fn engine_name(id: &str) -> String {
+    id.split('-')
+        .map(|w| {
+            let mut c = w.chars();
+            c.next().map(|f| f.to_uppercase().chain(c).collect::<String>()).unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
 /// Players a comparison takes, at most.
 pub const MAX_COMPARED: usize = 8;
@@ -33,7 +44,7 @@ impl Profiles {
     }
 
     /// What is known of a player: the players table first (Lichess people, as imports record them), then your Lichess
-    /// account for You, then the name they sat at a board under.
+    /// account for You, the engines list for an engine, then the name they sat at a board under.
     pub async fn player(&self, key: &PlayerKey) -> Result<Player, Error> {
         let store = &self.hub.store;
         if let Some(p) = store.player(key).await? {
@@ -53,8 +64,15 @@ impl Profiles {
                     player.lichess = Some(a.username);
                 }
             }
-            PlayerKey::Dameless => player.name = "Dameless".into(),
-            PlayerKey::Stockfish(level) => player.name = format!("Stockfish level {level}"),
+            PlayerKey::Engine(id) => {
+                player.name = match store.engine(id).await? {
+                    Some(e) => e.name,
+                    None => match dameless_core::engines::builtin(id) {
+                        Some(b) => b.name.to_owned(),
+                        None => engine_name(id),
+                    },
+                };
+            }
             PlayerKey::Lichess(id) => {
                 let newest = store.profile_games(key.clone(), ProfileFilter { limit: 1, ..Default::default() }, false);
                 let seat = newest.await?.into_iter().next().and_then(|g| {

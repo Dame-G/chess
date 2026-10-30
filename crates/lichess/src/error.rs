@@ -1,8 +1,6 @@
 //! What a call to Lichess can come to, beyond an answer. The token is never part of an error: errors are shown to
 //! people and logged.
 
-use std::time::Duration;
-
 use serde_json::Value;
 
 use crate::time::parse_iso;
@@ -40,26 +38,13 @@ pub struct LichessError {
 /// The `ratelimit` block of an error.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RateLimitInfo {
-    /// Which limit, such as `bot.vsBot.day`.
+    /// Which limit, such as `api.challenge`.
     pub key: Option<String>,
     /// Seconds until it lifts, when Lichess says.
     pub seconds: Option<f64>,
     /// When it lifts (ms since 1970), when Lichess says.
     pub until: Option<i64>,
 }
-
-/// Lichess's daily limit on games between bots (`bot.vsBot.day`, at most 100 in a rolling day), read from an error.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct BotDailyLimit {
-    /// Our bot has played its games, so no game against any bot can start; else the bot challenged has played its own.
-    pub ours: bool,
-    /// How long until the limit lifts: `ratelimit.seconds`, else the time in `ratelimit.until` or in the message, else
-    /// an hour.
-    pub retry_after: Duration,
-}
-
-/// When the error says nothing of when its limit lifts.
-const UNKNOWN_RESET: Duration = Duration::from_secs(3600);
 
 impl LichessError {
     /// Reads an error body (any text).
@@ -108,32 +93,6 @@ impl Error {
         self.status() == Some(401)
     }
 
-    /// Whether this is Lichess's daily limit on games between bots, and whose, as of `now_ms` (ms since 1970).
-    /// Lichess answers it with 429 or 400: "You played 100 games against other bots today, please wait before
-    /// challenging another bot." (ours) or "<name> played 100 games against other bots today, please wait until
-    /// <time> to challenge them." (theirs).
-    pub fn bot_daily_limit(&self, now_ms: i64) -> Option<BotDailyLimit> {
-        let error = self.lichess()?;
-        let key = error.ratelimit.as_ref().and_then(|r| r.key.as_deref());
-        if key != Some("bot.vsBot.day") && !error.message.contains("games against other bots") {
-            return None;
-        }
-        let ours = !error.message.contains("challenge them");
-        let limit = error.ratelimit.clone().unwrap_or_default();
-        let retry_after = if let Some(s) = limit.seconds {
-            Duration::from_secs_f64(s)
-        } else {
-            let until = limit.until.or_else(|| {
-                error.message.split("until ").nth(1).and_then(|rest| parse_iso(rest.split_whitespace().next()?))
-            });
-            match until {
-                Some(t) => Duration::from_millis((t - now_ms).max(0) as u64),
-                None => UNKNOWN_RESET,
-            }
-        };
-        Some(BotDailyLimit { ours, retry_after })
-    }
-
     /// The error for an answer with this status and body.
     pub(crate) fn from_answer(status: u16, text: &str) -> Self {
         match status {
@@ -167,22 +126,5 @@ mod tests {
         let e = Error::from_answer(429, r#"{"error":"Too many requests","ratelimit":{"key":"api.x","seconds":5}}"#);
         assert!(matches!(&e, Error::RateLimited { .. }));
         assert_eq!(e.lichess().unwrap().ratelimit.as_ref().unwrap().seconds, Some(5.0));
-        assert_eq!(e.bot_daily_limit(0), None);
-    }
-
-    #[test]
-    fn tells_the_daily_bot_limit_and_whose_it_is() {
-        let ours = r#"{"error":"You played 100 games against other bots today, please wait before challenging another bot.","ratelimit":{"key":"bot.vsBot.day","seconds":3000}}"#;
-        let limit = Error::from_answer(429, ours).bot_daily_limit(0).unwrap();
-        assert!(limit.ours);
-        assert_eq!(limit.retry_after.as_secs(), 3000);
-        let theirs = r#"{"error":"Gamma played 100 games against other bots today, please wait until 1970-01-01T01:00:00Z to challenge them.","ratelimit":{"key":"bot.vsBot.day"}}"#;
-        let limit = Error::from_answer(400, theirs).bot_daily_limit(0).unwrap();
-        assert!(!limit.ours);
-        assert_eq!(limit.retry_after.as_secs(), 3600);
-        let until = r#"{"error":"You played 100 games against other bots today","ratelimit":{"key":"bot.vsBot.day","until":"1970-01-01T00:10:00Z"}}"#;
-        assert_eq!(Error::from_answer(429, until).bot_daily_limit(60_000).unwrap().retry_after.as_secs(), 540);
-        let vague = r#"{"error":"You played 100 games against other bots today"}"#;
-        assert_eq!(Error::from_answer(400, vague).bot_daily_limit(0).unwrap().retry_after, UNKNOWN_RESET);
     }
 }

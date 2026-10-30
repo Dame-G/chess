@@ -12,7 +12,7 @@ use reqwest::{Method, header};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::{Config, Error, Ndjson, ndjson::parse_all};
+use crate::{Config, Error, Ndjson};
 
 /// A client of Lichess for one token, or anonymous. Cheap to clone; clones share the request slot and the pause.
 #[derive(Clone)]
@@ -173,11 +173,6 @@ impl Lichess {
 
     pub(crate) async fn delete_ok(&self, path: &str) -> Result<(), Error> {
         self.text(Method::DELETE, path, Body::None, false).await.map(drop)
-    }
-
-    /// A GET answered with NDJSON that ends by itself, read whole. Lines that do not read are left out.
-    pub(crate) async fn lines<T: DeserializeOwned>(&self, path: &str) -> Result<Vec<T>, Error> {
-        Ok(parse_all(&self.text(Method::GET, path, Body::None, true).await?))
     }
 
     /// Opens a stream of JSON lines. The slot is held until Lichess has answered, not for the stream's life.

@@ -4,7 +4,7 @@ mod common;
 
 use std::time::Duration;
 
-use common::{Harness, QUIET_DRAW, SCHOLARS_MATE, eventually, finished_game, harness};
+use common::{Harness, QUIET_DRAW, SCHOLARS_MATE, eventually, fake, finished_game, harness};
 use dameless_analysis::{ReviewCheckpoint, ReviewRequest, ReviewResult, ReviewSpec, Reviews};
 use dameless_core::{
     GameId, PlayerKey, Score, Side,
@@ -31,16 +31,16 @@ async fn run(h: &Harness, reviews: &Reviews, work: &Work, spec: serde_json::Valu
 async fn a_game_is_reviewed_stored_and_announced_then_skipped() {
     let h = harness(2).await;
     let reviews = Reviews::new(h.eval.clone());
-    let game = finished_game(&h.hub, PlayerKey::You, PlayerKey::Dameless, &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
+    let game = finished_game(&h.hub, PlayerKey::You, fake(), &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
     let mut sub = h.hub.bus.subscribe(0, TopicFilter::of(["games", "work"]));
 
     let (work, spec) = queue(&h, &reviews, ReviewRequest { games: vec![game], ..Default::default() }).await;
-    assert_eq!((work.kind, work.title.as_str()), (WorkKind::Review, "Reviewing you vs dameless"));
+    assert_eq!((work.kind, work.title.as_str()), (WorkKind::Review, "Reviewing you vs engine:fake"));
     assert_eq!(work.subject, Subject::Game { id: game });
     let resolved: ReviewSpec = serde_json::from_value(spec.clone()).unwrap();
     assert_eq!(
-        (resolved.version, resolved.nodes, resolved.multipv, resolved.concurrency),
-        (h.champion.id, 200_000, 2, 1)
+        (resolved.engine.as_str(), resolved.nodes, resolved.multipv, resolved.concurrency),
+        ("fake", 200_000, 2, 1)
     );
 
     let result = run(&h, &reviews, &work, spec).await;
@@ -49,7 +49,8 @@ async fn a_game_is_reviewed_stored_and_announced_then_skipped() {
     assert_eq!((result.positions_searched, result.positions_cached), (7, 0));
 
     let review = h.hub.store.review(game, None, None).await.unwrap().unwrap();
-    assert_eq!((review.version, review.nodes, review.plies.len()), (h.champion.id, 200_000, 7));
+    assert_eq!((review.engine.as_str(), review.nodes, review.plies.len()), ("Fake 1.0", 200_000, 7));
+    assert_eq!(result.engine, "Fake 1.0");
     let mate = review.plies.last().unwrap();
     assert_eq!((mate.san.as_str(), mate.side, mate.eval_after), ("Qxf7#", Side::White, Score::Mate(0)));
     // The fake engine's best move is the alphabetically first legal one; 1. e4 is not it.
@@ -79,7 +80,7 @@ async fn a_game_is_reviewed_stored_and_announced_then_skipped() {
         serde_json::from_value(h.hub.store.work_checkpoint(work.id).await.unwrap().unwrap()).unwrap();
     assert_eq!((checkpoint.next, checkpoint.reviewed), (1, 1));
 
-    // Again with the same version and budget: nothing to do.
+    // Again with the same engine and budget: nothing to do.
     let (work, spec) = queue(&h, &reviews, ReviewRequest { games: vec![game], ..Default::default() }).await;
     let again = run(&h, &reviews, &work, spec).await;
     assert_eq!((again.reviewed, again.skipped, again.positions_searched), (0, 1, 0));
@@ -95,11 +96,11 @@ async fn a_game_is_reviewed_stored_and_announced_then_skipped() {
 async fn a_players_newest_unreviewed_games_are_found() {
     let h = harness(4).await;
     let reviews = Reviews::new(h.eval.clone());
-    let mate = finished_game(&h.hub, PlayerKey::You, PlayerKey::Dameless, &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
-    let draw = finished_game(&h.hub, PlayerKey::Dameless, PlayerKey::You, &QUIET_DRAW, Outcome::Draw, 2).await;
-    finished_game(&h.hub, PlayerKey::Dameless, PlayerKey::Stockfish(3), &QUIET_DRAW, Outcome::Draw, 3).await;
+    let mate = finished_game(&h.hub, PlayerKey::You, fake(), &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
+    let draw = finished_game(&h.hub, fake(), PlayerKey::You, &QUIET_DRAW, Outcome::Draw, 2).await;
+    finished_game(&h.hub, fake(), PlayerKey::Engine("maia-1500".into()), &QUIET_DRAW, Outcome::Draw, 3).await;
 
-    // All of them in the background: below ideas, newest first, with no cap.
+    // All of them in the background: at the lowest priority, newest first, with no cap.
     let all = reviews.prepare(ReviewRequest { player: Some(PlayerKey::You), background: true, ..Default::default() });
     let all = all.await.unwrap();
     assert_eq!((all.priority, all.title.as_str()), (Priority::Background, "Reviewing all 2 of your games"));
@@ -122,6 +123,13 @@ async fn a_players_newest_unreviewed_games_are_found() {
     let (_, spec) = queue(&h, &reviews, req).await;
     assert!(serde_json::from_value::<ReviewSpec>(spec).unwrap().games.is_empty());
 
+    // A game another engine reviewed (Reckless, before the engines list) counts as reviewed: no review all again.
+    let older = finished_game(&h.hub, PlayerKey::You, fake(), &QUIET_DRAW, Outcome::Draw, 4).await;
+    assert_eq!(reviews.unreviewed_count(&PlayerKey::You).await.unwrap(), 1);
+    let summary = h.hub.store.review(mate, None, None).await.unwrap().unwrap().summary;
+    h.hub.store.put_review(older, "reckless|Reckless abcdef1".into(), summary, Vec::new()).await.unwrap();
+    assert_eq!(reviews.unreviewed_count(&PlayerKey::You).await.unwrap(), 0);
+
     let missing = reviews.prepare(ReviewRequest { games: vec![GameId(999)], ..Default::default() }).await;
     assert_eq!(missing.unwrap_err().status(), 404);
     assert_eq!(reviews.prepare(ReviewRequest::default()).await.unwrap_err().status(), 400);
@@ -133,7 +141,7 @@ async fn a_players_newest_unreviewed_games_are_found() {
 async fn a_review_waits_while_you_play_on_lichess() {
     let h = harness(2).await;
     let reviews = Reviews::new(h.eval.clone());
-    let game = finished_game(&h.hub, PlayerKey::You, PlayerKey::Dameless, &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
+    let game = finished_game(&h.hub, PlayerKey::You, fake(), &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
     let (work, spec) = queue(&h, &reviews, ReviewRequest { games: vec![game], ..Default::default() }).await;
 
     h.hub.policy.set_live_games(&[false]);
@@ -164,8 +172,8 @@ async fn a_review_waits_while_you_play_on_lichess() {
 async fn a_review_carries_on_from_its_checkpoint_and_stops_when_asked() {
     let h = harness(2).await;
     let reviews = Reviews::new(h.eval.clone());
-    let first = finished_game(&h.hub, PlayerKey::You, PlayerKey::Dameless, &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
-    let second = finished_game(&h.hub, PlayerKey::Dameless, PlayerKey::You, &QUIET_DRAW, Outcome::Draw, 2).await;
+    let first = finished_game(&h.hub, PlayerKey::You, fake(), &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
+    let second = finished_game(&h.hub, fake(), PlayerKey::You, &QUIET_DRAW, Outcome::Draw, 2).await;
     let (work, spec) = queue(&h, &reviews, ReviewRequest { games: vec![first, second], ..Default::default() }).await;
 
     // Stopped before it began: it saves where it stands and says it stopped.
@@ -201,13 +209,13 @@ async fn the_scheduler_runs_a_submitted_review() {
     let scheduler = dameless_work::Scheduler::new(h.hub.clone());
     scheduler.register(std::sync::Arc::new(reviews.clone()));
     scheduler.start().await.unwrap();
-    let game = finished_game(&h.hub, PlayerKey::You, PlayerKey::Dameless, &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
+    let game = finished_game(&h.hub, PlayerKey::You, fake(), &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
     let work = reviews.submit(&scheduler, ReviewRequest { games: vec![game], ..Default::default() }).await.unwrap();
     let store = h.hub.store.clone();
     eventually(async || store.work(work.id).await.unwrap().unwrap().status == dameless_core::work::WorkStatus::Done)
         .await;
     assert!(reviews.get(game, None, None).await.unwrap().is_some());
-    let named = reviews.get(game, Some(&dameless_analysis::VersionRef::Name("v1".into())), Some(200_000)).await;
+    let named = reviews.get(game, Some("fake"), Some(200_000)).await;
     assert!(named.unwrap().is_some());
     scheduler.shutdown();
 }

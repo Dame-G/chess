@@ -1,7 +1,7 @@
 import { h, nextTick } from "vue";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Seat } from "../../src/api/types";
-import { healthTone, ideaTone, trialTone, workTone } from "../../src/ui/badge";
+import { healthTone, workTone } from "../../src/ui/badge";
 import UiBadge from "../../src/ui/UiBadge.vue";
 import UiEmpty from "../../src/ui/UiEmpty.vue";
 import UiField from "../../src/ui/UiField.vue";
@@ -41,17 +41,9 @@ describe("UiBadge", () => {
   });
 
   it("maps every status to a tone", () => {
-    expect(ideaTone.running).toBe("info");
-    expect(ideaTone.kept).toBe("win");
-    expect(ideaTone.failed).toBe("loss");
-    expect(ideaTone.dropped).toBe("neutral");
-    expect(trialTone.passed).toBe("win");
-    expect(trialTone.waiting).toBe("neutral");
     expect(workTone.paused).toBe("warn");
     expect(healthTone.fail).toEqual({ tone: "loss", word: "Missing" });
     expect(healthTone.ok.word).toBe("Ready");
-    expect(Object.keys(ideaTone)).toHaveLength(6);
-    expect(Object.keys(trialTone)).toHaveLength(6);
     expect(Object.keys(workTone)).toHaveLength(6);
     expect(Object.keys(healthTone)).toHaveLength(4);
   });
@@ -150,16 +142,16 @@ describe("UiScore", () => {
 });
 
 describe("UiPlayer", () => {
-  const dameless: Seat = { player: "dameless", name: "v14", rating: 3290 };
+  const engineSeat: Seat = { player: "engine:stockfish", name: "Stockfish 17.1", rating: 3290 };
 
-  it("names a Dameless seat as people say it and shows its rating", async () => {
-    m = await mount(UiPlayer, { seat: dameless });
-    expect(text(m.el.querySelector(".ui-player-name"))).toBe("Dameless v14");
+  it("names an engine's seat as the server does and shows its rating", async () => {
+    m = await mount(UiPlayer, { seat: engineSeat });
+    expect(text(m.el.querySelector(".ui-player-name"))).toBe("Stockfish 17.1");
     expect(text(m.el.querySelector(".ui-player-rating"))).toBe("3,290");
   });
 
   it("marks a provisional rating with ? and an override with null shows none", async () => {
-    m = await mount(UiPlayer, { seat: dameless, rating: 1345, provisional: true });
+    m = await mount(UiPlayer, { seat: engineSeat, rating: 1345, provisional: true });
     expect(text(m.el.querySelector(".ui-player-rating"))).toBe("1,345?");
     m.props["rating"] = null;
     await m.flush();
@@ -172,21 +164,21 @@ describe("UiPlayer", () => {
     expect(m.el.querySelector(".ui-player-pip--black")?.getAttribute("aria-label")).toBe("plays black");
   });
 
-  it("links to a player's page, to yours and to Dameless's", async () => {
+  it("links to a player's page, to yours and to an engine's", async () => {
     m = await mount(UiPlayer, { seat: { player: "lichess:alpha-bot", name: "Alpha-Bot" }, link: true });
     expect(m.el.querySelector("a")?.getAttribute("href")).toBe("/players/lichess:alpha-bot");
     m.props["seat"] = { name: "You", key: "you" };
     await m.flush();
     expect(m.el.querySelector("a")?.getAttribute("href")).toBe("/you");
-    m.props["seat"] = { name: "Dameless", key: "dameless" };
+    m.props["seat"] = { name: "Stockfish", key: "engine:stockfish" };
     await m.flush();
-    expect(m.el.querySelector("a")?.getAttribute("href")).toBe("/dameless");
+    expect(m.el.querySelector("a")?.getAttribute("href")).toBe("/players/engine:stockfish");
   });
 
   it("is not a link without a key, or without link", async () => {
     m = await mount(UiPlayer, { seat: { name: "Nobody" }, link: true });
     expect(m.el.querySelector("a")).toBeNull();
-    m.props["seat"] = dameless;
+    m.props["seat"] = engineSeat;
     m.props["link"] = false;
     await m.flush();
     expect(m.el.querySelector("a")).toBeNull();
@@ -206,7 +198,7 @@ describe("UiPlayer", () => {
   });
 
   it("shows the live dot before the name", async () => {
-    m = await mount(UiPlayer, { seat: dameless, live: true });
+    m = await mount(UiPlayer, { seat: engineSeat, live: true });
     expect(m.el.querySelector('[aria-label="Live"]')).not.toBeNull();
   });
 });

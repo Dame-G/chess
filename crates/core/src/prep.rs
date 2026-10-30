@@ -221,7 +221,7 @@ mod tests {
     use super::*;
     use crate::{
         game::{Ending, GameSummary, Opening, Seat, Source},
-        ids::{ConnectionKey, VersionId},
+        ids::ConnectionKey,
         review::{
             Review, ReviewSummary, ReviewedMove, SideReview,
             judge::{Classification, Judgement, Phase},
@@ -297,10 +297,10 @@ mod tests {
         Review {
             id: crate::ids::ReviewId(game),
             game: GameId(game),
-            version: VersionId(1),
+            engine: "Stockfish 19".into(),
             nodes: 1000,
             summary: ReviewSummary {
-                version: VersionId(1),
+                engine: "Stockfish 19".into(),
                 nodes: 1000,
                 white: SideReview::default(),
                 black: SideReview::default(),

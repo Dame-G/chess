@@ -1,8 +1,6 @@
 //! From the engine's words to the domain's: UCI scores are the side to move's, every score analysis stores or sends is
 //! White's. Everything that reads an engine here goes through these functions, so the flip happens in one place.
 
-use std::path::Path;
-
 use dameless_core::{
     Error, Score, Side,
     events::EvalLine,
@@ -12,6 +10,7 @@ use dameless_engine::{
     pool::EngineSpec,
     uci::{self, Engine, Info, Limits, Position, SearchEvent},
 };
+use dameless_work::EngineBinary;
 
 /// Hash for review searches, in MiB: small, since a search at a review's budget fills little of it, and a run's next
 /// position needs what the search before it found, not every table entry since the run began.
@@ -37,9 +36,14 @@ pub fn white_score(score: uci::Score, to_move: Side) -> Score {
     own.from_side(to_move)
 }
 
+/// An engine of the engines list as the pool starts it: its binary, its arguments and its own options.
+pub fn engine_spec(binary: &EngineBinary) -> EngineSpec {
+    EngineSpec { path: binary.path.clone(), args: binary.args.clone(), options: binary.options.clone() }
+}
+
 /// The engines a review (or [`crate::Eval::evaluate`]) searches with: one thread each, a small hash, `multipv` lines.
-pub fn review_spec(binary: &Path, multipv: u32) -> EngineSpec {
-    EngineSpec::new(binary).option("Threads", 1).option("Hash", REVIEW_HASH).option("MultiPV", multipv.max(1))
+pub fn review_spec(binary: &EngineBinary, multipv: u32) -> EngineSpec {
+    engine_spec(binary).option("Threads", 1).option("Hash", REVIEW_HASH).option("MultiPV", multipv.max(1))
 }
 
 /// Keeps the newest report of each line asked for. An engine's `multipv` counts from 1; a line it numbers beyond what

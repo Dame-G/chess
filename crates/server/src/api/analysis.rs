@@ -7,7 +7,6 @@ use axum::{extract::State, http::StatusCode};
 use dameless_analysis::{Budget, EvalRequest, EvalSession, ReviewRequest};
 use dameless_core::{Error, GameId, PlayerKey, time::Speed, work::Work};
 use dameless_lichess::explorer::{ExplorerDb, ExplorerQuery};
-use dameless_work::VersionRef;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -23,9 +22,9 @@ pub struct EvalBody {
     /// Moves from it, UCI or SAN.
     #[serde(default)]
     pub moves: Vec<String>,
-    /// The version to search with (`champion`, `v14`, `#12`, a branch); the champion when none.
+    /// The engine to search with, by id; the analysis engine when none.
     #[serde(default)]
-    pub version: Option<String>,
+    pub engine: Option<String>,
     /// Lines to report, 1 to 10.
     #[serde(default = "one")]
     pub multipv: u32,
@@ -50,7 +49,7 @@ pub async fn start_eval(State(app): State<Arc<App>>, Json(b): Json<EvalBody>) ->
     let req = EvalRequest {
         fen: b.fen,
         moves: b.moves,
-        version: b.version.as_deref().map(VersionRef::parse),
+        engine: b.engine,
         multipv: b.multipv,
         budget: b.budget,
         threads: b.threads,
@@ -179,20 +178,19 @@ pub async fn tablebase(
     Ok(Json(app.connections.tablebase(&q.fen).await?))
 }
 
-/// `POST /api/reviews`: some games, or a player's newest games not reviewed yet with this version and budget.
+/// `POST /api/reviews`: some games, or a player's newest games no engine has reviewed yet.
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct ReviewBody {
     /// These games. Or, instead, `player`.
     #[serde(default)]
     pub games: Vec<GameId>,
-    /// This player's newest finished games not yet reviewed: `you`, `dameless`, `lichess:<name>`.
+    /// This player's newest finished games no engine has reviewed: `you`, `engine:<id>`, `lichess:<name>`.
     #[serde(default)]
     pub player: Option<PlayerKey>,
     /// How many of the player's games; 20 when none, at most 1000. In the background: every one when none.
     #[serde(default)]
     pub limit: Option<u32>,
-    /// Review in the background: at the lowest priority (`background`, below ideas), so trials keep their cores, and
-    /// in a lane of its own, so a review asked for meanwhile runs at once. With `player` and no `limit`: every game of
+    /// Review in the background: at the lowest priority (`background`, beside calibration), and in a lane of its own, so a review asked for meanwhile runs at once. With `player` and no `limit`: every game of
     /// theirs not reviewed yet, newest first.
     #[serde(default)]
     pub background: bool,
@@ -200,9 +198,9 @@ pub struct ReviewBody {
     pub speeds: Vec<Speed>,
     #[serde(default)]
     pub rated: Option<bool>,
-    /// The version to review with (`champion`, `v14`, `#12`, a branch); the champion when none.
+    /// The engine to review with, by id; the analysis engine when none.
     #[serde(default)]
-    pub version: Option<String>,
+    pub engine: Option<String>,
     /// Nodes per position; 200,000 when none.
     #[serde(default)]
     pub nodes: Option<u64>,
@@ -226,7 +224,7 @@ pub async fn review_games(
         background: b.background,
         speeds: b.speeds,
         rated: b.rated,
-        version: b.version.as_deref().map(VersionRef::parse),
+        engine: b.engine,
         nodes: b.nodes,
         concurrency: b.concurrency,
     };

@@ -133,16 +133,16 @@ async fn runs_by_priority_then_age_one_at_a_time_per_lane() {
     let s = Scheduler::new(hub);
     let reviews = Fake::new(WorkKind::Review);
     s.register(reviews.clone());
-    let a = s.submit(new(WorkKind::Review, Priority::Idea, units(1))).await.unwrap();
+    let a = s.submit(new(WorkKind::Review, Priority::Review, units(1))).await.unwrap();
     let b = s.submit(new(WorkKind::Review, Priority::Review, units(1))).await.unwrap();
-    let c = s.submit(new(WorkKind::Review, Priority::Interactive, units(1))).await.unwrap();
+    let c = s.submit(new(WorkKind::Review, Priority::Live, units(1))).await.unwrap();
     let d = s.submit(new(WorkKind::Review, Priority::Review, units(1))).await.unwrap();
     assert_eq!(a.status, WorkStatus::Queued);
     s.start().await.unwrap();
     for id in [a.id, b.id, c.id, d.id] {
         assert_eq!(s.wait(id).await.unwrap().status, WorkStatus::Done);
     }
-    assert_eq!(*reviews.started.lock().unwrap(), [c.id, b.id, d.id, a.id]);
+    assert_eq!(*reviews.started.lock().unwrap(), [c.id, a.id, b.id, d.id]);
     let log = std::fs::read_to_string(s.hub().config.work_log_path(a.id)).unwrap();
     assert!(log.contains("Queued") && log.contains("Started.") && log.contains("Done."), "{log}");
     let lists = s.list(10).await.unwrap();
@@ -150,20 +150,20 @@ async fn runs_by_priority_then_age_one_at_a_time_per_lane() {
 }
 
 #[tokio::test]
-async fn a_background_review_yields_to_trials_and_never_holds_up_a_review() {
+async fn a_background_review_yields_to_calibration_and_never_holds_up_a_review() {
     let (hub, _dir) = bare_hub(4);
     let s = Scheduler::new(hub);
     let reviews = Fake::new(WorkKind::Review);
-    let trials = Fake::new(WorkKind::Trial);
+    let calibration = Fake::new(WorkKind::Calibrate);
     s.register(reviews.clone());
-    s.register(trials.clone());
+    s.register(calibration.clone());
     s.start().await.unwrap();
     // Reviewing everything takes every core for each unit, hands them back and asks again at once.
     let all = s.submit(new(WorkKind::Review, Priority::Background, forever())).await.unwrap();
     eventually("the background review going", || async { reviews.units.load(Ordering::SeqCst) > 0 }).await;
-    // A trial starts beside it and is served first.
-    let t = s.submit(new(WorkKind::Trial, Priority::Idea, forever())).await.unwrap();
-    eventually("the trial playing", || async { trials.units.load(Ordering::SeqCst) > 2 }).await;
+    // Calibration starts beside it and is served first.
+    let t = s.submit(new(WorkKind::Calibrate, Priority::Background, forever())).await.unwrap();
+    eventually("calibration playing", || async { calibration.units.load(Ordering::SeqCst) > 2 }).await;
     // A review asked for now runs at once in its own lane, and ends, while the background one waits its turn.
     let one = s.submit(new(WorkKind::Review, Priority::Review, units(1))).await.unwrap();
     assert_eq!(s.wait(one.id).await.unwrap().status, WorkStatus::Done);
@@ -173,29 +173,30 @@ async fn a_background_review_yields_to_trials_and_never_holds_up_a_review() {
 }
 
 #[tokio::test]
-async fn imports_run_at_once_and_builds_do_not_wait_for_trials() {
+async fn imports_run_at_once_and_reviews_do_not_wait_for_calibration() {
     let (hub, _dir) = bare_hub(4);
     let s = Scheduler::new(hub);
-    let trials = Fake::new(WorkKind::Trial);
-    s.register(trials.clone());
-    for kind in [WorkKind::Import, WorkKind::Build] {
+    let calibration = Fake::new(WorkKind::Calibrate);
+    s.register(calibration.clone());
+    for kind in [WorkKind::Import, WorkKind::Review] {
         s.register(Fake::new(kind));
     }
     s.start().await.unwrap();
-    // The trial asks for every core for each unit, hands them back and asks again at once.
-    let t = s.submit(new(WorkKind::Trial, Priority::Idea, forever())).await.unwrap();
-    eventually("the trial playing", || async { trials.units.load(Ordering::SeqCst) > 0 }).await;
+    // Calibration asks for every core for each unit, hands them back and asks again at once.
+    let t = s.submit(new(WorkKind::Calibrate, Priority::Background, forever())).await.unwrap();
+    eventually("calibration playing", || async { calibration.units.load(Ordering::SeqCst) > 0 }).await;
     let i1 = s.submit(new(WorkKind::Import, Priority::Review, forever())).await.unwrap();
     let i2 = s.submit(new(WorkKind::Import, Priority::Review, forever())).await.unwrap();
-    let b = s.submit(new(WorkKind::Build, Priority::Interactive, units(1))).await.unwrap();
-    // The build runs although a trial holds its lane and takes every core between units: the ledger serves the
-    // waiting build first.
+    let b = s.submit(new(WorkKind::Review, Priority::Live, units(1))).await.unwrap();
+    // The review runs although calibration takes every core between units: the ledger serves the waiting review
+    // first.
     assert_eq!(s.wait(b.id).await.unwrap().status, WorkStatus::Done);
     eventually("both imports running", || async { s.is_running(i1.id) && s.is_running(i2.id) }).await;
     assert!(s.is_running(t.id));
-    // And the trial gets its cores again once the build is done.
-    let after = trials.units.load(Ordering::SeqCst);
-    eventually("trial units after the build", || async { trials.units.load(Ordering::SeqCst) > after + 1 }).await;
+    // And calibration gets its cores again once the review is done.
+    let after = calibration.units.load(Ordering::SeqCst);
+    eventually("calibrating units after the review", || async { calibration.units.load(Ordering::SeqCst) > after + 1 })
+        .await;
     for id in [t.id, i1.id, i2.id] {
         s.stop(id).await.unwrap();
         assert_eq!(s.wait(id).await.unwrap().status, WorkStatus::Stopped);
@@ -218,7 +219,7 @@ async fn records_failures_panics_and_waits_for_missing_executors() {
     assert_eq!(w.status, WorkStatus::Failed);
     assert!(w.error.unwrap().contains("panicked"));
     // No executor for the kind: it waits in the queue.
-    let orphan = s.submit(new(WorkKind::Tune, Priority::Idea, Job::default())).await.unwrap();
+    let orphan = s.submit(new(WorkKind::Setup, Priority::Background, Job::default())).await.unwrap();
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert_eq!(status(&s, orphan.id).await, WorkStatus::Queued);
 }
@@ -284,7 +285,7 @@ async fn pauses_and_resumes_running_and_queued_work() {
     eventually("units again", || async { fake.units.load(Ordering::SeqCst) > at }).await;
 
     // A queued item that is paused is held until resumed.
-    let held = s.submit(new(WorkKind::Review, Priority::Interactive, units(1))).await.unwrap();
+    let held = s.submit(new(WorkKind::Review, Priority::Live, units(1))).await.unwrap();
     assert_eq!(s.pause(held.id, PAUSED_BY_YOU).await.unwrap().status, WorkStatus::Paused);
     s.stop(w.id).await.unwrap();
     s.wait(w.id).await.unwrap();
@@ -299,53 +300,53 @@ async fn pauses_and_resumes_running_and_queued_work() {
 async fn live_play_pauses_the_lowest_priority_work_until_cores_are_back() {
     let (hub, _dir) = bare_hub(4);
     let s = Scheduler::new(hub.clone());
-    let trials = Fake::new(WorkKind::Trial);
-    // Units are held until released, so the trial holds its cores when live play arrives.
-    trials.release.store(false, Ordering::SeqCst);
-    s.register(trials.clone());
+    let calibration = Fake::new(WorkKind::Calibrate);
+    // Units are held until released, so calibration holds its cores when live play arrives.
+    calibration.release.store(false, Ordering::SeqCst);
+    s.register(calibration.clone());
     s.start().await.unwrap();
-    let trial = s.submit(new(WorkKind::Trial, Priority::Idea, forever())).await.unwrap();
-    eventually("the trial holds cores", || async { hub.ledger.snapshot().granted == 4 }).await;
+    let calibrating = s.submit(new(WorkKind::Calibrate, Priority::Background, forever())).await.unwrap();
+    eventually("calibration holds cores", || async { hub.ledger.snapshot().granted == 4 }).await;
 
     let game = hub.ledger.reserve("game:1", 2);
-    eventually("the trial paused", || async {
-        let w = s.get(trial.id).await.unwrap();
+    eventually("calibration paused", || async {
+        let w = s.get(calibrating.id).await.unwrap();
         w.status == WorkStatus::Paused && w.paused_for.as_deref() == Some(LIVE_PLAY)
     })
     .await;
     // At its safe point it gives the cores back and, with two free, carries on with those.
-    trials.release.store(true, Ordering::SeqCst);
-    eventually("the trial running again", || async { status(&s, trial.id).await == WorkStatus::Running }).await;
-    let before = trials.units.load(Ordering::SeqCst);
-    eventually("trial units", || async { trials.units.load(Ordering::SeqCst) > before + 1 }).await;
+    calibration.release.store(true, Ordering::SeqCst);
+    eventually("calibration running again", || async { status(&s, calibrating.id).await == WorkStatus::Running }).await;
+    let before = calibration.units.load(Ordering::SeqCst);
+    eventually("calibrating units", || async { calibration.units.load(Ordering::SeqCst) > before + 1 }).await;
 
     // With every core reserved, it stays paused until the games end.
-    trials.release.store(false, Ordering::SeqCst);
+    calibration.release.store(false, Ordering::SeqCst);
     let all = hub.ledger.reserve("game:2", 4);
-    eventually("paused again", || async { status(&s, trial.id).await == WorkStatus::Paused }).await;
-    // The first pause may have been lifted before the trial reached its safe point (and so never logged): count from
-    // here. The trial is still in its unit, so it cannot have logged this pause yet.
-    let log_path = hub.config.work_log_path(trial.id);
+    eventually("paused again", || async { status(&s, calibrating.id).await == WorkStatus::Paused }).await;
+    // The first pause may have been lifted before calibration reached its safe point (and so never logged): count from
+    // here. Calibration is still in its unit, so it cannot have logged this pause yet.
+    let log_path = hub.config.work_log_path(calibrating.id);
     let pauses = std::fs::read_to_string(&log_path).unwrap_or_default().matches("Paused: A live game").count();
-    trials.release.store(true, Ordering::SeqCst);
-    logged(&s, trial.id, "Paused: A live game", pauses + 1).await;
-    let at = trials.units.load(Ordering::SeqCst);
+    calibration.release.store(true, Ordering::SeqCst);
+    logged(&s, calibrating.id, "Paused: A live game", pauses + 1).await;
+    let at = calibration.units.load(Ordering::SeqCst);
     tokio::time::sleep(Duration::from_millis(100)).await;
-    assert_eq!(status(&s, trial.id).await, WorkStatus::Paused);
-    assert_eq!(trials.units.load(Ordering::SeqCst), at, "no units while live play holds every core");
+    assert_eq!(status(&s, calibrating.id).await, WorkStatus::Paused);
+    assert_eq!(calibration.units.load(Ordering::SeqCst), at, "no units while live play holds every core");
     drop(all);
     drop(game);
-    eventually("running after the games", || async { status(&s, trial.id).await == WorkStatus::Running }).await;
-    let log = std::fs::read_to_string(hub.config.work_log_path(trial.id)).unwrap();
+    eventually("running after the games", || async { status(&s, calibrating.id).await == WorkStatus::Running }).await;
+    let log = std::fs::read_to_string(hub.config.work_log_path(calibrating.id)).unwrap();
     assert!(log.contains("Pausing for live play") && log.contains("carrying on"), "{log}");
 
     // Work a person paused is not resumed by the ledger.
-    s.pause(trial.id, PAUSED_BY_YOU).await.unwrap();
+    s.pause(calibrating.id, PAUSED_BY_YOU).await.unwrap();
     drop(hub.ledger.reserve("game:3", 1));
     tokio::time::sleep(Duration::from_millis(80)).await;
-    assert_eq!(s.get(trial.id).await.unwrap().paused_for.as_deref(), Some(PAUSED_BY_YOU));
-    s.stop(trial.id).await.unwrap();
-    s.wait(trial.id).await.unwrap();
+    assert_eq!(s.get(calibrating.id).await.unwrap().paused_for.as_deref(), Some(PAUSED_BY_YOU));
+    s.stop(calibrating.id).await.unwrap();
+    s.wait(calibrating.id).await.unwrap();
 }
 
 #[tokio::test]

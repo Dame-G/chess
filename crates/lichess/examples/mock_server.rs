@@ -4,12 +4,12 @@
 //! cargo run -p dameless-lichess --features mock --example mock_server [-- <port>]
 //! ```
 //!
-//! It knows two accounts by their (fake) tokens: you, `Dame` (`lip_mock_you`), and the bot, `DamelessBot`
-//! (`lip_mock_bot`). The OAuth page grants every login as `Dame` at once. Opponents in games from challenges and seeks
-//! answer with their first legal move and take draw offers and takebacks. Some bots are online, Dame has a few games to
-//! import, and the explorer, the tablebase and a leaderboard answer.
+//! It knows you, `Dame`, by a (fake) token, `lip_mock_you`. The OAuth page grants every login as `Dame` at once.
+//! Opponents in games from challenges and seeks answer with their first legal move and take draw offers and takebacks.
+//! Bots Alpha, Beta, Gamma and Delta accept challenges, Dame has a few games to import, and the explorer, the tablebase
+//! and a leaderboard answer.
 //!
-//! The control API, on `<port> + 1`, scripts the rest (JSON bodies; seats are `you`, `bot`, `user:<name>:<rating>` or
+//! The control API, on `<port> + 1`, scripts the rest (JSON bodies; seats are `you`, `user:<name>:<rating>` or
 //! `ai:<level>`, sides `white` or `black`):
 //!
 //! ```text
@@ -20,11 +20,10 @@
 //! POST /games/{id}/gone           { side, seconds }   the side leaves; /back brings it back
 //! POST /games/{id}/end            { status: "resign", winner?: "white" }
 //! POST /seeks/{id}/take           { opponent }    someone takes your seek
-//! POST /challenges                { from, to: "dame" | "damelessbot", clock: [300, 3], rated?, color? }  → { id }
+//! POST /challenges                { from, to: "dame", clock: [300, 3], rated?, color? }  → { id }
 //! POST /challenges/{id}/accept    and /decline { reason? }, /cancel
 //! POST /answers                   { user, answer: "accept" | "ignore" | <decline reason> }   how a user answers ours
 //! POST /reply                     { reply: true, accepts_offers: true }   how opponents in new games play
-//! POST /bot-daily-limit           { ours: true, seconds: 3600 }   the bot's next challenge meets the 100-games limit
 //! ```
 
 use std::sync::Arc;
@@ -44,7 +43,6 @@ use dameless_lichess::{
 use serde_json::{Value, json};
 
 const YOU_TOKEN: &str = "lip_mock_you";
-const BOT_TOKEN: &str = "lip_mock_bot";
 
 type Mock = Arc<MockLichess>;
 
@@ -56,7 +54,7 @@ async fn main() -> std::io::Result<()> {
     let mock: Mock = Arc::new(mock);
     let control = tokio::net::TcpListener::bind(("127.0.0.1", port + 1)).await?;
     println!("mock Lichess at {} (LICHESS_URL); control API at http://127.0.0.1:{}", mock.url(), port + 1);
-    println!("tokens: you {YOU_TOKEN} (Dame), bot {BOT_TOKEN} (DamelessBot); logins are granted as Dame");
+    println!("token: you {YOU_TOKEN} (Dame); logins are granted as Dame");
     axum::serve(control, router(mock)).await
 }
 
@@ -66,14 +64,8 @@ fn script(mock: &MockLichess) {
         YOU_TOKEN,
         MockAccount::user("Dame").rating("blitz", 1650).rating("rapid", 1720).rating("classical", 1780).played(),
     );
-    mock.add_account(BOT_TOKEN, MockAccount::bot("DamelessBot").rating("bullet", 2050).rating("blitz", 2100));
     mock.grant_logins_as(YOU_TOKEN);
     mock.reply_by_default(Reply::FirstLegal, true);
-    let bot = |name: &str, blitz: u32| {
-        json!({ "id": name.to_lowercase(), "username": name, "title": "BOT",
-            "perfs": { "bullet": { "rating": blitz - 40, "games": 900 }, "blitz": { "rating": blitz, "games": 1500 } } })
-    };
-    mock.set_online_bots(vec![bot("Alpha", 2080), bot("Beta", 1950), bot("Gamma", 2300), bot("Delta", 1700)]);
     for name in ["Alpha", "Beta", "Gamma", "Delta"] {
         mock.answer_challenges(name, ChallengeAnswer::Accept);
     }
@@ -125,7 +117,6 @@ fn router(mock: Mock) -> Router {
         .route("/challenges/{id}/{action}", post(challenge_action))
         .route("/answers", post(answers))
         .route("/reply", post(reply))
-        .route("/bot-daily-limit", post(daily_limit))
         .with_state(mock)
 }
 
@@ -137,10 +128,9 @@ fn seat(v: &Value) -> Result<Seat, String> {
     let s = v.as_str().ok_or("a seat is a string")?;
     match s.split(':').collect::<Vec<_>>().as_slice() {
         ["you"] => Ok(Seat::account("dame")),
-        ["bot"] => Ok(Seat::account("damelessbot")),
         ["user", name, rating] => Ok(Seat::user(name, rating.parse().map_err(|_| "a rating is a number")?)),
         ["ai", level] => Ok(Seat::ai(level.parse().map_err(|_| "a level is a number")?)),
-        _ => Err(format!("unknown seat {s}: you, bot, user:<name>:<rating> or ai:<level>")),
+        _ => Err(format!("unknown seat {s}: you, user:<name>:<rating> or ai:<level>")),
     }
 }
 
@@ -149,7 +139,7 @@ fn side(v: &Value) -> Result<Side, String> {
 }
 
 async fn state(State(mock): State<Mock>) -> Json<Value> {
-    let ids: Vec<String> = ["dame", "damelessbot"].iter().flat_map(|a| mock.ongoing_games(a)).collect();
+    let ids: Vec<String> = mock.ongoing_games("dame");
     let games: Vec<Value> = ids
         .iter()
         .filter_map(|id| mock.game(id))
@@ -282,14 +272,5 @@ async fn answers(State(mock): State<Mock>, Json(b): Json<Value>) -> Response {
 async fn reply(State(mock): State<Mock>, Json(b): Json<Value>) -> Json<Value> {
     let reply = if b["reply"].as_bool().unwrap_or(true) { Reply::FirstLegal } else { Reply::None };
     mock.reply_by_default(reply, b["accepts_offers"].as_bool().unwrap_or(false));
-    Json(json!({ "ok": true }))
-}
-
-async fn daily_limit(State(mock): State<Mock>, Json(b): Json<Value>) -> Json<Value> {
-    mock.bot_daily_limit_next(
-        "/api/challenge/",
-        b["ours"].as_bool().unwrap_or(true),
-        b["seconds"].as_u64().unwrap_or(3600),
-    );
     Json(json!({ "ok": true }))
 }

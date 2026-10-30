@@ -11,6 +11,7 @@ import AddPlayer from "../parts/AddPlayer.vue";
 import Term from "../parts/Term.vue";
 import TopPlayers from "../parts/TopPlayers.vue";
 import { useMedia, up } from "../media";
+import { useEngines } from "../stores/engines";
 import { usePlayers } from "../stores/players";
 import UiEmpty from "../ui/UiEmpty.vue";
 import UiPlayer from "../ui/UiPlayer.vue";
@@ -23,14 +24,15 @@ import UiSelect from "../ui/UiSelect.vue";
 
 /**
  * Compare: players as columns, rows in groups (results, accuracy, moves per game, time, openings), the leader of a row
- * in bold with a dot. The address holds everything (`?players=you,dameless,lichess:x&speeds=blitz&rated=true&limit=100`),
+ * in bold with a dot. The address holds everything (`?players=you,engine:stockfish,lichess:x&speeds=blitz&rated=true&limit=100`),
  * so a comparison is a link. Add someone by name or pasted profile link at the top, or from the leaderboard.
  */
 const route = useRoute();
 const router = useRouter();
 const players = usePlayers();
+const engines = useEngines();
 
-const address = computed<CompareAddress>(() => parseAddress(route.query));
+const address = computed<CompareAddress>(() => parseAddress(route.query, engines.analysisId));
 const failed = ref<string | null>(null);
 const loading = ref(false);
 const comparison = computed(() => players.comparison);

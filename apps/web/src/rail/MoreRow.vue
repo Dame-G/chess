@@ -7,13 +7,13 @@ import { EListRow } from "@eos-ui/vue/components/EListRow";
  * the list has been scrolled near its end; each page's row is a new one, so reaching it again asks again. When the
  * request fails it says so, and choosing the row asks again.
  */
-defineProps<{ value: string; loading: boolean; error: string | null; nested?: boolean }>();
+defineProps<{ value: string; loading: boolean; error: string | null }>();
 const emit = defineEmits<{ more: [] }>();
 onMounted(() => emit("more"));
 </script>
 
 <template>
-  <EListRow :value="value" class="more" :class="{ nested }">
+  <EListRow :value="value" class="more">
     <template #title>
       <span class="text" :class="{ 'text--error': error }">{{
         error ? "More games did not load. Try again" : loading ? "Loading more games" : "More games"

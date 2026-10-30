@@ -18,7 +18,7 @@ fn request(client: &str, moves: &[&str]) -> EvalRequest {
     EvalRequest {
         fen: None,
         moves: moves.iter().map(|m| (*m).to_owned()).collect(),
-        version: None,
+        engine: None,
         multipv: 2,
         budget: Budget::Infinite,
         threads: None,
@@ -49,7 +49,7 @@ async fn a_session_streams_whites_scores_a_few_times_a_second() {
     let mut sub = h.hub.bus.subscribe(0, TopicFilter::of(["eval:*"]));
     // After 1. e4 Black is to move: the engine's second line is 25 worse for Black, so 25 better for White.
     let started = h.eval.start_session(request("tab-1", &["e4"])).await.unwrap();
-    assert_eq!(started.version, h.champion.id);
+    assert_eq!(started.engine, "Fake 1.0");
     assert_eq!(started.fen, Position::after(None, &["e4"]).unwrap().fen());
     assert_eq!(h.hub.ledger.snapshot().reserved, 1);
     // Listen for at least 600 ms, and until the first report has come however slow the machine is.
@@ -151,21 +151,25 @@ async fn bad_requests_are_refused() {
 }
 
 #[tokio::test]
-async fn evaluations_are_cached_by_position_commit_nodes_and_multipv() {
+async fn evaluations_are_cached_by_position_engine_nodes_and_multipv() {
     let h = harness(2).await;
     let after_e4 = Position::after(None, &["e4"]).unwrap().fen();
-    let first = h.eval.evaluate(&after_e4, &h.champion, 10_000, 2).await.unwrap();
-    assert_eq!(h.binaries.calls(), 1);
+    let first = h.eval.evaluate(&after_e4, &h.engine, 10_000, 2).await.unwrap();
     // White's view: Black's second line is 25 better for White.
     assert_eq!(cp(first.lines[1].score) - cp(first.lines[0].score), 25);
     assert_eq!(first.lines[0].uci, "a7a5");
     // The same position at another move number is the same entry: no engine is asked for.
     let later = after_e4.replace(" 0 1", " 0 7");
-    assert_eq!(h.eval.evaluate(&later, &h.champion, 10_000, 2).await.unwrap(), first);
-    assert_eq!(h.binaries.calls(), 1);
+    assert_eq!(h.eval.evaluate(&later, &h.engine, 10_000, 2).await.unwrap(), first);
+    let one = |fen: &str| ToSearch { fen: fen.to_owned(), key: position_key(fen), terminal: false };
+    let again = h.eval.evaluate_positions(&[one(&later)], &h.engine, 10_000, 2, 1).await.unwrap();
+    assert_eq!((again.searched, again.cached), (0, 1));
     // Another budget is another search.
-    h.eval.evaluate(&after_e4, &h.champion, 20_000, 2).await.unwrap();
-    assert_eq!(h.binaries.calls(), 2);
+    let other = h.eval.evaluate_positions(&[one(&after_e4)], &h.engine, 20_000, 2, 1).await.unwrap();
+    assert_eq!((other.searched, other.cached), (1, 0));
+    // An engine with a fixed budget cannot analyse.
+    let maia = dameless_analysis::EvalRequest { engine: Some("maia-1500".into()), ..request("tab-9", &[]) };
+    assert_eq!(h.eval.start_session(maia).await.unwrap_err().status(), 400);
 
     // Many at once: the cached one is read, a repeated one searched once, the finished one not at all.
     let start = Position::start().fen();
@@ -175,7 +179,7 @@ async fn evaluations_are_cached_by_position_commit_nodes_and_multipv() {
         .eval
         .evaluate_positions(
             &[at(&start, false), at(&after_e4, false), at(&start, false), at(mated, true)],
-            &h.champion,
+            &h.engine,
             10_000,
             2,
             2,
@@ -186,5 +190,5 @@ async fn evaluations_are_cached_by_position_commit_nodes_and_multipv() {
     assert_eq!(found.evals[1].as_ref(), Some(&first));
     assert_eq!(found.evals[0], found.evals[2]);
     assert!(found.evals[3].is_none());
-    assert_eq!(h.eval.evaluate(mated, &h.champion, 10_000, 2).await.unwrap_err().status(), 400);
+    assert_eq!(h.eval.evaluate(mated, &h.engine, 10_000, 2).await.unwrap_err().status(), 400);
 }

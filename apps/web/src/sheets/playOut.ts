@@ -3,7 +3,8 @@ import { useRouter } from "vue-router";
 import { useToast } from "@eos-ui/vue";
 import type { WeakSpot } from "../api/types";
 import { readClock } from "../shell/commands";
-import { useDameless } from "../stores/dameless";
+import { useEngines } from "../stores/engines";
+import { useLevels } from "../stores/levels";
 import { useGames } from "../stores/games";
 import { stored } from "../stored";
 import { playOutSeat } from "./levels";
@@ -18,14 +19,15 @@ export const boardTo = (s: Pick<WeakSpot, "game" | "ply">) => ({
 });
 
 /**
- * "Play this out": a local game against Dameless from the position before a mistake, You to move, at the level nearest
+ * "Play this out": a local game against the analysis engine from the position before a mistake, You to move, at the level nearest
  * your rating so the position is practised against someone you can learn from. `starting` is the spot being started.
  */
 export function usePlayOut() {
   const router = useRouter();
   const toast = useToast();
   const games = useGames();
-  const dameless = useDameless();
+  const ladderStore = useLevels();
+  const engines = useEngines();
   const clock = stored("new.clock", "5+3");
   const starting = ref<string | null>(null);
 
@@ -33,8 +35,8 @@ export function usePlayOut() {
     starting.value = spotKey(spot);
     const whiteToMove = spot.fen.split(" ")[1] !== "b";
     try {
-      if (!dameless.levels) await dameless.loadLevels().catch(() => {});
-      const seat = playOutSeat(dameless.levels);
+      if (!ladderStore.levels) await ladderStore.loadLevels().catch(() => {});
+      const seat = playOutSeat(engines.analysisId, ladderStore.levels);
       const s = await games.start({
         white: whiteToMove ? "you" : seat,
         black: whiteToMove ? seat : "you",

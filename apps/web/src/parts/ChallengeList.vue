@@ -2,14 +2,14 @@
 import { ref } from "vue";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
-import type { Challenge, ConnectionKey } from "../api/types";
+import type { Challenge } from "../api/types";
 import { speedName, timeControl } from "../format";
 import { useConnections } from "../stores/connections";
 import type { PlayerRef } from "../ui/player";
 import UiPlayer from "../ui/UiPlayer.vue";
 
-/** Challenges waiting on an account: incoming ones to accept or decline, outgoing ones to cancel. */
-defineProps<{ challenges: Challenge[]; connection: ConnectionKey }>();
+/** Challenges waiting on your account: incoming ones to accept or decline, outgoing ones to cancel. */
+defineProps<{ challenges: Challenge[] }>();
 
 const connections = useConnections();
 const toast = useToast();
@@ -61,18 +61,14 @@ const describe = (c: Challenge) =>
             variant="outline"
             size="sm"
             :loading="busy === c.id"
-            @click="run(c.id, () => connections.accept(connection, c.id))"
+            @click="run(c.id, () => connections.accept(c.id))"
           >
             Accept
           </EButton>
           <EButton v-else variant="outline" size="sm" :href="c.url" external>Play on lichess.org</EButton>
-          <EButton variant="quiet" size="sm" @click="run(c.id, () => connections.decline(connection, c.id))">
-            Decline
-          </EButton>
+          <EButton variant="quiet" size="sm" @click="run(c.id, () => connections.decline(c.id))"> Decline </EButton>
         </template>
-        <EButton v-else variant="quiet" size="sm" @click="run(c.id, () => connections.cancel(connection, c.id))">
-          Cancel
-        </EButton>
+        <EButton v-else variant="quiet" size="sm" @click="run(c.id, () => connections.cancel(c.id))"> Cancel </EButton>
       </div>
     </li>
   </ul>

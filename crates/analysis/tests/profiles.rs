@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{QUIET_DRAW, SCHOLARS_MATE, finished_game, harness};
+use common::{QUIET_DRAW, SCHOLARS_MATE, fake, finished_game, harness};
 use dameless_analysis::{Profiles, ReviewRequest, Reviews};
 use dameless_core::{
     PlayerKey, Side, Speed, chess::Position, game::Outcome, profile::ProfileFilter, review::judge::Judgement,
@@ -16,11 +16,11 @@ const QUEEN_BLUNDER: [&str; 6] = ["e4", "e5", "Qh5", "Nc6", "Qxe5+", "Nxe5"];
 #[tokio::test]
 async fn profiles_add_up_games_and_reviews() {
     let h = harness(2).await;
-    let mate = finished_game(&h.hub, PlayerKey::You, PlayerKey::Dameless, &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
-    let draw = finished_game(&h.hub, PlayerKey::Dameless, PlayerKey::You, &QUIET_DRAW, Outcome::Draw, 2).await;
+    let mate = finished_game(&h.hub, PlayerKey::You, fake(), &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
+    let draw = finished_game(&h.hub, fake(), PlayerKey::You, &QUIET_DRAW, Outcome::Draw, 2).await;
     let bob = PlayerKey::lichess("Bob").unwrap();
     let blunder = finished_game(&h.hub, PlayerKey::You, bob.clone(), &QUEEN_BLUNDER, Outcome::BlackWins, 3).await;
-    finished_game(&h.hub, PlayerKey::You, PlayerKey::Stockfish(2), &QUIET_DRAW, Outcome::Draw, 4).await;
+    finished_game(&h.hub, PlayerKey::You, PlayerKey::Engine("maia-1500".into()), &QUIET_DRAW, Outcome::Draw, 4).await;
 
     let reviews = Reviews::new(h.eval.clone());
     let new = reviews.prepare(ReviewRequest { games: vec![mate, draw, blunder], ..Default::default() }).await.unwrap();
@@ -55,9 +55,9 @@ async fn profiles_add_up_games_and_reviews() {
         .count();
     assert_eq!(you.weak_spots.iter().filter(|s| s.game == blunder).count(), your_mistakes);
 
-    // Dameless walked into the mate; its profile has no weak spots (those are yours alone).
-    let dameless = profiles.profile(PlayerKey::Dameless, ProfileFilter::default()).await.unwrap();
-    assert_eq!((dameless.player.name.as_str(), dameless.games, dameless.reviewed), ("Dameless", 2, 2));
+    // The engine walked into the mate; its profile has no weak spots (those are yours alone).
+    let dameless = profiles.profile(fake(), ProfileFilter::default()).await.unwrap();
+    assert_eq!((dameless.player.name.as_str(), dameless.games, dameless.reviewed), ("Fake", 2, 2));
     assert!(dameless.judgements.blunder >= 1);
     assert!(dameless.weak_spots.is_empty());
 
@@ -67,12 +67,11 @@ async fn profiles_add_up_games_and_reviews() {
     assert_eq!(profiles.profile(bob.clone(), only_blitz).await.unwrap().games, 1);
     let only_rapid = ProfileFilter { speeds: vec![Speed::Rapid], ..Default::default() };
     assert_eq!(profiles.profile(bob.clone(), only_rapid).await.unwrap().games, 0);
-    assert_eq!(profiles.player(&PlayerKey::Stockfish(2)).await.unwrap().name, "Stockfish level 2");
+    assert_eq!(profiles.player(&PlayerKey::Engine("maia-1500".into())).await.unwrap().name, "Maia 1500");
+    assert_eq!(profiles.player(&PlayerKey::Engine("reckless".into())).await.unwrap().name, "Reckless");
 
-    let comparison = profiles
-        .compare(vec![PlayerKey::You, PlayerKey::Dameless, bob.clone()], ProfileFilter::default())
-        .await
-        .unwrap();
+    let comparison =
+        profiles.compare(vec![PlayerKey::You, fake(), bob.clone()], ProfileFilter::default()).await.unwrap();
     assert_eq!(comparison.profiles.len(), 3);
     assert_eq!((comparison.profiles[2].games, comparison.profiles[2].results.overall.wins), (1, 1));
     assert!(comparison.leaders.iter().any(|l| l.row == "accuracy" && !l.players.is_empty()));

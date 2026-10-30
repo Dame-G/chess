@@ -7,10 +7,7 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{
-    Error, Lichess,
-    client::{Body, with_query},
-};
+use crate::{Error, Lichess, client::Body};
 
 /// A Lichess user as `/api/account`, `/api/user/{name}`, `/api/bot/online` and the leaderboards send it. Each sends
 /// some of these fields; the rest are empty.
@@ -151,22 +148,10 @@ impl Lichess {
             expires: info["expires"].as_i64(),
         }))
     }
-
-    /// Makes the account a BOT account. Permanent, and only allowed for an account that has played no games.
-    pub async fn upgrade_to_bot(&self) -> Result<(), Error> {
-        self.need_token()?;
-        self.post_ok("/api/bot/account/upgrade", Vec::new()).await
-    }
-
-    /// The bots online now, up to `nb` (Lichess allows 300), with their ratings.
-    pub async fn online_bots(&self, nb: u32) -> Result<Vec<User>, Error> {
-        self.lines(&with_query("/api/bot/online", &[("nb", nb.clamp(1, 300).to_string())])).await
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
 
     use crate::testing::{MockAccount, MockLichess};
 
@@ -188,31 +173,5 @@ mod tests {
         assert_eq!(info.user_id.as_deref(), Some("dame"));
         assert!(info.expires.is_some());
         assert_eq!(mock.client(Some("unknown")).test_token().await.unwrap(), None);
-    }
-
-    #[tokio::test]
-    async fn upgrades_only_an_account_without_games() {
-        let mock = MockLichess::start().await;
-        mock.add_account("fresh", MockAccount::user("Fresh"));
-        mock.add_account("played", MockAccount::user("Played").played());
-        mock.client(Some("fresh")).upgrade_to_bot().await.unwrap();
-        assert!(mock.client(Some("fresh")).account().await.unwrap().is_bot());
-        let e = mock.client(Some("played")).upgrade_to_bot().await.unwrap_err();
-        assert_eq!(e.status(), Some(400));
-    }
-
-    #[tokio::test]
-    async fn lists_online_bots_with_ratings() {
-        let mock = MockLichess::start().await;
-        mock.add_account("tok", MockAccount::bot("RecklessBot"));
-        mock.set_online_bots(vec![
-            json!({ "id": "alpha", "username": "Alpha", "title": "BOT", "perfs": { "blitz": { "rating": 2100, "games": 500 } } }),
-            json!({ "id": "beta", "username": "Beta", "title": "BOT", "perfs": { "bullet": { "rating": 1800, "prov": true } } }),
-        ]);
-        let bots = mock.client(Some("tok")).online_bots(50).await.unwrap();
-        assert_eq!(bots.len(), 2);
-        assert_eq!(bots[0].rating("blitz"), Some(2100));
-        assert!(bots[1].perfs["bullet"].prov);
-        assert_eq!(mock.requests_to("/api/bot/online")[0].query.get("nb").map(String::as_str), Some("50"));
     }
 }

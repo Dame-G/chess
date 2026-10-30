@@ -18,7 +18,7 @@ pub mod work;
 
 pub use bus::{Bus, Next, Subscription, TopicFilter};
 pub use config::{Config, LichessUrls};
-pub use ledger::{CoreRequest, GpuGrant, GpuRequest, Grant, Ledger, LedgerSnapshot, Reservation};
+pub use ledger::{CoreRequest, Grant, Ledger, LedgerSnapshot, Reservation};
 pub use policy::PolicyState;
 pub use secrets::Secrets;
 pub use work::{Control, Executor, WorkContext};
@@ -46,7 +46,7 @@ impl Hub {
         let bus = Arc::new(Bus::new());
         Ok(Arc::new(Self {
             policy: PolicyState::new(bus.clone()),
-            ledger: Ledger::with_gpus(config.cores, config.gpus),
+            ledger: Ledger::new(config.cores),
             bus,
             store,
             secrets,
@@ -65,7 +65,7 @@ mod tests {
     #[tokio::test]
     async fn opens_a_fresh_data_directory_and_again() {
         let dir = tempfile::tempdir().unwrap();
-        let config = Config::new(dir.path().join("data"), config::DEFAULT_LISTEN.parse().unwrap(), "reckless", 3);
+        let config = Config::new(dir.path().join("data"), config::DEFAULT_LISTEN.parse().unwrap(), 3);
         let hub = Hub::open(config.clone()).unwrap();
         assert_eq!(hub.ledger.total(), 3);
         assert!(hub.policy.allows(AssistKind::Eval));

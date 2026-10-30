@@ -2,7 +2,7 @@
 //! columns only and never touch the blob, so a list of a thousand games costs a thousand small rows.
 
 use dameless_core::{
-    Error, GameId, PlayerKey, Side, SidePair, Speed, TimeControl, Timestamp, TrialId,
+    Error, GameId, PlayerKey, Side, SidePair, Speed, TimeControl, Timestamp,
     game::{Ending, Game, GameEnd, GameStatus, GameSummary, Move, Offers, Opening, Outcome, Seat, Source},
 };
 use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter, types::Value};
@@ -17,7 +17,6 @@ pub enum SourceKind {
     Local,
     Lichess,
     Import,
-    Trial,
 }
 
 impl SourceKind {
@@ -26,7 +25,6 @@ impl SourceKind {
             Self::Local => "local",
             Self::Lichess => "lichess",
             Self::Import => "import",
-            Self::Trial => "trial",
         }
     }
 
@@ -35,13 +33,12 @@ impl SourceKind {
             Source::Local => Self::Local,
             Source::Lichess { .. } => Self::Lichess,
             Source::Import { .. } => Self::Import,
-            Source::Trial { .. } => Self::Trial,
         }
     }
 
-    /// Reads `local`, `lichess`, `import` or `trial`.
+    /// Reads `local`, `lichess` or `import`.
     pub fn parse(text: &str) -> Option<Self> {
-        [Self::Local, Self::Lichess, Self::Import, Self::Trial].into_iter().find(|k| k.as_str() == text.trim())
+        [Self::Local, Self::Lichess, Self::Import].into_iter().find(|k| k.as_str() == text.trim())
     }
 }
 
@@ -51,14 +48,7 @@ fn owner(source: &Source) -> Option<String> {
     match source {
         Source::Lichess { connection, .. } => Some(connection.to_string()),
         Source::Import { owner, .. } => Some(owner.to_string()),
-        Source::Local | Source::Trial { .. } => None,
-    }
-}
-
-fn trial_of(source: &Source) -> Option<TrialId> {
-    match source {
-        Source::Trial { trial, .. } => Some(*trial),
-        _ => None,
+        Source::Local => None,
     }
 }
 
@@ -150,8 +140,6 @@ pub struct GameFilter {
     /// Only these speeds; empty for all.
     pub speeds: Vec<Speed>,
     pub rated: Option<bool>,
-    /// One trial's games.
-    pub trial: Option<TrialId>,
     /// Games started at or after this moment.
     pub since: Option<Timestamp>,
     /// The page after this game: the cursor is the last game of the previous page.
@@ -210,10 +198,10 @@ fn missing(id: GameId) -> Error {
 fn insert(conn: &Connection, g: &NewGame) -> DbResult<GameId> {
     let mut stmt = conn.prepare_cached(
         "INSERT INTO games (source_kind, source, source_owner, white, black, white_key, black_key, time, speed, \
-         rated, status, live, outcome, ending, opening, start_fen, plies, moves, you_side, lichess_id, trial, url, \
+         rated, status, live, outcome, ending, opening, start_fen, plies, moves, you_side, lichess_id, url, \
          started_at, ended_at) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, \
-         ?23, ?24)",
+         ?23)",
     )?;
     stmt.execute(params![
         SourceKind::of(&g.source).as_str(),
@@ -236,7 +224,6 @@ fn insert(conn: &Connection, g: &NewGame) -> DbResult<GameId> {
         pack(&g.moves)?,
         g.you().map(|s| word(&s)),
         g.source.lichess_id(),
-        trial_of(&g.source).map(|t| t.0),
         g.url,
         g.started_at.as_str(),
         g.ended_at.as_ref().map(Timestamp::as_str),
@@ -269,7 +256,7 @@ impl Store {
         self.write(move |tx| insert(tx, &game)).await
     }
 
-    /// Stores many games in one transaction: imports and a trial round's PGN.
+    /// Stores many games in one transaction: imports.
     pub async fn insert_games(&self, games: Vec<NewGame>) -> Result<Vec<GameId>, Error> {
         self.write(move |tx| games.iter().map(|g| insert(tx, g)).collect()).await
     }
@@ -324,9 +311,6 @@ impl Store {
             sql += &any_of("g.speed", filter.speeds.iter().map(word).collect(), &mut args);
             if let Some(rated) = filter.rated {
                 sql += &format!(" AND g.rated = {}", arg(Value::Integer(rated.into()), &mut args));
-            }
-            if let Some(trial) = filter.trial {
-                sql += &format!(" AND g.trial = {}", arg(Value::Integer(trial.0), &mut args));
             }
             if let Some(calibration) = filter.calibration {
                 let not = if calibration { "" } else { "NOT " };
@@ -500,14 +484,6 @@ impl Store {
         .await
     }
 
-    /// How many of a trial's games are stored.
-    pub async fn count_trial_games(&self, trial: TrialId) -> Result<u32, Error> {
-        self.read(move |conn| {
-            Ok(conn.query_row("SELECT count(*) FROM games WHERE trial = ?1", [trial.0], |r| r.get(0))?)
-        })
-        .await
-    }
-
     /// Games still marked live: after a restart, the ones to resume or abort.
     pub async fn live_games(&self) -> Result<Vec<GameSummary>, Error> {
         self.games(GameFilter {
@@ -560,7 +536,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn a_game_is_played_and_finished() {
         let (store, _dir) = testing::store();
-        let id = store.insert_game(local(PlayerKey::You, PlayerKey::Dameless, 1_000)).await.unwrap();
+        let id = store.insert_game(local(PlayerKey::You, PlayerKey::Engine("stockfish".into()), 1_000)).await.unwrap();
         let s = store.game_summary(id).await.unwrap().unwrap();
         assert_eq!((s.status, s.plies, s.you), (GameStatus::Starting, 0, Some(Side::White)));
 
@@ -590,8 +566,8 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn seats_and_openings_update() {
         let (store, _dir) = testing::store();
-        let id = store.insert_game(local(PlayerKey::You, PlayerKey::Dameless, 1_000)).await.unwrap();
-        let mut black = seat(PlayerKey::Dameless);
+        let id = store.insert_game(local(PlayerKey::You, PlayerKey::Engine("stockfish".into()), 1_000)).await.unwrap();
+        let mut black = seat(PlayerKey::Engine("stockfish".into()));
         black.rating = Some(2800);
         let opening = Opening { eco: Some("C20".into()), name: "King's Pawn Game".into(), ply: Some(2) };
         let s = store
@@ -603,7 +579,10 @@ pub(crate) mod tests {
             .unwrap();
         assert_eq!((s.black, s.opening, s.you), (black, Some(opening), Some(Side::White)));
         let s = store
-            .update_game(id, GameUpdate { white: Some(seat(PlayerKey::Stockfish(3))), ..Default::default() })
+            .update_game(
+                id,
+                GameUpdate { white: Some(seat(PlayerKey::Engine("maia-1500".into()))), ..Default::default() },
+            )
             .await
             .unwrap();
         assert_eq!(s.you, None);
@@ -615,14 +594,18 @@ pub(crate) mod tests {
         let bob = PlayerKey::Lichess("bob".into());
         let mut ids = Vec::new();
         for i in 0..10 {
-            let (w, b) = if i % 2 == 0 { (PlayerKey::You, bob.clone()) } else { (PlayerKey::Dameless, PlayerKey::You) };
+            let (w, b) = if i % 2 == 0 {
+                (PlayerKey::You, bob.clone())
+            } else {
+                (PlayerKey::Engine("stockfish".into()), PlayerKey::You)
+            };
             let mut g = local(w, b, i * 1000);
             g.status = GameStatus::Finished;
             ids.push(store.insert_game(g).await.unwrap());
         }
-        let mut lichess = local(PlayerKey::Dameless, bob.clone(), 50_000);
+        let mut lichess = local(PlayerKey::Engine("stockfish".into()), bob.clone(), 50_000);
         lichess.source =
-            Source::Lichess { connection: ConnectionKey::Bot, id: "abcd1234".into(), rated: true, speed: Speed::Blitz };
+            Source::Lichess { connection: ConnectionKey::You, id: "abcd1234".into(), rated: true, speed: Speed::Blitz };
         lichess.status = GameStatus::Live;
         let live = store.insert_game(lichess).await.unwrap();
 
@@ -681,10 +664,14 @@ pub(crate) mod tests {
         g.source = source.clone();
         let id = store.insert_game(g.clone()).await.unwrap();
         assert_eq!(store.find_source(source.clone()).await.unwrap().map(|s| s.id), Some(id));
-        let bots =
-            Source::Lichess { connection: ConnectionKey::Bot, id: "q7ZvsdUF".into(), rated: true, speed: Speed::Rapid };
-        assert!(store.find_source(bots.clone()).await.unwrap().is_none());
-        g.source = bots;
+        let bobs = Source::Import {
+            owner: PlayerKey::Lichess("bob".into()),
+            id: "q7ZvsdUF".into(),
+            rated: true,
+            speed: Speed::Rapid,
+        };
+        assert!(store.find_source(bobs.clone()).await.unwrap().is_none());
+        g.source = bobs;
         store.insert_game(g).await.unwrap();
         assert_eq!(store.games_with_lichess_id("q7ZvsdUF").await.unwrap().len(), 2);
         assert!(store.find_source(Source::Local).await.unwrap().is_none());

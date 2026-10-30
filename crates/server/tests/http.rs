@@ -1,5 +1,5 @@
 //! The app over HTTP: the guard, error shapes, status, games you play against the fake engine with the event stream,
-//! PGN, reviews, profiles, ideas, versions, work, the player side and the harness.
+//! PGN, reviews, profiles, the engines list, setup, work and the player side.
 
 mod common;
 
@@ -96,9 +96,7 @@ async fn status_and_the_machine() {
     assert_eq!(status, 200);
     assert_eq!(s["cores"], 4);
     assert_eq!(s["policy"]["assist"], "allowed");
-    assert_eq!(s["machine"]["engine"]["found"], true);
-    assert_eq!(s["machine"]["engine"]["branch"], "main");
-    assert_eq!(s["machine"]["engine"]["dirty"], false);
+    assert!(s["machine"]["data_dir"].as_str().is_some_and(|d| d.ends_with("data")));
     assert!(s["ledger"]["total"].as_u64() == Some(4));
     assert_eq!(s["lichess_url"], t.mock.url());
     t.stop().await;
@@ -110,7 +108,7 @@ async fn you_play_dameless_and_the_stream_tells_it() {
     // Opened first, so it sees the game from its start.
     let stream = t.req(Method::GET, "/api/events?topics=game:*,games").send().await.unwrap();
     let (status, g) = t
-        .post("/api/games", json!({ "white": "you", "black": "dameless", "time": { "type": "movetime", "ms": 30 } }))
+        .post("/api/games", json!({ "white": "you", "black": "fake", "time": { "type": "movetime", "ms": 30 } }))
         .await;
     assert_eq!(status, 201, "{g}");
     let id = g["summary"]["id"].as_i64().unwrap();
@@ -282,57 +280,50 @@ async fn evaluation_streams_on_its_topic() {
 }
 
 #[tokio::test]
-async fn versions_ideas_and_work() {
+async fn engines_setup_and_work() {
     let t = TestApp::start().await;
-    let (status, d) = t.get("/api/dameless").await;
-    assert_eq!(status, 200, "{d}");
-    assert_eq!(d["champion"]["name"], "v1");
-    assert_eq!(d["strength"][0]["label"], "v1");
-    assert!(d["connection"].is_null());
+    let (status, list) = t.get("/api/engines").await;
+    assert_eq!(status, 200, "{list}");
+    assert_eq!(list["analysis"], "fake");
+    let engines = list["engines"].as_array().unwrap();
+    assert_eq!(engines.len(), 11, "ten built-ins and the fake one");
+    assert_eq!((&engines[0]["id"], &engines[0]["installed"]), (&json!("stockfish"), &json!(false)));
+    let fake = engines.iter().find(|e| e["id"] == "fake").unwrap();
+    assert_eq!(
+        (&fake["id_name"], &fake["analysis"], &fake["levels"]),
+        (&json!("FakeEval 1.0"), &json!(true), &json!(true))
+    );
 
-    let (status, v) = t.post("/api/versions", json!({ "ref": "deeper" })).await;
-    assert_eq!(status, 201, "{v}");
-    let vid = v["id"].as_i64().unwrap();
-    t.until("its build", &format!("/api/versions/{vid}/builds"), |b| b[0]["status"] == "ready").await;
-    let (_, versions) = t.get("/api/versions").await;
-    assert!(versions.as_array().unwrap().iter().any(|x| x["name"] == "deeper"));
-    assert_eq!(t.get("/api/versions?line=champion").await.1.as_array().unwrap().len(), 1);
-    let (status, pruned) = t.post("/api/builds/prune", json!({ "dry_run": true })).await;
-    assert_eq!((status, pruned["dry_run"].as_bool()), (200, Some(true)));
-    assert_eq!(t.delete("/api/builds/999").await.0, 404);
+    // Another engine by path; one that is not an engine, or a taken id, is refused.
+    let path = common::fake_engine().display().to_string();
+    let (status, added) =
+        t.post("/api/engines", json!({ "name": "Second", "path": path, "options": { "Hash": "8" } })).await;
+    assert_eq!(status, 201, "{added}");
+    assert_eq!(added["id"], "second");
+    assert_eq!(t.post("/api/engines", json!({ "name": "Second", "path": path })).await.0, 409);
+    assert_eq!(t.post("/api/engines", json!({ "name": "Gone", "path": "/no/such/engine" })).await.0, 400);
+    let (status, chosen) = t.put("/api/engines/analysis", json!({ "engine": "second" })).await;
+    assert_eq!((status, &chosen["analysis"]), (200, &json!("second")));
+    assert_eq!(t.put("/api/engines/analysis", json!({ "engine": "stockfish" })).await.0, 409, "not installed");
+    let (status, removed) = t.delete("/api/engines/second").await;
+    assert_eq!((status, &removed["analysis"]), (200, &json!("stockfish")));
+    assert_eq!(t.delete("/api/engines/second").await.0, 404);
+    assert_eq!(t.put("/api/engines/analysis", json!({ "engine": "fake" })).await.0, 200);
 
-    // The branch's Bench: line is checked, never built for that.
-    let (status, check) = t.get("/api/ideas/check-branch?branch=deeper").await;
-    assert_eq!(status, 200, "{check}");
-    assert_eq!(check["branch"], "deeper");
-    assert_eq!(t.get("/api/ideas/check-branch?branch=nowhere").await.0, 404);
-    assert_eq!(t.post("/api/ideas/fix-bench", json!({ "branch": "main" })).await.0, 400);
+    // The diagnostics name the analysis engine.
+    let (status, health) = t.get("/api/diagnostics").await;
+    assert_eq!(status, 200, "{health}");
+    let analysis = health["items"].as_array().unwrap().iter().find(|i| i["key"] == "analysis").unwrap().clone();
+    assert_eq!(analysis["level"], "ok", "{analysis}");
 
-    // An idea with a broken request, then a real one (its trials fail without fastchess, which is fine here).
-    let (status, body) = t.post("/api/ideas", json!({ "title": "x", "branch": "nowhere" })).await;
-    assert!(status == 404 || status == 400, "{status} {body}");
-    let (status, idea) = t
-        .post(
-            "/api/ideas",
-            json!({ "title": "Deeper search", "hypothesis": "It sees more", "kind": "gain", "branch": "deeper", "tags": ["lmr"] }),
-        )
-        .await;
-    assert_eq!(status, 201, "{idea}");
-    let id = idea["id"].as_i64().unwrap();
-    let (_, list) = t.get("/api/ideas?tag=lmr").await;
-    assert_eq!(list[0]["id"], id);
-    let (status, one) = t.get(&format!("/api/ideas/{id}")).await;
-    assert_eq!(status, 200);
-    let trial = one["trials"][0]["id"].as_i64().unwrap();
-    assert_eq!(t.get(&format!("/api/ideas/{id}/trials/{trial}")).await.0, 200);
-    assert_eq!(t.get(&format!("/api/ideas/{id}/tune")).await.0, 404);
-    let (status, _) = t.post(&format!("/api/ideas/{id}/promote"), json!({})).await;
-    assert_eq!(status, 409, "only a kept idea is promoted");
-    t.until("the idea to end", &format!("/api/ideas/{id}"), |i| {
-        matches!(i["status"].as_str(), Some("dropped" | "failed" | "stopped" | "kept"))
-    })
-    .await;
-
+    // Work: a review on the analysis engine.
+    let game = finished_game(&t).await;
+    let (status, w) = t.post("/api/reviews", json!({ "games": [game] })).await;
+    assert_eq!(status, 202, "{w}");
+    let id = w["id"].as_i64().unwrap();
+    t.until("the review", &format!("/api/work/{id}"), |w| w["status"] == "done").await;
+    let (status, review) = t.get(&format!("/api/games/{game}/review?engine=fake")).await;
+    assert_eq!((status, &review["engine"]), (200, &json!("FakeEval 1.0")));
     let (status, work) = t.get("/api/work").await;
     assert_eq!(status, 200);
     let any = work["recent"][0]["id"].as_i64().unwrap();
@@ -340,33 +331,15 @@ async fn versions_ideas_and_work() {
     let res = t.req(Method::GET, &format!("/api/work/{any}/log")).send().await.unwrap();
     assert_eq!(res.status(), 200);
     assert_eq!(t.post(&format!("/api/work/{any}/stop"), json!({})).await.0, 200);
-
-    // Tunables come from the branch's spsa build: queued first (409), then read.
-    let (status, _) = t.get("/api/tunables?branch=deeper").await;
-    assert_eq!(status, 409);
-    let tunables = t.until("the spsa build", "/api/tunables?branch=deeper", |v| v.is_array()).await;
-    assert_eq!(tunables[0]["name"], "rfp_margin");
-
-    // The harness: no check yet, and none can start without fastchess.
-    let (status, h) = t.get("/api/harness").await;
-    assert_eq!(status, 200, "{h}");
-    assert_eq!(h["trusted"], false);
-    assert_eq!(t.post("/api/harness/check", Value::Null).await.0, 409);
-    let (status, health) = t.get("/api/diagnostics").await;
-    assert_eq!(status, 200, "{health}");
-    assert!(health["items"].as_array().unwrap().iter().any(|i| i["key"] == "fastchess"));
-
-    // Upstream: the test checkout has no upstream remote, so there is nothing to sync; the setting toggles.
-    let (status, u) = t.get("/api/upstream").await;
-    assert_eq!(status, 200, "{u}");
-    assert_eq!((&u["settings"]["auto"], &u["remote"], &u["last"]), (&json!(true), &json!(false), &Value::Null));
-    let (status, off) = t.put("/api/upstream", json!({ "auto": false })).await;
-    assert_eq!((status, &off["settings"]["auto"], &off["next_at"]), (200, &json!(false), &Value::Null));
-    let (status, refused) = t.post("/api/upstream/sync", json!({})).await;
-    assert_eq!(status, 409, "{refused}");
-    let (_, logbook) = t.get("/api/dameless").await;
-    assert!(logbook.get("upstream").is_some_and(Value::is_null), "{logbook}");
     t.stop().await;
+}
+
+/// A finished game pasted in as PGN.
+async fn finished_game(t: &TestApp) -> i64 {
+    let pgn = "[White \"A\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0\n";
+    let (status, games) = t.post("/api/games/import", json!({ "pgn": pgn })).await;
+    assert_eq!(status, 201, "{games}");
+    games[0]["id"].as_i64().unwrap()
 }
 
 #[tokio::test]
@@ -382,13 +355,10 @@ async fn levels_list_and_calibrate() {
     assert_eq!(w["kind"], "calibrate");
     // A game at a level.
     let (status, g) = t
-        .post(
-            "/api/games",
-            json!({ "white": "dameless@3", "black": "dameless@4", "time": { "type": "nodes", "nodes": 500 } }),
-        )
+        .post("/api/games", json!({ "white": "fake@3", "black": "fake@4", "time": { "type": "nodes", "nodes": 500 } }))
         .await;
     assert_eq!(status, 201, "{g}");
-    assert!(g["summary"]["white"]["name"].as_str().unwrap().starts_with("Dameless"));
+    assert!(g["summary"]["white"]["name"].as_str().unwrap().starts_with("Fake "));
     // Calibration games stay out of the list unless asked for.
     let (status, _) = t.get("/api/games?calibration=true").await;
     assert_eq!(status, 200);

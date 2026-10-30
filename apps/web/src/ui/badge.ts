@@ -1,27 +1,7 @@
-import type { HealthLevel, IdeaStatus, TrialStatus, WorkStatus } from "../api/types";
+import type { HealthLevel, WorkStatus } from "../api/types";
 
 /** The tone of a badge: what it says about the thing, never a decoration. `act` is cognac, the live and the chosen. */
 export type BadgeTone = "neutral" | "win" | "loss" | "warn" | "info" | "act";
-
-/** An idea's status: running is info, kept is a win, failed is a loss, the rest are quiet. */
-export const ideaTone: Record<IdeaStatus, BadgeTone> = {
-  queued: "neutral",
-  running: "info",
-  kept: "win",
-  dropped: "neutral",
-  stopped: "neutral",
-  failed: "loss",
-};
-
-/** A trial's status, toned like an idea's. */
-export const trialTone: Record<TrialStatus, BadgeTone> = {
-  waiting: "neutral",
-  running: "info",
-  passed: "win",
-  failed: "loss",
-  stopped: "neutral",
-  skipped: "neutral",
-};
 
 /** A piece of work's status. */
 export const workTone: Record<WorkStatus, BadgeTone> = {

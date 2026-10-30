@@ -1,7 +1,7 @@
 import type { Ending, Estimate, Outcome, Progress, Score, Seat, Side, Speed, TimeControl } from "./api/types";
 
 /** `+1.23`, `−0.50` or `0.00`: a figure that rounds to zero has no sign. */
-export function signed(n: number, digits = 2): string {
+function signed(n: number, digits = 2): string {
   const text = Math.abs(n).toFixed(digits);
   const zero = Number(text) === 0;
   return `${zero ? "" : n > 0 ? "+" : "−"}${text}`;
@@ -43,12 +43,6 @@ export function timeControl(tc: TimeControl): string {
   }
 }
 
-/** A trial's clock: `8+0.08`, where the base is in seconds as OpenBench writes it. */
-export function trialClock(tc: TimeControl): string {
-  if (tc.type !== "clock") return timeControl(tc);
-  return `${tc.initial_ms / 1000}+${tc.increment_ms / 1000}`;
-}
-
 export const speedName: Record<Speed, string> = {
   ultra_bullet: "UltraBullet",
   bullet: "Bullet",
@@ -88,7 +82,7 @@ export const aboutDuration = (seconds: number): string =>
 export const ago = (iso: string, now = Date.now()): string => formatRelative(iso, now);
 
 /** "3 min", "1 h 20 min". */
-export function duration(seconds: number): string {
+function duration(seconds: number): string {
   const minutes = seconds / 60;
   if (minutes < 1) return "under a minute";
   const whole = Math.round(minutes);
@@ -106,17 +100,14 @@ export function resultText(outcome: Outcome | null | undefined): string {
   return "*";
 }
 
-/** Dameless at a level of its ladder (the server names it by its rating, `Dameless 1650`). */
-export const isLevelSeat = (seat: Seat): boolean => seat.player === "dameless" && seat.level != null;
+/** The engine id in an engine's player key (`engine:stockfish` → `stockfish`), or `null` for anyone else. */
+export const engineOf = (player: string): string | null => (player.startsWith("engine:") ? player.slice(7) : null);
 
-/**
- * A seat as people say it: `Dameless v14`, `Dameless 1650` (at a level), `cutemouse83`, `Stockfish level 5`. The
- * server names every seat this way; a Dameless seat recorded by its bare version name (`v14`) gets the prefix here.
- */
-export function seatName(seat: Seat): string {
-  if (seat.player === "dameless" && !/^Dameless\b/.test(seat.name)) return `Dameless ${seat.name}`.trim();
-  return seat.name;
-}
+/** An engine at a level of its ladder (the server names it by its rating, `Stockfish 1650`). */
+export const isLevelSeat = (seat: Seat): boolean => engineOf(seat.player) !== null && seat.level != null;
+
+/** A seat as people say it: `Stockfish 1650` (at a level), `Maia 1500`, `cutemouse83`. The server names every seat. */
+export const seatName = (seat: Seat): string => seat.name;
 
 export const other = (side: Side): Side => (side === "white" ? "black" : "white");
 
@@ -198,16 +189,6 @@ export function coverage(limit: number, games: number, whose = "their"): string 
 /** `1 game`, `3 games`. */
 export const plural = (n: number, one: string, many = `${one}s`): string =>
   `${n.toLocaleString("en-GB")} ${n === 1 ? one : many}`;
-
-/**
- * What to say while an engine that has not been built yet is wanted: the build's title ("Building v1", or with its
- * label) as a sentence about waiting, "Building Dameless v1 first (about a minute)…".
- */
-export function buildingText(title: string): string {
-  const what = title.replace(/^Building\s*/i, "").trim() || "the engine";
-  const named = /^v\d/.test(what) ? `Dameless ${what}` : what;
-  return `Building ${named} first (about a minute)…`;
-}
 
 /** How a game ended, in words: `Checkmate`, `Black resigned`, `Draw by repetition`, `White ran out of time`. */
 export function endingText(ending: Ending, outcome: Outcome | null | undefined): string {

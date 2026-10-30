@@ -91,7 +91,7 @@ mod tests {
 
     fn secrets() -> (Secrets, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let config = Config::new(dir.path(), crate::config::DEFAULT_LISTEN.parse().unwrap(), "reckless", 1);
+        let config = Config::new(dir.path(), crate::config::DEFAULT_LISTEN.parse().unwrap(), 1);
         (Secrets::new(&config), dir)
     }
 
@@ -106,14 +106,12 @@ mod tests {
     }
 
     #[test]
-    fn lichess_tokens_are_kept_apart() {
+    fn lichess_tokens_are_files() {
         let (s, dir) = secrets();
         assert_eq!(s.lichess_token(ConnectionKey::You).unwrap(), None);
         s.set_lichess_token(ConnectionKey::You, " lip_you \n").unwrap();
-        s.set_lichess_token(ConnectionKey::Bot, "lip_bot").unwrap();
         assert_eq!(s.lichess_token(ConnectionKey::You).unwrap().as_deref(), Some("lip_you"));
-        assert_eq!(s.lichess_token(ConnectionKey::Bot).unwrap().as_deref(), Some("lip_bot"));
-        assert!(dir.path().join("secrets").join("lichess-bot").is_file());
+        assert!(dir.path().join("secrets").join("lichess-you").is_file());
         s.delete_lichess_token(ConnectionKey::You).unwrap();
         s.delete_lichess_token(ConnectionKey::You).unwrap();
         assert_eq!(s.lichess_token(ConnectionKey::You).unwrap(), None);
@@ -124,8 +122,8 @@ mod tests {
     fn secrets_are_private() {
         use std::os::unix::fs::PermissionsExt;
         let (s, dir) = secrets();
-        s.set_lichess_token(ConnectionKey::Bot, "lip_bot").unwrap();
-        let mode = std::fs::metadata(dir.path().join("secrets/lichess-bot")).unwrap().permissions().mode();
+        s.set_lichess_token(ConnectionKey::You, "lip_you").unwrap();
+        let mode = std::fs::metadata(dir.path().join("secrets/lichess-you")).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
     }
 }

@@ -4,17 +4,14 @@
 
 pub mod analysis;
 pub mod connections;
-pub mod dameless;
+pub mod engines;
 pub mod error;
 pub mod events;
 pub mod games;
 pub mod guard;
-pub mod harness;
-pub mod ideas;
 pub mod player_side;
 pub mod players;
 pub mod status;
-pub mod training;
 pub mod web;
 pub mod work;
 
@@ -38,8 +35,8 @@ use crate::App;
 #[openapi(
     info(
         title = "Dameless",
-        description = "You and your engine, getting stronger at one board. Every command of the `dameless` CLI is one \
-                       of these routes. Every request but `/api/health` carries `Authorization: Bearer <token>`."
+        description = "Play, review and analyze chess, with any UCI engine. Every command of the `dameless` CLI is \
+                       one of these routes. Every request but `/api/health` carries `Authorization: Bearer <token>`."
     ),
     modifiers(&Bearer),
     security(("token" = [])),
@@ -65,7 +62,6 @@ fn routes() -> (OpenApiRouter<Arc<App>>, OpenApiRouter<Arc<App>>) {
     let guarded = OpenApiRouter::new()
         .routes(routes!(status::status))
         .routes(routes!(status::token))
-        .routes(routes!(status::setup))
         .routes(routes!(events::events))
         // Games
         .routes(routes!(games::list_games, games::start_game))
@@ -87,42 +83,12 @@ fn routes() -> (OpenApiRouter<Arc<App>>, OpenApiRouter<Arc<App>>) {
         .routes(routes!(players::get_profile))
         .routes(routes!(players::compare_players))
         .routes(routes!(players::import_player))
-        // Dameless
-        .routes(routes!(dameless::get_dameless))
-        .routes(routes!(dameless::push))
-        .routes(routes!(dameless::upstream_status, dameless::set_upstream_settings))
-        .routes(routes!(dameless::sync_upstream))
-        .routes(routes!(dameless::list_versions, dameless::make_version))
-        .routes(routes!(dameless::list_builds))
-        .routes(routes!(dameless::delete_build))
-        .routes(routes!(dameless::prune_builds))
-        .routes(routes!(dameless::list_tunables))
-        // Ideas
-        .routes(routes!(ideas::list_ideas, ideas::create_idea))
-        .routes(routes!(ideas::create_batch))
-        .routes(routes!(ideas::get_idea))
-        .routes(routes!(ideas::get_trial))
-        .routes(routes!(ideas::get_tune))
-        .routes(routes!(ideas::stop_idea))
-        .routes(routes!(ideas::resume_idea))
-        .routes(routes!(ideas::promote_idea))
-        .routes(routes!(harness::check_branch))
-        .routes(routes!(harness::fix_bench))
-        // Training
-        .routes(routes!(training::list_nets))
-        .routes(routes!(training::get_net))
-        .routes(routes!(training::list_datasets))
-        .routes(routes!(training::datagen))
-        .routes(routes!(training::import_dataset))
-        .routes(routes!(training::delete_dataset))
-        .routes(routes!(training::dataset_from_trials))
-        .routes(routes!(training::get_idea_train))
-        .routes(routes!(training::train))
-        .routes(routes!(training::work_train))
-        // Harness
-        .routes(routes!(harness::check_harness))
-        .routes(routes!(harness::harness_status))
-        .routes(routes!(harness::diagnostics))
+        // Engines
+        .routes(routes!(engines::list_engines, engines::add_engine))
+        .routes(routes!(engines::remove_engine))
+        .routes(routes!(engines::set_analysis_engine))
+        .routes(routes!(engines::setup_plan, engines::setup))
+        .routes(routes!(engines::diagnostics))
         // The player side
         .routes(routes!(player_side::list_levels))
         .routes(routes!(player_side::plan_levels))
@@ -152,11 +118,7 @@ fn routes() -> (OpenApiRouter<Arc<App>>, OpenApiRouter<Arc<App>>) {
         .routes(routes!(connections::challenge))
         .routes(routes!(connections::accept_challenge))
         .routes(routes!(connections::decline_challenge))
-        .routes(routes!(connections::cancel_challenge))
-        .routes(routes!(connections::set_bot_settings))
-        .routes(routes!(connections::set_bot_online))
-        .routes(routes!(connections::set_bot_seek))
-        .routes(routes!(connections::online_bots));
+        .routes(routes!(connections::cancel_challenge));
     (open, guarded)
 }
 
