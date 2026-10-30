@@ -153,6 +153,7 @@ const onDameless = computed(() => route.path.startsWith("/dameless"));
   justify-content: flex-start;
   margin-inline: auto;
   inline-size: min(100%, 26rem);
+  min-inline-size: 0;
   color: var(--c-ink-2);
   font-weight: 400;
 }
@@ -201,6 +202,8 @@ const onDameless = computed(() => route.path.startsWith("/dameless"));
 
 /* Train reads "Train · 12": the count is a figure, after the word. */
 .train-count {
+  display: inline-block;
+  text-decoration: none;
   margin-inline-start: var(--sp-1);
   color: var(--c-ink-2);
   font: var(--t-fig);

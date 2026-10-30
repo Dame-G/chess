@@ -248,7 +248,12 @@ const columns = [
         <UiEmpty
           v-else-if="!loadingGames && !recent.length"
           dense
-          title="Its games on Lichess show here once it has played some."
+          title="No games yet."
+          :body="
+            online
+              ? 'Turn on Looking for games, or wait for a challenge, and its games show here.'
+              : 'Take it online and its games on Lichess show here.'
+          "
         />
         <template v-else>
           <UiStats :columns="2">
@@ -315,7 +320,16 @@ const columns = [
       </UiSection>
 
       <UiSection title="Recent challenges">
-        <UiEmpty v-if="!entries.length" dense title="Challenges it answers show here, with why it said no." />
+        <UiEmpty
+          v-if="!entries.length"
+          dense
+          title="No challenges yet."
+          :body="
+            online
+              ? 'Each one it answers shows here, with why when it said no.'
+              : 'Once it is online, each one it answers shows here, with why when it said no.'
+          "
+        />
         <UiTable v-else label="Recent challenges" :columns="columns" :rows="entries" row-key="id">
           <template #cell-verdict="{ row }">
             <UiBadge :tone="row.tone">{{ row.verdict }}</UiBadge>

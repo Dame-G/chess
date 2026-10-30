@@ -55,17 +55,24 @@ const canHint = computed(() => !r.value && !drills.answering && drills.hints.len
 const learned = stored("drill.learned", false);
 /** The Next button takes focus when the answer comes, so Enter goes on whether or not a key was caught. */
 const nextButton = ref<{ $el?: HTMLElement } | null>(null);
+const hintsEl = ref<HTMLElement | null>(null);
+const cardEl = ref<HTMLElement | null>(null);
+/** On a phone the page scrolls and the controls hold its foot: what they just produced is brought up over them. */
+const reveal = (el: HTMLElement | null) => el?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
 watch(r, async (v) => {
   if (!v) return;
   learned.value = true;
   await nextTick();
-  nextButton.value?.$el?.focus?.();
+  nextButton.value?.$el?.focus?.({ preventScroll: true });
+  reveal(cardEl.value);
 });
 
 async function hint() {
   if (!canHint.value) return;
   try {
     await drills.hint();
+    await nextTick();
+    reveal(hintsEl.value);
   } catch (e) {
     toast.show({
       title: "No hint",
@@ -155,12 +162,12 @@ const keys = { hint: formatShortcut("h"), next: formatShortcut("enter") };
 
     <template v-if="!r">
       <p v-if="!learned" class="meta">One try: make the move on the board.</p>
-      <ol v-if="drills.hints.length" class="hints" aria-label="Hints" aria-live="polite">
+      <ol v-if="drills.hints.length" ref="hintsEl" class="hints" aria-label="Hints" aria-live="polite">
         <li v-for="h in drills.hints" :key="h.level" class="hint">
           <PhLightbulb class="hint-icon" aria-hidden="true" />{{ h.text }}
         </li>
       </ol>
-      <UiToolbar align="between" label="Drill">
+      <UiToolbar class="controls" align="between" label="Drill">
         <EButton
           variant="outline"
           :disabled="!canHint"
@@ -178,7 +185,7 @@ const keys = { hint: formatShortcut("h"), next: formatShortcut("enter") };
       <p v-if="drills.hints.length" class="meta">A right answer with a hint counts half.</p>
     </template>
     <template v-else>
-      <section class="card" :class="`card--${tone}`" aria-label="The answer" aria-live="polite">
+      <section ref="cardEl" class="card" :class="`card--${tone}`" aria-label="The answer" aria-live="polite">
         <p class="verdict">
           <component
             :is="halved ? PhMinusCircle : passed ? PhCheckCircle : PhXCircle"
@@ -211,7 +218,7 @@ const keys = { hint: formatShortcut("h"), next: formatShortcut("enter") };
           </RouterLink>
         </p>
       </section>
-      <UiToolbar align="between" label="Drill">
+      <UiToolbar class="controls" align="between" label="Drill">
         <EButton ref="nextButton" variant="primary" aria-keyshortcuts="Enter" @click="next">
           {{ last ? "Finish" : "Next" }}
           <EKbd size="sm" class="kbd">{{ keys.next.join("") }}</EKbd>
@@ -411,5 +418,23 @@ const keys = { hint: formatShortcut("h"), next: formatShortcut("enter") };
   align-items: center;
   gap: var(--sp-1) var(--sp-2);
   margin: 0;
+}
+
+/* On a phone the page scrolls: the controls hold the foot of the screen, over the tab bar, so Hint, Skip and Next are
+   in reach whatever the hints and the answer push down. */
+@media (width < 48rem) {
+  .hints,
+  .card {
+    scroll-margin-block-end: calc(var(--h-tabbar) + var(--h-control) + var(--sp-4));
+  }
+
+  .controls {
+    position: sticky;
+    inset-block-end: calc(var(--h-tabbar) + env(safe-area-inset-bottom, 0px));
+    z-index: var(--e-z-sticky);
+    padding-block: var(--sp-2);
+    background: var(--c-pane);
+    box-shadow: 0 calc(-1 * var(--e-stroke-hair)) 0 var(--c-line);
+  }
 }
 </style>

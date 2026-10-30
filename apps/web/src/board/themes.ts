@@ -46,7 +46,7 @@ export const THEMES: Record<ThemeKind, ThemeWords> = {
     evidence: "A mistake once few pieces were left that none of the above explains.",
   },
   other: {
-    name: "Other",
+    name: "Not classified",
     one: "Other",
     evidence: "Quiet mistakes that no rule above explains.",
   },

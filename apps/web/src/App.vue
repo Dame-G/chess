@@ -261,6 +261,7 @@ watchEffect(() => {
   .ws-panel {
     grid-column: 1;
     order: 2;
+    overflow: visible;
     border-block-start: var(--e-stroke-hair) solid var(--c-line);
     border-inline-start: 0;
   }

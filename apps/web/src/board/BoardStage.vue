@@ -234,7 +234,7 @@ watch(
 
 <template>
   <section class="stage" aria-label="Board">
-    <div class="col">
+    <div class="col" :class="{ 'col--drill': drilling }">
       <Strip :class="'strip-top'" v-bind="strip(top)" />
       <div class="eval-slot">
         <EvalBar
@@ -395,6 +395,23 @@ watch(
   .graph-slot,
   .transport {
     margin-inline: var(--sp-3);
+  }
+
+  /* A drill has no graph: its flip button moves up beside the bottom strip, so the drill's controls, which sit under
+     the board, are that much nearer the top of a short phone. */
+  .col--drill {
+    grid-template:
+      "top top" var(--strip)
+      "board board" var(--side)
+      "bottom transport" var(--strip) / minmax(0, 1fr) auto;
+  }
+
+  .col--drill .graph-slot {
+    display: none;
+  }
+
+  .col--drill .transport {
+    margin-inline-start: 0;
   }
 }
 </style>

@@ -135,7 +135,11 @@ const moveNo = (ply: number, san: string) => `${Math.ceil(ply / 2)}${ply % 2 ? "
             <p class="pgn mono">{{ row.pgn }}</p>
             <p class="meta">
               {{ recordText(row) }}. Early mistakes in {{ earlyText(row)
-              }}{{ row.early_swing ? `, ${lost(row.early_swing)} in all` : "" }}.
+              }}{{
+                row.early_mistakes && row.early_swing
+                  ? `, costing ${lost(row.early_swing / row.early_mistakes)} each`
+                  : ""
+              }}.
             </p>
             <p v-if="row.worst" class="meta">
               Costliest:
