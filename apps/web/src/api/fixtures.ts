@@ -1,5 +1,5 @@
 /**
- * A stand-in server, so the app can be built and reviewed before `dameless serve` exists. It answers the routes the
+ * A stand-in server, so the app can be built and reviewed before `chess serve` exists. It answers the routes the
  * stores call and streams events like the real one, at the fetch level: the client swaps its transport and nothing
  * above it knows. Turn it on with `?fixtures` in the address (or `VITE_FIXTURES=1`); `?fixtures=fairplay` makes your
  * live game a Lichess game, so analysis is off.
@@ -509,7 +509,7 @@ const engines: EnginesOverview = {
     builtin({
       id: "stockfish",
       name: "Stockfish",
-      path: "C:\\Users\\you\\AppData\\Local\\dameless\\tools\\stockfish\\stockfish.exe",
+      path: "C:\\Users\\you\\AppData\\Local\\chess\\tools\\stockfish\\stockfish.exe",
       id_name: "Stockfish 17.1",
       analysis: true,
       levels: true,
@@ -718,7 +718,7 @@ const status: Status = {
     physical_cores: 8,
     logical_cores: 16,
     memory_bytes: 34_359_738_368,
-    data_dir: "C:\\Users\\you\\AppData\\Local\\dameless",
+    data_dir: "C:\\Users\\you\\AppData\\Local\\chess",
   },
   ledger: {
     total: 15,

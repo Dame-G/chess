@@ -1,25 +1,25 @@
 ---
-name: dameless
-description: Drive Dameless, the user's chess app (their games, reviews, profiles, drills, repertoire, engines, their Lichess account) through its MCP tools or the `dameless` CLI. Use when reviewing or coaching the user's games, starting games against an engine, managing the engines list, or acting on their Lichess account.
+name: chess
+description: Drive Chess, the user's chess app (their games, reviews, profiles, drills, repertoire, engines, their Lichess account) through its MCP tools or the `chess` CLI. Use when reviewing or coaching the user's games, starting games against an engine, managing the engines list, or acting on their Lichess account.
 ---
 
-# Driving Dameless
+# Driving Chess
 
-Dameless is a chess app to **play, review and analyze**, with any UCI engine as an opponent or the analysis engine. You drive the same app the user does: every MCP tool is one API route, named by its operation id, and every route is one `dameless` CLI command (each tool's description names it). Results are the route's JSON.
+Chess is the user's app to **play, review and analyze**, with any UCI engine as an opponent or the analysis engine. You drive the same app the user does: every MCP tool is one API route, named by its operation id, and every route is one `chess` CLI command (each tool's description names it). Results are the route's JSON.
 
 ## Connect
 
-The app runs as `dameless serve` on `http://127.0.0.1:7979`. Check with the `health` tool or `dameless health`.
+The app runs as `chess serve` on `http://127.0.0.1:7979`. Check with the `health` tool or `chess health`.
 
 - **MCP** (preferred): the endpoint is `/mcp`, behind the app's bearer token. The user adds it once:
 
   ```bash
-  claude mcp add --transport http dameless http://127.0.0.1:7979/mcp --header "Authorization: Bearer $(dameless token)"
+  claude mcp add --transport http chess http://127.0.0.1:7979/mcp --header "Authorization: Bearer $(chess token)"
   ```
 
-  `dameless token` prints the token from the app's data directory. Never paste the token into chat, files or commits.
+  `chess token` prints the token from the app's data directory. Never paste the token into chat, files or commits.
 
-- **CLI**: `dameless <command> --json` prints one JSON document; errors go to stderr with a non-zero exit. `--wait` blocks on work.
+- **CLI**: `chess <command> --json` prints one JSON document; errors go to stderr with a non-zero exit. `--wait` blocks on work.
 
 Start every session with `status` (machine, cores, `policy`) and `list_engines` (the engines and the analysis engine).
 

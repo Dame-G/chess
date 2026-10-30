@@ -4,14 +4,14 @@ mod common;
 
 use std::time::Duration;
 
-use common::*;
-use dameless_core::{
+use chess_core::{
     PlayerKey, Side, TimeControl,
     events::EventKind,
     game::{Ending, GameStatus, Outcome, SeatAction, Source},
 };
-use dameless_play::{NewGameRequest, SeatRequest, StartFrom};
-use dameless_store::NewGame;
+use chess_play::{NewGameRequest, SeatRequest, StartFrom};
+use chess_store::NewGame;
+use common::*;
 
 fn request(white: &str, black: &str, time: TimeControl) -> NewGameRequest {
     NewGameRequest {
@@ -104,7 +104,7 @@ async fn you_play_an_engine_with_moves_takebacks_offers_and_resigning() {
     assert_eq!((g.summary.outcome, g.summary.ending), (Some(Outcome::BlackWins), Some(Ending::Resignation)));
     assert!(g.actions.is_empty());
     assert_eq!(s.games.act(id, SeatAction::Resign, None).await.unwrap_err().status(), 409);
-    assert_eq!(s.games.act(dameless_core::GameId(999), SeatAction::Resign, None).await.unwrap_err().status(), 404);
+    assert_eq!(s.games.act(chess_core::GameId(999), SeatAction::Resign, None).await.unwrap_err().status(), 404);
 
     let events = drain(&mut events);
     assert_eq!(count(&events, EventKind::GameUndone), 1);
@@ -174,11 +174,11 @@ async fn games_are_checked_before_they_start() {
 async fn local_games_left_live_by_a_stopped_app_are_aborted() {
     let s = setup(engines());
     let mut new = NewGame::starting(
-        dameless_core::game::Seat::new(PlayerKey::You, "You"),
-        dameless_core::game::Seat::new(PlayerKey::Engine("fake".into()), "v1"),
+        chess_core::game::Seat::new(PlayerKey::You, "You"),
+        chess_core::game::Seat::new(PlayerKey::Engine("fake".into()), "v1"),
         Source::Local,
         TimeControl::clock(60_000, 0),
-        dameless_store::now(),
+        chess_store::now(),
     );
     new.status = GameStatus::Live;
     let id = s.hub.store.insert_game(new).await.unwrap();

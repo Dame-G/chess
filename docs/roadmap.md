@@ -1,4 +1,4 @@
-# Dameless: the roadmap
+# Chess: the roadmap
 
 `docs/design.md` is the contract; this file says what is built and what comes next, in order. Each step ends usable.
 
@@ -8,15 +8,15 @@ The app plays, reviews and analyzes, with any UCI engine:
 
 - **Play:** local games against an engine at full strength, at a level of the analysis engine (about 800 to full, calibrated by the app), or against Maia at 1100 to 1900; your Lichess games played from the same board through the Board API.
 - **Review and analyze:** reviews on the analysis engine with Lichess's judgements, profiles and comparisons, weak spots and drills (SM-2, themes, hints), your repertoire and opening prep, your progress, free analysis with the explorer and the tablebase, imports of your history and anyone's.
-- **Engines:** the engines list (Stockfish 19 and Maia on lc0 as built-ins that `dameless setup` downloads, and any engine added by path), the analysis engine as a setting, reviews and the position cache keyed by the engine and what it calls itself.
-- **Claude in the loop:** `/mcp` serves every route as a tool, generated from the OpenAPI document, with the fair-play and real-account rules in its instructions; the `dameless` skill documents driving the app.
+- **Engines:** the engines list (Stockfish 19 and Maia on lc0 as built-ins that `chess setup` downloads, and any engine added by path), the analysis engine as a setting, reviews and the position cache keyed by the engine and what it calls itself.
+- **Claude in the loop:** `/mcp` serves every route as a tool, generated from the OpenAPI document, with the fair-play and real-account rules in its instructions; the `chess` skill documents driving the app.
 
 ## Next
 
 1. **The name.** The app becomes "Chess": the crates, the binary, the environment variables and the data directory are renamed in one change, with the old data directory picked up once.
 2. **The design pass on the web app.** The opponent picker as an engines list (levels, Maia by rating, your engines), Settings' Engines section and setup with its sizes, and the screens that lost the engine's sheet, polished to the brief (`docs/ui-brief.md`) and the kit.
-3. **Calibrate the Stockfish ladder.** The node budgets were chosen for Reckless; calibrate on Stockfish (`dameless levels calibrate`) and, if the spread is off, retune the budgets and temperatures so the ladder spans 800 to full strength evenly.
-4. **Maia everywhere.** lc0 publishes Windows builds only: on Linux and macOS, setup uses an `lc0` on the PATH. Build or fetch lc0 for those platforms, or document it in `dameless diagnostics`.
+3. **Calibrate the Stockfish ladder.** The node budgets were chosen for Reckless; calibrate on Stockfish (`chess levels calibrate`) and, if the spread is off, retune the budgets and temperatures so the ladder spans 800 to full strength evenly.
+4. **Maia everywhere.** lc0 publishes Windows builds only: on Linux and macOS, setup uses an `lc0` on the PATH. Build or fetch lc0 for those platforms, or document it in `chess diagnostics`.
 5. **eos gains the patterns the app hand-styles** (a non-modal side sheet, a popover, a selectable list row and a tree, a compact stat link, a chart with series highlighting, a virtual list), released and adopted; then a last audit of words, keyboard paths, phone and tablet, both schemes, reduced motion and contrast.
 
 ## The player side in detail

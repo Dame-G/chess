@@ -39,7 +39,7 @@ const engine = ref("v14");
 const kvItems = [
   { label: "Cores", value: 15 },
   { label: "Engine checkout", value: "C:\\dev\\reckless · main at 9e3a5e41", mono: true, copy: true },
-  { label: "Data", value: "C:\\Users\\dame\\AppData\\Local\\dameless", mono: true, copy: true },
+  { label: "Data", value: "C:\\Users\\dame\\AppData\\Local\\chess", mono: true, copy: true },
   { label: "Binaries", value: "23 binaries, 2.3 GB with the build cache" },
   { label: "Status", value: "Healthy", tone: "win" as const },
 ];

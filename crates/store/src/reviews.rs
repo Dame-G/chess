@@ -1,7 +1,7 @@
 //! Reviews: one row per game, engine and node budget, the summary as JSON and the judged plies as a compressed blob.
 //! Each side's accuracy has its own column, so game lists show it without reading the summary.
 
-use dameless_core::{
+use chess_core::{
     Error, GameId, PlayerKey, ReviewId, Timestamp,
     game::GameStatus,
     profile::{ProfileFilter, ProfileGame},
@@ -183,7 +183,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use dameless_core::{
+    use chess_core::{
         Side,
         game::{Ending, GameEnd, Outcome},
         review::{ClassCounts, SideReview, judge::Classification},
@@ -225,7 +225,7 @@ mod tests {
     async fn reviews_replace_by_engine_and_budget_and_show_in_lists() {
         let (store, _dir) = testing::store();
         let mut g = local(PlayerKey::You, PlayerKey::Engine("stockfish".into()), 0);
-        g.status = dameless_core::game::GameStatus::Finished;
+        g.status = chess_core::game::GameStatus::Finished;
         let game = store.insert_game(g).await.unwrap();
         assert!(store.review(game, None, None).await.unwrap().is_none());
         assert!(!store.has_any_review(game).await.unwrap());

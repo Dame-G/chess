@@ -2,13 +2,13 @@
 
 mod common;
 
-use common::{QUIET_DRAW, SCHOLARS_MATE, fake, finished_game, harness};
-use dameless_analysis::{Profiles, ReviewRequest, Reviews};
-use dameless_core::{
+use chess_analysis::{Profiles, ReviewRequest, Reviews};
+use chess_core::{
     PlayerKey, Side, Speed, chess::Position, game::Outcome, profile::ProfileFilter, review::judge::Judgement,
     work::WorkKind,
 };
-use dameless_hub::{Executor, WorkContext};
+use chess_hub::{Executor, WorkContext};
+use common::{QUIET_DRAW, SCHOLARS_MATE, fake, finished_game, harness};
 
 /// You (White) give your queen away on move 3.
 const QUEEN_BLUNDER: [&str; 6] = ["e4", "e5", "Qh5", "Nc6", "Qxe5+", "Nxe5"];
@@ -56,10 +56,10 @@ async fn profiles_add_up_games_and_reviews() {
     assert_eq!(you.weak_spots.iter().filter(|s| s.game == blunder).count(), your_mistakes);
 
     // The engine walked into the mate; its profile has no weak spots (those are yours alone).
-    let dameless = profiles.profile(fake(), ProfileFilter::default()).await.unwrap();
-    assert_eq!((dameless.player.name.as_str(), dameless.games, dameless.reviewed), ("Fake", 2, 2));
-    assert!(dameless.judgements.blunder >= 1);
-    assert!(dameless.weak_spots.is_empty());
+    let chess = profiles.profile(fake(), ProfileFilter::default()).await.unwrap();
+    assert_eq!((chess.player.name.as_str(), chess.games, chess.reviewed), ("Fake", 2, 2));
+    assert!(chess.judgements.blunder >= 1);
+    assert!(chess.weak_spots.is_empty());
 
     let player = profiles.player(&bob).await.unwrap();
     assert_eq!((player.name.as_str(), player.lichess.as_deref()), ("lichess:bob", Some("bob")));

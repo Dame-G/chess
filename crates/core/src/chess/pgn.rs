@@ -55,7 +55,7 @@ pub fn write(game: &Game) -> String {
             format!("Lichess {} {} game", if *rated { "rated" } else { "casual" }, speed.lichess_key()),
             s.url.clone().unwrap_or_else(|| "https://lichess.org".into()),
         ),
-        Source::Local => ("Dameless game".into(), "Dameless".into()),
+        Source::Local => ("Chess game".into(), "Chess".into()),
     };
     header("Event", &event);
     header("Site", &site);
@@ -536,7 +536,7 @@ mod tests {
     #[test]
     fn writes_headers_and_commented_moves_like_the_test_pgns() {
         let pgn = write(&game(None)).replace('\n', " ");
-        assert!(pgn.contains("[Event \"Dameless game\"]"), "{pgn}");
+        assert!(pgn.contains("[Event \"Chess game\"]"), "{pgn}");
         assert!(pgn.contains("[White \"v14\"]"));
         assert!(pgn.contains("[Black \"deeper-lmr\"]"));
         assert!(pgn.contains("[Date \"2026.10.25\"]"));

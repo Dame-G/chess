@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use dameless_core::{
+use chess_core::{
     Error,
     events::{AssistKind, Payload, Policy},
 };
@@ -72,7 +72,7 @@ impl PolicyState {
 mod tests {
     use std::time::Duration;
 
-    use dameless_core::events::{Assist, EventKind};
+    use chess_core::events::{Assist, EventKind};
 
     use super::*;
     use crate::bus::TopicFilter;

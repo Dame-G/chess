@@ -4,9 +4,9 @@
 use std::sync::Arc;
 
 use axum::{extract::State, http::StatusCode};
-use dameless_analysis::{Budget, EvalRequest, EvalSession, ReviewRequest};
-use dameless_core::{Error, GameId, PlayerKey, time::Speed, work::Work};
-use dameless_lichess::explorer::{ExplorerDb, ExplorerQuery};
+use chess_analysis::{Budget, EvalRequest, EvalSession, ReviewRequest};
+use chess_core::{Error, GameId, PlayerKey, time::Speed, work::Work};
+use chess_lichess::explorer::{ExplorerDb, ExplorerQuery};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -44,7 +44,7 @@ fn one() -> u32 {
 /// Starts a live search. Its progress comes as `eval.info` events on topic `eval:<session>`; it ends at its budget,
 /// when stopped, or when the policy turns analysis off.
 #[utoipa::path(post, path = "/api/eval", operation_id = "start_eval", tag = "analysis", request_body = EvalBody,
-    responses((status = 200, body = EvalSession), (status = 400, body = dameless_core::error::ErrorBody), (status = 409, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = EvalSession), (status = 400, body = chess_core::error::ErrorBody), (status = 409, body = chess_core::error::ErrorBody)))]
 pub async fn start_eval(State(app): State<Arc<App>>, Json(b): Json<EvalBody>) -> ApiResult<Json<EvalSession>> {
     let req = EvalRequest {
         fen: b.fen,
@@ -126,7 +126,7 @@ fn words(text: &Option<String>) -> Vec<String> {
 /// Lichess's opening explorer, as Lichess answers it. Needs your Lichess login (409 without it); refused while you
 /// play on Lichess unless every game of yours is correspondence.
 #[utoipa::path(get, path = "/api/explorer", operation_id = "explorer", tag = "analysis", params(ExplorerParams),
-    responses((status = 200, body = serde_json::Value), (status = 409, body = dameless_core::error::ErrorBody), (status = 502, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = serde_json::Value), (status = 409, body = chess_core::error::ErrorBody), (status = 502, body = chess_core::error::ErrorBody)))]
 pub async fn explorer(
     State(app): State<Arc<App>>,
     Query(q): Query<ExplorerParams>,
@@ -170,7 +170,7 @@ pub struct TablebaseParams {
 
 /// The tablebase's answer for a position of seven pieces or fewer, as Lichess gives it. Refused while you play.
 #[utoipa::path(get, path = "/api/tablebase", operation_id = "tablebase", tag = "analysis", params(TablebaseParams),
-    responses((status = 200, body = serde_json::Value), (status = 409, body = dameless_core::error::ErrorBody), (status = 502, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = serde_json::Value), (status = 409, body = chess_core::error::ErrorBody), (status = 502, body = chess_core::error::ErrorBody)))]
 pub async fn tablebase(
     State(app): State<Arc<App>>,
     Query(q): Query<TablebaseParams>,
@@ -212,7 +212,7 @@ pub struct ReviewBody {
 
 /// Queues a review (work). Refused while you play on Lichess; a running review pauses while you do.
 #[utoipa::path(post, path = "/api/reviews", operation_id = "review_games", tag = "analysis", request_body = ReviewBody,
-    responses((status = 202, body = Work), (status = 404, body = dameless_core::error::ErrorBody), (status = 409, body = dameless_core::error::ErrorBody)))]
+    responses((status = 202, body = Work), (status = 404, body = chess_core::error::ErrorBody), (status = 409, body = chess_core::error::ErrorBody)))]
 pub async fn review_games(
     State(app): State<Arc<App>>,
     Json(b): Json<ReviewBody>,

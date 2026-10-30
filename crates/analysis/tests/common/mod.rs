@@ -13,15 +13,15 @@ use std::{
 };
 
 use async_trait::async_trait;
-use dameless_analysis::Eval;
-use dameless_core::{
+use chess_analysis::Eval;
+use chess_core::{
     Error, GameId, PlayerKey, TimeControl, Timestamp,
     chess::Position,
     game::{Ending, GameStatus, Move, Outcome, Seat, Source},
 };
-use dameless_hub::{Config, Hub};
-use dameless_store::NewGame;
-use dameless_work::{EngineBinary, EngineSource, FixedEngines};
+use chess_hub::{Config, Hub};
+use chess_store::NewGame;
+use chess_work::{EngineBinary, EngineSource, FixedEngines};
 
 /// The fake engine as `fake` (the analysis engine), counting how often an engine is asked for.
 pub struct FakeEngines {

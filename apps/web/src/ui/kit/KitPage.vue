@@ -47,7 +47,7 @@ const nav = [
   <EToastProvider>
     <div class="kit">
       <header class="kit-head">
-        <h1 class="kit-title">Dameless UI kit</h1>
+        <h1 class="kit-title">Chess UI kit</h1>
         <UiSeg v-model="choice" label="Colour scheme" size="sm" :options="schemes" />
         <a class="ui-link kit-back" href="/?fixtures">Back to the app</a>
       </header>

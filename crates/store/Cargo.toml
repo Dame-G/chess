@@ -1,5 +1,5 @@
 [package]
-name = "dameless-store"
+name = "chess-store"
 description = "SQLite: schema, migrations, one writer, repositories."
 version.workspace = true
 edition.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-dameless-core.workspace = true
+chess-core.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true

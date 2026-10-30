@@ -1,5 +1,5 @@
 [package]
-name = "dameless-analysis"
+name = "chess-analysis"
 description = "The evaluation service, the position cache, reviews, profiles and comparisons."
 version.workspace = true
 edition.workspace = true
@@ -8,11 +8,11 @@ repository.workspace = true
 
 [dependencies]
 async-trait.workspace = true
-dameless-core.workspace = true
-dameless-engine.workspace = true
-dameless-hub.workspace = true
-dameless-store.workspace = true
-dameless-work.workspace = true
+chess-core.workspace = true
+chess-engine.workspace = true
+chess-hub.workspace = true
+chess-store.workspace = true
+chess-work.workspace = true
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true

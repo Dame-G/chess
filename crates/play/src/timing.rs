@@ -57,7 +57,7 @@ impl Timing {
     }
 
     /// A backoff for streams, from these waits.
-    pub(crate) fn backoff(&self) -> dameless_lichess::Backoff {
-        dameless_lichess::Backoff::new(self.reconnect_min, self.reconnect_max, self.rate_limited)
+    pub(crate) fn backoff(&self) -> chess_lichess::Backoff {
+        chess_lichess::Backoff::new(self.reconnect_min, self.reconnect_max, self.rate_limited)
     }
 }

@@ -5,7 +5,7 @@
 import { error, reply } from "./fixtures-http";
 
 const LONG_DIR =
-  "C:\\Users\\a-person-with-a-long-name\\AppData\\Local\\Programs\\dameless-with-a-deeply\\nested\\data\\folder";
+  "C:\\Users\\a-person-with-a-long-name\\AppData\\Local\\Programs\\chess-with-a-deeply\\nested\\data\\folder";
 
 /** The answer for a route in a Settings state, or undefined to leave it to the usual fixtures. */
 export function settingsRoute(mode: string | null, path: string): Response | undefined {
@@ -24,7 +24,7 @@ export function settingsRoute(mode: string | null, path: string): Response | und
             ok: false,
             title: "Analysis engine",
             detail: `Stockfish was not found in ${LONG_DIR}\\tools\\stockfish-windows-x86-64-avx2`,
-            action: { label: "Set it up", command: "dameless setup" },
+            action: { label: "Set it up", command: "chess setup" },
           },
           {
             key: "maia",
@@ -32,7 +32,7 @@ export function settingsRoute(mode: string | null, path: string): Response | und
             ok: true,
             title: "Maia",
             detail: "No Maia engine is installed: the human-like opponents need lc0 and Maia's nets.",
-            action: { label: "Set it up", command: "dameless setup" },
+            action: { label: "Set it up", command: "chess setup" },
           },
         ],
       });

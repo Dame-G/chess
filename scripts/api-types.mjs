@@ -9,7 +9,7 @@ const SPEC = "crates/server/openapi.json";
 const TYPES = "apps/web/src/api/schema.d.ts";
 
 const spec =
-  execFileSync("cargo", ["run", "--quiet", "--package", "dameless", "--bin", "dameless", "--", "openapi"], {
+  execFileSync("cargo", ["run", "--quiet", "--package", "chess", "--bin", "chess", "--", "openapi"], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   }).trimEnd() + "\n";

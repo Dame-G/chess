@@ -9,7 +9,7 @@ use axum::{
     http::{StatusCode, header},
     response::IntoResponse,
 };
-use dameless_core::{
+use chess_core::{
     ConnectionKey, Error, GameId, PlayerKey, Side, TimeControl, Timestamp,
     chess::pgn,
     events::Payload,
@@ -17,8 +17,8 @@ use dameless_core::{
     review::Review,
     time::Speed,
 };
-use dameless_play::NewGameRequest;
-use dameless_store::{GameFilter, NewGame, SourceKind};
+use chess_play::NewGameRequest;
+use chess_store::{GameFilter, NewGame, SourceKind};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use utoipa::{IntoParams, ToSchema};
 
@@ -54,7 +54,7 @@ pub struct GamesQuery {
 
 /// Games, live ones first in the list's order of newest first.
 #[utoipa::path(get, path = "/api/games", operation_id = "list_games", tag = "games", params(GamesQuery),
-    responses((status = 200, body = Vec<GameSummary>), (status = 400, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = Vec<GameSummary>), (status = 400, body = chess_core::error::ErrorBody)))]
 pub async fn list_games(State(app): State<Arc<App>>, Query(q): Query<GamesQuery>) -> ApiResult<Json<Vec<GameSummary>>> {
     let filter = GameFilter {
         player: q.player.as_deref().map(|p| parse::<PlayerKey>("a player", p)).transpose()?,
@@ -86,7 +86,7 @@ fn bad(message: impl Into<String>) -> ApiError {
 
 /// Starts a local game: you against an engine, or two engines. Engines are started before the game is stored.
 #[utoipa::path(post, path = "/api/games", operation_id = "start_game", tag = "games", request_body = NewGameRequest,
-    responses((status = 201, body = Game), (status = 400, body = dameless_core::error::ErrorBody), (status = 404, body = dameless_core::error::ErrorBody)))]
+    responses((status = 201, body = Game), (status = 400, body = chess_core::error::ErrorBody), (status = 404, body = chess_core::error::ErrorBody)))]
 pub async fn start_game(
     State(app): State<Arc<App>>,
     Json(req): Json<NewGameRequest>,
@@ -103,14 +103,14 @@ pub struct GamePath {
 
 /// A game as it is now: a live game's clocks, offers and your actions laid over the stored record.
 #[utoipa::path(get, path = "/api/games/{id}", operation_id = "get_game", tag = "games", params(GamePath),
-    responses((status = 200, body = Game), (status = 404, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = Game), (status = 404, body = chess_core::error::ErrorBody)))]
 pub async fn get_game(State(app): State<Arc<App>>, Path(p): Path<GamePath>) -> ApiResult<Json<Game>> {
     Ok(Json(app.games.game(GameId(p.id)).await?))
 }
 
 /// A game as PGN, with a comment on every move (eval/depth, think time, nodes, clock).
 #[utoipa::path(get, path = "/api/games/{id}/pgn", operation_id = "get_game_pgn", tag = "games", params(GamePath),
-    responses((status = 200, content_type = "application/x-chess-pgn", body = String), (status = 404, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, content_type = "application/x-chess-pgn", body = String), (status = 404, body = chess_core::error::ErrorBody)))]
 pub async fn get_game_pgn(State(app): State<Arc<App>>, Path(p): Path<GamePath>) -> ApiResult<impl IntoResponse> {
     let game = app.games.game(GameId(p.id)).await?;
     Ok(([(header::CONTENT_TYPE, "application/x-chess-pgn; charset=utf-8")], pgn::write(&game)))
@@ -137,8 +137,8 @@ pub struct ActionBody {
 /// now, 400 for a move that is not legal. A move answers once it is on the board.
 #[utoipa::path(post, path = "/api/games/{id}/actions/{action}", operation_id = "act_in_game", tag = "games",
     params(ActionPath), request_body(content = Option<ActionBody>),
-    responses((status = 200, body = Game), (status = 400, body = dameless_core::error::ErrorBody),
-        (status = 404, body = dameless_core::error::ErrorBody), (status = 409, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = Game), (status = 400, body = chess_core::error::ErrorBody),
+        (status = 404, body = chess_core::error::ErrorBody), (status = 409, body = chess_core::error::ErrorBody)))]
 pub async fn act_in_game(State(app): State<Arc<App>>, Path(p): Path<ActionPath>, body: Bytes) -> ApiResult<Json<Game>> {
     let action = SeatAction::parse(&p.action)
         .ok_or_else(|| bad(format!("{:?} is not an action: {}", p.action, actions_text())))?;
@@ -156,7 +156,7 @@ fn actions_text() -> String {
 /// Stops a live game: a game you sit in is resigned (aborted before each side has moved), an engine game aborted,
 /// your Lichess game resigned there. Answers the game once it has ended, or as it stands after a few seconds.
 #[utoipa::path(post, path = "/api/games/{id}/stop", operation_id = "stop_game", tag = "games", params(GamePath),
-    responses((status = 200, body = Game), (status = 404, body = dameless_core::error::ErrorBody), (status = 409, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = Game), (status = 404, body = chess_core::error::ErrorBody), (status = 409, body = chess_core::error::ErrorBody)))]
 pub async fn stop_game(State(app): State<Arc<App>>, Path(p): Path<GamePath>) -> ApiResult<Json<Game>> {
     Ok(Json(app.games.stop(GameId(p.id)).await?))
 }
@@ -174,7 +174,7 @@ pub struct ImportPgnRequest {
 /// Stores pasted PGN as finished local games (one per game in the text). A player is you when `you` says so or the
 /// tag names your Lichess account; anyone else is kept as a Lichess player of that name.
 #[utoipa::path(post, path = "/api/games/import", operation_id = "import_pgn", tag = "games", request_body = ImportPgnRequest,
-    responses((status = 201, body = Vec<GameSummary>), (status = 400, body = dameless_core::error::ErrorBody)))]
+    responses((status = 201, body = Vec<GameSummary>), (status = 400, body = chess_core::error::ErrorBody)))]
 pub async fn import_pgn(
     State(app): State<Arc<App>>,
     Json(req): Json<ImportPgnRequest>,
@@ -185,7 +185,7 @@ pub async fn import_pgn(
     }
     let username =
         app.connections.status(ConnectionKey::You).account.map(|a| a.username.to_lowercase()).filter(|u| !u.is_empty());
-    let now = dameless_store::now();
+    let now = chess_store::now();
     let mut stored = Vec::with_capacity(read.len());
     for g in read {
         let seat = |side: Side| {
@@ -261,7 +261,7 @@ pub struct ReviewQuery {
 
 /// A game's newest review (or the one by this engine and budget). 404 without one.
 #[utoipa::path(get, path = "/api/games/{id}/review", operation_id = "get_review", tag = "games", params(GamePath, ReviewQuery),
-    responses((status = 200, body = Review), (status = 404, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = Review), (status = 404, body = chess_core::error::ErrorBody)))]
 pub async fn get_review(
     State(app): State<Arc<App>>,
     Path(p): Path<GamePath>,

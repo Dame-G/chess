@@ -4,7 +4,7 @@
 
 use std::time::Instant;
 
-use dameless_core::{
+use chess_core::{
     Side,
     game::{SeatAction, Turn},
     referee::{Acted, Referee},
@@ -20,7 +20,7 @@ use crate::{
 
 /// What a turn came to.
 enum Turned {
-    Moved(Result<dameless_core::game::SeatMove, dameless_core::Error>, u64),
+    Moved(Result<chess_core::game::SeatMove, chess_core::Error>, u64),
     Flagged,
     Stopped,
     Command(Command),
@@ -32,7 +32,7 @@ pub(crate) struct LocalGame {
     pub record: Record,
     pub referee: Referee,
     pub start_fen: Option<String>,
-    pub time: dameless_core::TimeControl,
+    pub time: chess_core::TimeControl,
     pub seats: [Box<dyn SeatController>; 2],
     pub commands: mpsc::UnboundedReceiver<Command>,
     pub cancel: CancellationToken,
@@ -82,7 +82,7 @@ pub(crate) async fn run(game: LocalGame) {
             Turned::Flagged => break referee.flag(),
             Turned::Command(Command::Act { action, ack }) => {
                 let Some(side) = you else {
-                    let _ = ack.send(Err(dameless_core::Error::bad_request("you do not play in this game")));
+                    let _ = ack.send(Err(chess_core::Error::bad_request("you do not play in this game")));
                     continue;
                 };
                 match referee.act(side, action) {

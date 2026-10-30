@@ -26,11 +26,11 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
-use dameless_analysis::{Drills, Eval, Profiles, Reviews};
-use dameless_core::ConnectionKey;
-use dameless_hub::{Config, Hub};
-use dameless_play::{Calibrate, Connections, Games, ImportExecutor, Timing, your_anchor};
-use dameless_work::{Diagnostics, EngineSource, Engines, Scheduler, Setup, SystemProbes};
+use chess_analysis::{Drills, Eval, Profiles, Reviews};
+use chess_core::ConnectionKey;
+use chess_hub::{Config, Hub};
+use chess_play::{Calibrate, Connections, Games, ImportExecutor, Timing, your_anchor};
+use chess_work::{Diagnostics, EngineSource, Engines, Scheduler, Setup, SystemProbes};
 use tokio_util::sync::CancellationToken;
 
 /// What can differ between the real app and a test's.
@@ -39,7 +39,7 @@ pub struct Options {
     /// Where engines come from: the engines list when `None`; fixed fake engines in tests.
     pub engines: Option<Arc<dyn EngineSource>>,
     /// The Lichess the connections talk to: the hub config's when `None`; a mock with short waits in tests.
-    pub lichess: Option<dameless_lichess::Config>,
+    pub lichess: Option<chess_lichess::Config>,
     /// The waits of games and Lichess connections: the real ones by default, shortened in tests.
     pub timing: Timing,
 }
@@ -141,14 +141,14 @@ impl App {
 }
 
 /// The Lichess the hub's config names (`LICHESS_URL` and its explorer and tablebase).
-pub fn lichess_config(config: &Config) -> dameless_lichess::Config {
-    let mut c = dameless_lichess::Config::new(&config.lichess.url);
+pub fn lichess_config(config: &Config) -> chess_lichess::Config {
+    let mut c = chess_lichess::Config::new(&config.lichess.url);
     c.explorer = config.lichess.explorer.clone();
     c.tablebase = config.lichess.tablebase.clone();
     c
 }
 
-/// `dameless serve`: binds, wires the app and serves until Ctrl-C or SIGTERM.
+/// `chess serve`: binds, wires the app and serves until Ctrl-C or SIGTERM.
 pub async fn serve(config: Config, options: Options) -> Result<()> {
     let listen = config.listen;
     // Bound first: a second app started by mistake stops here, before it requeues the first one's work.
@@ -158,7 +158,7 @@ pub async fn serve(config: Config, options: Options) -> Result<()> {
     let app = App::start(config, options).await?;
     let router = app.router().layer(tower_http::trace::TraceLayer::new_for_http());
 
-    tracing::info!("Dameless on http://{listen} (data in {})", data.display());
+    tracing::info!("Chess on http://{listen} (data in {})", data.display());
     tracing::info!("Lichess: {lichess}");
     let stopping = app.shutdown.clone();
     let served = axum::serve(listener, router).with_graceful_shutdown(async move {

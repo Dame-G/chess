@@ -4,11 +4,11 @@
 
 use std::sync::RwLock;
 
-use dameless_core::{
+use chess_core::{
     Color, ConnectionKey, Speed, TimeControl,
     lichess::{Account, Challenge, Direction, Opponent, Rating, Ratings, board},
 };
-use dameless_lichess::{Config, Lichess, User, events};
+use chess_lichess::{Config, Lichess, User, events};
 
 pub(crate) struct Clients {
     pub config: Config,
@@ -113,20 +113,20 @@ pub(crate) fn challenge_of(c: &events::Challenge, connection: ConnectionKey, me:
 }
 
 /// Lichess's colour for ours.
-pub(crate) fn lichess_color(c: Color) -> dameless_lichess::Color {
+pub(crate) fn lichess_color(c: Color) -> chess_lichess::Color {
     match c {
-        Color::White => dameless_lichess::Color::White,
-        Color::Black => dameless_lichess::Color::Black,
-        Color::Random => dameless_lichess::Color::Random,
+        Color::White => chess_lichess::Color::White,
+        Color::Black => chess_lichess::Color::Black,
+        Color::Random => chess_lichess::Color::Random,
     }
 }
 
 /// A game clock as Lichess's challenges take it: whole seconds.
-pub(crate) fn clock_seconds(time: &TimeControl) -> Result<(u32, u32), dameless_core::Error> {
+pub(crate) fn clock_seconds(time: &TimeControl) -> Result<(u32, u32), chess_core::Error> {
     match *time {
         TimeControl::Clock { initial_ms, increment_ms } => {
             Ok(((initial_ms / 1000) as u32, (increment_ms / 1000) as u32))
         }
-        _ => Err(dameless_core::Error::bad_request("a game on Lichess here needs a clock, such as 10+5")),
+        _ => Err(chess_core::Error::bad_request("a game on Lichess here needs a clock, such as 10+5")),
     }
 }

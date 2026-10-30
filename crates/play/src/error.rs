@@ -1,8 +1,8 @@
 //! Turning the adapters' errors into the shared vocabulary, so a route answers 400, 409, 429 or 502 without knowing
 //! where the error came from.
 
-use dameless_core::Error;
-use dameless_lichess::Error as LichessError;
+use chess_core::Error;
+use chess_lichess::Error as LichessError;
 
 /// Lichess refused (400, or 404 for something it does not know), rate-limited us (429), could not be reached (502), or
 /// the call needed a login we do not have (409).

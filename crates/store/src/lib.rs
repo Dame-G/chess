@@ -15,7 +15,7 @@ use std::{
     time::Duration,
 };
 
-use dameless_core::{Error, Timestamp};
+use chess_core::{Error, Timestamp};
 use rusqlite::{Connection, Transaction};
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::{Semaphore, oneshot};
@@ -109,7 +109,7 @@ impl Store {
 
         let (tx, rx) = mpsc::channel::<WriteJob>();
         std::thread::Builder::new()
-            .name("dameless-store-writer".into())
+            .name("chess-store-writer".into())
             .spawn(move || {
                 // Runs until every clone of the store is dropped and the channel closes.
                 while let Ok(job) = rx.recv() {
@@ -255,14 +255,14 @@ pub(crate) mod testing {
     /// A store in a fresh temporary directory, removed when the guard drops.
     pub fn store() -> (Store, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(dir.path().join("dameless.db")).unwrap();
+        let store = Store::open(dir.path().join("chess.db")).unwrap();
         (store, dir)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use dameless_core::game::{Move, Outcome};
+    use chess_core::game::{Move, Outcome};
 
     use super::*;
 

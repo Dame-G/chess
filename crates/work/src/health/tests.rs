@@ -22,7 +22,7 @@ async fn a_fresh_app_asks_for_setup() {
     assert_eq!(h.items.iter().map(|i| i.key.as_str()).collect::<Vec<_>>(), ["analysis", "maia", "disk", "database"]);
     let analysis = find(&h, "analysis");
     assert_eq!(analysis.level, HealthLevel::Fail);
-    assert_eq!(analysis.action.as_ref().unwrap().command, "dameless setup");
+    assert_eq!(analysis.action.as_ref().unwrap().command, "chess setup");
     assert_eq!(find(&h, "maia").level, HealthLevel::Info);
     assert_eq!(find(&h, "disk").level, HealthLevel::Ok);
     assert!(!h.ok);

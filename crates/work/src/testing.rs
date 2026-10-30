@@ -2,7 +2,7 @@
 
 use std::{future::Future, sync::Arc, time::Duration};
 
-use dameless_hub::{Config, Hub};
+use chess_hub::{Config, Hub};
 
 /// A hub with `cores` cores on a fresh data directory, removed when the returned directory is dropped.
 pub fn bare_hub(cores: u32) -> (Arc<Hub>, tempfile::TempDir) {

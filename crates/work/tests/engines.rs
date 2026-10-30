@@ -3,13 +3,13 @@
 
 use std::collections::BTreeMap;
 
-use dameless_core::{
+use chess_core::{
     engines::EngineKind,
     events::{EventKind, Topic},
 };
-use dameless_hub::{Config, Hub, Next, TopicFilter};
-use dameless_store::EngineRecord;
-use dameless_work::{EngineSource, Engines, NewEngineRequest};
+use chess_hub::{Config, Hub, Next, TopicFilter};
+use chess_store::EngineRecord;
+use chess_work::{EngineSource, Engines, NewEngineRequest};
 
 const FAKE: &str = env!("CARGO_BIN_EXE_work-fake-uci");
 
@@ -31,7 +31,7 @@ async fn the_builtins_wait_for_setup() {
     assert_eq!((o.engines[5].nodes, o.engines[5].rating), (Some(1), Some(1500)));
     assert!(o.engines[0].analysis && !o.engines[0].levels);
     let e = engines.ready(None).await.unwrap_err();
-    assert_eq!((e.status(), e.message().contains("dameless setup")), (409, true));
+    assert_eq!((e.status(), e.message().contains("chess setup")), (409, true));
     assert_eq!(engines.ready(Some("nope")).await.unwrap_err().status(), 404);
 }
 

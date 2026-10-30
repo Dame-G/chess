@@ -20,7 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use dameless_core::chess::Position;
+use chess_core::chess::Position;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

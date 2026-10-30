@@ -15,9 +15,9 @@ use std::{
     },
 };
 
+use chess_analysis::{Job, runs::RunQueue};
+use chess_core::chess::{Position, position_key};
 use common::{QUIET_DRAW, SCHOLARS_MATE, harness};
-use dameless_analysis::{Job, runs::RunQueue};
-use dameless_core::chess::{Position, position_key};
 
 /// The positions of a game, from the start to the end.
 fn jobs(san: &[&str]) -> Vec<Job> {

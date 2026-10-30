@@ -103,7 +103,7 @@ async fn status_and_the_machine() {
 }
 
 #[tokio::test]
-async fn you_play_dameless_and_the_stream_tells_it() {
+async fn you_play_chess_and_the_stream_tells_it() {
     let t = TestApp::start().await;
     // Opened first, so it sees the game from its start.
     let stream = t.req(Method::GET, "/api/events?topics=game:*,games").send().await.unwrap();
@@ -175,7 +175,7 @@ async fn you_play_dameless_and_the_stream_tells_it() {
 #[tokio::test]
 async fn a_reconnect_with_a_lost_past_is_told_to_reload() {
     let t = TestApp::start().await;
-    for _ in 0..dameless_hub::bus::KEEP + 5 {
+    for _ in 0..chess_hub::bus::KEEP + 5 {
         t.app.hub.policy.set_live_games(&[false]);
         t.app.hub.policy.set_live_games(&[]);
     }
@@ -227,7 +227,7 @@ async fn pasted_pgn_becomes_games_that_are_reviewed_and_profiled() {
     assert_eq!(p["reviewed"], 1);
     // Your whole history is not here until an import says so; other players have no such flag.
     assert_eq!(p["history_complete"], false);
-    t.app.hub.store.put_meta(dameless_play::import::COMPLETE_KEY, &true).await.unwrap();
+    t.app.hub.store.put_meta(chess_play::import::COMPLETE_KEY, &true).await.unwrap();
     let (_, p) = t.get("/api/players/you/profile").await;
     assert_eq!(p["history_complete"], true);
     let (_, p) = t.get("/api/players/lichess:alice/profile").await;

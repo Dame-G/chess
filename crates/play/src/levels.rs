@@ -10,7 +10,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use dameless_core::{
+use chess_core::{
     Error, PlayerKey, Timestamp,
     events::{LevelsUpdated, Payload},
     levels::Estimate,
@@ -18,12 +18,12 @@ use dameless_core::{
     lichess::ConnectionStatus,
     work::{Priority, Subject, WorkKind},
 };
-use dameless_hub::Hub;
-use dameless_store::{NewWork, now};
+use chess_hub::Hub;
+use chess_store::{NewWork, now};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use dameless_work::EngineSource;
+use chess_work::EngineSource;
 
 /// Where your rating (and its deviation, when known) comes from: `None` without a Lichess account.
 pub type AnchorSource = Arc<dyn Fn() -> Option<(u32, Option<f64>)> + Send + Sync>;

@@ -3,12 +3,12 @@
 use std::{net::SocketAddr, path::PathBuf};
 
 use anyhow::{Context, Result};
-use dameless_core::{ConnectionKey, WorkId};
+use chess_core::{ConnectionKey, WorkId};
 
 /// The hosted UI. It may call a local app with the token.
 pub const HOSTED_ORIGIN: &str = "https://chess.dame.gg";
 
-/// Where the app listens unless `DAMELESS_LISTEN` says otherwise.
+/// Where the app listens unless `CHESS_LISTEN` says otherwise.
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:7979";
 
 /// The Lichess the adapters talk to unless `LICHESS_URL` names another (a mock in tests).
@@ -63,7 +63,7 @@ pub struct Config {
 }
 
 impl Config {
-    /// From the process's environment: `DAMELESS_DATA`, `DAMELESS_LISTEN`, `DAMELESS_CORES`, `LICHESS_URL`,
+    /// From the process's environment: `CHESS_DATA`, `CHESS_LISTEN`, `CHESS_CORES`, `LICHESS_URL`,
     /// `LICHESS_EXPLORER_URL`, `LICHESS_TABLEBASE_URL`.
     pub fn from_env() -> Result<Self> {
         Self::from_vars(|name| std::env::var(name).ok())
@@ -73,16 +73,15 @@ impl Config {
     /// as unset.
     pub fn from_vars(var: impl Fn(&str) -> Option<String>) -> Result<Self> {
         let var = |name: &str| var(name).map(|v| v.trim().to_owned()).filter(|v| !v.is_empty());
-        let data_dir = var("DAMELESS_DATA").map(PathBuf::from).unwrap_or_else(default_data_dir);
-        let listen = var("DAMELESS_LISTEN").unwrap_or_else(|| DEFAULT_LISTEN.to_owned());
-        let listen =
-            listen.parse().with_context(|| format!("DAMELESS_LISTEN: {listen:?} is not an address and port"))?;
-        let cores = match var("DAMELESS_CORES") {
+        let data_dir = var("CHESS_DATA").map(PathBuf::from).unwrap_or_else(default_data_dir);
+        let listen = var("CHESS_LISTEN").unwrap_or_else(|| DEFAULT_LISTEN.to_owned());
+        let listen = listen.parse().with_context(|| format!("CHESS_LISTEN: {listen:?} is not an address and port"))?;
+        let cores = match var("CHESS_CORES") {
             Some(n) => n
                 .parse::<u32>()
                 .ok()
                 .filter(|n| *n > 0)
-                .with_context(|| format!("DAMELESS_CORES: {n:?} is not a positive number"))?,
+                .with_context(|| format!("CHESS_CORES: {n:?} is not a positive number"))?,
             None => default_cores(),
         };
         let mut lichess = LichessUrls::new(&var("LICHESS_URL").unwrap_or_else(|| LICHESS_URL.to_owned()));
@@ -125,7 +124,7 @@ impl Config {
     }
 
     pub fn db_path(&self) -> PathBuf {
-        self.data_dir.join("dameless.db")
+        self.data_dir.join("chess.db")
     }
 
     /// The API token, which the CLI on the same machine reads.
@@ -147,7 +146,7 @@ impl Config {
         self.data_dir.join("games")
     }
 
-    /// The built-in engines `dameless setup` installs: `tools/stockfish/`, `tools/lc0/`, `tools/maia/`.
+    /// The built-in engines `chess setup` installs: `tools/stockfish/`, `tools/lc0/`, `tools/maia/`.
     pub fn tools_dir(&self) -> PathBuf {
         self.data_dir.join("tools")
     }
@@ -162,9 +161,9 @@ impl Config {
     }
 }
 
-/// `dameless` in the user's local data folder (`%LOCALAPPDATA%` on Windows).
+/// `chess` in the user's local data folder (`%LOCALAPPDATA%` on Windows).
 pub fn default_data_dir() -> PathBuf {
-    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("dameless")
+    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("chess")
 }
 
 /// Physical cores less one, so the machine stays usable; at least one.
@@ -190,7 +189,7 @@ mod tests {
     fn defaults() {
         let c = Config::from_vars(vars(&[])).unwrap();
         assert_eq!(c.listen.to_string(), DEFAULT_LISTEN);
-        assert!(c.data_dir.ends_with("dameless"));
+        assert!(c.data_dir.ends_with("chess"));
         assert!(c.cores >= 1);
         assert_eq!(c.lichess, LichessUrls::new("https://lichess.org/"));
         assert_eq!(c.lichess.explorer, "https://explorer.lichess.org");
@@ -203,9 +202,9 @@ mod tests {
     fn reads_the_environment() {
         let dir = tempfile::tempdir().unwrap();
         let c = Config::from_vars(vars(&[
-            ("DAMELESS_DATA", dir.path().to_str().unwrap()),
-            ("DAMELESS_LISTEN", "0.0.0.0:8000"),
-            ("DAMELESS_CORES", "6"),
+            ("CHESS_DATA", dir.path().to_str().unwrap()),
+            ("CHESS_LISTEN", "0.0.0.0:8000"),
+            ("CHESS_CORES", "6"),
             ("LICHESS_URL", "http://127.0.0.1:9999/"),
             ("LICHESS_TABLEBASE_URL", "http://tb.test/"),
         ]))
@@ -217,8 +216,8 @@ mod tests {
         assert_eq!(c.lichess.explorer, "http://127.0.0.1:9999/explorer");
         assert_eq!(c.lichess.tablebase, "http://tb.test");
 
-        assert!(Config::from_vars(vars(&[("DAMELESS_CORES", "0")])).is_err());
-        assert!(Config::from_vars(vars(&[("DAMELESS_LISTEN", "nowhere")])).is_err());
+        assert!(Config::from_vars(vars(&[("CHESS_CORES", "0")])).is_err());
+        assert!(Config::from_vars(vars(&[("CHESS_LISTEN", "nowhere")])).is_err());
     }
 
     #[test]
@@ -226,7 +225,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let c = Config::new(dir.path(), DEFAULT_LISTEN.parse().unwrap(), 2);
         c.create_dirs().unwrap();
-        assert_eq!(c.db_path(), dir.path().join("dameless.db"));
+        assert_eq!(c.db_path(), dir.path().join("chess.db"));
         assert_eq!(c.lichess_token_path(ConnectionKey::You), dir.path().join("secrets").join("lichess-you"));
         assert_eq!(c.work_log_path(WorkId(7)), dir.path().join("logs").join("work-7.log"));
         for d in ["secrets", "games", "tools", "logs"] {

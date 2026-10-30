@@ -1,7 +1,7 @@
 //! Games: one row per game, wherever it was played, with its moves as one compressed blob. Lists read the summary
 //! columns only and never touch the blob, so a list of a thousand games costs a thousand small rows.
 
-use dameless_core::{
+use chess_core::{
     Error, GameId, PlayerKey, Side, SidePair, Speed, TimeControl, Timestamp,
     game::{Ending, Game, GameEnd, GameStatus, GameSummary, Move, Offers, Opening, Outcome, Seat, Source},
 };
@@ -499,7 +499,7 @@ impl Store {
 pub(crate) mod tests {
     use std::time::Instant;
 
-    use dameless_core::{ConnectionKey, Score, game::Ending};
+    use chess_core::{ConnectionKey, Score, game::Ending};
 
     use super::*;
     use crate::testing;

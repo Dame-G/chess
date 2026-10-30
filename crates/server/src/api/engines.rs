@@ -7,11 +7,11 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
-use dameless_core::{
+use chess_core::{
     engines::{Engine, EnginesOverview},
     work::Work,
 };
-use dameless_work::{Health, NewEngineRequest, SetupPlan, SetupRequest};
+use chess_work::{Health, NewEngineRequest, SetupPlan, SetupRequest};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -28,8 +28,8 @@ pub async fn list_engines(State(app): State<Arc<App>>) -> ApiResult<Json<Engines
 /// Adds a UCI engine by path. It must answer UCI's handshake; what it calls itself (`id name`) is kept. 409 when the
 /// id is taken (a built-in's or another engine's), 400 when the file is not a UCI engine.
 #[utoipa::path(post, path = "/api/engines", operation_id = "add_engine", tag = "engines", request_body = NewEngineRequest,
-    responses((status = 201, body = Engine), (status = 400, body = dameless_core::error::ErrorBody),
-        (status = 409, body = dameless_core::error::ErrorBody)))]
+    responses((status = 201, body = Engine), (status = 400, body = chess_core::error::ErrorBody),
+        (status = 409, body = chess_core::error::ErrorBody)))]
 pub async fn add_engine(
     State(app): State<Arc<App>>,
     Json(b): Json<NewEngineRequest>,
@@ -47,7 +47,7 @@ pub struct EnginePath {
 /// Removes an engine from the list. A built-in's files stay (setup adds it again); when it was the analysis engine,
 /// Stockfish analyses again.
 #[utoipa::path(delete, path = "/api/engines/{id}", operation_id = "remove_engine", tag = "engines", params(EnginePath),
-    responses((status = 200, body = EnginesOverview), (status = 404, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = EnginesOverview), (status = 404, body = chess_core::error::ErrorBody)))]
 pub async fn remove_engine(State(app): State<Arc<App>>, Path(p): Path<EnginePath>) -> ApiResult<Json<EnginesOverview>> {
     Ok(Json(app.engines.remove(&p.id).await?))
 }
@@ -63,8 +63,8 @@ pub struct AnalysisEngine {
 /// play on the clock (Maia's fixed node cannot analyse: 400).
 #[utoipa::path(put, path = "/api/engines/analysis", operation_id = "set_analysis_engine", tag = "engines",
     request_body = AnalysisEngine,
-    responses((status = 200, body = EnginesOverview), (status = 400, body = dameless_core::error::ErrorBody),
-        (status = 404, body = dameless_core::error::ErrorBody), (status = 409, body = dameless_core::error::ErrorBody)))]
+    responses((status = 200, body = EnginesOverview), (status = 400, body = chess_core::error::ErrorBody),
+        (status = 404, body = chess_core::error::ErrorBody), (status = 409, body = chess_core::error::ErrorBody)))]
 pub async fn set_analysis_engine(
     State(app): State<Arc<App>>,
     Json(b): Json<AnalysisEngine>,

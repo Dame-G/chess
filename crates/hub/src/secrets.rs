@@ -3,7 +3,7 @@
 
 use std::{io, path::Path};
 
-use dameless_core::ConnectionKey;
+use chess_core::ConnectionKey;
 
 use crate::config::Config;
 

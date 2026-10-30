@@ -9,17 +9,17 @@
 use std::time::Instant;
 
 use async_trait::async_trait;
-use dameless_core::{
+use chess_core::{
     ConnectionKey, Error, PlayerKey, Side, SidePair, Speed, TimeControl,
     chess::Position,
     game::{GameEnd, GameSummary, Move, Offers, Seat, SeatAction, SeatMove, Source, Turn},
     lichess::board,
 };
-use dameless_lichess::{
+use chess_lichess::{
     Error as LichessError, GameStatus as LichessStatus, Lichess, Ndjson,
     game::{GameEvent, GameFull, GamePlayer, GameState},
 };
-use dameless_store::NewGame;
+use chess_store::NewGame;
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
@@ -35,10 +35,10 @@ use crate::{
 // The Board API
 // ---------------------------------------------------------------------------------------------------------------------
 
-pub(crate) fn side(s: dameless_lichess::Side) -> Side {
+pub(crate) fn side(s: chess_lichess::Side) -> Side {
     match s {
-        dameless_lichess::Side::White => Side::White,
-        dameless_lichess::Side::Black => Side::Black,
+        chess_lichess::Side::White => Side::White,
+        chess_lichess::Side::Black => Side::Black,
     }
 }
 
@@ -354,10 +354,7 @@ enum Woke {
 
 /// Plays the game to its end, mirroring Lichess, and answers how it ended. `on_record` hears the record's id once it
 /// exists.
-pub(crate) async fn run(
-    game: LichessGame,
-    on_record: impl FnOnce(dameless_core::GameId),
-) -> Result<GameSummary, Error> {
+pub(crate) async fn run(game: LichessGame, on_record: impl FnOnce(chess_core::GameId)) -> Result<GameSummary, Error> {
     let LichessGame {
         games,
         connection,
@@ -377,8 +374,8 @@ pub(crate) async fn run(
     let timing = games.timing().clone();
     let id = full.id.clone();
     let theirs_seat = seat_of(full.player(match our.other() {
-        Side::White => dameless_lichess::Side::White,
-        Side::Black => dameless_lichess::Side::Black,
+        Side::White => chess_lichess::Side::White,
+        Side::Black => chess_lichess::Side::Black,
     }));
     let time = time_of(&full);
     let clocked = full.clock.is_some();
@@ -390,11 +387,11 @@ pub(crate) async fn run(
         Side::White => (our_seat, theirs_seat),
         Side::Black => (theirs_seat, our_seat),
     };
-    let mut new = NewGame::starting(white, black, source.clone(), time, dameless_store::now());
+    let mut new = NewGame::starting(white, black, source.clone(), time, chess_store::now());
     new.start_fen = start_fen.clone();
     new.url = source.url(&lichess_url);
     if let Some(created) = full.created_at {
-        new.started_at = dameless_core::Timestamp::from_unix_ms(created);
+        new.started_at = chess_core::Timestamp::from_unix_ms(created);
     }
 
     // A game come back to goes on in its record, as far as the record agrees with Lichess.
@@ -512,11 +509,11 @@ pub(crate) async fn run(
         record.set(offers, actions, m.clocks.map(|(w, b)| SidePair::new(w, b)), running);
 
         if m.status.is_over() {
-            let end = dameless_core::lichess::ending(m.status.key(), m.winner, Some(&pos));
+            let end = chess_core::lichess::ending(m.status.key(), m.winner, Some(&pos));
             break end.or(Some(GameEnd::aborted()));
         }
         if m.lost {
-            break Some(GameEnd { outcome: None, ending: dameless_core::game::Ending::Other });
+            break Some(GameEnd { outcome: None, ending: chess_core::game::Ending::Other });
         }
 
         // You are offered the claim once the opponent has been gone long enough.
@@ -592,7 +589,7 @@ pub(crate) async fn run(
             }
             Woke::Moved(Err(e), _) => {
                 if rx.has_changed().is_err() && !rx.borrow().status.is_over() {
-                    break Some(GameEnd { outcome: None, ending: dameless_core::game::Ending::Other });
+                    break Some(GameEnd { outcome: None, ending: chess_core::game::Ending::Other });
                 }
                 if side_to_move == our && !leaving {
                     tracing::warn!("lichess game {id}: {e}: leaving the game");

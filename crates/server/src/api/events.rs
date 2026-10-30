@@ -14,14 +14,14 @@ use axum::{
     http::HeaderMap,
     response::sse::{Event as SseEvent, KeepAlive, Sse},
 };
-use dameless_core::{
+use chess_core::{
     engines::EnginesOverview,
     events::{self as ev, EventKind},
     game::GameSummary,
     lichess::{ChallengeEvent, ConnectionStatus},
     work::Work,
 };
-use dameless_hub::{Next, TopicFilter};
+use chess_hub::{Next, TopicFilter};
 use futures::{Stream, StreamExt, stream};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -134,7 +134,7 @@ pub enum EventData {
     #[serde(rename = "eval.info")]
     EvalInfo(ev::EvalInfo),
     #[serde(rename = "drill.upserted")]
-    DrillUpserted(Box<dameless_core::drills::Drill>),
+    DrillUpserted(Box<chess_core::drills::Drill>),
     #[serde(rename = "drill.answered")]
     DrillAnswered(ev::DrillAnswered),
     #[serde(rename = "drill.deleted")]

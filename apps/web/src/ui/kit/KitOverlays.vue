@@ -202,20 +202,20 @@ const tabs: SheetTab[] = [
         </UiSheetPage>
       </div>
       <div class="kit-stage">
-        <UiSheetPage contained :sync="false" wide title="Compare" subtitle="You · Dameless v14" @close="() => {}">
+        <UiSheetPage contained :sync="false" wide title="Compare" subtitle="You · Chess v14" @close="() => {}">
           <UiSection title="One tab, so no tab row">
             <p class="kit-p">A single-tab sheet hides its tab row.</p>
           </UiSection>
         </UiSheetPage>
       </div>
       <div class="kit-stage">
-        <UiSheetPage contained :sync="false" title="Dameless" loading :tabs="tabs" @close="() => {}" />
+        <UiSheetPage contained :sync="false" title="Chess" loading :tabs="tabs" @close="() => {}" />
       </div>
       <div class="kit-stage">
         <UiSheetPage
           contained
           :sync="false"
-          title="Dameless"
+          title="Chess"
           error="The app did not answer."
           :tabs="tabs"
           @close="() => {}"
@@ -238,7 +238,7 @@ const tabs: SheetTab[] = [
           <UiKeyValue
             :items="[
               { label: 'Cores', value: 15 },
-              { label: 'Data', value: 'C:\\dameless', mono: true, copy: true },
+              { label: 'Data', value: 'C:\\chess', mono: true, copy: true },
             ]"
           />
         </UiSection>

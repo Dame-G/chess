@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 use crate::{Error, Lichess, client::Body};
 
 /// What Lichess shows as the app asking for access.
-pub const CLIENT_ID: &str = "dameless";
+pub const CLIENT_ID: &str = "chess";
 
 /// The scopes asked for: playing with the Board API, and reading and sending challenges. Your games and the opening
 /// explorer need a login but no scope.
@@ -188,7 +188,7 @@ mod tests {
         assert_eq!(url.path(), "/oauth");
         let q: HashMap<String, String> = url.query_pairs().into_owned().collect();
         assert_eq!(q["response_type"], "code");
-        assert_eq!(q["client_id"], "dameless");
+        assert_eq!(q["client_id"], "chess");
         assert_eq!(q["code_challenge_method"], "S256");
         assert_eq!(q["scope"], "board:play challenge:read challenge:write");
         assert_eq!(q["redirect_uri"], "http://127.0.0.1:7979/cb");

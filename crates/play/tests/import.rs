@@ -6,16 +6,16 @@ mod common;
 
 use std::time::Duration;
 
-use common::*;
-use dameless_core::{
+use chess_core::{
     ConnectionKey, PlayerKey, WorkId,
     game::GameStatus,
     work::{Priority, Subject, WorkKind},
 };
-use dameless_hub::{Executor, WorkContext};
-use dameless_lichess::testing::{MockAccount, MockLichess, exported_game};
-use dameless_play::{Connections, ImportExecutor, ImportSpec};
-use dameless_store::{GameFilter, NewWork, SourceKind};
+use chess_hub::{Executor, WorkContext};
+use chess_lichess::testing::{MockAccount, MockLichess, exported_game};
+use chess_play::{Connections, ImportExecutor, ImportSpec};
+use chess_store::{GameFilter, NewWork, SourceKind};
+use common::*;
 
 async fn work(s: &Setup, spec: &ImportSpec) -> (WorkContext, tokio_util::sync::CancellationToken) {
     let spec = serde_json::to_value(spec).unwrap();
@@ -38,7 +38,7 @@ fn spec(player: PlayerKey) -> ImportSpec {
     ImportSpec { player, max: None, since: None, speeds: Vec::new(), rated: None }
 }
 
-async fn imported(s: &Setup) -> Vec<dameless_core::game::GameSummary> {
+async fn imported(s: &Setup) -> Vec<chess_core::game::GameSummary> {
     s.hub
         .store
         .games(GameFilter { sources: vec![SourceKind::Import], limit: 100, ..GameFilter::default() })
@@ -153,7 +153,7 @@ async fn stored(s: &Setup) -> u32 {
 }
 
 async fn complete(s: &Setup) -> bool {
-    s.hub.store.meta::<bool>(dameless_play::import::COMPLETE_KEY).await.unwrap().unwrap_or(false)
+    s.hub.store.meta::<bool>(chess_play::import::COMPLETE_KEY).await.unwrap().unwrap_or(false)
 }
 
 #[tokio::test]
@@ -256,7 +256,7 @@ async fn an_import_cut_off_resumes_after_a_restart() {
 
     // The app starts again: the same work, from its checkpoint, carries on below the oldest game read.
     let spec_json = s.hub.store.work_spec(id).await.unwrap().unwrap();
-    let (_control, rx) = tokio::sync::watch::channel(dameless_hub::Control::Run);
+    let (_control, rx) = tokio::sync::watch::channel(chess_hub::Control::Run);
     let cx = WorkContext::new(
         s.hub.clone(),
         id,

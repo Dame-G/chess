@@ -6,7 +6,7 @@
 //! dropped and the new one renamed): with them on, dropping the old table would delete every row that points at it. A
 //! migration deletes what it orphans itself, and the foreign keys are checked once all have run.
 
-use dameless_core::Error;
+use chess_core::Error;
 use rusqlite::Connection;
 
 use crate::DbResult;
@@ -32,7 +32,7 @@ fn apply_to(conn: &mut Connection, to: usize) -> DbResult<()> {
     let applied: usize = conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))? as usize;
     if applied > MIGRATIONS.len() {
         return Err(Error::internal(format!(
-            "the database is at schema {applied}, newer than this build's {}: use a newer dameless",
+            "the database is at schema {applied}, newer than this build's {}: use a newer chess",
             MIGRATIONS.len()
         ))
         .into());

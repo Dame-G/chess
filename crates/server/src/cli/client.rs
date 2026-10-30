@@ -1,4 +1,4 @@
-//! The CLI's side of the API: HTTP to a running app, with the token from `--token`, `DAMELESS_TOKEN` or the data
+//! The CLI's side of the API: HTTP to a running app, with the token from `--token`, `CHESS_TOKEN` or the data
 //! directory, and the event stream read as server-sent events.
 
 use std::{path::Path, time::Duration};
@@ -58,7 +58,7 @@ impl Client {
         let res = req
             .send()
             .await
-            .with_context(|| format!("no Dameless app at {} (start one with `dameless serve`)", self.base))?;
+            .with_context(|| format!("no Chess app at {} (start one with `chess serve`)", self.base))?;
         let status = res.status();
         if !status.is_success() {
             // The app answers errors as { "error": { "code", "message" } }; show the message.

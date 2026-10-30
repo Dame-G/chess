@@ -1,7 +1,7 @@
 //! Progress: your lines side by side (`core::progress`): rating, accuracy (a rolling mean) and the drill hit rate, from
 //! your games and drill answers.
 
-use dameless_core::{
+use chess_core::{
     Error, PlayerKey, drills,
     profile::ProfileFilter,
     progress::{self, Progress},

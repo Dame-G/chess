@@ -1,5 +1,5 @@
 [package]
-name = "dameless-work"
+name = "chess-work"
 description = "The scheduler, the engines list, setup and diagnostics."
 version.workspace = true
 edition.workspace = true
@@ -8,10 +8,10 @@ repository.workspace = true
 
 [dependencies]
 async-trait.workspace = true
-dameless-core.workspace = true
-dameless-engine.workspace = true
-dameless-hub.workspace = true
-dameless-store.workspace = true
+chess-core.workspace = true
+chess-engine.workspace = true
+chess-hub.workspace = true
+chess-store.workspace = true
 futures.workspace = true
 sysinfo.workspace = true
 serde.workspace = true

@@ -4,16 +4,16 @@ mod common;
 
 use std::time::Duration;
 
-use common::{Harness, QUIET_DRAW, SCHOLARS_MATE, eventually, fake, finished_game, harness};
-use dameless_analysis::{ReviewCheckpoint, ReviewRequest, ReviewResult, ReviewSpec, Reviews};
-use dameless_core::{
+use chess_analysis::{ReviewCheckpoint, ReviewRequest, ReviewResult, ReviewSpec, Reviews};
+use chess_core::{
     GameId, PlayerKey, Score, Side,
     events::{EventKind, ReviewUpserted},
     game::Outcome,
     review::judge::Classification,
     work::{Priority, Subject, Work, WorkKind},
 };
-use dameless_hub::{Control, Executor, TopicFilter, WorkContext};
+use chess_hub::{Control, Executor, TopicFilter, WorkContext};
+use common::{Harness, QUIET_DRAW, SCHOLARS_MATE, eventually, fake, finished_game, harness};
 use tokio_util::sync::CancellationToken;
 
 async fn queue(h: &Harness, reviews: &Reviews, req: ReviewRequest) -> (Work, serde_json::Value) {
@@ -60,8 +60,8 @@ async fn a_game_is_reviewed_stored_and_announced_then_skipped() {
 
     let events: Vec<_> = std::iter::from_fn(|| sub.try_recv())
         .filter_map(|n| match n {
-            dameless_hub::Next::Event(e) => Some(e),
-            dameless_hub::Next::Lagged(_) => None,
+            chess_hub::Next::Event(e) => Some(e),
+            chess_hub::Next::Lagged(_) => None,
         })
         .collect();
     let upserted: Vec<ReviewUpserted> = events
@@ -206,14 +206,13 @@ async fn a_review_carries_on_from_its_checkpoint_and_stops_when_asked() {
 async fn the_scheduler_runs_a_submitted_review() {
     let h = harness(2).await;
     let reviews = Reviews::new(h.eval.clone());
-    let scheduler = dameless_work::Scheduler::new(h.hub.clone());
+    let scheduler = chess_work::Scheduler::new(h.hub.clone());
     scheduler.register(std::sync::Arc::new(reviews.clone()));
     scheduler.start().await.unwrap();
     let game = finished_game(&h.hub, PlayerKey::You, fake(), &SCHOLARS_MATE, Outcome::WhiteWins, 1).await;
     let work = reviews.submit(&scheduler, ReviewRequest { games: vec![game], ..Default::default() }).await.unwrap();
     let store = h.hub.store.clone();
-    eventually(async || store.work(work.id).await.unwrap().unwrap().status == dameless_core::work::WorkStatus::Done)
-        .await;
+    eventually(async || store.work(work.id).await.unwrap().unwrap().status == chess_core::work::WorkStatus::Done).await;
     assert!(reviews.get(game, None, None).await.unwrap().is_some());
     let named = reviews.get(game, Some("fake"), Some(200_000)).await;
     assert!(named.unwrap().is_some());

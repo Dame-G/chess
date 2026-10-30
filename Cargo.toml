@@ -8,18 +8,18 @@ exclude = [".data", ".data-web"]
 version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/Dame-G/dameless"
+repository = "https://github.com/Dame-G/chess"
 
 [workspace.dependencies]
 # Ours
-dameless-core = { path = "crates/core" }
-dameless-hub = { path = "crates/hub" }
-dameless-store = { path = "crates/store" }
-dameless-engine = { path = "crates/engine" }
-dameless-lichess = { path = "crates/lichess" }
-dameless-play = { path = "crates/play" }
-dameless-analysis = { path = "crates/analysis" }
-dameless-work = { path = "crates/work" }
+chess-core = { path = "crates/core" }
+chess-hub = { path = "crates/hub" }
+chess-store = { path = "crates/store" }
+chess-engine = { path = "crates/engine" }
+chess-lichess = { path = "crates/lichess" }
+chess-play = { path = "crates/play" }
+chess-analysis = { path = "crates/analysis" }
+chess-work = { path = "crates/work" }
 
 # Theirs
 anyhow = "1.0.104"

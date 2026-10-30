@@ -12,15 +12,15 @@ use std::{
 };
 
 use async_trait::async_trait;
-use dameless_core::{
+use chess_core::{
     Error,
     engines::{BUILTINS, DEFAULT_ANALYSIS, Engine, EngineKind, EnginesOverview, builtin, slug},
     events::Payload,
     ids::valid_engine_id,
 };
-use dameless_engine::{proc, uci};
-use dameless_hub::Hub;
-use dameless_store::{EngineRecord, engines::ANALYSIS_KEY, now};
+use chess_engine::{proc, uci};
+use chess_hub::Hub;
+use chess_store::{EngineRecord, engines::ANALYSIS_KEY, now};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -131,7 +131,7 @@ impl Engines {
             .engines
             .into_iter()
             .find(|e| e.id == id)
-            .ok_or_else(|| Error::not_found(format!("No engine {id}: see `dameless engines`")))
+            .ok_or_else(|| Error::not_found(format!("No engine {id}: see `chess engines`")))
     }
 
     /// Adds an engine by path. It must answer UCI's handshake: what it calls itself is kept.
@@ -237,7 +237,7 @@ impl EngineSource for Engines {
 
 fn not_installed(engine: &Engine) -> Error {
     match engine.kind {
-        EngineKind::Builtin => Error::conflict(format!("{} is not installed: run `dameless setup`", engine.name)),
+        EngineKind::Builtin => Error::conflict(format!("{} is not installed: run `chess setup`", engine.name)),
         EngineKind::Custom => Error::conflict(format!(
             "{}'s binary is gone ({}): add it again",
             engine.name,

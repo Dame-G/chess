@@ -250,10 +250,10 @@ mod tests {
     #[tokio::test]
     async fn passes_the_environment() {
         #[cfg(windows)]
-        let c = shell("echo %DAMELESS_TEST_VAR%");
+        let c = shell("echo %CHESS_TEST_VAR%");
         #[cfg(not(windows))]
-        let c = shell("echo $DAMELESS_TEST_VAR");
-        let out = output(&c.env("DAMELESS_TEST_VAR", "seen")).await.unwrap();
+        let c = shell("echo $CHESS_TEST_VAR");
+        let out = output(&c.env("CHESS_TEST_VAR", "seen")).await.unwrap();
         assert_eq!(out.trim(), "seen");
     }
 

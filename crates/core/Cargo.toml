@@ -1,5 +1,5 @@
 [package]
-name = "dameless-core"
+name = "chess-core"
 description = "Pure domain: types, chess, statistics, review rules, referee rules, SPSA and scaling maths, events. No I/O."
 version.workspace = true
 edition.workspace = true

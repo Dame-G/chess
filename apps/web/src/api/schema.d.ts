@@ -2685,7 +2685,7 @@ export interface components {
         Status: {
             /**
              * Format: int32
-             * @description Cores the scheduler hands out (`DAMELESS_CORES`).
+             * @description Cores the scheduler hands out (`CHESS_CORES`).
              */
             cores: number;
             /** @description Who holds them now. */
@@ -2980,7 +2980,7 @@ export interface operations {
     compare_players: {
         parameters: {
             query: {
-                /** @description Two to eight players, comma-separated: `you,dameless,lichess:cutemouse83`. */
+                /** @description Two to eight players, comma-separated: `you,engine:stockfish,lichess:cutemouse83`. */
                 players: string;
                 speeds?: string;
                 rated?: boolean;

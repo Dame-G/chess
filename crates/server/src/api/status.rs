@@ -3,8 +3,8 @@
 use std::{sync::Arc, sync::OnceLock};
 
 use axum::extract::State;
-use dameless_core::events::Policy;
-use dameless_hub::LedgerSnapshot;
+use chess_core::events::Policy;
+use chess_hub::LedgerSnapshot;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -32,7 +32,7 @@ pub struct Status {
     /// The app's version.
     pub version: String,
     pub machine: Machine,
-    /// Cores the scheduler hands out (`DAMELESS_CORES`).
+    /// Cores the scheduler hands out (`CHESS_CORES`).
     pub cores: u32,
     /// Who holds them now.
     pub ledger: LedgerSnapshot,

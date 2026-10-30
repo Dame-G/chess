@@ -9,7 +9,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use dameless_core::{
+use chess_core::{
     Color, ConnectionKey, Error, GameId, PlayerKey, Side, Speed, TimeControl, Timestamp,
     events::Payload,
     game::Seat,
@@ -18,14 +18,14 @@ use dameless_core::{
         ElsewhereGame, YouSeek, YouStatus, board,
     },
 };
-use dameless_hub::Hub;
-use dameless_lichess::{
+use chess_hub::Hub;
+use chess_lichess::{
     Error as LichessError, Lichess,
     board::{SeekRequest, SeekTime},
     challenge::{AiChallenge, ChallengeRequest as LichessChallenge, DeclineReason},
     events::{Event, GameInfo},
 };
-use dameless_store::ConnectionField;
+use chess_store::ConnectionField;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 use utoipa::ToSchema;
@@ -127,7 +127,7 @@ pub struct You {
     inner: Arc<Inner>,
 }
 
-const SCOPES: &[&str] = dameless_lichess::oauth::SCOPES;
+const SCOPES: &[&str] = chess_lichess::oauth::SCOPES;
 
 impl You {
     pub(crate) fn new(hub: Arc<Hub>, clients: Arc<Clients>, games: Games) -> Self {
@@ -315,7 +315,7 @@ impl You {
     async fn follow(
         &self,
         cancel: &CancellationToken,
-        backoff: &mut dameless_lichess::Backoff,
+        backoff: &mut chess_lichess::Backoff,
     ) -> Result<(), LichessError> {
         let Some(client) = self.client() else { return Err(LichessError::NoToken) };
         let account = account_of(&client.account().await?);
@@ -452,8 +452,8 @@ impl You {
             return Err(Error::internal(format!("{} plays neither side", account.username)));
         };
         let player = full.player(match our {
-            Side::White => dameless_lichess::Side::White,
-            Side::Black => dameless_lichess::Side::Black,
+            Side::White => chess_lichess::Side::White,
+            Side::Black => chess_lichess::Side::Black,
         });
         let seat = Seat {
             rating: player.rating,
@@ -591,7 +591,7 @@ impl You {
             });
         }
         let username = req.username.unwrap_or_default().trim().to_owned();
-        if !dameless_core::ids::valid_lichess_name(&username) {
+        if !chess_core::ids::valid_lichess_name(&username) {
             return Err(Error::bad_request("that is not a Lichess username"));
         }
         if self.account().is_some_and(|a| a.id == username.to_lowercase()) {

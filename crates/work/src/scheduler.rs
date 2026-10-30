@@ -21,17 +21,17 @@ use std::{
 };
 
 use async_trait::async_trait;
-use dameless_core::{
+use chess_core::{
     Error, WorkId,
     events::{Payload, WorkLog},
     work::{Priority, Work, WorkKind, WorkStatus},
 };
-use dameless_hub::{Control, Executor, Hub, WorkContext};
-use dameless_store::{WorkLists, WorkUpdate, now};
+use chess_hub::{Control, Executor, Hub, WorkContext};
+use chess_store::{WorkLists, WorkUpdate, now};
 use tokio::sync::{Notify, watch};
 use tokio_util::sync::CancellationToken;
 
-pub use dameless_store::NewWork;
+pub use chess_store::NewWork;
 
 /// Why work paused itself for live play, as people read it. Work paused for this reason resumes by itself.
 pub const LIVE_PLAY: &str = "A live game";

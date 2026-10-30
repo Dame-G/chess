@@ -270,6 +270,182 @@ dependencies = [
 ]
 
 [[package]]
+name = "chess"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "chess-analysis",
+ "chess-core",
+ "chess-engine",
+ "chess-hub",
+ "chess-lichess",
+ "chess-play",
+ "chess-store",
+ "chess-work",
+ "clap",
+ "futures",
+ "mime_guess",
+ "reqwest",
+ "rmcp",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "tower-http 0.7.1",
+ "tracing",
+ "tracing-subscriber",
+ "utoipa",
+ "utoipa-axum",
+]
+
+[[package]]
+name = "chess-analysis"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chess-core",
+ "chess-engine",
+ "chess-hub",
+ "chess-store",
+ "chess-work",
+ "futures",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "utoipa",
+]
+
+[[package]]
+name = "chess-core"
+version = "0.1.0"
+dependencies = [
+ "regex-lite",
+ "serde",
+ "serde_json",
+ "shakmaty",
+ "thiserror",
+ "utoipa",
+]
+
+[[package]]
+name = "chess-engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "process-wrap",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tar",
+ "tokio",
+ "tokio-util",
+ "zip",
+]
+
+[[package]]
+name = "chess-hub"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chess-core",
+ "chess-store",
+ "dirs 7.0.0",
+ "getrandom 0.4.3",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "utoipa",
+]
+
+[[package]]
+name = "chess-lichess"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "futures",
+ "getrandom 0.4.3",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "shakmaty",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "chess-play"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chess-core",
+ "chess-engine",
+ "chess-hub",
+ "chess-lichess",
+ "chess-store",
+ "chess-work",
+ "futures",
+ "getrandom 0.4.3",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "utoipa",
+]
+
+[[package]]
+name = "chess-store"
+version = "0.1.0"
+dependencies = [
+ "chess-core",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "zstd",
+]
+
+[[package]]
+name = "chess-work"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chess-core",
+ "chess-engine",
+ "chess-hub",
+ "chess-store",
+ "futures",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "utoipa",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -393,181 +569,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453"
 dependencies = [
  "hybrid-array",
-]
-
-[[package]]
-name = "dameless"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "clap",
- "dameless-analysis",
- "dameless-core",
- "dameless-engine",
- "dameless-hub",
- "dameless-lichess",
- "dameless-play",
- "dameless-store",
- "dameless-work",
- "futures",
- "mime_guess",
- "reqwest",
- "rmcp",
- "rust-embed",
- "serde",
- "serde_json",
- "sysinfo",
- "tempfile",
- "tokio",
- "tokio-util",
- "tower",
- "tower-http 0.7.1",
- "tracing",
- "tracing-subscriber",
- "utoipa",
- "utoipa-axum",
-]
-
-[[package]]
-name = "dameless-analysis"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "dameless-core",
- "dameless-engine",
- "dameless-hub",
- "dameless-store",
- "dameless-work",
- "futures",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-util",
- "utoipa",
-]
-
-[[package]]
-name = "dameless-core"
-version = "0.1.0"
-dependencies = [
- "regex-lite",
- "serde",
- "serde_json",
- "shakmaty",
- "thiserror",
- "utoipa",
-]
-
-[[package]]
-name = "dameless-engine"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "futures",
- "process-wrap",
- "reqwest",
- "serde",
- "serde_json",
- "tar",
- "tokio",
- "tokio-util",
- "zip",
-]
-
-[[package]]
-name = "dameless-hub"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "dameless-core",
- "dameless-store",
- "dirs 7.0.0",
- "getrandom 0.4.3",
- "serde",
- "serde_json",
- "sysinfo",
- "tempfile",
- "tokio",
- "tokio-util",
- "utoipa",
-]
-
-[[package]]
-name = "dameless-lichess"
-version = "0.1.0"
-dependencies = [
- "axum",
- "futures",
- "getrandom 0.4.3",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "shakmaty",
- "thiserror",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "dameless-play"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "dameless-core",
- "dameless-engine",
- "dameless-hub",
- "dameless-lichess",
- "dameless-store",
- "dameless-work",
- "futures",
- "getrandom 0.4.3",
- "reqwest",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-util",
- "tracing",
- "utoipa",
-]
-
-[[package]]
-name = "dameless-store"
-version = "0.1.0"
-dependencies = [
- "dameless-core",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "zstd",
-]
-
-[[package]]
-name = "dameless-work"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "dameless-core",
- "dameless-engine",
- "dameless-hub",
- "dameless-store",
- "futures",
- "serde",
- "serde_json",
- "sysinfo",
- "tempfile",
- "tokio",
- "tokio-util",
- "utoipa",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 //! Small keyed records: the Lichess connections' account, settings and state (never their tokens, which are files),
 //! players, and `meta`, the app's own settings and counters.
 
-use dameless_core::{ConnectionKey, Error, PlayerKey, Timestamp, profile::Player};
+use chess_core::{ConnectionKey, Error, PlayerKey, Timestamp, profile::Player};
 use rusqlite::{OptionalExtension, params};
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -172,7 +172,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use dameless_core::lichess::{Rating, Ratings};
+    use chess_core::lichess::{Rating, Ratings};
 
     use super::*;
     use crate::testing;

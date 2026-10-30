@@ -3,9 +3,8 @@
 
 mod common;
 
-use common::{SCHOLARS_MATE, fake, finished_game, harness, moves};
-use dameless_analysis::{Drills, Profiles, RepertoireRequest, ReviewRequest, Reviews, SessionRequest};
-use dameless_core::{
+use chess_analysis::{Drills, Profiles, RepertoireRequest, ReviewRequest, Reviews, SessionRequest};
+use chess_core::{
     GameId, PlayerKey, Side, TimeControl, Timestamp,
     drills::DrillOutcome,
     events::{Event, EventKind},
@@ -15,8 +14,9 @@ use dameless_core::{
     themes::ThemeKind,
     work::WorkKind,
 };
-use dameless_hub::{Executor, Next, Subscription, TopicFilter, WorkContext};
-use dameless_store::NewGame;
+use chess_hub::{Executor, Next, Subscription, TopicFilter, WorkContext};
+use chess_store::NewGame;
+use common::{SCHOLARS_MATE, fake, finished_game, harness, moves};
 
 /// You (White) give your queen away on move 3.
 const QUEEN_BLUNDER: [&str; 6] = ["e4", "e5", "Qh5", "Nc6", "Qxe5+", "Nxe5"];
@@ -104,7 +104,7 @@ async fn drills_come_from_your_reviewed_mistakes_and_repeat_on_a_schedule() {
     assert_eq!(trend.iter().map(|p| p.answers).sum::<u32>(), 2);
     assert_eq!(trend.iter().map(|p| p.passes).sum::<u32>(), 1);
 
-    assert_eq!(drills.answer(dameless_core::drills::DrillId(999), "e4", now.clone()).await.unwrap_err().status(), 404);
+    assert_eq!(drills.answer(chess_core::drills::DrillId(999), "e4", now.clone()).await.unwrap_err().status(), 404);
     drills.delete(queen.id).await.unwrap();
     assert_eq!(drills.delete(queen.id).await.unwrap_err().status(), 404);
     assert!(events(&mut sub).iter().any(|e| e.kind == EventKind::DrillDeleted));
@@ -138,7 +138,7 @@ async fn drills_come_from_your_reviewed_mistakes_and_repeat_on_a_schedule() {
     assert!(!plain.hinted);
     let trend = drills.trend(None).await.unwrap();
     assert_eq!(trend.iter().map(|p| p.hinted).sum::<u32>(), 1);
-    assert_eq!(drills.hint(dameless_core::drills::DrillId(999)).await.unwrap_err().status(), 404);
+    assert_eq!(drills.hint(chess_core::drills::DrillId(999)).await.unwrap_err().status(), 404);
 }
 
 /// A finished Lichess-like game of yours with a named opening covering `book` plies.

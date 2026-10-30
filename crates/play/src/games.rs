@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use dameless_core::{
+use chess_core::{
     Error, GameId, PlayerKey, Side, SidePair, TimeControl,
     chess::Position,
     engines::SeatSpec,
@@ -18,9 +18,9 @@ use dameless_core::{
     levels::{Entrant, Level},
     referee::{Referee, Setup, Sitter},
 };
-use dameless_hub::Hub;
-use dameless_store::{GameFilter, NewGame, SourceKind, now};
-use dameless_work::EngineSource;
+use chess_hub::Hub;
+use chess_store::{GameFilter, NewGame, SourceKind, now};
+use chess_work::EngineSource;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -283,7 +283,7 @@ impl Games {
         for g in self.inner.hub.store.live_games().await? {
             if g.source == Source::Local {
                 let s = self.inner.hub.store.finish_game(g.id, GameEnd::aborted(), now()).await?;
-                self.inner.hub.bus.emit(dameless_core::events::Payload::GameUpserted(Box::new(s)));
+                self.inner.hub.bus.emit(chess_core::events::Payload::GameUpserted(Box::new(s)));
                 n += 1;
             }
         }
@@ -309,7 +309,7 @@ impl Games {
     /// Stored Lichess games of a connection still marked live, for it to take up or close.
     pub(crate) async fn stored_live_lichess(
         &self,
-        connection: dameless_core::ConnectionKey,
+        connection: chess_core::ConnectionKey,
     ) -> Result<Vec<GameSummary>, Error> {
         let games = self
             .inner
@@ -317,8 +317,8 @@ impl Games {
             .store
             .games(GameFilter {
                 sources: vec![SourceKind::Lichess],
-                statuses: vec![dameless_core::game::GameStatus::Starting, dameless_core::game::GameStatus::Live],
-                limit: dameless_store::games::MAX_LIMIT,
+                statuses: vec![chess_core::game::GameStatus::Starting, chess_core::game::GameStatus::Live],
+                limit: chess_store::games::MAX_LIMIT,
                 ..GameFilter::default()
             })
             .await?;
@@ -334,7 +334,7 @@ impl Games {
     pub(crate) async fn close_stale(&self, id: GameId) -> Result<(), Error> {
         let end = GameEnd { outcome: None, ending: Ending::Other };
         let s = self.inner.hub.store.finish_game(id, end, now()).await?;
-        self.inner.hub.bus.emit(dameless_core::events::Payload::GameUpserted(Box::new(s)));
+        self.inner.hub.bus.emit(chess_core::events::Payload::GameUpserted(Box::new(s)));
         Ok(())
     }
 

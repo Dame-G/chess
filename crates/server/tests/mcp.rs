@@ -74,16 +74,16 @@ async fn tools_are_the_api() {
     let tools = body["result"]["tools"].as_array().unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     // One tool per operation, but the event stream and the token, plus the two waits.
-    let doc = serde_json::to_value(dameless::api::openapi()).unwrap();
+    let doc = serde_json::to_value(chess::api::openapi()).unwrap();
     let mut ops = 0;
     for methods in doc["paths"].as_object().unwrap().values() {
         for op in methods.as_object().unwrap().values() {
             let id = op["operationId"].as_str().unwrap();
-            assert_eq!(names.contains(&id), !dameless::mcp::tools::EXCLUDED.contains(&id), "{id}");
+            assert_eq!(names.contains(&id), !chess::mcp::tools::EXCLUDED.contains(&id), "{id}");
             ops += 1;
         }
     }
-    assert_eq!(names.len(), ops - dameless::mcp::tools::EXCLUDED.len() + 1);
+    assert_eq!(names.len(), ops - chess::mcp::tools::EXCLUDED.len() + 1);
     assert!(names.contains(&"wait_for_work"));
     let tool = |name: &str| tools.iter().find(|t| t["name"] == name).unwrap();
     assert_eq!(tool("status")["annotations"]["readOnlyHint"], true);

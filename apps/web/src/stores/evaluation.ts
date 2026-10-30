@@ -75,7 +75,7 @@ export const useEvaluation = defineStore("evaluation", () => {
   return { session, info, target, error, start, stop };
 });
 
-const TAB_KEY = "dameless.tab";
+const TAB_KEY = "chess.tab";
 
 /** An id for this browser tab, kept in its session storage (a fresh one when that is not available). */
 function tabId(): string {

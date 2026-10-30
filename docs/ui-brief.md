@@ -1,4 +1,4 @@
-# Dameless UI overhaul: design brief
+# Chess UI overhaul: design brief
 
 Status: audit and direction, written by the design director. Implementers: read sections 1 to 4 first (everything depends on them), then your area in section 7 and the matching parts of sections 5 and 6.
 
@@ -6,7 +6,7 @@ Audit evidence is in `docs/ui-audit/` (PNGs, NOT yet git-ignored: add `/docs/ui-
 
 Vocabulary rules from AGENTS.md hold (you, engine, analysis engine, level, game, player, work, review, connection). Never in UI copy: build, match, experiment, test, batch, job, runner, human.
 
-The app no longer has the Dameless sheet, ideas, trials, versions, the bot or training: the parts of sections 5 to 7 about them have no screen to apply to. The tokens, the kit, the layout and the rules (sections 1 to 4) stand, and `docs/design.md` › The web app lists the screens as they are.
+The app no longer has the Chess sheet, ideas, trials, versions, the bot or training: the parts of sections 5 to 7 about them have no screen to apply to. The tokens, the kit, the layout and the rules (sections 1 to 4) stand, and `docs/design.md` › The web app lists the screens as they are.
 
 ---
 
@@ -17,7 +17,7 @@ What works: the Saddle palette (cognac, brass, linen / espresso) is distinctive 
 What does not:
 
 1. **Nothing has a rank.** Every section is the same grey uppercase mono kicker over the same content weight. Selected segmented buttons, primary buttons, current tabs, links, stamps and the live dot are all the same cognac. The eye has no first stop on any screen.
-2. **Sheets are 2,000 px scrolls.** You, Dameless and Settings are single columns of 8 to 12 sections squeezed into a 510 px column beside a dead board. The user cannot find anything without scrolling a river.
+2. **Sheets are 2,000 px scrolls.** You, Chess and Settings are single columns of 8 to 12 sections squeezed into a 510 px column beside a dead board. The user cannot find anything without scrolling a river.
 3. **The same thing is built five ways.** Section headers (`.sec`/`.part-title`/ENotice titles/inline kickers), key figures (`.figs`, Metric, bare numbers, WdlBar rows), tables (EDataGrid/ETable/custom divs), stamps, empty states, segmented filters, dialogs: each screen invents its own.
 4. **The board area changes size and structure between modes** (647 px play, 593 px review, 727 px drill at 1440x900) and wastes the screen at 1920 (770 px board in a 1120 px stage). At 768 the board is 768 px square and pushes everything off screen.
 5. **The rail lies.** On the real data the Games rail shows one trial row and "No games here yet" under You, with 3,708 imported games, because the app fetches `limit=300` and trial games fill all 300. This is a data bug that reads as a design failure.
@@ -29,7 +29,7 @@ The direction ("Workbench v2"): keep Saddle and radius 3, make it **quieter and 
 - Outcome colour (win green, loss red) is only for results and judgements.
 - Everything numeric is mono, right-aligned, tabular; everything else is sans, sentence case. Uppercase mono kickers are removed from forms and tables and survive only as the one section label style.
 - Sheets become **tabbed pages** with a real header (title, subtitle-as-data, actions) and a sticky tab row. Three screens-worth of scroll become three tabs of one screen each.
-- Mobile gets a **bottom tab bar** (Board, Games, You, Dameless).
+- Mobile gets a **bottom tab bar** (Board, Games, You, Chess).
 - A small `src/ui/` kit replaces every ad hoc pattern, and the rule is: **no screen styles its own section header, stat, table, empty state, badge or dialog frame.**
 
 ---
@@ -211,7 +211,7 @@ Keep eos snappy. Add: `@media (prefers-reduced-motion: reduce)` kills sheet slid
   --w-rail: clamp(16rem, 18vw, 20rem); /* 256..320 (today 288..352) */
   --w-panel: clamp(22rem, 24vw, 28rem); /* 352..448 */
   --w-sheet: clamp(32rem, 34vw, 44rem); /* sheets dock here beside the board */
-  --w-sheet-wide: clamp(40rem, 52vw, 64rem); /* Compare, You > Openings, Dameless > Ideas tables */
+  --w-sheet-wide: clamp(40rem, 52vw, 64rem); /* Compare, You > Openings, Chess > Ideas tables */
   --w-measure: 62ch;
 }
 ```
@@ -366,7 +366,7 @@ props: game: GameSummary | null; mode: Mode
 slots: #status (what is happening now), #actions
 ```
 
-Two lines: `UiPlayer white  [UiResult]  UiPlayer black`, then `Opening · 5+3 · rated · Lichess` in `--t-meta`. This is the one place the panel states who is playing whom; the board strips keep clock + name but the panel no longer repeats "Dameless played h6. Your move." plus "5+3 · local game". Replaces the first lines of Play/Watch/Review panels.
+Two lines: `UiPlayer white  [UiResult]  UiPlayer black`, then `Opening · 5+3 · rated · Lichess` in `--t-meta`. This is the one place the panel states who is playing whom; the board strips keep clock + name but the panel no longer repeats "Chess played h6. Your move." plus "5+3 · local game". Replaces the first lines of Play/Watch/Review panels.
 
 ### 3.16 `UiLive.vue`
 
@@ -387,7 +387,7 @@ Three regions plus header, exactly as now, with these changes.
 ```
 >= 75rem (1200)
 +--------------------------------------------------------------------------------------+
-| Dameless   [ Search or run a command  Ctrl K ]     [+ New game]  You 1,840  Dameless v14  [work] [gear] |  48
+| Chess   [ Search or run a command  Ctrl K ]     [+ New game]  You 1,840  Chess v14  [work] [gear] |  48
 +----------+------------------------------------------------------------+--------------+
 | Games    |                      stage (board)                         | panel / sheet|
 | rail     |                                                            |              |
@@ -397,7 +397,7 @@ Three regions plus header, exactly as now, with these changes.
 ```
 
 - **Status footer removed.** Its content ("Trying deeper-lmr · short games · 412 pairs · +0.7 ± 5.9 Elo · ~40 min (and 1 more)") becomes the **work indicator in the header** (`UiLive` + short label `Trial 412 pairs`, click opens a popover listing work with stop/pause). The footer eats 37 px of vertical space on every screen (board height!) for one line that nobody reads at the bottom. At 1440x900 this adds 37 px to the board. Mobile already does this (the stacked header has the indicator). **One indicator everywhere.** Files: `shell/StatusLine.vue` (becomes the popover content + compact trigger), `App.vue` (drop footer), `TopBar.vue`.
-- **Header**: `Dameless` wordmark (the Fraunces italic `less` stays, it is the brand), centered command bar 26rem, right: `New game` (the one filled button, shown always, not only when you have no game running: playing a second game vs a bot while one runs is legal and the user should find the entry; when a game you sit in is live it becomes quiet), then the **two players as `UiPlayer size="md" link`**: `You 1,840` and `Dameless v14` with a vertical hairline between them and a faint `vs` glyph is NOT used; they are simply symmetric and visually paired (same chip shape, same height, current one has the `--c-sunk` background not the cognac outline), then the work indicator, then Settings. Currently `You 1,840` is plain text and `Dameless v14` is plain text; when on a sheet the active one becomes a cognac outlined box (a different shape from the idle state). Fix: both always chips.
+- **Header**: `Chess` wordmark (the Fraunces italic `less` stays, it is the brand), centered command bar 26rem, right: `New game` (the one filled button, shown always, not only when you have no game running: playing a second game vs a bot while one runs is legal and the user should find the entry; when a game you sit in is live it becomes quiet), then the **two players as `UiPlayer size="md" link`**: `You 1,840` and `Chess v14` with a vertical hairline between them and a faint `vs` glyph is NOT used; they are simply symmetric and visually paired (same chip shape, same height, current one has the `--c-sunk` background not the cognac outline), then the work indicator, then Settings. Currently `You 1,840` is plain text and `Chess v14` is plain text; when on a sheet the active one becomes a cognac outlined box (a different shape from the idle state). Fix: both always chips.
 - **Rail** 256 to 320 px (`--w-rail`), see 5.2.
 - **Stage**: see 4.2.
 - **Panel** `--w-panel`; sheets `--w-sheet` (or wide), see 4.4.
@@ -448,19 +448,19 @@ At 1280x800 the Review content currently overflows and clips "Play this out" (`b
 
 A sheet is a **page that docks beside the board**, not a scroll of everything.
 
-- Dock width `--w-sheet` (512 to 704); `wide` variants `--w-sheet-wide` (>= 640) for You/Compare/Dameless tables. The stage shrinks (board re-fits) as today; the rail stays (it is how you open games from within a sheet).
+- Dock width `--w-sheet` (512 to 704); `wide` variants `--w-sheet-wide` (>= 640) for You/Compare/Chess tables. The stage shrinks (board re-fits) as today; the rail stays (it is how you open games from within a sheet).
 - Every sheet has: sticky header (title, optional actions, close), optional hero strip, **tabs**, content. No sentence-long description under the title (remove "Your games added up: how you play, what to work on, and how you compare." etc.; the title and tabs say it). Subtitle is data only (account name, rating, version).
-- Tabs per sheet (5.8 to 5.13): You = Overview, Games, Openings, Drills, Challenges(only when there are any); Dameless = Strength, Ideas, Brain, Bot; Settings = Accounts, Machine, Health, Appearance; Idea = Trials, Notes, Games; Player/Compare: none (single screen).
+- Tabs per sheet (5.8 to 5.13): You = Overview, Games, Openings, Drills, Challenges(only when there are any); Chess = Strength, Ideas, Brain, Bot; Settings = Accounts, Machine, Health, Appearance; Idea = Trials, Notes, Games; Player/Compare: none (single screen).
 - Opening animation: slide from the right 120 ms, `prefers-reduced-motion` off. Closing returns to the board address as today.
 - Under 75rem a sheet is full-screen with a back arrow; the bottom tab bar (4.5) stays.
 
 ### 4.5 Mobile navigation (new)
 
-Bottom tab bar at < 48rem, 56 px + safe area: **Board**, **Games**, **You**, **Dameless**. Icons 20 + label `--t-meta`. Current tab has the act underline. Settings stays in the header (gear) with the work indicator. `Games` is a full-screen list (the rail component, `UiToolbar` filters sticky at the top). Choosing a game switches to Board. `New game` is a header + button on Board and a fab-less top action on Games. The page no longer ends in a 28 rem rail; the move list on the Board tab collapses to a one-row **horizontal move strip** under the transport (`1. e4 e5 2. Nf3 ...`, current move scrolled to center) with a "Moves" button opening the full list in a bottom sheet. Files: new `shell/TabBar.vue`, `App.vue`, `Panel.vue`, `MoveList.vue`, `GamesRail.vue`, `media.ts`.
+Bottom tab bar at < 48rem, 56 px + safe area: **Board**, **Games**, **You**, **Chess**. Icons 20 + label `--t-meta`. Current tab has the act underline. Settings stays in the header (gear) with the work indicator. `Games` is a full-screen list (the rail component, `UiToolbar` filters sticky at the top). Choosing a game switches to Board. `New game` is a header + button on Board and a fab-less top action on Games. The page no longer ends in a 28 rem rail; the move list on the Board tab collapses to a one-row **horizontal move strip** under the transport (`1. e4 e5 2. Nf3 ...`, current move scrolled to center) with a "Moves" button opening the full list in a bottom sheet. Files: new `shell/TabBar.vue`, `App.vue`, `Panel.vue`, `MoveList.vue`, `GamesRail.vue`, `media.ts`.
 
 ### 4.6 Always visible
 
-Header (48), the board stage (always the board, except mobile Games/You/Dameless tabs), the rail on >= 75rem, and the work indicator. Never hidden behind a sheet: the live game's clock (when a sheet is open and you sit in a live game, the header shows `UiPlayer` with the running clock of your game, `3:31`, as a chip next to New game; click returns to the board). Today a sheet over your live game hides your clock because the board shrinks but the panel (with the game status) is replaced.
+Header (48), the board stage (always the board, except mobile Games/You/Chess tabs), the rail on >= 75rem, and the work indicator. Never hidden behind a sheet: the live game's clock (when a sheet is open and you sit in a live game, the header shows `UiPlayer` with the running clock of your game, `3:31`, as a chip next to New game; click returns to the board). Today a sheet over your live game hides your clock because the board shrinks but the panel (with the game status) is replaced.
 
 ---
 
@@ -472,31 +472,31 @@ Convention: **Remove / Merge / Order / Copy / Ref**. Screenshots are in `docs/ui
 
 Ref: `main-1440-light.png`, `board-play-375-light.png`, `board-review-768-dark.png`.
 
-- Remove: the status footer (moves into header, 4.1); the `You` and `Dameless` cognac outline "active" box; icon-less `You`/`Dameless` links with figures that disappear at 375.
+- Remove: the status footer (moves into header, 4.1); the `You` and `Chess` cognac outline "active" box; icon-less `You`/`Chess` links with figures that disappear at 375.
 - Merge: `StatLink`s into `UiPlayer` chips; the compact work indicator and the footer StatusLine into one component.
-- Order: wordmark, command bar, New game, You chip, Dameless chip, work indicator, gear.
-- Copy: command bar placeholder `Search or run a command` stays (fine). Tooltip on chips: `Your profile` / `Dameless: ideas, strength, the bot`. At < 30rem chips are icons (person, engine) with the rating/version dropped (today it shows the words "You" and "Dameless" without figures, which are meaningless labels).
-- Mobile (< 48rem): wordmark glyph only, command icon, work indicator, gear. New game moves to the Board tab header; You/Dameless to the tab bar.
+- Order: wordmark, command bar, New game, You chip, Chess chip, work indicator, gear.
+- Copy: command bar placeholder `Search or run a command` stays (fine). Tooltip on chips: `Your profile` / `Chess: ideas, strength, the bot`. At < 30rem chips are icons (person, engine) with the rating/version dropped (today it shows the words "You" and "Chess" without figures, which are meaningless labels).
+- Mobile (< 48rem): wordmark glyph only, command icon, work indicator, gear. New game moves to the Board tab header; You/Chess to the tab bar.
 
 ### 5.2 Games rail
 
 Ref: `main-1440-light.png`, `real-main-1440.png`, `real-rail-you-1440.png`, `empty-1440-light.png`, `error-1440-light.png`, `board-play-375-light.png` (bottom), `board-review-768-dark.png`.
 
-**Data (P1, a bug that looks like design):** `stores/games.ts` loads `limit: 300` newest and filters client-side. On the real app trial games fill all 300, so imported history never appears, You filter shows "No games here yet" with 3,708 games. Fix: the rail asks the server for the active filter (`player=you`, `source=…`, `trial` for Trials, none for All but with `exclude_trial` or by folding trial rows server-side) and pages 50 at a time with infinite scroll in the virtual list (a "Load more" row at the end). Keep the live games always loaded (they come over SSE). `All` = games you or Dameless played + live; trial games only under Trials (they are not "games" in the user's sense; AGENTS defines game as every record, but the rail's job is the user's attention: a 4,000-pair trial must be one folded row and never be in All beyond its single row; as now but not at the cost of the 300).
+**Data (P1, a bug that looks like design):** `stores/games.ts` loads `limit: 300` newest and filters client-side. On the real app trial games fill all 300, so imported history never appears, You filter shows "No games here yet" with 3,708 games. Fix: the rail asks the server for the active filter (`player=you`, `source=…`, `trial` for Trials, none for All but with `exclude_trial` or by folding trial rows server-side) and pages 50 at a time with infinite scroll in the virtual list (a "Load more" row at the end). Keep the live games always loaded (they come over SSE). `All` = games you or Chess played + live; trial games only under Trials (they are not "games" in the user's sense; AGENTS defines game as every record, but the rail's job is the user's attention: a 4,000-pair trial must be one folded row and never be in All beyond its single row; as now but not at the cost of the 300).
 
 - Remove: the "live" mono word at row end (replace by the pulsing dot only; the word duplicates the dot); the accuracy pair `97.0 · 96.0` in mono bold on the second line for reviewed games (it competes with the names; move it to a trailing muted `97 / 96` with a tooltip, only when reviewed); the caret-only trial rows' extra indentation gutter on non-trial rows (rows have a fixed 16 px gutter that is empty for 90% of rows).
-- Merge: the "You - Dameless" title format. Replace the hyphen with `-` en-dash rendering done through `UiPlayer` pair: `You  vs  Dameless` is wrong for AGENTS' "match" ban? No: `vs` is fine (the trial rows already say `deeper-lmr vs v14`). Use `vs` consistently (today games use `-` and trials use `vs`).
+- Merge: the "You - Chess" title format. Replace the hyphen with `-` en-dash rendering done through `UiPlayer` pair: `You  vs  Chess` is wrong for AGENTS' "match" ban? No: `vs` is fine (the trial rows already say `deeper-lmr vs v14`). Use `vs` consistently (today games use `-` and trials use `vs`).
 - Row (48 px): line 1: `UiPlayer(white) vs UiPlayer(black)` with names `--t-body-strong` ellipsis; trailing `UiResult` or live dot. Line 2 `--t-meta`: `10+5 · Rapid · rated` left, relative time right (`20h`). Selected row: `--c-sunk` + 2 px act bar at start (today full cognac outline box).
-- Filter row: `UiSeg` sm: `All · You · Dameless · Lichess · Trials`, no wrap at 256 px (labels `All You Dameless Lichess Trials`: 5 options at 256 px = 51 px each; at `--w-rail` 256 use `Dameless` truncated? Instead: `All · You · Dameless · Lichess · Trials` at `--t-meta` 12 px fits 256 minus gutters; verify at 16rem).
+- Filter row: `UiSeg` sm: `All · You · Chess · Lichess · Trials`, no wrap at 256 px (labels `All You Chess Lichess Trials`: 5 options at 256 px = 51 px each; at `--w-rail` 256 use `Chess` truncated? Instead: `All · You · Chess · Lichess · Trials` at `--t-meta` 12 px fits 256 minus gutters; verify at 16rem).
 - Add a search field? No: the command palette already finds games. Instead the filter row gets a trailing icon button `Import` only when You has 0 games (newcomer).
-- Empty / error: `UiEmpty` (3.5). Copy: All empty: title `No games yet`, body `Play Dameless, or link your Lichess account to bring in your games.`, actions `New game` (primary) `Open Settings` (quiet). Per filter: You: `You haven't played here yet`; Dameless: `Dameless hasn't played yet`; Lichess: `No Lichess games` + `Import my Lichess games`; Trials: `No trials yet` + `New idea`. Error: `Games did not load` / `The app did not answer.` / `Try again`, no pink full-height box.
+- Empty / error: `UiEmpty` (3.5). Copy: All empty: title `No games yet`, body `Play Chess, or link your Lichess account to bring in your games.`, actions `New game` (primary) `Open Settings` (quiet). Per filter: You: `You haven't played here yet`; Chess: `Chess hasn't played yet`; Lichess: `No Lichess games` + `Import my Lichess games`; Trials: `No trials yet` + `New idea`. Error: `Games did not load` / `The app did not answer.` / `Try again`, no pink full-height box.
 - Mobile: the rail is the Games tab (full screen), rows 56 px.
 
-### 5.3 Play mode (you vs Dameless / on Lichess)
+### 5.3 Play mode (you vs Chess / on Lichess)
 
 Ref: `board-play-1440-light.png`, `board-play-375-light.png`, `dlg-resign-1440-light.png`.
 
-- Remove: the lone "Play" tab; the sentence "Dameless played h6. Your move." (the board shows the last move highlighted; show the **turn** only: `Your move` / `Dameless is thinking` as a `UiLive` line in the panel head); "5+3 · local game" (`UiPanelHead` meta line carries it as `5+3 · here`... use `5+3 · local`).
+- Remove: the lone "Play" tab; the sentence "Chess played h6. Your move." (the board shows the last move highlighted; show the **turn** only: `Your move` / `Chess is thinking` as a `UiLive` line in the panel head); "5+3 · local game" (`UiPanelHead` meta line carries it as `5+3 · here`... use `5+3 · local`).
 - Merge: Offer a draw, Take back, Resign into a `UiToolbar` right under the head: `Offer draw · Take back` quiet, `Resign` quiet-danger (red text, no fill); Resign confirms (UiConfirm, danger).
 - Order: head, status line, actions, move list (starts directly under; no hairline gap box).
 - Copy: `Offer a draw` -> `Offer draw`; `Take back` -> `Ask for takeback` only when against a person on Lichess, otherwise `Take back`; Resign dialog title `Resign this game?`, body `You lose the game.`, buttons `Cancel` (left) `Resign` (right, danger). Never leave it as a title that restates the button.
@@ -509,12 +509,12 @@ Ref: `board-review-1440-light.png`, `board-review-1280-dark.png`, `board-review-
 
 Current state is the most visibly broken panel: result line, a Rematch button, a two-column table with six judgement rows of mostly zeros, the best-move line, a Play-this-out button, then the moves. 330 px before the first move; at 1280x800 the Play-this-out button is clipped.
 
-- Remove: `Brilliant 0 0` etc. **zero rows** (only show classes with a non-zero count for either side); the heading row `You / Dameless` repeated above the table (the head has the players); the word `Average centipawn loss` row as a full table row (becomes a stat); `Missed chance` row if zero.
+- Remove: `Brilliant 0 0` etc. **zero rows** (only show classes with a non-zero count for either side); the heading row `You / Chess` repeated above the table (the head has the players); the word `Average centipawn loss` row as a full table row (becomes a stat); `Missed chance` row if zero.
 - Merge: `Rematch` and `Play this out` into one `Play from here` split: the primary button (quiet) is `Play from this position` (the board's current position), and `Rematch` is an overflow item (`More: Rematch, Copy PGN, Copy FEN`). Copy FEN/PGN (today only in Explore) belong to a `UiToolbar` overflow in every mode.
 - Order: `UiPanelHead` (players, result `1-0`, termination `Checkmate`, opening `Philidor Defense`), then a **review summary** (one compact block):
 
 ```
- Accuracy        95.0   94.3          <- UiStat xl, two columns, player names above (You, Dameless) in the head not here
+ Accuracy        95.0   94.3          <- UiStat xl, two columns, player names above (You, Chess) in the head not here
  Avg. loss       22     17            <- UiStat md
  Moves           Blunder 1 · Mistake 0 · Inaccuracy 0   <- chips, only non-zero, each with its glyph (?? ? ?!) and rv colour; clicking jumps to that move
 ```
@@ -532,7 +532,7 @@ Ref: `board-watch-1440-light.png`.
 - Remove: `The engine's line shows here while it thinks.` (when there is nothing to show, show nothing); the Watch tab if Explore is the only other (keep 2 tabs).
 - Merge: description line into the panel head.
 - Order: head (white vs black, `LIVE` `UiLive`, `3+2 · Blitz · rated`), engine thinking line (when present: `UiScore` + 1 line of PV, mono, ellipsis), moves.
-- Copy: `Watching Alpha-Bot vs Dameless`... not needed (head). For bot games the head shows `Bot` badge.
+- Copy: `Watching Alpha-Bot vs Chess`... not needed (head). For bot games the head shows `Bot` badge.
 
 ### 5.6 Explore mode (free analysis / any position)
 
@@ -571,25 +571,25 @@ New (page with tabs):
 - **Openings**: `UiTable` with the opening, games, W/D/L bar, score; and `Your openings` repertoire tree (RepertoireView) below with White/Black `UiSeg`. Fix: header cells currently clip (`GAMES WON · DRAWN · LOST SCORE` run together); use real column labels `Games`, `Record`, `Score`.
 - **Drills**: today's drills count + `Practice` primary + trend; empty: `No drills yet. Review your games and your mistakes become drills.` with `Review my games`.
 - **Challenges**: the incoming/sent list with Accept/Decline/Cancel (move out of the top of the main sheet where it pushes everything down; the header shows a badge on the tab).
-- **Newcomer** (0 games): replace the tabs with `UiEmpty`: `No games yet`, `Play one against Dameless, or bring in your Lichess history.`, actions `New game` primary, `Import my Lichess games`, `Log in with Lichess` when not linked.
+- **Newcomer** (0 games): replace the tabs with `UiEmpty`: `No games yet`, `Play one against Chess, or bring in your Lichess history.`, actions `New game` primary, `Import my Lichess games`, `Log in with Lichess` when not linked.
 - **Error/loading**: skeleton hero + 6 stat placeholders; error `UiEmpty tone=error` `Your profile didn't load` / `Try again`.
 - **Windowing (the other agent's `ProfileFilters`/`players.ts`)**: the profile covers the newest 200 games (see `real-you-1440.png`: `200 games`, `Last 200 games`, `0 reviewed`). The `UiToolbar` must have a third control `Newest [All ▾ 50 / 200 / 1000 / All]` once that lands; until then show `Last 200 games` as muted text in the toolbar, never as an unexplained chart subtitle. Do not hard-code its location: `ProfileFilters.vue` just renders `UiToolbar` + `UiSeg` + `UiSelect`.
 
-### 5.9 Dameless sheet
+### 5.9 Chess sheet
 
-Ref: `sheet-dameless-1440-light.png`, `sheet-dameless-tall-1440-light.png`, `dameless-empty-1440-light.png`, `dameless-long-1440-light.png`, `real-dameless-1440.png`.
+Ref: `sheet-chess-1440-light.png`, `sheet-chess-tall-1440-light.png`, `chess-empty-1440-light.png`, `chess-long-1440-light.png`, `real-chess-1440.png`.
 
-~3,000 px: Strength chart, Progress chart (a "You vs Dameless" comparison that belongs to the profile), 13-row Levels table, Ideas in progress, Logbook, Brain (networks, datasets, generate/import), Out in the world (bot).
+~3,000 px: Strength chart, Progress chart (a "You vs Chess" comparison that belongs to the profile), 13-row Levels table, Ideas in progress, Logbook, Brain (networks, datasets, generate/import), Out in the world (bot).
 
-- **Header**: `Dameless`, subtitle `Champion v14` (link opens the version). Remove the description.
+- **Header**: `Chess`, subtitle `Champion v14` (link opens the version). Remove the description.
 - **Lead**: `UiStat xl` `Champion v14`, `+51.0 Elo over v1 (±12.8)`, `Playing: Alpha-Bot (blitz) ●` (live bot game as a chip linking the board), `Bot: online`.
 - **Tabs**: `Strength · Ideas · Brain · Bot`.
   - **Strength**: the strength chart (champion line with the Elo band) + `Levels` as a **compact list**, not a 13-row table: a vertical ladder with a bar per level (742 to 3000) and a marker `You 1,846` between 6 and 7; each row `Level 6  1,822 ± 58  40 games`. `Calibrate levels` quiet button with its sentence trimmed to `About 1 min in the background.` Remove the Progress chart from here (it is already on You; link `Compare with you` instead).
   - **Ideas**: `New idea` primary in the tab header; **In progress** list (running first: badge, title, one line of evidence `+0.7 ± 5.9 Elo after 412 pairs`, an inline thin `LlrGauge`), **Logbook** below as one `UiTable` (Idea, Kind, Result, Elo, When) with the Ended/Kept/Dropped `UiSeg`; rows expand to the evidence as now (ExpandableRow is fine here).
   - **Brain**: Networks and Datasets as `UiTable`s with row actions in a kebab; `Generate data` and `Import a dataset` as quiet buttons in the section header (`#aside`), disk used as one `Data used 1.0 of 10 GB` meter row. Remove the hatched progress style (use a plain bar).
   - **Bot**: `Play on Lichess` switch + state line, `Looking for games` `UiSeg` (Off / Find one game / Keep playing; rename `Keep playing` -> `Always`), daily limit as `37 of 100 games against bots today` with a bar, the rules summary as a `UiKeyValue` (Plays: champion; Speeds: Bullet, Blitz, Rapid; Takes: rated and casual, people and bots; Clock: 1 to 30 min + up to 30 s; At once: 1) with `Edit rules` button replacing the paragraph "Rated and casual Bullet, Blitz and Rapid games, from 1 minute to 30 minutes with up to 30 s added a move, from people and bots, one at a time. Plays the champion." Recent bot challenges as a list below.
-- States: `dameless-empty` (no ideas): Ideas tab `UiEmpty`: `No ideas yet` / `An idea is a change to test against the champion.` / `New idea`. `?fixtures=long` (many ideas): the logbook table virtualizes at 50 rows.
-- Real app note (`real-dameless-1440.png`): version `v3`, few ideas; the Strength lead must degrade (`v3` has no Elo over v1 until there are two versions).
+- States: `chess-empty` (no ideas): Ideas tab `UiEmpty`: `No ideas yet` / `An idea is a change to test against the champion.` / `New idea`. `?fixtures=long` (many ideas): the logbook table virtualizes at 50 rows.
+- Real app note (`real-chess-1440.png`): version `v3`, few ideas; the Strength lead must degrade (`v3` has no Elo over v1 until there are two versions).
 
 ### 5.10 Idea sheet
 
@@ -630,7 +630,7 @@ Ref: `sheet-settings-1440-light.png`, `sheet-settings-tall-1440-light.png`, `set
 
 - Header `Settings`. Remove the description.
 - **Tabs**: `Accounts · This machine · Health · Appearance`.
-  - **Accounts**: two cards side by side (`>= 56rem`): `You` and `The bot` each with `UiLive`, account name, `Connected` badge, `Login ends 25 Aug 2027`, `Log out` / `Disconnect` (quiet, with confirm), and for the bot a link `Bot controls` to the Dameless > Bot tab. Not-linked state: `UiEmpty dense` `Not connected` + `Log in with Lichess` primary / `Add the bot's token`.
+  - **Accounts**: two cards side by side (`>= 56rem`): `You` and `The bot` each with `UiLive`, account name, `Connected` badge, `Login ends 25 Aug 2027`, `Log out` / `Disconnect` (quiet, with confirm), and for the bot a link `Bot controls` to the Chess > Bot tab. Not-linked state: `UiEmpty dense` `Not connected` + `Log in with Lichess` primary / `Add the bot's token`.
   - **This machine**: one `UiKeyValue` (Cores, Engine checkout, Data, Binaries `23 binaries, 2.3 GB`), `Free disk space` as an inline action on the Binaries row (the explanatory sentence moves to its tooltip), the harness as `UiKeyValue` + `Check the harness` row action.
   - **Health**: the 9 diagnostics as a compact list: dot + name + one-line status (`fastchess 1.4.0`), the failing ones expanded with the fix (`Install it: winget install LLVM.LLVM` with a Copy button). Order: failures first. Remove the per-row `READY` stamps for healthy items: a green dot is enough; only non-ready items get a `UiBadge`.
   - **Appearance**: `Theme` `UiSeg` (System / Light / Dark) and the hosted app token section (`The hosted app`: server URL, version, `Copy token`).
@@ -644,8 +644,8 @@ All use `UiDialog`; frame sizes: New game `md`, New idea `md`, Bot rules `lg`, D
 **New game** (ref `dlg-newgame-1440-light.png`, `dlg-newgame-375-light.png`)
 
 - Remove: the uppercase kickers `OPPONENT`, `VERSION`, `STRENGTH`, `TIME CONTROL`, `YOU PLAY`; the helper `Minutes + seconds added each move.` (move to the placeholder/tooltip on the custom clock input); the helper under book line.
-- Order: Opponent `UiSeg` (Dameless / Lichess / Stockfish); for Dameless one row `Version [v14 champion ▾]  Strength [Full ▾]` (if there is only one version, hide the Version select and show `v14`); Time control as a `UiSeg` of 5 presets + `Custom…` (a reveal of two number fields); You play `UiSeg` `White · Random · Black` (rename `Either` -> `Random`); advanced (`Start from a book line`, hash, threads) in a collapsed `Options` disclosure (the book switch is today a prominent control but rarely used).
-- Footer: `[Cancel] ........ [Start game]`; the primary label includes the setup `Start 5+3 vs Dameless`, so the user can confirm what they are about to start without re-reading. Press Enter to start.
+- Order: Opponent `UiSeg` (Chess / Lichess / Stockfish); for Chess one row `Version [v14 champion ▾]  Strength [Full ▾]` (if there is only one version, hide the Version select and show `v14`); Time control as a `UiSeg` of 5 presets + `Custom…` (a reveal of two number fields); You play `UiSeg` `White · Random · Black` (rename `Either` -> `Random`); advanced (`Start from a book line`, hash, threads) in a collapsed `Options` disclosure (the book switch is today a prominent control but rarely used).
+- Footer: `[Cancel] ........ [Start game]`; the primary label includes the setup `Start 5+3 vs Chess`, so the user can confirm what they are about to start without re-reading. Press Enter to start.
 - Disabled opponents (Lichess unlinked, no Stockfish): visible with `UiBadge neutral` `Log in first` and the reason in the tooltip.
 - At 375: bottom sheet, `UiSeg full`.
 
@@ -667,7 +667,7 @@ All use `UiDialog`; frame sizes: New game `md`, New idea `md`, Bot rules `lg`, D
 
 **Confirms** (Promote, Push, Resign, Delete dataset/build, Disconnect): `UiConfirm` only. Title is the action as a question, one sentence of consequence, `Cancel` left, action right, danger tone for destructive. Never a 2-line title.
 
-**Command bar** (ref `dlg-command-1440-light.png`): sections `Places`, `Do`, `Games` as `--t-meta` headers; remove the per-row description line for obvious items (`Board`, `Settings`); show the shortcut chip (`g s`) as `Kbd` only; the result rows 32 px; the placeholder `Go to, find a game, or type: play 5+3 dameless` is good, keep. The panel sits over the board's top (fine); add `Esc` hint in the footer.
+**Command bar** (ref `dlg-command-1440-light.png`): sections `Places`, `Do`, `Games` as `--t-meta` headers; remove the per-row description line for obvious items (`Board`, `Settings`); show the shortcut chip (`g s`) as `Kbd` only; the result rows 32 px; the placeholder `Go to, find a game, or type: play 5+3 chess` is good, keep. The panel sits over the board's top (fine); add `Esc` hint in the footer.
 
 **Shortcuts**: a two-column grouped reference (Board, Review, Sheets, Anywhere); keep content, restyle with `UiKeyValue` and `Kbd`.
 
@@ -706,10 +706,10 @@ Severity: **P1** must fix, **P2** should, **P3** nice. Files relative to `apps/w
 - B-2 **P1** Review panel overflows at 1280x800; `Play this out` is clipped under the move list (`panel/ReviewPanel.vue`, `panel/Panel.vue` `.tabs { max-height: 55dvh }` with `overflow: hidden auto` and the list grid `minmax(12rem, 1fr)`). Compact review block (5.4).
 - B-3 **P1** At 768 the board is 768 px square with the panel below; page is 2,466 px tall. Tablet two-column layout (4.1). `App.vue` breakpoints.
 - B-4 **P1** Single-tab tablists (`Play`, `Explore`, `Drill`) show an orphan tab. Hide when one mode; `panel/Panel.vue`.
-- B-5 **P2** The panel head states things twice: `Dameless played h6. Your move.` + `5+3 · local game`; `1-0 Checkmate · Philidor Defense` + the strips' result `0`/`1`. `UiPanelHead` (3.15).
+- B-5 **P2** The panel head states things twice: `Chess played h6. Your move.` + `5+3 · local game`; `1-0 Checkmate · Philidor Defense` + the strips' result `0`/`1`. `UiPanelHead` (3.15).
 - B-6 **P2** Eval graph: black block fills the top 50% and white the bottom (harsh, reads as UI chrome); in review the strongest element below the board is the least useful. Neutral graph (4.2). `board/EvalGraph.vue`.
 - B-7 **P2** Eval bar: 28 px wide with the figure printed inside on a contrasting patch, cropped `+0.6` at the bottom, mismatched with the strip chip at < 75rem. 16 px bar + `UiScore` chip (4.2). `board/EvalBar.vue`, `board/Strip.vue`.
-- B-8 **P2** Strip: player name, `1840` rating, the score box and the clock are four unrelated styles (`Dameless  0  9:45` with a lone `0` captured-material or score? it is a points figure with no label). Replace with `UiPlayer` + material diff `+3` (muted) + clock. `board/Strip.vue`.
+- B-8 **P2** Strip: player name, `1840` rating, the score box and the clock are four unrelated styles (`Chess  0  9:45` with a lone `0` captured-material or score? it is a points figure with no label). Replace with `UiPlayer` + material diff `+3` (muted) + clock. `board/Strip.vue`.
 - B-9 **P2** Transport counter `33 / 33` offset from the board edge and different alignment in explore (centered) vs review. `board/Transport.vue`.
 - B-10 **P2** Explore: truncated FEN/PGN text + two Copy buttons + textarea + `Play from here` + `OPEN A POSITION` kicker: 5 controls for 2 ideas (5.6). `panel/ExplorePanel.vue`, `panel/CopyRow.vue` (delete).
 - B-11 **P2** Explore engine lines clip (`3. Nc3…`) with no hover/title on every line, start at inconsistent ply; PV not clickable. `panel/ExplorePanel.vue`.
@@ -727,33 +727,33 @@ Severity: **P1** must fix, **P2** should, **P3** nice. Files relative to `apps/w
 ### R: Rail
 
 - R-1 **P1** Real data: rail shows a single trial row, You filter says `No games here yet`, with 3,708 games, due to `limit=300` + client filter. Server-side filter + paging (5.2). `stores/games.ts`, `rail/GamesRail.vue`, `rail/rail.ts`, API query params (`GET /api/games` already supports `player`, `source`, `trial`).
-- R-2 **P2** `1-0` coloured by raw result not by the user's outcome: `cutemouse83 - You 1-0` (you lost) shows red; `You - Dameless 1-0` green; `Dameless - Bot-Sam 1-0` green though you are not in it. `UiResult` (3.10). `rail/GameRow.vue`.
+- R-2 **P2** `1-0` coloured by raw result not by the user's outcome: `cutemouse83 - You 1-0` (you lost) shows red; `You - Chess 1-0` green; `Chess - Bot-Sam 1-0` green though you are not in it. `UiResult` (3.10). `rail/GameRow.vue`.
 - R-3 **P2** Game titles use `-`, trials `vs`; mixed. `vs` everywhere. `rail/GameRow.vue`, `rail/GamesRail.vue`.
 - R-4 **P2** Selected row is a full cognac outline box plus tinted fill: loudest object on screen. Act bar + `--c-sunk`.
 - R-5 **P2** `live` word + dot duplicates; the word is red-brown mono. Dot only (plus `Live` tooltip). `rail/GameRow.vue`.
 - R-6 **P2** Second line packs accuracy, clock, speed, rated: `97.0 · 96.0 · 3+0 · Blitz · rated` truncates to `10+5 · Rapid · rat…` at 288 px. Accuracy to a trailing tooltip; `3+0 Blitz · rated`.
 - R-7 **P2** Filter segmented control is 5 options in 267 px with the selected one a cognac block; `Trials` label named `tests` in code (`RailFilter` `tests`): rename the value to `trials` to match vocabulary (and the ESegmented option). `rail/rail.ts`.
 - R-8 **P2** Error state is a full-height pink panel (`error-1440-light.png`); `UiEmpty tone=error`.
-- R-9 **P3** Empty state copy `Games you play, Dameless's games on Lichess and trial games all land here.` is a run-on; copy in 5.2.
+- R-9 **P3** Empty state copy `Games you play, Chess's games on Lichess and trial games all land here.` is a run-on; copy in 5.2.
 - R-10 **P3** Trial caret rows have a 16 px caret gutter that non-trial rows render empty; align titles at one x.
 - R-11 **P3** Relative time `20h`, `3w` fine; add a date separator for > 2 weeks (`Oct`), no per-row change.
 
 ### S: Sheets
 
 - S-1 **P1** Every sheet title renders inside a rectangular focus box (it is auto-focused on open): looks like a text field (`sheet-*-1440-light.png`, top). `useSheet.ts`/`ESheet` heading focus; remove the visible outline for programmatic focus (`:focus:not(:focus-visible) { outline: none }` plus `UiSheetPage`).
-- S-2 **P1** You, Dameless and Settings are 2,000 to 3,000 px single scrolls; no way to jump. Tabs (4.4, 5.8 to 5.13).
+- S-2 **P1** You, Chess and Settings are 2,000 to 3,000 px single scrolls; no way to jump. Tabs (4.4, 5.8 to 5.13).
 - S-3 **P1** You: filters (speed, rated) sit above the review bar and stats, scroll away, and have no label; the user cannot tell what they filter. Sticky toolbar at the top of the tab (5.8). `sheets/YouSheet.vue`, `parts/ProfileFilters.vue`, `parts/ProfileView.vue`.
 - S-4 **P1** Sheet width 32rem is too narrow for tables (Openings header clipped; Levels table crowds; Compare is a 3-column table in 510 px). Wide variant (2.9, 3.14).
 - S-5 **P2** Redundant descriptions under every title (`Your games added up…`, `The engine: its strength over…`, `Lichess, the machine, the theme and the hosted app.`, `A player on Lichess, from the games brought…`, `Players side by side over the games they have here, reviewed by the same engine.`). Delete.
-- S-6 **P2** `Progress` chart is on both You and Dameless with different names (`ACCURACY AND RATING OVER TIME`, `PROGRESS`, `You and Dameless, side by side.`). Keep it on You only as `Progress` with the Dameless line toggle; Dameless links to it.
+- S-6 **P2** `Progress` chart is on both You and Chess with different names (`ACCURACY AND RATING OVER TIME`, `PROGRESS`, `You and Chess, side by side.`). Keep it on You only as `Progress` with the Chess line toggle; Chess links to it.
 - S-7 **P2** Review bar is a tinted notice with a filled `Review all 23` plus an outlined `Import my Lichess games` stacked below; two competing buttons. One banner row, one primary (5.8). `parts/ReviewBar.vue` (the other agent is editing the count: only restyle the frame, keep its logic).
 - S-8 **P2** Key figures: `Games 64 / 41 reviewed` and `Performance 1863 / Win streak 6` wrap onto a second grid row with inconsistent label/value gaps; the `?` after provisional ratings (`1345?`) reads as an error. `UiStat` (3.2).
 - S-9 **P2** `Accuracy by phase and speed` merges two dimensions in one list (Opening, Middlegame, Endgame, Bullet, Blitz, Rapid, Classical) with identical bars. Two lists.
 - S-10 **P2** `Moves per game` is a two-column table where the right half has no header alignment with the left (`Inaccuracy 4.32 177` aligned to the far right, `Brilliant 0.07 3` to the left); one table, two column pairs only on wide.
 - S-11 **P2** Results rows: the W-D-L text (`34-5-25`) is printed in a tiny mono font under the bar and collides with the bar; score on the right at 18 px mono is larger than the bar. Row: label, bar with the record inside on hover, score. `parts/WdlBar.vue`, `parts/ProfileView.vue`.
 - S-12 **P2** Chart axes: tick labels in ink-3 at 11 px with sparse x labels (`15 Aug`, `25 Aug`…) and a stray summary line below the chart (`27 Oct · accuracy 83.2 · rating 1813 · won`) that is the hover readout in rest state: make it appear only on hover, otherwise a legend row. `parts/LineChart.vue`, `parts/TrendChart.vue`, `parts/ProgressChart.vue`.
-- S-13 **P2** Dameless Levels is a 13-row table with `about 2200` for unrated levels in the rating column and `0` games; `Level 6 NEAR YOUR RATING` stamp inside the cell. Ladder (5.9). `parts/LevelsCard.vue`.
-- S-14 **P2** Logbook and Ideas in progress are two lists of the same item (`UiBadge`, title, evidence) styled differently (the logbook stamps are green KEPT/grey DROPPED boxes with a caret; in-progress are blue RUNNING with underline links). One `IdeaRow`. `parts/Logbook.vue`, `sheets/DamelessSheet.vue`.
+- S-13 **P2** Chess Levels is a 13-row table with `about 2200` for unrated levels in the rating column and `0` games; `Level 6 NEAR YOUR RATING` stamp inside the cell. Ladder (5.9). `parts/LevelsCard.vue`.
+- S-14 **P2** Logbook and Ideas in progress are two lists of the same item (`UiBadge`, title, evidence) styled differently (the logbook stamps are green KEPT/grey DROPPED boxes with a caret; in-progress are blue RUNNING with underline links). One `IdeaRow`. `parts/Logbook.vue`, `sheets/ChessSheet.vue`.
 - S-15 **P2** Idea sheet: hypothesis paragraph + stamp line + tag button-look + verdict sentence + Stop + `NOTES` + trials strip: the verdict is buried at the 4th line. Reorder (5.10). `sheets/IdeaSheet.vue`.
 - S-16 **P2** Trial evidence: `Elo / nElo / Pairs` use `Term` underlines that look like links; `LLR +0.61` label sits on the gauge with `-2.94 · dropped` / `kept · +2.94` at the sides in mono 12 px; the gauge marker is a 2 px black bar hard to find. `parts/LlrGauge.vue`, `parts/TrialEvidence.vue`, `parts/PentaBar.vue`.
 - S-17 **P2** Trial games list is underlined links (`v14 - deeper-lmr`) with ordinals only; no visible affordance difference from prose links. `UiTable` rows (5.10).
@@ -785,7 +785,7 @@ Severity: **P1** must fix, **P2** should, **P3** nice. Files relative to `apps/w
 
 - M-1 **P1** No navigation on phones; rail at the very bottom (28 rem fixed height) under a 30-row move list. Bottom tab bar (4.5).
 - M-2 **P1** Move list on phones is unbounded (33 plies = 600 px) between the board and everything else. Horizontal strip + sheet (4.5).
-- M-3 **P2** At 375 the header shows `You  Dameless` words with no figures and a `● 2` work count: unexplained. (5.1)
+- M-3 **P2** At 375 the header shows `You  Chess` words with no figures and a `● 2` work count: unexplained. (5.1)
 - M-4 **P2** 375 sheet: filters wrap into two full-width segmented rows (`All speeds | Bullet | Blitz | Rapid | Classical` at 11 px) that need horizontal scroll or font shrink; tab/overflow handling: `UiSeg` scrolls horizontally with a fade.
 - M-5 **P2** Challenge row at 375 truncates `Rapid · 10+` (`Incoming · Rated · Rapid · 10+…`). Wrap to two lines or drop `Incoming`.
 - M-6 **P3** Touch targets: rail filter options 28 px; move cells 34 px; icon buttons in Transport 36 px; coarse = 44 (2.6).
@@ -793,7 +793,7 @@ Severity: **P1** must fix, **P2** should, **P3** nice. Files relative to `apps/w
 
 ### Wording issues (collected)
 
-`Rated and casual` -> `All` (filter); `Missed chance` -> `Missed win`; `Keep playing` -> `Always`; `Either` -> `Random`; `Custom trial` -> `Single trial`; `The bot's rules` -> `Bot rules`; `Offer a draw` -> `Offer draw`; `Average centipawn loss` -> `Avg. loss` (tooltip: average centipawn loss); `Centipawn loss` -> `Avg. loss`; `Rated and casual` in Compare likewise; `Games did not load` fine; `Nothing running` -> `Idle`; header `Dameless v14` fine.
+`Rated and casual` -> `All` (filter); `Missed chance` -> `Missed win`; `Keep playing` -> `Always`; `Either` -> `Random`; `Custom trial` -> `Single trial`; `The bot's rules` -> `Bot rules`; `Offer a draw` -> `Offer draw`; `Average centipawn loss` -> `Avg. loss` (tooltip: average centipawn loss); `Centipawn loss` -> `Avg. loss`; `Rated and casual` in Compare likewise; `Games did not load` fine; `Nothing running` -> `Idle`; header `Chess v14` fine.
 
 ---
 
@@ -830,9 +830,9 @@ Owns: `src/sheets/YouSheet.vue`, `PlayerSheet.vue`, `CompareSheet.vue`, `compare
 
 Covers: 5.8, 5.11, 5.12, issues S-2 to S-12, S-19 to S-21, M-4, M-5. **Note**: `ReviewBar.vue`, `ProfileFilters.vue`, `stores/players.ts` are being edited concurrently by another agent (review count fix, games-window filter). Rebase onto their commit before touching those three; restyle only (frame, `UiToolbar`, `UiSeg`) and keep their props, emits and logic.
 
-### Area E: Dameless, Idea, Settings, dialogs
+### Area E: Chess, Idea, Settings, dialogs
 
-Owns: `src/sheets/DamelessSheet.vue`, `IdeaSheet.vue`, `SettingsSheet.vue`, `idea.ts`, `levels.ts`, `training.ts`, `tune.ts`, `useSheet.ts` (hand over to `UiSheetPage`); `src/parts/BotCard.vue`, `BotSettingsDialog.vue`, `bot.ts`, `BrainCard.vue`, `DatagenDialog.vue`, `ImportDatasetDialog.vue`, `LevelsCard.vue`, `Logbook.vue`, `IdeaActions.vue`, `NewIdea.vue`, `Notes.vue`, `LlrGauge.vue`, `PentaBar.vue`, `TrialEvidence.vue`, `TrainView.vue`, `TuneView.vue`, `markdown.ts`, `glossary.ts`; `src/stores/ideas.ts`, `dameless.ts`, `training.ts`, `versions.ts`, `work.ts`, `connections.ts`, `policy.ts`.
+Owns: `src/sheets/ChessSheet.vue`, `IdeaSheet.vue`, `SettingsSheet.vue`, `idea.ts`, `levels.ts`, `training.ts`, `tune.ts`, `useSheet.ts` (hand over to `UiSheetPage`); `src/parts/BotCard.vue`, `BotSettingsDialog.vue`, `bot.ts`, `BrainCard.vue`, `DatagenDialog.vue`, `ImportDatasetDialog.vue`, `LevelsCard.vue`, `Logbook.vue`, `IdeaActions.vue`, `NewIdea.vue`, `Notes.vue`, `LlrGauge.vue`, `PentaBar.vue`, `TrialEvidence.vue`, `TrainView.vue`, `TuneView.vue`, `markdown.ts`, `glossary.ts`; `src/stores/ideas.ts`, `chess.ts`, `training.ts`, `versions.ts`, `work.ts`, `connections.ts`, `policy.ts`.
 
 Covers: 5.9, 5.10, 5.13, 5.14 (all dialogs except New game, which is area B), issues S-13 to S-18, S-22 to S-26, D-2 to D-7, D-9 to D-11.
 
@@ -851,15 +851,15 @@ Checks, in order:
 7. Contrast: body, muted, badge text, graph and judgement colours against both surfaces (4.5:1 text, 3:1 graphics).
 8. Keyboard: tab order through header, rail, board, panel, sheet tabs; the sheet title no longer draws a box; Escape closes the topmost dialog, then the sheet; focus returns correctly.
 9. Reduced motion, coarse pointer (44 px targets) at 375.
-10. Real-app smoke test (read-only) against :7979: the rail shows your games, You loads, Dameless with 3 versions degrades cleanly.
+10. Real-app smoke test (read-only) against :7979: the rail shows your games, You loads, Chess with 3 versions degrades cleanly.
 11. `corepack pnpm api:check` untouched (no API changes unless area B adds the rail query; then `corepack pnpm api`).
 
 ---
 
 ## 8. Appendix: audit method, files, caveats
 
-- Screenshots: headless Edge via playwright-core, `reducedMotion: reduce`, light and dark by `localStorage dameless.scheme`. Scripts are in the session scratchpad (`ui.mjs`, `batch-ui.mjs`, `b1.mjs` to `b7.mjs`); to regenerate, start `corepack pnpm dev --port 5460` in `apps/web` and run them with `BASE=http://localhost:5460`. The real app was only loaded and one filter button clicked (`real-rail-you-1440.png`): nothing acting.
-- Index of screenshots (all in `C:\dev\chess\docs\ui-audit\`): `main-1440-{light,dark}`, `board-{play,watch,review,review-lichess,review-sf,review-import,explore,explore-game,drill}-1440-light`, `board-{play-375-light,play-768-light,play-1280-light,play-1920-light,review-375-dark,review-768-dark,review-1280-dark,review-1920-dark}`, `sheet-{you,dameless,idea1,idea2,idea3,player-cm,player-dameless,compare,settings}-1440-light`, `sheet-{dameless,you,settings,idea1}-tall-1440-light`, `sheet-you-375-light`, `sheet-dameless-768-light`, `sheet-compare-375-dark`, `sheet-settings-1280-dark`, `dlg-{newgame-1440-light,newgame-375-light,newgame-dark,command,shortcuts,newidea,botrules,datagen,importdata,promote,resign}-1440-light`, `empty-1440-light`, `error-1440-light`, `loading-1440-light`, `newcomer-you-1440-light`, `you-error-1440-light`, `settings-edge-1440-light`, `dameless-empty-1440-light`, `dameless-long-1440-light`, `real-{main,you,dameless,settings,rail-you}-1440`.
+- Screenshots: headless Edge via playwright-core, `reducedMotion: reduce`, light and dark by `localStorage chess.scheme`. Scripts are in the session scratchpad (`ui.mjs`, `batch-ui.mjs`, `b1.mjs` to `b7.mjs`); to regenerate, start `corepack pnpm dev --port 5460` in `apps/web` and run them with `BASE=http://localhost:5460`. The real app was only loaded and one filter button clicked (`real-rail-you-1440.png`): nothing acting.
+- Index of screenshots (all in `C:\dev\chess\docs\ui-audit\`): `main-1440-{light,dark}`, `board-{play,watch,review,review-lichess,review-sf,review-import,explore,explore-game,drill}-1440-light`, `board-{play-375-light,play-768-light,play-1280-light,play-1920-light,review-375-dark,review-768-dark,review-1280-dark,review-1920-dark}`, `sheet-{you,chess,idea1,idea2,idea3,player-cm,player-chess,compare,settings}-1440-light`, `sheet-{chess,you,settings,idea1}-tall-1440-light`, `sheet-you-375-light`, `sheet-chess-768-light`, `sheet-compare-375-dark`, `sheet-settings-1280-dark`, `dlg-{newgame-1440-light,newgame-375-light,newgame-dark,command,shortcuts,newidea,botrules,datagen,importdata,promote,resign}-1440-light`, `empty-1440-light`, `error-1440-light`, `loading-1440-light`, `newcomer-you-1440-light`, `you-error-1440-light`, `settings-edge-1440-light`, `chess-empty-1440-light`, `chess-long-1440-light`, `real-{main,you,chess,settings,rail-you}-1440`.
 - Not fully covered (flag for the implementers): `?fixtures=fairplay` states, `botnoversion`, `untrusted`, `nogpu`, tune5000 and the Train/Tune views, challenge toast flows, promotion picker, 1920 dark sheets. Shoot them after your change and apply the same rules.
 - Measured at 1440x900: header 49, footer 37, rail 288, stage 778, panel 374, board 647 (explore) / 593 (review) / 727 (drill). Tokens: control 44 px by eos default (40 px in `App.vue` fine pointer), gap scale 3/6/9/12/18.
 - Decisions that deliberately depart from `docs/design.md` (update it in the cohesion pass): sheets are tabbed pages; the status footer is replaced by the header work indicator; mobile has a bottom tab bar; the rail is server-filtered and paged; single-tab tablists are hidden.

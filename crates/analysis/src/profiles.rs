@@ -6,13 +6,13 @@
 
 use std::sync::Arc;
 
-use dameless_core::{
+use chess_core::{
     ConnectionKey, Error, PlayerKey,
     lichess::Account,
     profile::{self, Comparison, Player, Profile, ProfileFilter},
 };
-use dameless_hub::Hub;
-use dameless_store::ConnectionField;
+use chess_hub::Hub;
+use chess_store::ConnectionField;
 
 /// An engine's name from its id, for one no longer on the list: `reckless` is Reckless.
 fn engine_name(id: &str) -> String {
@@ -67,7 +67,7 @@ impl Profiles {
             PlayerKey::Engine(id) => {
                 player.name = match store.engine(id).await? {
                     Some(e) => e.name,
-                    None => match dameless_core::engines::builtin(id) {
+                    None => match chess_core::engines::builtin(id) {
                         Some(b) => b.name.to_owned(),
                         None => engine_name(id),
                     },
