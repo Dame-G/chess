@@ -286,7 +286,7 @@ const doubled = [...levelRows, ...levelRows].map((r, id) => ({ ...r, id }));
         label="Engine"
         :options="[
           { value: 'stockfish', label: 'Stockfish' },
-          { value: 'maia-1500', label: 'Maia 1500' },
+          { value: 'reckless', label: 'Reckless' },
         ]"
       />
       <UiField v-slot="{ id }" label="Hash" hint="In megabytes.">

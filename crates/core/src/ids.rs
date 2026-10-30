@@ -217,7 +217,7 @@ impl PlayerKey {
 }
 
 /// An engine's id: 1 to 40 lower-case letters, digits and `-`, starting with a letter or digit (`stockfish`,
-/// `maia-1500`).
+/// `my-engine-2`).
 pub fn valid_engine_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 40
@@ -426,7 +426,7 @@ mod tests {
         for (text, key) in [
             ("you", PlayerKey::You),
             ("engine:stockfish", PlayerKey::Engine("stockfish".into())),
-            ("engine:maia-1500", PlayerKey::Engine("maia-1500".into())),
+            ("engine:my-engine-2", PlayerKey::Engine("my-engine-2".into())),
             ("lichess:cutemouse83", PlayerKey::Lichess("cutemouse83".into())),
         ] {
             assert_eq!(text.parse::<PlayerKey>().unwrap(), key);

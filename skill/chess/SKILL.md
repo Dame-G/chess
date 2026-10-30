@@ -32,10 +32,10 @@ These hold in every branch of the work.
 
 ## Engines
 
-- `list_engines`: the built-ins (`stockfish`, `maia-1100` … `maia-1900`, installed or not) and the engines the user added, each with what it calls itself (`id_name`), and which one is the analysis engine.
-- A fresh app has no engines installed: `setup_plan` lists the downloads and their sizes; `setup` (when the user agrees) queues them as work.
-- `add_engine` (`{ name, path, options?, args?, nodes?, rating? }`) adds an engine the user names by path; `set_analysis_engine` chooses the analysis engine (reviews, evaluation, drills and the levels run on it); `remove_engine` takes one off the list.
-- Games: `start_game` with seats `you`, an engine's id (`stockfish`, `maia-1500`), or `stockfish@5` for a level of the analysis engine.
+- `list_engines`: the built-ins (`stockfish`, `reckless`, installed or not) and the engines the user added, each with what it calls itself (`id_name`), whether it has levels and MultiPV, and which one is the analysis engine.
+- A fresh app has no engines installed: `setup_plan` lists the downloads and their sizes, one package per built-in; `setup` (when the user agrees; `{ packages: ["reckless"] }` for one) queues them as work.
+- `add_engine` (`{ name, path, options?, args?, nodes?, rating? }`) adds an engine the user names by path; `set_analysis_engine` chooses the analysis engine (reviews, evaluation and drills run on it); `remove_engine` takes one off the list.
+- Games: `start_game` with seats `you`, an engine's id (`stockfish`, `reckless`), or `<engine id>@<level>` for a level of that engine (`stockfish@5`, `reckless@3`): every engine on the clock has its own ladder and ratings.
 
 ## Coaching the user
 

@@ -52,12 +52,12 @@ const customIncrement = stored<number | null>("new.custom.increment", 3);
 const color = stored<Color>("new.color", "random");
 const rated = stored("new.rated", true);
 const level = stored("new.level", "5");
-/** Every engine to play, grouped: the analysis engine's levels, the human-like engines, the rest. */
-const engineOptions = computed(() => opponentChoices(engines.list, engines.analysisId, ladder.levels));
+/** Every engine to play, each with its own levels: the analysis engine first, then the rest. */
+const engineOptions = computed(() => opponentChoices(engines.list, engines.analysisId, ladder.of));
 /** The analysis engine at the level nearest your rating: the seat chosen until you choose another. */
 const suggestedSeat = () => levelSeat(engines.analysisId, suggestedStrength(ladder.levels));
 /**
- * The engine as last chosen, as the seat the server reads (`stockfish@5`, `maia-1500`, `stockfish`). Empty until you
+ * The engine as last chosen, as the seat the server reads (`stockfish@5`, `reckless@3`, `stockfish`). Empty until you
  * choose, and then the level nearest your rating is the one shown; a seat no longer offered falls back to it too.
  */
 const seat = stored("new.engine", "");
@@ -85,8 +85,10 @@ watch(
       return;
     }
     if (fromPosition.value) opponent.value = "engine";
-    if (!engines.loaded) void engines.load().catch(() => {});
+    if (!engines.loaded) await engines.load().catch(() => {});
     if (!ladder.levels) await ladder.loadLevels().catch(() => {});
+    // Every engine with levels offers them, with its own ratings.
+    void ladder.loadAll(engines.list.filter((e) => e.levels).map((e) => e.id));
     // Practising a position ("Play this out") starts at the level nearest your rating.
     if (ui.newGame && fromPosition.value) {
       remembered ??= seat.value;
@@ -251,7 +253,7 @@ async function start() {
         v-if="opponent === 'engine' && engineOptions.length"
         v-model="chosenSeat"
         :choices="engineOptions"
-        :analysis="engines.analysisId"
+        :engines="engines.list"
         :suggested="suggestedSeat()"
         @settings="ui.newGame = false"
       />

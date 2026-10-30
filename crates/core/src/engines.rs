@@ -1,10 +1,10 @@
 //! Engines: the UCI engines the app plays against and analyses with. Any UCI engine can be one: the built-ins that
-//! `chess setup` installs (Stockfish, and Maia's human-like nets on lc0) and engines you add by path.
+//! `chess setup` installs (Stockfish and Reckless) and engines you add by path.
 //!
-//! One engine is the **analysis engine** (Stockfish by default): reviews, live evaluation, drills and the ladder of
-//! levels run on it. An engine with a fixed node budget (Maia plays one node a move, as it is meant to) plays that
-//! budget whatever the clock; every other engine plays on the clock at full strength, or at a level when it is the
-//! analysis engine.
+//! One engine is the **analysis engine** (Stockfish by default): reviews, live evaluation and drills run on it. Every
+//! engine that plays on the clock has its own ladder of levels (`stockfish@5`, `reckless@3`), each with its own
+//! calibrated ratings. An engine you add with a fixed node budget plays that budget whatever the clock, and has no
+//! levels.
 
 use std::collections::BTreeMap;
 
@@ -29,29 +29,32 @@ pub enum EngineKind {
 /// An engine of the engines list.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct Engine {
-    /// The slug seats and player keys name it by: `stockfish`, `maia-1500`.
+    /// The slug seats and player keys name it by: `stockfish`, `reckless`, `my-engine`.
     pub id: String,
-    /// As shown: `Stockfish`, `Maia 1500`.
+    /// As shown: `Stockfish`, `Reckless`.
     pub name: String,
     pub kind: EngineKind,
     /// The binary; none for a built-in that is not installed yet.
     pub path: Option<String>,
-    /// Arguments it is started with (lc0's `--weights=…` for Maia).
+    /// Arguments it is started with.
     pub args: Vec<String>,
     /// UCI options set after the handshake, before the app's own (`Threads`, `Hash`, `MultiPV`).
     pub options: BTreeMap<String, String>,
     /// What it calls itself (its UCI `id name`), read when it was added or installed: `Stockfish 19`. Reviews and the
     /// position cache are keyed by it, so a new release of an engine never reads an old one's results as its own.
     pub id_name: Option<String>,
-    /// Nodes it searches a move whatever the clock: Maia's 1. None plays on the clock.
+    /// Nodes it searches a move whatever the clock (set when you add it). None plays on the clock.
     pub nodes: Option<u64>,
-    /// The rating it plays at, when it has one by design (Maia's nominal rating).
+    /// The rating it plays at, when you gave it one (an engine made to play at a rating).
     pub rating: Option<u32>,
+    /// Whether it declares UCI's `MultiPV` (read when it was added or installed). Without it, levels 1 to 6 play
+    /// their node budget only, the engine's best move at that budget, rather than choosing among its lines.
+    pub multipv: bool,
     /// Whether it can be started: a binary is there.
     pub installed: bool,
     /// Whether it is the analysis engine.
     pub analysis: bool,
-    /// Whether the ladder of levels runs on it (the analysis engine, when it plays on the clock).
+    /// Whether it has a ladder of levels: installed, and plays on the clock (no fixed node budget).
     pub levels: bool,
     pub created_at: Option<Timestamp>,
 }
@@ -87,11 +90,11 @@ pub struct EnginesOverview {
 pub enum Package {
     /// Stockfish's release binary.
     Stockfish,
-    /// lc0 with Maia's weights for this rating.
-    Maia(u32),
+    /// Reckless's release binary.
+    Reckless,
 }
 
-/// A built-in engine.
+/// A built-in engine. Both play on the clock at full strength and can analyse.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Builtin {
     pub id: &'static str,
@@ -99,38 +102,10 @@ pub struct Builtin {
     pub package: Package,
 }
 
-impl Builtin {
-    /// Maia's fixed budget: one node a move, which is how its nets play like people at their rating.
-    pub fn nodes(&self) -> Option<u64> {
-        match self.package {
-            Package::Stockfish => None,
-            Package::Maia(_) => Some(1),
-        }
-    }
-
-    pub fn rating(&self) -> Option<u32> {
-        match self.package {
-            Package::Stockfish => None,
-            Package::Maia(rating) => Some(rating),
-        }
-    }
-}
-
-/// Maia's nets: one per hundred points from 1100 to 1900.
-pub const MAIA_RATINGS: [u32; 9] = [1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900];
-
-/// Every built-in engine: Stockfish, then the Maias by rating.
-pub const BUILTINS: [Builtin; 10] = [
+/// Every built-in engine: Stockfish (the analysis engine by default), then Reckless.
+pub const BUILTINS: [Builtin; 2] = [
     Builtin { id: "stockfish", name: "Stockfish", package: Package::Stockfish },
-    Builtin { id: "maia-1100", name: "Maia 1100", package: Package::Maia(1100) },
-    Builtin { id: "maia-1200", name: "Maia 1200", package: Package::Maia(1200) },
-    Builtin { id: "maia-1300", name: "Maia 1300", package: Package::Maia(1300) },
-    Builtin { id: "maia-1400", name: "Maia 1400", package: Package::Maia(1400) },
-    Builtin { id: "maia-1500", name: "Maia 1500", package: Package::Maia(1500) },
-    Builtin { id: "maia-1600", name: "Maia 1600", package: Package::Maia(1600) },
-    Builtin { id: "maia-1700", name: "Maia 1700", package: Package::Maia(1700) },
-    Builtin { id: "maia-1800", name: "Maia 1800", package: Package::Maia(1800) },
-    Builtin { id: "maia-1900", name: "Maia 1900", package: Package::Maia(1900) },
+    Builtin { id: "reckless", name: "Reckless", package: Package::Reckless },
 ];
 
 /// The built-in engine with this id.
@@ -194,7 +169,7 @@ mod tests {
         assert_eq!(SeatSpec::parse("you"), Ok(SeatSpec::You));
         assert_eq!(SeatSpec::parse("stockfish"), Ok(SeatSpec::Engine { id: "stockfish".into(), level: None }));
         assert_eq!(SeatSpec::parse("stockfish@5"), Ok(SeatSpec::Engine { id: "stockfish".into(), level: Some(5) }));
-        assert_eq!(SeatSpec::parse("engine:maia-1500"), Ok(SeatSpec::Engine { id: "maia-1500".into(), level: None }));
+        assert_eq!(SeatSpec::parse("engine:reckless"), Ok(SeatSpec::Engine { id: "reckless".into(), level: None }));
         assert!(SeatSpec::parse("stockfish@x").is_err());
         assert!(SeatSpec::parse("Big Engine").is_err());
         assert!(SeatSpec::parse("you@3").is_err());
@@ -202,9 +177,9 @@ mod tests {
 
     #[test]
     fn builtins_and_slugs() {
-        assert_eq!(builtin("maia-1500").unwrap().nodes(), Some(1));
-        assert_eq!(builtin("maia-1900").unwrap().rating(), Some(1900));
-        assert_eq!(builtin("stockfish").unwrap().nodes(), None);
+        assert_eq!(builtin("reckless").unwrap().package, Package::Reckless);
+        assert_eq!(builtin("stockfish").unwrap().package, Package::Stockfish);
+        assert!(builtin("maia-1500").is_none());
         assert!(BUILTINS.iter().all(|b| valid_engine_id(b.id)));
         assert_eq!(slug("My Engine 2"), "my-engine-2");
         assert_eq!(slug("  Reckless (dev)  "), "reckless-dev");
@@ -223,6 +198,7 @@ mod tests {
             id_name: Some("Stockfish 19".into()),
             nodes: None,
             rating: None,
+            multipv: true,
             installed: true,
             analysis: true,
             levels: true,

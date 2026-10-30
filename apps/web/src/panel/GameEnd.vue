@@ -1,18 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed } from "vue";
 import { PhArrowDown, PhArrowUp } from "@phosphor-icons/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { useBoard } from "../board/board";
 import { formatNumber, seatName } from "../format";
 import { levelChoices } from "../sheets/levels";
-import { useLevels } from "../stores/levels";
 import UiToolbar from "../ui/UiToolbar.vue";
 import { useRematch } from "./useRematch";
 
 /**
  * A finished game of yours against an engine, played here: how it went for you, who the engine was and where you
- * stand, and what to do next. Rematch is the one filled button (the colours swap); against the analysis engine one
- * level easier or harder plays the same clock against the neighbouring level; Review this game reads it with the engine. Keys: R plays again.
+ * stand, and what to do next. Rematch is the one filled button (the colours swap); against an engine with levels one
+ * level easier or harder plays the same clock against the neighbouring level of its ladder; Review this game reads it with the engine. Keys: R plays again.
  */
 const props = defineProps<{
   /** Whether the game has been reviewed, is being, or has not been: Review this game shows until it has begun. */
@@ -21,8 +20,7 @@ const props = defineProps<{
 defineEmits<{ review: [] }>();
 
 const board = useBoard();
-const ladderStore = useLevels();
-const { strength, easier, harder, starting, start } = useRematch();
+const { overview, strength, easier, harder, starting, start } = useRematch();
 
 const result = computed(() => {
   const s = board.summary;
@@ -34,15 +32,11 @@ const result = computed(() => {
 const opponent = computed(() => {
   const level = strength.value;
   if (level === null) return null;
-  const choice = levelChoices(ladderStore.levels).find((c) => c.value === String(level));
+  const choice = levelChoices(overview.value).find((c) => c.value === String(level));
   return choice ?? { name: level === "full" ? "Full strength" : `Level ${level}`, text: "" };
 });
 
-onMounted(() => {
-  if (!ladderStore.levels) void ladderStore.loadLevels().catch(() => {});
-});
-
-/** Who it was, as the server named the seat: "Stockfish 1650", "Maia 1500", "Stockfish 19". */
+/** Who it was, as the server named the seat: "Stockfish 1650", "Reckless 1400", "Stockfish 19". */
 const who = computed(() => {
   const s = board.summary;
   if (!s?.you) return "the engine";
@@ -64,7 +58,7 @@ const context = computed(() => {
   const parts: string[] = [];
   const them = opponent.value;
   if (them?.text) parts.push(`${them.name} is rated ${them.text}`);
-  const you = ladderStore.levels?.you;
+  const you = overview.value?.you;
   if (you) parts.push(`you are about ${formatNumber(Math.round(you.estimate.elo))}`);
   return parts.join(", ");
 });

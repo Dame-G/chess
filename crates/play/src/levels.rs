@@ -1,6 +1,7 @@
-//! The levels as a service (the ladder engine, the analysis engine, at a node budget): the ladder, the calibrated ratings (`GET /api/levels`), the plan of calibration
-//! matches, and the refit after games at a level. The maths is `core::levels`; the games are played by [`Games`]
-//! (yours) and the [`crate::Calibrate`] executor (levels against each other).
+//! The levels as a service: every engine that plays on the clock has the same ladder of node budgets, and its own
+//! calibrated ratings (`GET /api/levels?engine=reckless`), plan of calibration matches, and refit after games at its
+//! levels. The maths is `core::levels`; the games are played by [`Games`] (yours) and the [`crate::Calibrate`] executor
+//! (an engine's levels against each other).
 //!
 //! Your Lichess rating anchors the ladder on the human scale. [`Levels`] reads it through a source the server sets
 //! ([`Levels::set_anchor`], usually [`your_anchor`] over the you connection's status), since the connections are made
@@ -12,6 +13,7 @@ use std::sync::{Arc, Mutex};
 
 use chess_core::{
     Error, PlayerKey, Timestamp,
+    engines::Engine,
     events::{LevelsUpdated, Payload},
     levels::Estimate,
     levels::{self, Entrant, EntrantRating, Level, PlannedMatch},
@@ -40,9 +42,11 @@ pub struct LevelRating {
     pub games: u32,
 }
 
-/// `GET /api/levels`.
+/// `GET /api/levels`: one engine's ladder.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct LevelsOverview {
+    /// The engine whose ladder it is: `stockfish`, `reckless`.
+    pub engine: String,
     pub levels: Vec<LevelRating>,
     /// Your fitted rating on the ladder's scale, once there is a fit with you in it.
     pub you: Option<EntrantRating>,
@@ -55,6 +59,9 @@ pub struct LevelsOverview {
 /// `POST /api/levels/calibrate`.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct CalibrateRequest {
+    /// The engine whose levels play (its id); the analysis engine when none.
+    #[serde(default)]
+    pub engine: Option<String>,
     /// These matches; else the plan's `count` most useful ones.
     #[serde(default)]
     pub matches: Option<Vec<PlannedMatch>>,
@@ -70,7 +77,7 @@ pub struct CalibrateRequest {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct CalibrateSpec {
     pub matches: Vec<PlannedMatch>,
-    /// The engine every level plays: the analysis engine when the calibration was queued.
+    /// The engine whose levels play.
     pub engine: String,
 }
 
@@ -125,9 +132,9 @@ impl Levels {
         source.and_then(|f| f())
     }
 
-    /// The ladder with its calibrated ratings, your place on it and the level to suggest.
-    pub async fn overview(&self) -> Result<LevelsOverview, Error> {
-        let (ratings, updated_at) = self.inner.hub.store.level_ratings().await?;
+    /// `engine`'s ladder with its calibrated ratings, your place on it and the level to suggest.
+    pub async fn overview(&self, engine: &str) -> Result<LevelsOverview, Error> {
+        let (ratings, updated_at) = self.inner.hub.store.level_ratings(engine).await?;
         let fitted = |id: u32| ratings.iter().find(|r| r.entrant == Entrant::Level(id) && r.games > 0);
         let levels = self
             .inner
@@ -142,7 +149,7 @@ impl Levels {
         let you = ratings.iter().find(|r| r.entrant == Entrant::You).copied();
         let target = you.map(|r| r.estimate.elo).or_else(|| self.anchor().map(|(r, _)| f64::from(r)));
         let suggested = target.and_then(|t| levels::nearest_level(&self.effective(&ratings), t));
-        Ok(LevelsOverview { levels, you, suggested, updated_at })
+        Ok(LevelsOverview { engine: engine.to_owned(), levels, you, suggested, updated_at })
     }
 
     /// Each level's rating as it stands: calibrated once it has games, else its nominal one.
@@ -162,57 +169,62 @@ impl Levels {
             .collect()
     }
 
-    /// The level's rating to show, rounded: calibrated once it has games, else nominal.
-    pub async fn rating_of(&self, level: &Level) -> u32 {
-        let fitted = self.inner.hub.store.level_ratings().await.ok().and_then(|(ratings, _)| {
+    /// The rating of `engine`'s level to show, rounded: calibrated once it has games, else nominal.
+    pub async fn rating_of(&self, engine: &str, level: &Level) -> u32 {
+        let fitted = self.inner.hub.store.level_ratings(engine).await.ok().and_then(|(ratings, _)| {
             ratings.into_iter().find(|r| r.entrant == Entrant::Level(level.id) && r.games > 0)
         });
         fitted.map_or(level.nominal, |r| r.estimate.elo.round().max(0.0) as u32)
     }
 
-    /// "Stockfish 1600" (the engine's name and the level's rating), and the rating.
-    pub(crate) async fn seat_name(&self, level: &Level, engine: &str) -> (String, u32) {
-        let rating = self.rating_of(level).await;
-        (format!("{engine} {rating}"), rating)
+    /// "Stockfish 1600" (the engine's name and its level's rating), and the rating.
+    pub(crate) async fn seat_name(&self, level: &Level, engine: &Engine) -> (String, u32) {
+        let rating = self.rating_of(&engine.id, level).await;
+        (format!("{} {rating}", engine.name), rating)
     }
 
-    /// The `count` calibration matches to play next (`core::levels::plan` over the last fit).
-    pub async fn plan(&self, count: usize) -> Result<Vec<PlannedMatch>, Error> {
-        let (ratings, _) = self.inner.hub.store.level_ratings().await?;
+    /// The `count` calibration matches of `engine`'s levels to play next (`core::levels::plan` over its last fit).
+    pub async fn plan(&self, engine: &str, count: usize) -> Result<Vec<PlannedMatch>, Error> {
+        let (ratings, _) = self.inner.hub.store.level_ratings(engine).await?;
         Ok(levels::plan(&self.inner.ladder, &ratings, count))
     }
 
-    /// Fits the ladder again over every finished game at a level, with your rating as the anchor, stores the fit and
-    /// announces it (`levels.updated`).
-    pub async fn refit(&self) -> Result<LevelsUpdated, Error> {
+    /// Fits `engine`'s ladder again over every finished game at its levels, with your rating as the anchor, stores
+    /// the fit and announces it (`levels.updated`).
+    pub async fn refit(&self, engine: &str) -> Result<LevelsUpdated, Error> {
         let store = &self.inner.hub.store;
-        let games = store.level_games().await?;
+        let games = store.level_games(engine).await?;
         let results = levels::pair_results(&games);
         let priors = levels::priors(&self.inner.ladder, self.anchor());
         let ratings = levels::fit(&priors, &results);
-        store.put_level_ratings(ratings.clone()).await?;
-        let updated = LevelsUpdated { ratings, updated_at: now() };
+        store.put_level_ratings(engine, ratings.clone()).await?;
+        let updated = LevelsUpdated { engine: engine.to_owned(), ratings, updated_at: now() };
         self.inner.hub.bus.emit(Payload::LevelsUpdated(updated.clone()));
         Ok(updated)
     }
 
     /// [`Levels::refit`], a failure only logged: for the end of a game.
-    pub(crate) async fn refit_quietly(&self) {
-        if let Err(e) = self.refit().await {
-            tracing::warn!("could not refit the levels: {e}");
+    pub(crate) async fn refit_quietly(&self, engine: &str) {
+        if let Err(e) = self.refit(engine).await {
+            tracing::warn!("could not refit {engine}'s levels: {e}");
         }
     }
 
-    /// The calibration work for a request, resolved now: the matches (planned when not given) and the engine (the
-    /// analysis engine). The caller queues it with the scheduler (`Scheduler::submit`).
+    /// The calibration work for a request, resolved now: the engine (the analysis engine when none is named; it must
+    /// play on the clock) and the matches (planned when not given). The caller queues it with the scheduler
+    /// (`Scheduler::submit`).
     pub async fn prepare_calibration(
         &self,
         engines: &dyn EngineSource,
         req: CalibrateRequest,
     ) -> Result<NewWork, Error> {
+        let engine = engines.ready(req.engine.as_deref()).await?.engine;
+        if !engine.levels {
+            return Err(Error::bad_request(format!("{} plays a fixed budget: it has no levels", engine.name)));
+        }
         let mut matches = match req.matches {
             Some(m) => m,
-            None => self.plan(req.count.unwrap_or(DEFAULT_MATCHES).clamp(1, 64)).await?,
+            None => self.plan(&engine.id, req.count.unwrap_or(DEFAULT_MATCHES).clamp(1, 64)).await?,
         };
         if matches.is_empty() {
             return Err(Error::bad_request("no matches to play: the ladder needs two levels"));
@@ -230,7 +242,6 @@ impl Levels {
                 return Err(Error::bad_request("a match plays 1 to 1000 games"));
             }
         }
-        let engine = engines.ready(None).await?.engine;
         let games: u32 = matches.iter().map(|m| m.games).sum();
         let pairs = matches.iter().map(|m| format!("{}–{}", m.a, m.b)).collect::<Vec<_>>().join(", ");
         let spec = CalibrateSpec { matches, engine: engine.id.clone() };

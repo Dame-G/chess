@@ -49,13 +49,13 @@ pub enum Command {
     Health,
     /// The app, the machine, the cores and fair play.
     Status,
-    /// The machine's health: the analysis engine, Maia, disk, database.
+    /// The machine's health: the analysis engine, Reckless, disk, database.
     Diagnostics,
     /// Print the API token (for the hosted UI).
     Token,
-    /// Download the built-in engines (Stockfish 19, lc0 and Maia's nets): shows the sizes and asks first.
+    /// Download the built-in engines (Stockfish 19 and Reckless 0.9.0): shows the sizes and asks first.
     Setup {
-        /// Only these: stockfish, maia (comma-separated).
+        /// Only these packages: stockfish, reckless (comma-separated).
         #[arg(long, value_delimiter = ',')]
         only: Vec<String>,
         /// Download without asking.
@@ -175,7 +175,7 @@ pub enum Command {
         #[arg(long)]
         window: Option<usize>,
     },
-    /// The levels of the analysis engine; `levels plan`, `levels calibrate`.
+    /// An engine's levels (the analysis engine's unless `--engine`); `levels plan`, `levels calibrate`.
     Levels(LevelsArgs),
     /// Your drills; `drills today|make|answer <id> <move>|delete <id>|trend`.
     Drills(DrillsArgs),
@@ -217,7 +217,7 @@ pub struct GamesArgs {
 
 #[derive(Args)]
 pub struct PlayArgs {
-    /// you, an engine's id (stockfish, maia-1500) or <engine id>@<level> (stockfish@5).
+    /// you, an engine's id (stockfish, reckless) or <engine id>@<level> (stockfish@5, reckless@3).
     #[arg(long, default_value = "you")]
     pub white: String,
     #[arg(long, default_value = "stockfish")]
@@ -334,17 +334,26 @@ pub enum PlayersCommand {
 pub struct LevelsArgs {
     #[command(subcommand)]
     pub action: Option<LevelsAction>,
+    /// The engine whose levels (its id); the analysis engine when left out.
+    #[arg(long)]
+    pub engine: Option<String>,
 }
 
 #[derive(Subcommand)]
 pub enum LevelsAction {
-    /// The calibration matches that would teach the most now.
+    /// The calibration matches of an engine's levels that would teach the most now.
     Plan {
         #[arg(long, default_value_t = 3)]
         count: usize,
+        /// The engine whose levels (its id); the analysis engine when left out.
+        #[arg(long)]
+        engine: Option<String>,
     },
-    /// Queue calibration: levels play each other in the background.
+    /// Queue calibration: an engine's levels play each other in the background.
     Calibrate {
+        /// The engine whose levels (its id); the analysis engine when left out.
+        #[arg(long)]
+        engine: Option<String>,
         #[arg(long)]
         count: Option<usize>,
         #[arg(long)]
@@ -473,7 +482,7 @@ pub enum EnginesAction {
         /// A UCI option set after the handshake: `--option Threads=2` (repeat for more).
         #[arg(long = "option", value_name = "NAME=VALUE")]
         options: Vec<String>,
-        /// Nodes it searches a move whatever the clock (as Maia's one).
+        /// Nodes it searches a move whatever the clock (it then has no levels).
         #[arg(long)]
         nodes: Option<u64>,
         /// The rating it plays at, when it has one by design.
@@ -482,7 +491,7 @@ pub enum EnginesAction {
     },
     /// Remove an engine from the list.
     Remove { id: String },
-    /// Choose the analysis engine: reviews, evaluation, drills and the levels run on it.
+    /// Choose the analysis engine: reviews, evaluation and drills run on it.
     Analysis { id: String },
 }
 
@@ -602,8 +611,8 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("setup_plan", "chess setup"),
     ("setup", "chess setup --yes"),
     ("list_engines", "chess engines"),
-    ("add_engine", "chess engines add --name Reckless --path ./reckless"),
-    ("remove_engine", "chess engines remove reckless"),
+    ("add_engine", "chess engines add --name Berserk --path ./berserk"),
+    ("remove_engine", "chess engines remove berserk"),
     ("set_analysis_engine", "chess engines analysis stockfish"),
     ("follow_events", "chess events --topics games"),
     ("list_games", "chess games"),
@@ -629,8 +638,8 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("get_prep", "chess prep --side white"),
     ("get_progress", "chess progress"),
     ("list_levels", "chess levels"),
-    ("plan_levels", "chess levels plan"),
-    ("calibrate_levels", "chess levels calibrate"),
+    ("plan_levels", "chess levels plan --engine reckless"),
+    ("calibrate_levels", "chess levels calibrate --engine reckless"),
     ("list_drills", "chess drills"),
     ("make_drills", "chess drills make"),
     ("drills_today", "chess drills today"),
@@ -1191,8 +1200,14 @@ async fn finish_work(c: &Client, w: Value, wait: bool, json: bool) -> Result<()>
 }
 
 async fn levels(c: &Client, a: LevelsArgs, json: bool) -> Result<()> {
+    let path = |base: &str, engine: Option<String>, more: Vec<(&'static str, String)>| {
+        let mut q = Vec::new();
+        push(&mut q, "engine", engine);
+        q.extend(more);
+        format!("{base}{}", query(&q))
+    };
     match a.action {
-        None => print(&c.get("/api/levels").await?, json, |v| {
+        None => print(&c.get(&path("/api/levels", a.engine, Vec::new())).await?, json, |v| {
             lines(&v["levels"], |l| {
                 let rating = if l["rating"].is_null() {
                     format!("about {}", l["level"]["nominal"])
@@ -1202,13 +1217,14 @@ async fn levels(c: &Client, a: LevelsArgs, json: bool) -> Result<()> {
                 format!("{:>2}  {:<12} {} games", l["level"]["id"].to_string(), rating, l["games"])
             })
         }),
-        Some(LevelsAction::Plan { count }) => {
-            print(&c.get(&format!("/api/levels/plan?count={count}")).await?, json, |v| {
+        Some(LevelsAction::Plan { count, engine }) => {
+            let url = path("/api/levels/plan", engine.or(a.engine), vec![("count", count.to_string())]);
+            print(&c.get(&url).await?, json, |v| {
                 lines(v, |m| format!("level {} vs level {}  {} games", m["a"], m["b"], m["games"]))
             })
         }
-        Some(LevelsAction::Calibrate { count, games_per_pair, wait }) => {
-            let body = json!({ "count": count, "games_per_pair": games_per_pair });
+        Some(LevelsAction::Calibrate { engine, count, games_per_pair, wait }) => {
+            let body = json!({ "engine": engine.or(a.engine), "count": count, "games_per_pair": games_per_pair });
             let w = c.post("/api/levels/calibrate", body).await?;
             finish_work(c, w, wait, json).await?;
         }
@@ -1477,11 +1493,15 @@ async fn engines(c: &Client, a: EnginesArgs, json: bool) -> Result<()> {
                 (Some(true), _) => "installed",
                 _ => "not installed",
             };
-            let extra = match (e["rating"].as_u64(), e["nodes"].as_u64()) {
+            let mut extra = match (e["rating"].as_u64(), e["nodes"].as_u64()) {
                 (Some(r), Some(n)) => format!("  {r}, {n} node a move"),
+                (None, Some(n)) => format!("  {n} node a move"),
                 (Some(r), None) => format!("  {r}"),
                 _ => String::new(),
             };
+            if e["multipv"] == json!(false) && e["nodes"].is_null() {
+                extra.push_str("  no MultiPV: levels play their node budget only");
+            }
             format!(
                 "{:<12} {:<16} {:<14} {}{extra}",
                 str_of(&e["id"]),

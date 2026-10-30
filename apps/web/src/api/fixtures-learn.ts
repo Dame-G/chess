@@ -689,6 +689,7 @@ export function createLearnRoutes(ctx: LearnContext): Handler {
       if (path === "/api/drills/trend") return reply("/api/drills/trend", "get", trend());
       if (path === "/api/levels")
         return reply("/api/levels", "get", {
+          engine: url.searchParams.get("engine") ?? "stockfish",
           levels: levels(),
           suggested: 6,
           you: { entrant: "you", estimate: { elo: 1846, low: 1752, high: 1940 }, games: 14 },

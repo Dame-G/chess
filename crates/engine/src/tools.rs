@@ -103,7 +103,7 @@ fn unpack_blocking(archive: &Path, dir: &Path) -> Result<()> {
             }
             let mut dest = std::fs::File::create(&out)?;
             std::io::copy(&mut entry, &mut dest)?;
-            executable(&out)?;
+            make_executable(&out)?;
         }
     } else {
         let mut tar = tar::Archive::new(file);
@@ -113,7 +113,7 @@ fn unpack_blocking(archive: &Path, dir: &Path) -> Result<()> {
             entry.unpack_in(dir)?;
         }
         for path in files(dir) {
-            executable(&path)?;
+            make_executable(&path)?;
         }
     }
     std::fs::remove_file(archive)?;
@@ -121,14 +121,14 @@ fn unpack_blocking(archive: &Path, dir: &Path) -> Result<()> {
 }
 
 #[cfg(unix)]
-fn executable(path: &Path) -> Result<()> {
+pub fn make_executable(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
     Ok(())
 }
 
 #[cfg(not(unix))]
-fn executable(_: &Path) -> Result<()> {
+pub fn make_executable(_: &Path) -> Result<()> {
     Ok(())
 }
 

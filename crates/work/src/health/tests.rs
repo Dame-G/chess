@@ -19,11 +19,15 @@ async fn a_fresh_app_asks_for_setup() {
     let free = DiskSpace { free_bytes: 100 * GB, total_bytes: 500 * GB };
     let d = Diagnostics::new(Engines::new(hub), Arc::new(Disk(Some(free))));
     let h = d.health().await.unwrap();
-    assert_eq!(h.items.iter().map(|i| i.key.as_str()).collect::<Vec<_>>(), ["analysis", "maia", "disk", "database"]);
+    assert_eq!(
+        h.items.iter().map(|i| i.key.as_str()).collect::<Vec<_>>(),
+        ["analysis", "reckless", "disk", "database"]
+    );
     let analysis = find(&h, "analysis");
     assert_eq!(analysis.level, HealthLevel::Fail);
     assert_eq!(analysis.action.as_ref().unwrap().command, "chess setup");
-    assert_eq!(find(&h, "maia").level, HealthLevel::Info);
+    assert_eq!(find(&h, "reckless").level, HealthLevel::Info);
+    assert_eq!(find(&h, "reckless").action.as_ref().unwrap().command, "chess setup --only reckless");
     assert_eq!(find(&h, "disk").level, HealthLevel::Ok);
     assert!(!h.ok);
 }

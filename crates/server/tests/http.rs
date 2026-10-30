@@ -286,8 +286,9 @@ async fn engines_setup_and_work() {
     assert_eq!(status, 200, "{list}");
     assert_eq!(list["analysis"], "fake");
     let engines = list["engines"].as_array().unwrap();
-    assert_eq!(engines.len(), 11, "ten built-ins and the fake one");
+    assert_eq!(engines.len(), 3, "two built-ins and the fake one");
     assert_eq!((&engines[0]["id"], &engines[0]["installed"]), (&json!("stockfish"), &json!(false)));
+    assert_eq!((&engines[1]["id"], &engines[1]["installed"]), (&json!("reckless"), &json!(false)));
     let fake = engines.iter().find(|e| e["id"] == "fake").unwrap();
     assert_eq!(
         (&fake["id_name"], &fake["analysis"], &fake["levels"]),
@@ -347,12 +348,18 @@ async fn levels_list_and_calibrate() {
     let t = TestApp::start().await;
     let (status, levels) = t.get("/api/levels").await;
     assert_eq!(status, 200, "{levels}");
-    assert_eq!(levels["levels"].as_array().unwrap().len(), 12);
-    let (status, plan) = t.get("/api/levels/plan?count=2").await;
+    assert_eq!((levels["levels"].as_array().unwrap().len(), &levels["engine"]), (12, &json!("fake")));
+    // Every engine has a ladder: one not installed yet still lists its levels at their nominal ratings.
+    let (status, reckless) = t.get("/api/levels?engine=reckless").await;
+    assert_eq!((status, &reckless["engine"]), (200, &json!("reckless")), "{reckless}");
+    assert_eq!(t.get("/api/levels?engine=nope").await.0, 404);
+    let (status, plan) = t.get("/api/levels/plan?count=2&engine=reckless").await;
     assert_eq!((status, plan.as_array().map(Vec::len)), (200, Some(2)));
     let (status, w) = t.post("/api/levels/calibrate", json!({ "count": 1, "games_per_pair": 2 })).await;
     assert_eq!(status, 202, "{w}");
     assert_eq!(w["kind"], "calibrate");
+    let missing = t.post("/api/levels/calibrate", json!({ "engine": "reckless", "count": 1 })).await;
+    assert_eq!(missing.0, 409, "Reckless is not installed: {}", missing.1);
     // A game at a level.
     let (status, g) = t
         .post("/api/games", json!({ "white": "fake@3", "black": "fake@4", "time": { "type": "nodes", "nodes": 500 } }))

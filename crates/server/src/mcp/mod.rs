@@ -50,8 +50,8 @@ the same. Results are the route's JSON.
 How to work:
 - Start with `status` (machine, cores, fair play) and `list_engines` (the engines and the analysis engine). A fresh app \
 needs its engines: `setup_plan` says what `setup` would download and how big it is.
-- Games are `start_game` (seats `you`, an engine's id such as `stockfish` or `maia-1500`, or `stockfish@5` for a \
-level), `list_games` and `get_game`. Reviews (`review_games`), imports and calibration run as work in the \
+- Games are `start_game` (seats `you`, an engine's id such as `stockfish` or `reckless`, or `reckless@5` for a \
+level of that engine), `list_games` and `get_game`. Reviews (`review_games`), imports and calibration run as work in the \
 background; `wait_for_work` waits for them.
 - A player's figures are `get_profile` and `compare_players` (keys `you`, `engine:<id>`, `lichess:<name>`); yours also \
 `get_progress`, `drills_today`, `get_repertoire` and `get_prep`.

@@ -82,7 +82,7 @@ const NOTES: &[(&str, &str)] = &[
     ("stop_game", "In a Lichess game of the user's this resigns it (or aborts it before both sides moved) on Lichess."),
     (
         "setup",
-        "Downloads the built-in engines (Stockfish, lc0 and Maia's nets; about a hundred MB, `setup_plan` gives the \
+        "Downloads the built-in engines (Stockfish and Reckless, about a hundred MB; `setup_plan` gives the \
          sizes). Only when the user asked, after they saw the sizes.",
     ),
     ("add_engine", "Starts the binary at `path` to check it speaks UCI: only a path the user gave."),

@@ -4,11 +4,11 @@ import { levelSeat } from "../sheets/levels";
 
 /** What a rematch needs to know that the game itself does not say. */
 export interface RematchContext {
-  /** The analysis engine's id: the one engine that plays at levels. */
-  analysis: string;
+  /** Whether an engine (by id) has levels: every engine on the clock does, one with a fixed budget does not. */
+  hasLevels: (engine: string) => boolean;
 }
 
-/** A strength of the analysis engine: a level of the ladder, or `full`. */
+/** A strength of an engine: a level of its ladder, or `full`. */
 export type Strength = number | "full";
 
 /** Whether a finished game is one of yours against an engine played here: the games a rematch is offered for. */
@@ -20,13 +20,18 @@ function yours(g: Pick<Game, "summary">): { them: Seat; engine: string; you: "wh
   return engine ? { them, engine, you: s.you } : null;
 }
 
+/** The engine you played in a finished local game of yours (its id), else `null`. */
+export function opponentEngine(g: Pick<Game, "summary">): string | null {
+  return yours(g)?.engine ?? null;
+}
+
 /**
- * The strength the analysis engine played at in a game of yours against it: the seat's level, else full strength.
- * `null` for a game against any other engine, which has no ladder to step along.
+ * The strength the engine played at in a game of yours against it: the seat's level, else full strength. `null` for a
+ * game against an engine without levels (a fixed budget), which has no ladder to step along.
  */
 export function strengthOf(g: Pick<Game, "summary">, cx: RematchContext): Strength | null {
   const ours = yours(g);
-  if (!ours || ours.engine !== cx.analysis) return null;
+  if (!ours || !cx.hasLevels(ours.engine)) return null;
   return ours.them.level ?? "full";
 }
 

@@ -98,7 +98,7 @@ describe("the command bar's verbs", () => {
       time: { type: "clock", initial_ms: 300_000, increment_ms: 3000 },
     });
     expect(readVerb("play sf@5")).toEqual({ verb: "play", opponent: "stockfish", level: 5, time: null });
-    expect(readVerb("play maia-1500 3+2")).toMatchObject({ opponent: "maia-1500" });
+    expect(readVerb("play reckless 3 3+2")).toMatchObject({ opponent: "reckless", level: 3 });
     expect(readVerb("play")).toEqual({ verb: "play", opponent: null, time: null });
     expect(readVerb("play lichess")).toMatchObject({ opponent: "lichess" });
     expect(readVerb("review last 20")).toEqual({ verb: "review", last: 20 });

@@ -146,7 +146,7 @@ impl Config {
         self.data_dir.join("games")
     }
 
-    /// The built-in engines `chess setup` installs: `tools/stockfish/`, `tools/lc0/`, `tools/maia/`.
+    /// The built-in engines `chess setup` installs: `tools/stockfish/`, `tools/reckless/`.
     pub fn tools_dir(&self) -> PathBuf {
         self.data_dir.join("tools")
     }

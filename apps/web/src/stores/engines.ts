@@ -8,7 +8,7 @@ import { listen, reloadOnReconnect } from "./listen";
 const DEFAULT_ANALYSIS = "stockfish";
 
 /**
- * The engines list: the built-ins (Stockfish and the Maia nets, installed or not) and the engines you added, with the
+ * The engines list: the built-ins (Stockfish and Reckless, installed or not) and the engines you added, with the
  * one that analyses. Loaded once and kept current by `engines.changed`.
  */
 export const useEngines = defineStore("engines", () => {

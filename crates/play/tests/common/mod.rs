@@ -30,14 +30,16 @@ pub fn setup(engines: Arc<dyn EngineSource>) -> Setup {
 }
 
 /// The fake engine as `fake` (the analysis engine, with the ladder), as `dying` (exits on its first search), `slow`
-/// (half a second a move) and `illegal`, and as `maia-1500` (one node a move, rated 1500).
+/// (half a second a move) and `illegal`, as `other` (another engine with its own levels), and as `fixed` (one node a
+/// move, rated 1500: no levels).
 pub fn engines() -> Arc<dyn EngineSource> {
     FixedEngines::new()
         .with("fake", fake(), &[])
         .with("dying", fake(), &["--die"])
         .with("slow", fake(), &["--delay", "500"])
         .with("illegal", fake(), &["--illegal"])
-        .with_engine("maia-1500", fake(), &[], Some(1), Some(1500))
+        .with("other", fake(), &[])
+        .with_engine("fixed", fake(), &[], Some(1), Some(1500))
         .shared()
 }
 

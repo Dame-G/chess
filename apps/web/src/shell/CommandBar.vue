@@ -104,7 +104,7 @@ const gameItems = computed<CommandItem[]>(() =>
 );
 const items = computed(() => [...typed.value, ...places, ...verbs.value, ...gameItems.value]);
 
-/** Who a typed `play` is against, in words: "someone on Lichess", "Stockfish level 5", "Maia 1500". */
+/** Who a typed `play` is against, in words: "someone on Lichess", "Stockfish level 5", "Reckless". */
 function opponentName(v: Extract<Verb, { verb: "play" }>): string {
   if (v.opponent === "lichess") return "someone on Lichess";
   const id = v.opponent ?? engines.analysisId;
@@ -119,7 +119,7 @@ async function runVerb(v: Verb) {
       return;
     }
     const id = v.opponent ?? engines.analysisId;
-    const seat = v.level != null && id === engines.analysisId ? levelSeat(id, v.level) : id;
+    const seat = v.level != null && engines.byId(id)?.nodes == null ? levelSeat(id, v.level) : id;
     const youWhite = Math.random() < 0.5;
     const s = await games.start({
       white: youWhite ? "you" : seat,

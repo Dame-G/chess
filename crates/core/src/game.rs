@@ -20,7 +20,7 @@ pub struct Seat {
     /// The level of the ladder an engine seat played at (or Lichess's AI level); none at full strength.
     #[serde(default)]
     pub level: Option<u32>,
-    /// What an engine seat's engine called itself (its UCI `id name`): `Stockfish 19`, `Lc0 v0.32.1`.
+    /// What an engine seat's engine called itself (its UCI `id name`): `Stockfish 19`, `Reckless 0.9.0`.
     #[serde(default)]
     pub engine: Option<String>,
     pub rating: Option<u32>,

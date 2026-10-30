@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { calibrationTime, isCalibrated, ladder } from "../sheets/levels";
@@ -10,13 +10,15 @@ import { useWork } from "../stores/work";
 import UiBadge from "../ui/UiBadge.vue";
 import UiEmpty from "../ui/UiEmpty.vue";
 import UiSection from "../ui/UiSection.vue";
+import UiSeg from "../ui/UiSeg.vue";
 import UiTable from "../ui/UiTable.vue";
 import Term from "./Term.vue";
 
 /**
- * Levels: the ladder the analysis engine can play at, weakest to strongest, each with the rating the app has found for it by
- * playing (or the one it was designed for, drawn quieter), the games behind it, and You where your rating falls.
- * Calibrate levels queues the games that teach the most, in the background.
+ * Levels: the ladder an engine can play at (each engine on the clock has its own; the analysis engine's first),
+ * weakest to strongest, each with the rating the app has found for it by playing (or the one it was designed for,
+ * drawn quieter), the games behind it, and You where your rating falls. Calibrate levels queues the games that teach
+ * that engine's ladder the most, in the background.
  */
 const ladderStore = useLevels();
 const engines = useEngines();
@@ -24,18 +26,36 @@ const policy = usePolicy();
 const work = useWork();
 const toast = useToast();
 
+/** The engines with a ladder, installed ones, the analysis engine first. */
+const withLevels = computed(() =>
+  engines.list
+    .filter((e) => e.levels)
+    .toSorted((a, b) => Number(b.id === engines.analysisId) - Number(a.id === engines.analysisId)),
+);
+const picked = ref<string | null>(null);
+/** The engine whose ladder is shown: the one picked, else the analysis engine. */
+const engineId = computed(() =>
+  picked.value && withLevels.value.some((e) => e.id === picked.value) ? picked.value : engines.analysisId,
+);
+const engineName = computed(() => engines.byId(engineId.value)?.name ?? "The analysis engine");
+const engineOptions = computed(() => withLevels.value.map((e) => ({ value: e.id, label: e.name })));
+
 const failed = ref<string | null>(null);
 async function read() {
   failed.value = null;
   try {
-    await Promise.all([ladderStore.loadLevels(), ladderStore.loadPlan()]);
+    await Promise.all([ladderStore.loadLevels(engineId.value), ladderStore.loadPlan(3, engineId.value)]);
   } catch (e) {
     failed.value = e instanceof Error ? e.message : String(e);
   }
 }
-onMounted(read);
+onMounted(() => {
+  if (!engines.loaded) void engines.load().catch(() => {});
+  void read();
+});
+watch(engineId, () => void read());
 
-const overview = computed(() => ladderStore.levels);
+const overview = computed(() => ladderStore.of(engineId.value));
 const levels = computed(() => overview.value?.levels ?? []);
 const rungs = computed(() => (overview.value ? ladder(overview.value) : []));
 /** One scale for every row: from the lowest end of any interval to the highest, so a wide interval is seen as wide. */
@@ -58,7 +78,7 @@ const standingNote = {
 } as const;
 const provisional = computed(() => rungs.value.some((r) => r.kind === "level" && r.standing !== "found"));
 
-/** Calibration work in the queue or running: one at a time is enough. */
+/** Calibration work in the queue or running: one at a time is enough (they share one lane). */
 const calibrating = computed(() => [...work.running, ...work.queued].find((w) => w.kind === "calibrate"));
 /** Games calibrate in pairs on two cores each. */
 const slots = computed(() => Math.max(1, Math.floor((policy.status?.cores ?? 8) / 4)));
@@ -76,7 +96,7 @@ const busy = ref(false);
 async function calibrate() {
   busy.value = true;
   try {
-    const w = await ladderStore.calibrate();
+    const w = await ladderStore.calibrate(3, engineId.value);
     toast.show({ title: "Calibration queued", message: w.title, tone: "success" });
   } catch (e) {
     toast.show({
@@ -104,17 +124,27 @@ async function calibrate() {
       </EButton>
     </template>
     <template #note>
-      {{ engines.analysis?.name ?? "The analysis engine" }} at a strength you choose, rated by
-      <Term k="calibration" text="calibration" />.
+      {{ engineName }} at a strength you choose, rated by <Term k="calibration" text="calibration" />.
+      <template v-if="engines.byId(engineId)?.multipv === false">
+        It has no MultiPV, so each level plays its node budget alone.
+      </template>
       <template v-if="calibrating">{{ calibrating.title }} is running.</template>
       <template v-else-if="time">{{ time }} in the background.</template>
     </template>
+    <UiSeg
+      v-if="engineOptions.length > 1"
+      class="pick"
+      :model-value="engineId"
+      label="Engine"
+      :options="engineOptions"
+      @update:model-value="picked = $event"
+    />
     <UiEmpty v-if="failed" tone="error" title="Levels did not load" :body="failed">
       <template #actions><EButton variant="outline" @click="read">Try again</EButton></template>
     </UiEmpty>
     <UiTable
       v-else
-      :label="`The levels of ${engines.analysis?.name ?? 'the analysis engine'}`"
+      :label="`The levels of ${engineName}`"
       :columns="columns"
       :rows="rungs"
       row-key="id"
@@ -161,6 +191,10 @@ async function calibrate() {
 </template>
 
 <style scoped>
+.pick {
+  margin-block-end: var(--sp-3);
+}
+
 .name {
   margin-inline-end: var(--sp-2);
 }

@@ -294,9 +294,11 @@ pub struct DrillDeleted {
     pub id: DrillId,
 }
 
-/// `levels.updated`: the levels were refitted.
+/// `levels.updated`: an engine's levels were refitted.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct LevelsUpdated {
+    /// The engine whose ladder it is.
+    pub engine: String,
     pub ratings: Vec<EntrantRating>,
     pub updated_at: Timestamp,
 }

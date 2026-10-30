@@ -228,7 +228,7 @@ const fairplay = fixtureMode() === "fairplay";
     summary({
       id: 1,
       white: you(),
-      black: fairplay ? lichess("cutemouse83", 1871) : engine("maia-1500", "Maia 1500", null, 1500),
+      black: fairplay ? lichess("cutemouse83", 1871) : engine("reckless", "Reckless 1550", 5, 1550),
       source,
       time: tc,
       status: "live",
@@ -497,12 +497,13 @@ const builtin = (e: Partial<Engine> & Pick<Engine, "id" | "name">): Engine => ({
   kind: "builtin",
   args: [],
   options: {},
+  multipv: true,
   installed: true,
   analysis: false,
   levels: false,
   ...e,
 });
-/** The engines list: Stockfish analyses, two Maias are installed and the rest are not, and one engine you added. */
+/** The engines list: Stockfish analyses, Reckless is not installed yet, and one engine you added (without MultiPV). */
 const engines: EnginesOverview = {
   analysis: "stockfish",
   engines: [
@@ -514,16 +515,7 @@ const engines: EnginesOverview = {
       analysis: true,
       levels: true,
     }),
-    ...[1100, 1300, 1500, 1700, 1900].map((rating) =>
-      builtin({
-        id: `maia-${rating}`,
-        name: `Maia ${rating}`,
-        installed: rating === 1500 || rating === 1700,
-        nodes: 1,
-        rating,
-        ...(rating === 1500 || rating === 1700 ? { id_name: "Lc0 v0.31.2", path: "tools\\lc0\\lc0.exe" } : {}),
-      }),
-    ),
+    builtin({ id: "reckless", name: "Reckless", installed: false }),
     {
       id: "berserk",
       name: "Berserk",
@@ -532,9 +524,10 @@ const engines: EnginesOverview = {
       args: [],
       options: { Threads: "2", Hash: "128" },
       id_name: "Berserk 13",
+      multipv: false,
       installed: true,
       analysis: false,
-      levels: false,
+      levels: true,
       created_at: minutesAgo(60 * 24 * 3),
     },
   ],
@@ -542,7 +535,7 @@ const engines: EnginesOverview = {
 const overviewOf = (): EnginesOverview => {
   for (const e of engines.engines) {
     e.analysis = e.id === engines.analysis;
-    e.levels = e.analysis;
+    e.levels = e.installed && e.nodes == null;
   }
   return clone(engines);
 };
@@ -552,24 +545,25 @@ const enginesChanged = () => {
   return o;
 };
 
-/** What setup would download: the Maia nets not here yet and lc0 to play them (Stockfish is installed). */
+/** What setup would download: Reckless while it is not installed (Stockfish is). */
 function setupPlan(): SetupPlan {
-  const missing = engines.engines.filter((e) => e.kind === "builtin" && !e.installed);
-  const downloads: SetupPlan["downloads"] = missing.length
-    ? [
-        ...missing.map((e) => ({
-          package: "maia" as const,
-          name: `${e.name} net`,
-          url: `https://github.com/CSSLab/maia-chess/releases/download/v1.0/${e.id}.pb.gz`,
-          bytes: 1_300_000,
-        })),
-      ]
-    : [];
+  const reckless = engines.engines.find((e) => e.id === "reckless");
+  const downloads: SetupPlan["downloads"] =
+    reckless && !reckless.installed
+      ? [
+          {
+            package: "reckless",
+            name: "Reckless 0.9.0",
+            url: "https://github.com/codedeliveryservice/Reckless/releases/download/v0.9.0/reckless-windows-avx2.exe",
+            bytes: 65_400_000,
+          },
+        ]
+      : [];
   return {
     downloads,
     bytes: downloads.reduce((n, d) => n + (d.bytes ?? 0), 0),
-    installed: ["stockfish", ...(missing.length < 5 ? ["maia" as const] : [])] as SetupPlan["installed"],
-    notes: missing.length ? ["Maia plays through lc0, which is already installed."] : [],
+    installed: downloads.length ? ["stockfish"] : ["stockfish", "reckless"],
+    notes: [],
   };
 }
 
@@ -606,7 +600,9 @@ function runSetup(): Work {
     };
     if (step >= 4) {
       clearInterval(timer);
-      for (const e of engines.engines) e.installed = true;
+      for (const e of engines.engines) {
+        if (!e.installed) Object.assign(e, { installed: true, id_name: `${e.name} 0.9.0`, path: `tools\\${e.id}.exe` });
+      }
       enginesChanged();
       w.status = "done";
       w.ended_at = new Date().toISOString();
@@ -1030,7 +1026,7 @@ function act(g: Game, action: SeatAction, body: { uci?: string }): Response | un
   return undefined;
 }
 
-/** The seat a new game's request names (`stockfish@5`, `maia-1500`, `stockfish`), as the server would write it. */
+/** The seat a new game's request names (`stockfish@5`, `reckless@3`, `stockfish`), as the server would write it. */
 function seatOf(request: string): Seat {
   const [id = "stockfish", at] = request.split("@");
   const known = engines.engines.find((e) => e.id === id);
@@ -1152,9 +1148,10 @@ export async function fixtureFetch(input: string, init?: RequestInit): Promise<R
         args: [],
         options: (body["options"] as Record<string, string>) ?? {},
         id_name: name,
+        multipv: true,
         installed: true,
         analysis: false,
-        levels: false,
+        levels: true,
         created_at: new Date().toISOString(),
       };
       engines.engines.push(made);

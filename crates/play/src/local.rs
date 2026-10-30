@@ -38,8 +38,8 @@ pub(crate) struct LocalGame {
     pub cancel: CancellationToken,
     /// The side you play, if you play.
     pub you: Option<Side>,
-    /// A game at a level: the levels are refitted when it ends.
-    pub refit: bool,
+    /// A game at an engine's levels: that engine's levels are refitted when it ends.
+    pub refit: Option<String>,
 }
 
 pub(crate) async fn run(game: LocalGame) {
@@ -130,7 +130,7 @@ pub(crate) async fn run(game: LocalGame) {
     games.forget(record.id);
     // The engines stop with their seats.
     drop(seats);
-    if refit {
-        games.levels().refit_quietly().await;
+    if let Some(engine) = refit {
+        games.levels().refit_quietly(&engine).await;
     }
 }

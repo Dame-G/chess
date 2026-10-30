@@ -12,7 +12,7 @@ pub enum WorkKind {
     Import,
     /// Games between the levels of the ladder, to fit their ratings.
     Calibrate,
-    /// Downloading the built-in engines (Stockfish, lc0 and Maia's weights) into the data directory's `tools/`.
+    /// Downloading the built-in engines (Stockfish and Reckless) into the data directory's `tools/`.
     Setup,
 }
 

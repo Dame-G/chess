@@ -24,17 +24,17 @@ So there are three things to understand, **the Board, Games and Players**, and e
 
 One vocabulary everywhere: code, routes, the CLI, the UI, docs.
 
-| Word                | Means                                                                                                                   |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| **You**             | The person. Has a linked Lichess account (optional).                                                                    |
-| **Engine**          | A UCI engine of the engines list: a built-in (Stockfish, the Maias) or one added by path. Named by an id: `stockfish`.  |
-| **Analysis engine** | The engine reviews, live evaluation, drills and the levels run on. Stockfish by default.                                |
-| **Level**           | The analysis engine at a node budget (and a MultiPV choice at the lowest), from about 800 to full strength, calibrated. |
-| **Game**            | Two seats, moves, clocks, a result. Wherever it was played.                                                             |
-| **Player**          | Someone who sits at a board: You, an engine, a person on Lichess.                                                       |
-| **Work**            | Anything running in the background: a review, an import, calibrating the levels, setup.                                 |
-| **Review**          | An engine reading every move of a finished game.                                                                        |
-| **Connection**      | Your Lichess account linked to the app.                                                                                 |
+| Word                | Means                                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **You**             | The person. Has a linked Lichess account (optional).                                                                     |
+| **Engine**          | A UCI engine of the engines list: a built-in (Stockfish, Reckless) or one added by path. Named by an id: `stockfish`.    |
+| **Analysis engine** | The engine reviews, live evaluation and drills run on. Stockfish by default.                                             |
+| **Level**           | An engine at a node budget (and a MultiPV choice at the lowest), from about 800 to full strength, calibrated per engine. |
+| **Game**            | Two seats, moves, clocks, a result. Wherever it was played.                                                              |
+| **Player**          | Someone who sits at a board: You, an engine, a person on Lichess.                                                        |
+| **Work**            | Anything running in the background: a review, an import, calibrating the levels, setup.                                  |
+| **Review**          | An engine reading every move of a finished game.                                                                         |
+| **Connection**      | Your Lichess account linked to the app.                                                                                  |
 
 Never: build, match, experiment, test, batch, job, runner, human.
 
@@ -78,7 +78,7 @@ The binary is `chess` (crate `server`). `chess serve` runs the app; every other 
 ### Process and data
 
 - Listens on `127.0.0.1:7979` (`CHESS_LISTEN`). Bearer token for every request except `GET /api/health`; `Origin`/`Host` checks against DNS rebinding; the hosted UI origin `https://chess.dame.gg` is allowed with the token.
-- Data directory: `dirs::data_local_dir()/chess` (`CHESS_DATA`): `chess.db`, `token`, `secrets/lichess-you` (0600 on Unix), `tools/` (the built-in engines: `stockfish/`, `lc0/`, `maia/`), `games/` (archived PGN, zstd), `logs/work-<id>.log`. The first start with the default folder copies your files from the old `dameless` folder, if there is one and no `chess` folder yet (`hub::legacy`).
+- Data directory: `dirs::data_local_dir()/chess` (`CHESS_DATA`): `chess.db`, `token`, `secrets/lichess-you` (0600 on Unix), `tools/` (the built-in engines: `stockfish/`, `reckless/`), `games/` (archived PGN, zstd), `logs/work-<id>.log`. The first start with the default folder copies your files from the old `dameless` folder, if there is one and no `chess` folder yet (`hub::legacy`).
 - `LICHESS_URL`, `LICHESS_EXPLORER_URL`, `LICHESS_TABLEBASE_URL` point the adapters elsewhere (a mock in tests).
 - In debug builds the server serves `apps/web/dist` from disk; in release it embeds it (rust-embed).
 
@@ -99,7 +99,7 @@ pub enum PlayerKey { You, Engine(String), Lichess(String) }
 pub enum ConnectionKey { You }                    // `you` in routes; the only connection
 ```
 
-An engine id is a slug: lower-case letters, digits and `-` (`stockfish`, `maia-1500`), never `you`.
+An engine id is a slug: lower-case letters, digits and `-` (`stockfish`, `reckless`, `my-engine-2`), never `you`.
 
 ### Scores
 
@@ -188,27 +188,29 @@ pub enum EngineKind { Builtin, Custom }
 
 pub struct Engine {
     pub id: String,                   // the slug seats and player keys use
-    pub name: String,                 // "Stockfish", "Maia 1500"
+    pub name: String,                 // "Stockfish", "Reckless"
     pub kind: EngineKind,
     pub path: Option<String>,         // none for a built-in that is not installed
     pub args: Vec<String>,
     pub options: BTreeMap<String, String>,   // UCI options set after the handshake, before the app's own
     pub id_name: Option<String>,      // what it calls itself (UCI `id name`), read when added or installed: "Stockfish 19"
-    pub nodes: Option<u64>,           // nodes a move whatever the clock: Maia's 1
-    pub rating: Option<u32>,          // a rating it plays at by design: Maia's nominal
+    pub nodes: Option<u64>,           // nodes a move whatever the clock (an engine you added that way): no levels
+    pub rating: Option<u32>,          // a rating it plays at by design
+    pub multipv: bool,                // it declares UCI's MultiPV (read when added or installed; unknown reads as yes)
     pub installed: bool,              // its binary is there
     pub analysis: bool,               // it is the analysis engine
-    pub levels: bool,                 // the ladder runs on it (the analysis engine, when it plays on the clock)
+    pub levels: bool,                 // it has a ladder of levels: installed, and no fixed budget
     pub created_at: Option<Timestamp>,
 }
 pub struct EnginesOverview { pub analysis: String, pub engines: Vec<Engine> }   // built-ins first, then yours by name
 ```
 
-- **Built-ins** (`core::engines::BUILTINS`): `stockfish` (Stockfish 19) and `maia-1100` … `maia-1900` (lc0 v0.32.1 with Maia's nets, `nodes: 1`, `rating` the net's). They are always listed; one that is not installed has `installed: false` and no path. `chess setup` downloads them into `tools/` (`work::setup`): Stockfish's release build for this platform, picked from the release's asset list by OS and architecture (universal, else AVX2, else plain x86-64; the Windows fallback is `stockfish-windows-x86-64-universal.zip`), lc0's CPU build for Windows (`lc0-v0.32.1-windows-cpu-dnnl.zip`; elsewhere an `lc0` on the PATH), and each Maia net (`maia-<n>.pb.gz`, set as lc0's `WeightsFile`). Each installed engine is started once to read its `id name`.
+- **Built-ins** (`core::engines::BUILTINS`): `stockfish` (Stockfish 19) and `reckless` (Reckless 0.9.0). They are always listed; one that is not installed has `installed: false` and no path. Each is its own setup package (`SetupPackage::Stockfish`, `Reckless`). `chess setup` downloads them into `tools/` (`work::setup`): Stockfish's release build for this platform, picked from the release's asset list by OS and architecture (universal, else AVX2, else plain x86-64; the Windows fallback is `stockfish-windows-x86-64-universal.zip`), and Reckless's, a bare executable picked from codedeliveryservice/Reckless's v0.9.0 assets (`reckless-<os>-avx2` when the CPU has AVX2, else `reckless-<os>-generic`, `.exe` on Windows; `reckless-macos` on macOS; when GitHub does not answer, the name is built and the size is unknown). Each installed engine is started once to read its `id name` and whether it declares `MultiPV`. The old player key `engine:reckless` (Chess's seats from before the engines list) is the built-in's, so those games and new ones are one player.
+- **Maia** (lc0 with nine nets, `maia-1100` … `maia-1900`) was a built-in until migration 8 removed it: its rows leave the engines table, and games against it keep their seats and names (a player no longer on the list is named from its id).
 - **Engines you add** (`kind: custom`): a name, a path, arguments, options, and optionally `nodes` and `rating`. The app starts it once to check it answers UCI's handshake (400 when it does not), keeps what it calls itself, and makes its id from the name unless given one (409 when taken by a built-in or another engine).
 - **The analysis engine** is `meta` `engines.analysis` (default `stockfish`); an engine with a fixed budget cannot be it (400). Removing it from the list makes Stockfish the analysis engine again.
 - **What results are keyed by:** an engine's `cache_key()` is `<id>|<id_name>` (`stockfish|Stockfish 19`): reviews and the position cache use it, so a new release of an engine never reads an old one's results as its own, and its `label()` (`id_name`, else the name) is what reviews and seats show.
-- **Seats** (`core::engines::SeatSpec`): `you`, `<engine id>` (full strength on the clock, or its fixed budget), `<engine id>@<level>` (a level of the ladder: only for the engine whose `levels` is true; 400 otherwise). `engine:<id>` reads too.
+- **Seats** (`core::engines::SeatSpec`): `you`, `<engine id>` (full strength on the clock, or its fixed budget), `<engine id>@<level>` (a level of that engine's ladder: any engine whose `levels` is true; 400 for one with a fixed budget). `engine:<id>` reads too.
 
 ### Reviews
 
@@ -278,7 +280,7 @@ One stream, `GET /api/events?since=<id>&topics=<t,…>` (SSE, `Last-Event-ID` re
 pub struct Event { pub id: u64, pub topic: String, pub kind: EventKind, pub data: serde_json::Value }
 ```
 
-Topics: `game:<id>`, `games` (summaries of every game), `work`, `player:<key>`, `connection:you`, `engines` (the engines list and the levels), `policy`, `eval:<session>`. No `topics` means all except `eval:*` and `game:<id>` detail.
+Topics: `game:<id>`, `games` (summaries of every game), `work`, `player:<key>`, `connection:you`, `engines` (the engines list and the levels of every engine), `policy`, `eval:<session>`. No `topics` means all except `eval:*` and `game:<id>` detail.
 
 Kinds (a closed enum in `core::events`, each with a typed payload in the OpenAPI document):
 
@@ -299,7 +301,7 @@ Kinds (a closed enum in `core::events`, each with a typed payload in the OpenAPI
 | `drill.upserted`      | `Drill` (topic `player:you`)                                                         | yes             |
 | `drill.answered`      | `{ drill, outcome, at }` (topic `player:you`)                                        | yes             |
 | `drill.deleted`       | `{ id }` (topic `player:you`)                                                        | yes             |
-| `levels.updated`      | `{ ratings: EntrantRating[], updated_at }` (topic `engines`)                         | yes             |
+| `levels.updated`      | `{ engine, ratings: EntrantRating[], updated_at }` (topic `engines`)                 | yes             |
 | `engines.changed`     | `EnginesOverview`: an engine added, installed or removed, or the analysis engine set | yes             |
 
 The web client keeps one normalised store per resource and applies these: an `*.upserted` replaces the object, `game.moved`/`game.undone` patch the open game, `engines.changed` replaces the list.
@@ -388,6 +390,8 @@ A game's offers, clocks and actions are not columns: they belong to the game bei
 
 **Migration 7** (`0007_engines.sql`) turned a database of the engine-development app into this one: it deletes trial games and calibration games (with their reviews and drills), the levels' ratings and seats (the ladder was Reckless's), and the work, meta and the BOT connection only engine development used; it rewrites Chess's seats onto `engine:reckless`, Lichess's AI onto `engine:stockfish`, the BOT account's games into Reckless's imported history, and each review's key and label from its commit (`reckless|Reckless abcdef1`); and it drops the versions, builds, ideas, trials, tune steps, nets, datasets and training tables, and the old position cache.
 
+**Migration 8** (`0008_engine_levels.sql`) gives every engine its own ladder and drops Maia: it deletes the built-in `maia-*` rows from `engines` (games against them stay), adds `engines.multipv`, adds `level_games.engine` (filled from the seat that played at a level, else `stockfish`), and rebuilds `level_ratings` keyed by `(engine, entrant)` with the one fit there was as Stockfish's.
+
 ## API (`crates/server`)
 
 Resource routes; actions are `POST` sub-routes. Every route has a `utoipa` path, so `crates/server/openapi.json` (`chess openapi`) is complete and typed, and `scripts/api-types.mjs` (`corepack pnpm api`; `api:check` fails on stale files) regenerates `apps/web/src/api/schema.d.ts` from it. Errors are `{ error: { code, message } }` with codes `bad_request` 400, `unauthorized` 401, `forbidden` 403 (a foreign `Host` or `Origin`), `not_found` 404, `conflict` 409, `fair_play` 409, `rate_limited` 429 (with `Retry-After` when known), `upstream` 502, and `internal` 500 for anything unexpected (core::error::Error carries one of these codes, so every crate shares the vocabulary). A body, query or path that does not read is a `bad_request` in the same shape.
@@ -401,14 +405,14 @@ GET    /api/health                                   { ok, version }; no token
 GET    /api/status                                   { version, machine: { os, cpu, physical_cores, logical_cores, memory_bytes, data_dir },
                                                        cores, ledger, policy, lichess_url, next_event }
 GET    /api/token                                    { token } (Settings: pairing the hosted UI)
-GET    /api/diagnostics                              Health { ok, items: [{ key: analysis|maia|disk|database, ok, level, title, detail, action? }] }
+GET    /api/diagnostics                              Health { ok, items: [{ key: analysis|reckless|disk|database, ok, level, title, detail, action? }] }
 
 GET    /api/engines                                  EnginesOverview
 POST   /api/engines                                  NewEngineRequest { name, path, id?, args?, options?, nodes?, rating? } → 201 Engine
                                                      (400 not a UCI engine or not a file; 409 the id is taken)
 DELETE /api/engines/{id}                             EnginesOverview (404 for none)
 PUT    /api/engines/analysis                         { engine } → EnginesOverview (400 a fixed budget; 409 not installed)
-GET    /api/setup                                    SetupPlan { downloads: [{ package: stockfish|maia, name, url, bytes? }], bytes,
+GET    /api/setup                                    SetupPlan { downloads: [{ package: stockfish|reckless, name, url, bytes? }], bytes,
                                                      installed, notes } (sizes from GitHub; downloads nothing)
 POST   /api/setup                                    { packages? } → 201 Work (kind setup; explicit)
 
@@ -447,9 +451,9 @@ GET    /api/players/you/repertoire?side=&max_plies=&min_games=&limit=   Repertoi
 GET    /api/players/you/prep?side=&limit=            Prep (409 fair_play likewise)
 GET    /api/progress?window=10                       Progress
 
-GET    /api/levels                                   LevelsOverview { levels: [{ level, rating, games }], you, suggested, updated_at }
-GET    /api/levels/plan?count=3                      PlannedMatch[]
-POST   /api/levels/calibrate                         { matches?, count?, games_per_pair? } → 202 Work (on the analysis engine)
+GET    /api/levels?engine=                           LevelsOverview { engine, levels: [{ level, rating, games }], you, suggested, updated_at } (default the analysis engine; 400 a fixed budget)
+GET    /api/levels/plan?engine=&count=3              PlannedMatch[]
+POST   /api/levels/calibrate                         { engine?, matches?, count?, games_per_pair? } → 202 Work (that engine's levels; default the analysis engine)
 GET    /api/drills                                   Drill[] (soonest due first)
 POST   /api/drills                                   { limit? } → 201 Drill[] made from your weak spots
 GET    /api/drills/today?new_per_day=&limit=&theme=&games=&max_ply=   DrillsToday { drills, due, new, started_today }
@@ -482,7 +486,7 @@ GET    /api/events?since=&topics=&token=             SSE
 
 ```
 chess serve | openapi | health | status | diagnostics | token | events [--topics] [--since]
-chess setup [--only stockfish,maia] [--yes] [--wait]          (shows each download's size and asks first)
+chess setup [--only stockfish,reckless] [--yes] [--wait]      (shows each download's size and asks first)
 chess engines | engines add --name … --path … [--option K=V --arg … --nodes --rating --id] | engines remove <id> | engines analysis <id>
 chess games [--player --source --status --speed --rated --calibration --limit]
 chess game <id> [--pgn | --review [--engine --nodes] | --follow]
@@ -492,7 +496,7 @@ chess resign|abort|stop <game> | claim <game> [--draw]
 chess import you | lichess:<name> [--max --since --speeds --rated --wait] | import --pgn <file|-> [--you white]
 chess review <game>… | --player you [--limit --all --background --engine --nodes --wait]
 chess player <key> | profile <key> | compare <key>… [--speeds --rated --since --limit] | players top [speed] [--nb]
-chess repertoire --side white | prep --side white | progress | levels [plan | calibrate] | drills [today | hint | make | answer <id> <move> | delete <id> | trend]
+chess repertoire --side white | prep --side white | progress | levels [--engine] [plan | calibrate] | drills [today | hint | make | answer <id> <move> | delete <id> | trend]
 chess eval [--fen --moves --engine --depth|--nodes --multipv] (streams until done) | eval --list | eval --stop <session>
 chess explorer [--db --fen --play …] | tablebase --fen <fen, _ for spaces>
 chess work [show|stop|pause|resume|log|wait <id>]
@@ -528,10 +532,10 @@ chess lichess | lichess you [login | token | logout | seek --tc 10+5 | seek --st
   - **Review:** a finished game. The result and how it ended in words ("Black resigned", "Draw by repetition"), accuracy per side, class counts (each jumps to the next such move), the selected move's judgement, the better move as an arrow and "Show line", **Play this out** (a local game from here against the analysis engine at the level nearest your rating), the eval graph with judged dots, and, for a finished local game against an engine, the **end card**: how it went ("You beat Stockfish 1600"), the rating context, the one filled button **Rematch** (same opponent and clock, colours swapped; `R`), the level one step easier and one step harder as outline buttons, and "Review this game" until a review has been asked for. Not reviewed yet, for any other game: one button, "Review this game". The review names the engine that made it.
   - **Explore:** free analysis from any position: engine lines (MultiPV) from the analysis engine, the explorer (Lichess, Masters, your games), the tablebase at 7 pieces or fewer, and where the position stands in your repertoire. Play moves freely into a tree of variations, or paste a FEN or PGN; "Play from here" starts a game.
   - **Drill:** one of your drills takes the board and the panel (the game under it waits): your side to move, the opening and phase it came from, no engine, one try. Then the answer, the line and when it comes back; Next goes on through today's set. `D` (or Start on the You sheet's Drills) begins today's set. Hidden while you play on Lichess.
-- **New game** (a quiet outline button in the header, and `N`; the one filled button is the view's own): the opponent, from the engines list: in two steps, from the engines list: the engine (the analysis engine, Maia "plays like a person", each engine you added), then its strength (the analysis engine's levels, each with its rating, the one nearest yours marked "About your strength", a rating still being calibrated written "≈ 2,441 ± 488", one that has not played "≈ 2,800", and full strength last; or a Maia's rating); an engine that plays as it is has no second step, and one that is not installed is shown with the way to install it (Settings › Engines). The button says what it starts: "Play 10+5 · Stockfish 6". The last choice is remembered; the clock defaults to 10+5, and "No clock" is the only game that allows a takeback. Lichess: find a game, challenge someone or Lichess's AI. Time control, colour, rated. One dialog, the choices that apply to the opponent.
+- **New game** (a quiet outline button in the header, and `N`; the one filled button is the view's own): the opponent, from the engines list: in two steps, from the engines list: the engine (the analysis engine first, then Reckless and each engine you added), then its strength (that engine's levels, each with that engine's rating for it, the one nearest yours marked "About your strength", a rating still being calibrated written "≈ 2,441 ± 488", one that has not played "≈ 2,800", and full strength last); an engine that plays as it is (a fixed budget) has no second step, and one that is not installed is shown with the way to install it (Settings › Engines). The button says what it starts: "Play 10+5 · Stockfish 6". The last choice is remembered; the clock defaults to 10+5, and "No clock" is the only game that allows a takeback. Lichess: find a game, challenge someone or Lichess's AI. Time control, colour, rated. One dialog, the choices that apply to the opponent.
 - **Games rail:** one list of `GameSummary`, filtered All · You · Lichess, live games pinned on top with a pulse, then newest first under month headings, the filter and the paging done by the server. Each row: players (you are "You"), result, accuracy if reviewed, time control, when; a screen reader hears it as one sentence. Calibration games are left out. Nothing yet is one sentence and one button (New game).
-- **You** (`/you`, a wide sheet): your Lichess ratings across the top (Log in with Lichess first when not linked), then tabs. **Overview**: the filters (speed, rated, how many games), the figures (games, score, accuracy, average loss, performance, win streak), the review notice with Review all and Import, Progress (your rating, accuracy and drill hit rate over time), results, accuracy by phase and speed, moves per game by class, time per move, best moments and worst blunders as links onto the board. **Openings**: the openings you play, then the lines you play as White and as Black, where you leave theory, how you score. **Train**: today's drills and Start, the hit rate over time, themes, Make drills from your mistakes, the weak spots with Play this out, and the **Levels** (the ladder in level order, each rung an interval and a dot on one shared scale; calibrate with what it costs). **Challenges** when there are any. Compare opens the comparison.
-- **Settings** (`/settings`, a tabbed sheet): **Accounts** (your Lichess login), **Engines** (the list with what each calls itself, Use for analysis, Remove for yours, Add engine by path, and setup: the downloads with their sizes, then Download), **This machine** (cores, the data directory), **Health** (the analysis engine, Maia, disk, the database, each with what fixes it), and **Appearance** (theme, sounds and their volume, and the token for the hosted app).
+- **You** (`/you`, a wide sheet): your Lichess ratings across the top (Log in with Lichess first when not linked), then tabs. **Overview**: the filters (speed, rated, how many games), the figures (games, score, accuracy, average loss, performance, win streak), the review notice with Review all and Import, Progress (your rating, accuracy and drill hit rate over time), results, accuracy by phase and speed, moves per game by class, time per move, best moments and worst blunders as links onto the board. **Openings**: the openings you play, then the lines you play as White and as Black, where you leave theory, how you score. **Train**: today's drills and Start, the hit rate over time, themes, Make drills from your mistakes, the weak spots with Play this out, and the **Levels** (one engine's ladder at a time, the engines with levels to choose from, the analysis engine first; the ladder in level order, each rung an interval and a dot on one shared scale; calibrate with what it costs). **Challenges** when there are any. Compare opens the comparison.
+- **Settings** (`/settings`, a tabbed sheet): **Accounts** (your Lichess login), **Engines** (the list with what each calls itself, Use for analysis, Remove for yours, Add engine by path, and setup: the downloads with their sizes, each package with its own Download and Download all), **This machine** (cores, the data directory), **Health** (the analysis engine, Reckless, disk, the database, each with what fixes it), and **Appearance** (theme, sounds and their volume, and the token for the hosted app).
 - **Command bar** (`⌘K` / `Ctrl K`): places, games, players, and verbs in the CLI's words (`play 5+3 stockfish`, `review last 20`, `compare cutemouse83`, `drills`), and the common ones as entries (New game, Drills, Review your last 20 games, Flip the board, the theme). What fair play forbids is not offered.
 - **Work indicator** (in the header): what background work is doing in one short sentence, with the dot alone below 75rem; click for the queue (a popover: running, queued, recent, with stop and pause), and "Analysis is off while you're playing on Lichess" when the policy says so. It is the only place background work appears.
 - **Toasts:** a game of yours starting elsewhere ("Your game against X started" — Open), an incoming challenge (Accept · Decline).

@@ -186,10 +186,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * The machine's health for Settings: the analysis engine, the Maia engines, the disk and the database, each with
-         *     what to do about it.
-         */
+        /** The machine's health for Settings: the analysis engine, the disk and the database, each with what to do about it. */
         get: operations["diagnostics"];
         put?: never;
         post?: never;
@@ -339,8 +336,9 @@ export interface paths {
         };
         get?: never;
         /**
-         * Chooses the analysis engine: reviews, live evaluation, drills and the levels run on it. It must be installed and
-         *     play on the clock (Maia's fixed node cannot analyse: 400).
+         * Chooses the analysis engine: reviews, live evaluation and drills run on it, and it is the engine `levels` and
+         *     `calibrate_levels` mean when none is named. It must be installed and play on the clock (an engine with a fixed node
+         *     budget cannot analyse: 400).
          */
         put: operations["set_analysis_engine"];
         post?: never;
@@ -598,7 +596,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The ladder of levels with their calibrated ratings, your rating on it and the level suggested for you. */
+        /**
+         * An engine's ladder of levels (every engine that plays on the clock has one) with their calibrated ratings, your
+         *     rating on it and the level suggested for you.
+         */
         get: operations["list_levels"];
         put?: never;
         post?: never;
@@ -618,8 +619,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Queues calibration (background work at the lowest priority): levels play each other at fixed nodes, and the
-         *     ladder is refitted after each match.
+         * Queues calibration of an engine's levels (the analysis engine's when none is named; background work at the lowest
+         *     priority): its levels play each other at fixed nodes, and its ladder is refitted after each match.
          */
         post: operations["calibrate_levels"];
         delete?: never;
@@ -635,7 +636,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The calibration matches that would teach the most now: neighbouring levels, the widest and most even first. */
+        /**
+         * The calibration matches of an engine's levels that would teach the most now: neighbouring levels, the widest and
+         *     most even first.
+         */
         get: operations["plan_levels"];
         put?: never;
         post?: never;
@@ -802,14 +806,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * What setup would download (Stockfish 19, lc0 and Maia's nets) with the sizes GitHub gives, and what is installed
-         *     already. Downloads nothing.
+         * What setup would download (Stockfish 19 and Reckless 0.9.0, each its own package) with the sizes GitHub gives, and
+         *     what is installed already. Downloads nothing.
          */
         get: operations["setup_plan"];
         put?: never;
         /**
-         * Downloads the built-in engines into the data directory's `tools/` and adds them to the list, as work. Only on this
-         *     explicit request (the CLI shows the sizes and asks first).
+         * Downloads the built-in engines (the packages named, else both) into the data directory's `tools/` and adds them to
+         *     the list, as work. Only on this explicit request (the CLI shows the sizes and asks first).
          */
         post: operations["setup"];
         delete?: never;
@@ -1023,6 +1027,8 @@ export interface components {
         CalibrateRequest: {
             /** @description How many planned matches, when `matches` is not given. Default 3. */
             count?: number | null;
+            /** @description The engine whose levels play (its id); the analysis engine when none. */
+            engine?: string | null;
             /**
              * Format: int32
              * @description Games per match, overriding each match's own (`core::levels::CALIBRATION_GAMES`, 20).
@@ -1316,10 +1322,10 @@ export interface components {
         Engine: {
             /** @description Whether it is the analysis engine. */
             analysis: boolean;
-            /** @description Arguments it is started with (lc0's `--weights=…` for Maia). */
+            /** @description Arguments it is started with. */
             args: string[];
             created_at?: components["schemas"]["Timestamp"] | null;
-            /** @description The slug seats and player keys name it by: `stockfish`, `maia-1500`. */
+            /** @description The slug seats and player keys name it by: `stockfish`, `reckless`, `my-engine`. */
             id: string;
             /**
              * @description What it calls itself (its UCI `id name`), read when it was added or installed: `Stockfish 19`. Reviews and the
@@ -1329,13 +1335,18 @@ export interface components {
             /** @description Whether it can be started: a binary is there. */
             installed: boolean;
             kind: components["schemas"]["EngineKind"];
-            /** @description Whether the ladder of levels runs on it (the analysis engine, when it plays on the clock). */
+            /** @description Whether it has a ladder of levels: installed, and plays on the clock (no fixed node budget). */
             levels: boolean;
-            /** @description As shown: `Stockfish`, `Maia 1500`. */
+            /**
+             * @description Whether it declares UCI's `MultiPV` (read when it was added or installed). Without it, levels 1 to 6 play
+             *     their node budget only, the engine's best move at that budget, rather than choosing among its lines.
+             */
+            multipv: boolean;
+            /** @description As shown: `Stockfish`, `Reckless`. */
             name: string;
             /**
              * Format: int64
-             * @description Nodes it searches a move whatever the clock: Maia's 1. None plays on the clock.
+             * @description Nodes it searches a move whatever the clock (set when you add it). None plays on the clock.
              */
             nodes?: number | null;
             /** @description UCI options set after the handshake, before the app's own (`Threads`, `Hash`, `MultiPV`). */
@@ -1346,7 +1357,7 @@ export interface components {
             path?: string | null;
             /**
              * Format: int32
-             * @description The rating it plays at, when it has one by design (Maia's nominal rating).
+             * @description The rating it plays at, when you gave it one (an engine made to play at a rating).
              */
             rating?: number | null;
         };
@@ -1653,7 +1664,7 @@ export interface components {
             action?: components["schemas"]["HealthAction"] | null;
             /** @description One sentence for people. */
             detail: string;
-            /** @description `analysis`, `maia`, `disk`, `database`. */
+            /** @description `analysis`, `reckless`, `disk`, `database`. */
             key: string;
             level: components["schemas"]["HealthLevel"];
             /** @description Not failing (a warning or a note is still ok). */
@@ -1815,8 +1826,10 @@ export interface components {
             level: components["schemas"]["Level"];
             rating?: components["schemas"]["Estimate"] | null;
         };
-        /** @description `GET /api/levels`. */
+        /** @description `GET /api/levels`: one engine's ladder. */
         LevelsOverview: {
+            /** @description The engine whose ladder it is: `stockfish`, `reckless`. */
+            engine: string;
             levels: components["schemas"]["LevelRating"][];
             /**
              * Format: int32
@@ -1826,8 +1839,10 @@ export interface components {
             updated_at?: components["schemas"]["Timestamp"] | null;
             you?: components["schemas"]["EntrantRating"] | null;
         };
-        /** @description `levels.updated`: the levels were refitted. */
+        /** @description `levels.updated`: an engine's levels were refitted. */
         LevelsUpdated: {
+            /** @description The engine whose ladder it is. */
+            engine: string;
             ratings: components["schemas"]["EntrantRating"][];
             updated_at: components["schemas"]["Timestamp"];
         };
@@ -1932,7 +1947,7 @@ export interface components {
             name: string;
             /**
              * Format: int64
-             * @description Nodes it searches a move whatever the clock (Maia-like engines); none plays on the clock.
+             * @description Nodes it searches a move whatever the clock (an engine made to play that way); none plays on the clock.
              */
             nodes?: number | null;
             /** @description UCI options set after the handshake. */
@@ -2510,7 +2525,7 @@ export interface components {
         };
         /** @description Someone at a board, as this game knew them. */
         Seat: {
-            /** @description What an engine seat's engine called itself (its UCI `id name`): `Stockfish 19`, `Lc0 v0.32.1`. */
+            /** @description What an engine seat's engine called itself (its UCI `id name`): `Stockfish 19`, `Reckless 0.9.0`. */
             engine?: string | null;
             /**
              * Format: int32
@@ -2534,11 +2549,11 @@ export interface components {
          */
         SeatAction: "move" | "offer_draw" | "accept_draw" | "decline_draw" | "takeback" | "accept_takeback" | "decline_takeback" | "resign" | "abort" | "claim_victory" | "claim_draw";
         /**
-         * @description `you`, an engine's id (`stockfish`, `maia-1500`), or `<engine id>@<level>` for a level of the analysis engine's ladder (`stockfish@5`). The object `{ player, level? }` reads too.
+         * @description `you`, an engine's id (`stockfish`, `reckless`), or `<engine id>@<level>` for a level of that engine's ladder (`stockfish@5`, `reckless@3`). The object `{ player, level? }` reads too.
          * @example you
          * @example stockfish
          * @example stockfish@5
-         * @example maia-1500
+         * @example reckless@3
          */
         SeatRequest: string;
         /** @description `POST /api/connections/you/seek`. */
@@ -2556,23 +2571,23 @@ export interface components {
             /** @description Oldest first. */
             points: components["schemas"]["ProgressPoint"][];
         };
-        /** @description One download of the plan. */
+        /** @description One download of the plan: a package's file. */
         SetupDownload: {
             /**
              * Format: int64
              * @description Its size, when GitHub said.
              */
             bytes?: number | null;
-            /** @description For people: `Stockfish 19`, `lc0 v0.32.1`, `Maia 1500's net`. */
+            /** @description For people: `Stockfish 19`, `Reckless 0.9.0`. */
             name: string;
             package: components["schemas"]["SetupPackage"];
             url: string;
         };
         /**
-         * @description What setup installs: `stockfish`, `maia`.
+         * @description What setup installs: `stockfish`, `reckless`.
          * @enum {string}
          */
-        SetupPackage: "stockfish" | "maia";
+        SetupPackage: "stockfish" | "reckless";
         /** @description `GET /api/setup`: what `POST /api/setup` would download, and what is installed already. */
         SetupPlan: {
             /**
@@ -2583,7 +2598,7 @@ export interface components {
             downloads: components["schemas"]["SetupDownload"][];
             /** @description The packages installed already (they are skipped). */
             installed: components["schemas"]["SetupPackage"][];
-            /** @description What cannot be installed here, for people: "lc0 publishes no build for this platform: put lc0 on the PATH". */
+            /** @description What cannot be installed here, for people: "Reckless 0.9.0 has no release build for this platform". */
             notes: string[];
         };
         /** @description `POST /api/setup`: which packages to install; all when empty. */
@@ -3645,7 +3660,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The engine's id: `stockfish`, `maia-1500`, `my-engine`. */
+                /** @description The engine's id: `stockfish`, `reckless`, `my-engine`. */
                 id: string;
             };
             cookie?: never;
@@ -4157,7 +4172,10 @@ export interface operations {
     };
     list_levels: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The engine whose ladder (its id); the analysis engine when none. */
+                engine?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4170,6 +4188,22 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LevelsOverview"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };
@@ -4208,6 +4242,8 @@ export interface operations {
     plan_levels: {
         parameters: {
             query?: {
+                /** @description The engine whose levels (its id); the analysis engine when none. */
+                engine?: string;
                 /** @description How many matches (default 3). */
                 count?: number;
             };
@@ -4223,6 +4259,22 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlannedMatch"][];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };

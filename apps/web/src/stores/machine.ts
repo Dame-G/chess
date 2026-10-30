@@ -7,7 +7,7 @@ import type { Health, MachineInfo } from "../api/types";
 export const useMachine = defineStore("machine", () => {
   const machine = ref<MachineInfo | null>(null);
   const token = ref<string | null>(null);
-  /** What the machine has and lacks: the analysis engine, the Maia nets, the disk, the database. */
+  /** What the machine has and lacks: the analysis engine, Reckless, the disk, the database. */
   const health = ref<Health | null>(null);
 
   async function loadMachine() {

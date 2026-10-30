@@ -2,7 +2,7 @@ import type { TimeControl } from "../api/types";
 
 /** A verb typed in the CLI's words, read into what it asks for. */
 export type Verb =
-  /** `opponent`: `lichess`, an engine's id, or `null` for the analysis engine; `level` only for the analysis engine. */
+  /** `opponent`: `lichess`, an engine's id, or `null` for the analysis engine; `level`, one of that engine's levels. */
   | { verb: "play"; time: TimeControl | null; opponent: string | null; level?: number }
   | { verb: "review"; last: number }
   | { verb: "compare"; players: string[] }
@@ -21,7 +21,7 @@ export function readClock(text: string): TimeControl | null {
 
 /**
  * Reads what is typed in the command bar as one of the CLI's verbs: `play 5+3 stockfish`, `play stockfish@5`,
- * `play maia-1500`, `play lichess`, `review last 20`, `compare cutemouse83`, `drills`. `undefined` when it is not one.
+ * `play reckless 3`, `play lichess`, `review last 20`, `compare cutemouse83`, `drills`. `undefined` when it is not one.
  */
 export function readVerb(query: string): Verb | undefined {
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);

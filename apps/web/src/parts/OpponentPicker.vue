@@ -1,29 +1,30 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from "vue";
 import { RouterLink } from "vue-router";
-import { HUMAN, opponentFamilies, type OpponentChoice } from "../sheets/opponents";
+import type { Engine } from "../api/types";
+import { opponentFamilies, type OpponentChoice } from "../sheets/opponents";
 import UiField from "../ui/UiField.vue";
 import UiSeg from "../ui/UiSeg.vue";
 import LevelPicker from "./LevelPicker.vue";
 
 /**
- * Which engine to play, in two steps: the family first (the analysis engine, the human-like Maia, each engine you
- * added), then its strength (a level with its rating, or a Maia's rating). An engine that plays as it is has no second
- * step. The value is the seat the server reads (`stockfish@5`, `maia-1500`), and each family remembers the strength
- * last chosen in it, so going back and forth does not lose it. What is not installed is shown but not chosen, and the
- * note under the steps says where it is set up.
+ * Which engine to play, in two steps: the engine first (Stockfish, Reckless, each engine you added), then its strength
+ * (one of its levels with that engine's rating for it, or full strength). An engine that plays as it is (a fixed
+ * budget, or levels not read yet) has no second step. The value is the seat the server reads (`stockfish@5`,
+ * `reckless`), and each engine remembers the strength last chosen in it, so going back and forth does not lose it.
+ * What is not installed is shown but not chosen, and the note under the steps says where it is set up.
  */
 const props = defineProps<{
   modelValue: string;
   choices: OpponentChoice[];
-  /** The analysis engine's id: it names the family that starts at `suggested`. */
-  analysis: string;
-  /** The seat to start a family at when it has no strength chosen yet: the level nearest your rating. */
+  /** The engines list, for what each family says of itself (levels by node budget alone without MultiPV). */
+  engines?: Engine[];
+  /** The seat to start a family at when it has no strength chosen yet: the analysis engine's level nearest your rating. */
   suggested: string;
 }>();
 const emit = defineEmits<{ "update:modelValue": [seat: string]; settings: [] }>();
 
-const families = computed(() => opponentFamilies(props.choices, props.analysis));
+const families = computed(() => opponentFamilies(props.choices, props.engines));
 const chosen = computed(() => props.choices.find((c) => c.value === props.modelValue));
 const current = computed(() => families.value.find((f) => f.key === chosen.value?.family) ?? families.value[0]);
 
@@ -43,7 +44,11 @@ function pickFamily(key: string) {
   const f = families.value.find((x) => x.key === key);
   if (!f || f.key === current.value?.key) return;
   const open = f.choices.filter((c) => !c.disabled);
-  const next = open.find((c) => c.value === lastIn[f.key]) ?? open.find((c) => c.value === props.suggested) ?? open[0];
+  const next =
+    open.find((c) => c.value === lastIn[f.key]) ??
+    open.find((c) => c.value === props.suggested) ??
+    open.find((c) => c.near) ??
+    open[0];
   if (next) emit("update:modelValue", next.value);
 }
 
@@ -53,9 +58,8 @@ const strengthHint = computed(() =>
 );
 const second = computed(() => (current.value?.choices.length ?? 0) > 1);
 
-/** What is not installed, as a sentence for the note: this family's missing ratings, else whole families by name. */
+/** What is not installed, as a sentence for the note: the engines by name. */
 const missing = computed(() => {
-  if (current.value?.choices.some((c) => c.disabled)) return "Ratings marked not installed need setting up.";
   const gone = families.value.filter((f) => f.disabled).map((f) => f.name);
   return gone.length ? `${gone.join(" and ")} ${gone.length > 1 ? "are" : "is"} not installed.` : "";
 });
@@ -72,7 +76,7 @@ const missing = computed(() => {
         @update:model-value="pickFamily"
       />
     </UiField>
-    <UiField v-if="second" :label="current?.key === HUMAN ? 'Rating' : 'Strength'" group :hint="strengthHint">
+    <UiField v-if="second" label="Strength" group :hint="strengthHint">
       <LevelPicker
         :model-value="modelValue"
         :label="current?.name ?? 'Strength'"

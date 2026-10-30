@@ -106,7 +106,7 @@ export const engineOf = (player: string): string | null => (player.startsWith("e
 /** An engine at a level of its ladder (the server names it by its rating, `Stockfish 1650`). */
 export const isLevelSeat = (seat: Seat): boolean => engineOf(seat.player) !== null && seat.level != null;
 
-/** A seat as people say it: `Stockfish 1650` (at a level), `Maia 1500`, `cutemouse83`. The server names every seat. */
+/** A seat as people say it: `Stockfish 1650` (at a level), `Reckless`, `cutemouse83`. The server names every seat. */
 export const seatName = (seat: Seat): string => seat.name;
 
 export const other = (side: Side): Side => (side === "white" ? "black" : "white");

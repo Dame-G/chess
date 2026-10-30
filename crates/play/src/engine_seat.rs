@@ -4,7 +4,7 @@
 //!
 //! At a level ([`EngineSeat::at_level`]) it searches the level's node budget with its MultiPV, whatever the game's
 //! clock, and plays the move `core::levels::choose_move` picks among the lines, drawing from the seat's seeded RNG. An
-//! engine with a fixed budget (Maia's one node) searches that budget whatever the clock.
+//! engine with a fixed node budget searches that budget whatever the clock.
 
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
@@ -80,7 +80,7 @@ pub struct EngineSeat {
     every: std::time::Duration,
     unclocked_ms: u64,
     level: Option<AtLevel>,
-    /// The engine's fixed nodes per move (Maia's 1), whatever the clock.
+    /// The engine's fixed nodes per move, whatever the clock.
     fixed_nodes: Option<u64>,
     _cores: Option<Reservation>,
 }

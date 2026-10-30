@@ -164,10 +164,10 @@ async fn games_are_checked_before_they_start() {
     assert_eq!(corr.status(), 400);
     let none = s.games.start(request("you", "nope", TimeControl::Movetime { ms: 10 })).await.unwrap_err();
     assert_eq!(none.status(), 404);
-    let maia = s.games.start(request("you", "maia-1500@3", TimeControl::Movetime { ms: 10 })).await.unwrap_err();
-    assert_eq!(maia.status(), 400, "levels are the analysis engine's");
+    let fixed = s.games.start(request("you", "fixed@3", TimeControl::Movetime { ms: 10 })).await.unwrap_err();
+    assert_eq!(fixed.status(), 400, "an engine with a fixed budget has no levels");
     assert!(s.games.live().is_empty());
-    assert_eq!("maia-1500".parse::<SeatRequest>().unwrap().engine_id(), Some("maia-1500"));
+    assert_eq!("other@2".parse::<SeatRequest>().unwrap().engine_id(), Some("other"));
 }
 
 #[tokio::test]

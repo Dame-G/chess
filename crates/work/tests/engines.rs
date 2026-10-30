@@ -25,11 +25,11 @@ async fn the_builtins_wait_for_setup() {
     let engines = Engines::new(hub);
     let o = engines.overview().await.unwrap();
     assert_eq!(o.analysis, "stockfish");
-    assert_eq!(o.engines.len(), 10);
+    assert_eq!(o.engines.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["stockfish", "reckless"]);
     assert!(o.engines.iter().all(|e| e.kind == EngineKind::Builtin && !e.installed));
-    assert_eq!(o.engines[5].id, "maia-1500");
-    assert_eq!((o.engines[5].nodes, o.engines[5].rating), (Some(1), Some(1500)));
-    assert!(o.engines[0].analysis && !o.engines[0].levels);
+    assert!(o.engines.iter().all(|e| e.nodes.is_none() && e.rating.is_none() && e.multipv));
+    assert!(o.engines[0].analysis && !o.engines[0].levels, "no levels until it is installed");
+    assert!(!o.engines[1].analysis);
     let e = engines.ready(None).await.unwrap_err();
     assert_eq!((e.status(), e.message().contains("chess setup")), (409, true));
     assert_eq!(engines.ready(Some("nope")).await.unwrap_err().status(), 404);
@@ -51,6 +51,8 @@ async fn engines_are_added_chosen_and_removed() {
         .unwrap();
     assert_eq!((added.id.as_str(), added.id_name.as_deref()), ("fake-engine", Some("Fake 1.0")));
     assert!(added.installed && !added.analysis);
+    // Every engine on the clock has levels, the analysis engine or not.
+    assert!(added.levels);
     let Some(Next::Event(event)) = events.recv().await else { panic!("no event") };
     assert_eq!((event.kind, event.topic.as_str()), (EventKind::EnginesChanged, "engines"));
     assert_eq!(Topic::Engines.to_string(), "engines");
@@ -60,6 +62,8 @@ async fn engines_are_added_chosen_and_removed() {
     assert_eq!(engines.add(again.clone()).await.unwrap_err().status(), 409);
     let sf = NewEngineRequest { id: Some("stockfish".into()), ..again.clone() };
     assert_eq!(engines.add(sf).await.unwrap_err().status(), 409);
+    let reckless = NewEngineRequest { id: Some("reckless".into()), ..again.clone() };
+    assert_eq!(engines.add(reckless).await.unwrap_err().status(), 409, "Reckless is a built-in");
     let missing = NewEngineRequest { name: "Gone".into(), path: "/no/such/engine".into(), ..Default::default() };
     assert_eq!(engines.add(missing).await.unwrap_err().status(), 400);
 
@@ -73,13 +77,34 @@ async fn engines_are_added_chosen_and_removed() {
     assert_eq!(ready.options, [("Hash".to_owned(), "32".to_owned())]);
     assert_eq!(ready.path.to_str(), Some(FAKE));
 
-    // An engine with a fixed budget cannot analyse.
-    let mut maia = EngineRecord::new("maia-1100", "Maia 1100", EngineKind::Builtin, FAKE);
-    maia.nodes = Some(1);
-    maia.rating = Some(1100);
-    let installed = engines.install(maia).await.unwrap();
+    // A built-in installed by setup is asked what it calls itself.
+    let installed =
+        engines.install(EngineRecord::new("reckless", "Reckless", EngineKind::Builtin, FAKE)).await.unwrap();
     assert_eq!(installed.id_name.as_deref(), Some("Fake 1.0"));
-    assert_eq!(engines.set_analysis("maia-1100").await.unwrap_err().status(), 400);
+    assert!(installed.installed && installed.levels);
+    assert_eq!(engines.set_analysis("reckless").await.unwrap().analysis, "reckless");
+    engines.set_analysis("fake-engine").await.unwrap();
+
+    // An engine with a fixed budget cannot analyse and has no levels.
+    let fixed = NewEngineRequest {
+        name: "Fixed".into(),
+        path: FAKE.into(),
+        nodes: Some(1),
+        rating: Some(1100),
+        ..Default::default()
+    };
+    let fixed = engines.add(fixed).await.unwrap();
+    assert!(!fixed.levels && fixed.multipv);
+    // An engine without MultiPV keeps its levels; they play the node budget only.
+    let plain = NewEngineRequest {
+        name: "Plain".into(),
+        path: FAKE.into(),
+        args: vec!["--no-multipv".into()],
+        ..Default::default()
+    };
+    let plain = engines.add(plain).await.unwrap();
+    assert!(plain.levels && !plain.multipv);
+    assert_eq!(engines.set_analysis("fixed").await.unwrap_err().status(), 400);
 
     // Removing the analysis engine goes back to Stockfish.
     let o = engines.remove("fake-engine").await.unwrap();

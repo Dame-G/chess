@@ -1,5 +1,6 @@
-//! The levels of the ladder: which entrant (`level:<id>` or `you`) sat at each seat of a game played at a level, and the last
-//! calibration fit. The fit itself is `core::levels::fit`, over [`Store::level_games`].
+//! The levels: every engine has its own ladder. Which entrant (`level:<id>` or `you`) sat at each seat of a game
+//! played at an engine's levels, and each engine's last calibration fit. The fit itself is `core::levels::fit`, over
+//! [`Store::level_games`].
 
 use chess_core::{
     Error, GameId, Timestamp,
@@ -15,21 +16,23 @@ fn entrant(text: &str) -> DbResult<Entrant> {
 }
 
 impl Store {
-    /// Records who sat at a game played at a level. `calibration` marks the background matches between levels.
-    /// Recording a game again replaces its seats.
+    /// Records who sat at a game played at `engine`'s levels. `calibration` marks the background matches between
+    /// levels. Recording a game again replaces its seats.
     pub async fn record_level_game(
         &self,
         game: GameId,
+        engine: &str,
         white: Entrant,
         black: Entrant,
         calibration: bool,
     ) -> Result<(), Error> {
+        let engine = engine.to_owned();
         self.write(move |tx| {
             tx.execute(
-                "INSERT INTO level_games (game, white, black, calibration) VALUES (?1, ?2, ?3, ?4) \
+                "INSERT INTO level_games (game, white, black, calibration, engine) VALUES (?1, ?2, ?3, ?4, ?5) \
                  ON CONFLICT (game) DO UPDATE SET white = excluded.white, black = excluded.black, \
-                 calibration = excluded.calibration",
-                params![game.0, white.to_string(), black.to_string(), calibration],
+                 calibration = excluded.calibration, engine = excluded.engine",
+                params![game.0, white.to_string(), black.to_string(), calibration, engine],
             )?;
             Ok(())
         })
@@ -49,14 +52,15 @@ impl Store {
         .await
     }
 
-    /// Every finished game played at a level, oldest first: what the calibration fits.
-    pub async fn level_games(&self) -> Result<Vec<LevelGame>, Error> {
-        self.read(|conn| {
+    /// Every finished game played at `engine`'s levels, oldest first: what its calibration fits.
+    pub async fn level_games(&self, engine: &str) -> Result<Vec<LevelGame>, Error> {
+        let engine = engine.to_owned();
+        self.read(move |conn| {
             let mut stmt = conn.prepare_cached(
                 "SELECT l.white, l.black, g.outcome FROM level_games l JOIN games g ON g.id = l.game \
-                 WHERE g.status = 'finished' AND g.outcome IS NOT NULL ORDER BY g.started_at, g.id",
+                 WHERE l.engine = ?1 AND g.status = 'finished' AND g.outcome IS NOT NULL ORDER BY g.started_at, g.id",
             )?;
-            let mut rows = stmt.query([])?;
+            let mut rows = stmt.query([engine])?;
             let mut out = Vec::new();
             while let Some(row) = rows.next()? {
                 out.push(LevelGame {
@@ -70,16 +74,18 @@ impl Store {
         .await
     }
 
-    /// Replaces the calibrated ratings with a new fit.
-    pub async fn put_level_ratings(&self, ratings: Vec<EntrantRating>) -> Result<(), Error> {
+    /// Replaces `engine`'s calibrated ratings with a new fit.
+    pub async fn put_level_ratings(&self, engine: &str, ratings: Vec<EntrantRating>) -> Result<(), Error> {
+        let engine = engine.to_owned();
         self.write(move |tx| {
             let at = now();
-            tx.execute("DELETE FROM level_ratings", [])?;
+            tx.execute("DELETE FROM level_ratings WHERE engine = ?1", [&engine])?;
             for r in &ratings {
                 tx.execute(
-                    "INSERT INTO level_ratings (entrant, elo, low, high, games, updated_at) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    "INSERT INTO level_ratings (engine, entrant, elo, low, high, games, updated_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                     params![
+                        engine,
                         r.entrant.to_string(),
                         r.estimate.elo,
                         r.estimate.low,
@@ -94,12 +100,14 @@ impl Store {
         .await
     }
 
-    /// The last fit, levels by id then You, and when it was made (`None` before the first).
-    pub async fn level_ratings(&self) -> Result<(Vec<EntrantRating>, Option<Timestamp>), Error> {
-        self.read(|conn| {
-            let mut stmt =
-                conn.prepare_cached("SELECT entrant, elo, low, high, games, updated_at FROM level_ratings")?;
-            let mut rows = stmt.query([])?;
+    /// `engine`'s last fit, levels by id then You, and when it was made (`None` before the first).
+    pub async fn level_ratings(&self, engine: &str) -> Result<(Vec<EntrantRating>, Option<Timestamp>), Error> {
+        let engine = engine.to_owned();
+        self.read(move |conn| {
+            let mut stmt = conn.prepare_cached(
+                "SELECT entrant, elo, low, high, games, updated_at FROM level_ratings WHERE engine = ?1",
+            )?;
+            let mut rows = stmt.query([engine])?;
             let mut out = Vec::new();
             let mut updated: Option<Timestamp> = None;
             while let Some(row) = rows.next()? {
@@ -153,14 +161,15 @@ mod tests {
         let live = store.insert_game(local(PlayerKey::You, PlayerKey::Engine("stockfish".into()), 3)).await.unwrap();
         let unrelated = finished(4, Outcome::BlackWins).await;
 
-        store.record_level_game(g1, Entrant::Level(2), Entrant::Level(1), true).await.unwrap();
-        store.record_level_game(g2, Entrant::Level(1), Entrant::Level(3), false).await.unwrap();
-        store.record_level_game(g2, Entrant::Level(1), Entrant::Level(2), true).await.unwrap();
-        store.record_level_game(live, Entrant::You, Entrant::Level(1), false).await.unwrap();
+        store.record_level_game(g1, "stockfish", Entrant::Level(2), Entrant::Level(1), true).await.unwrap();
+        store.record_level_game(g2, "stockfish", Entrant::Level(1), Entrant::Level(3), false).await.unwrap();
+        store.record_level_game(g2, "stockfish", Entrant::Level(1), Entrant::Level(2), true).await.unwrap();
+        store.record_level_game(live, "stockfish", Entrant::You, Entrant::Level(1), false).await.unwrap();
+        // Another engine's levels are another ladder.
+        store.record_level_game(unrelated, "reckless", Entrant::Level(1), Entrant::Level(2), true).await.unwrap();
 
         assert_eq!(store.level_seats(g2).await.unwrap(), Some((Entrant::Level(1), Entrant::Level(2))));
-        assert_eq!(store.level_seats(unrelated).await.unwrap(), None);
-        let games = store.level_games().await.unwrap();
+        let games = store.level_games("stockfish").await.unwrap();
         assert_eq!(
             games,
             [
@@ -169,13 +178,18 @@ mod tests {
             ]
         );
 
-        assert_eq!(store.level_ratings().await.unwrap(), (Vec::new(), None));
+        assert_eq!(store.level_games("reckless").await.unwrap().len(), 1);
+        assert_eq!(store.level_games("nobody").await.unwrap(), []);
+
+        assert_eq!(store.level_ratings("stockfish").await.unwrap(), (Vec::new(), None));
         let ratings = fit(&priors(&ladder()[..2], Some((1500, None))), &pair_results(&games));
-        store.put_level_ratings(ratings.clone()).await.unwrap();
-        let (stored, at) = store.level_ratings().await.unwrap();
+        store.put_level_ratings("stockfish", ratings.clone()).await.unwrap();
+        store.put_level_ratings("reckless", ratings[..1].to_vec()).await.unwrap();
+        let (stored, at) = store.level_ratings("stockfish").await.unwrap();
         assert_eq!(stored, ratings);
         assert!(at.is_some());
-        store.put_level_ratings(ratings[..1].to_vec()).await.unwrap();
-        assert_eq!(store.level_ratings().await.unwrap().0.len(), 1);
+        store.put_level_ratings("stockfish", ratings[..1].to_vec()).await.unwrap();
+        assert_eq!(store.level_ratings("stockfish").await.unwrap().0.len(), 1);
+        assert_eq!(store.level_ratings("reckless").await.unwrap().0.len(), 1);
     }
 }
