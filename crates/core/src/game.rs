@@ -264,13 +264,19 @@ impl Opening {
 
 /// `"C20 King's Pawn Game: Busch-Gass Gambit"` (or without the code) is the family `"King's Pawn Game"`.
 pub fn opening_family(name: &str) -> String {
+    opening_title(name).split(':').next().unwrap_or_default().trim().to_owned()
+}
+
+/// `"C20 King's Pawn Game: Busch-Gass Gambit"` (or without the code) is `"King's Pawn Game: Busch-Gass Gambit"`: the
+/// opening's whole name, which names one line.
+pub fn opening_title(name: &str) -> String {
     let mut words = name.splitn(2, ' ');
     let first = words.next().unwrap_or_default();
     let is_eco = first.len() == 3
         && first.starts_with(['A', 'B', 'C', 'D', 'E'])
         && first[1..].chars().all(|c| c.is_ascii_digit());
     let rest = if is_eco { words.next().unwrap_or_default() } else { name };
-    rest.split(':').next().unwrap_or_default().trim().to_owned()
+    rest.trim().to_owned()
 }
 
 /// What lists, events and the Games rail show of a game.

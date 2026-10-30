@@ -17,7 +17,8 @@ use crate::{
         ClassCounts, JudgementCounts, Review,
         judge::{Classification, Judgement, Phase},
     },
-    time::Speed,
+    themes::{self, Mistake, ThemeKind},
+    time::{Speed, TimeControl},
 };
 
 /// Someone who sits at a board.
@@ -251,10 +252,43 @@ pub struct WeakSpot {
     pub phase: Phase,
     /// How many weak spots share this one's opening family and phase: recurring themes come first.
     pub recurring: u32,
+    /// What the mistake was about (`core::themes`), and the cause when the evidence names one.
+    pub kind: ThemeKind,
+    pub detail: Option<String>,
 }
 
 /// Weak spots a profile lists, at most.
 pub const WEAK_SPOTS: usize = 20;
+
+/// A name counted: a cause of a theme's mistakes, or an opening they came in.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ThemeCount {
+    pub name: String,
+    pub count: u32,
+    /// Win percentage lost to them.
+    pub swing: f64,
+}
+
+/// Your mistakes of one theme (`core::themes`) added up: how often, how much they cost, and the costliest examples.
+/// Every mistake and blunder in the games considered has exactly one theme, so the themes add up to all of them.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ThemeStat {
+    pub kind: ThemeKind,
+    /// Mistakes and blunders of this theme, and the games they were in.
+    pub count: u32,
+    pub games: u32,
+    /// Win percentage lost to them in all, and per reviewed game.
+    pub swing: f64,
+    pub per_game: f64,
+    /// Their share of everything lost to mistakes, 0 to 1.
+    pub share: f64,
+    /// The causes named most often (`a knight`, `fork`), at most 3; empty when the theme names none.
+    pub causes: Vec<ThemeCount>,
+    /// The opening families they came in most often, at most 3.
+    pub openings: Vec<ThemeCount>,
+    /// The costliest, at most 3, to open on the board.
+    pub examples: Vec<WeakSpot>,
+}
 
 /// A player's games added up.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -294,6 +328,9 @@ pub struct Profile {
     pub moments: Moments,
     /// Positions from the player's mistakes, recurring themes first; filled for You only.
     pub weak_spots: Vec<WeakSpot>,
+    /// The same mistakes grouped by theme, the costliest first (every one, not just the listed weak spots); filled
+    /// for You only.
+    pub themes: Vec<ThemeStat>,
 }
 
 /// One game as a profile reads it: its summary, its start position (for weak spots) and its newest review.
@@ -443,6 +480,7 @@ pub fn profile(player: Player, filter: ProfileFilter, games: &[ProfileGame], wea
         trend.push(point);
     }
     trend.reverse();
+    count_recurring(&mut spots);
 
     let mut longest = 0u32;
     let mut streak = 0u32;
@@ -522,18 +560,34 @@ pub fn profile(player: Player, filter: ProfileFilter, games: &[ProfileGame], wea
         trend,
         longest_win_streak: longest,
         moments: Moments { best, blunders, most_accurate_game: most, least_accurate_game: least },
+        themes: theme_stats(&spots, reviewed),
         weak_spots: rank_weak_spots(spots),
     }
 }
 
-/// The positions before `side`'s mistakes and blunders (misses included) in one reviewed game.
-fn weak_spots_of(g: &ProfileGame, review: &Review, side: Side) -> Vec<WeakSpot> {
+/// The positions before `side`'s mistakes and blunders (misses included) in one reviewed game, each with its theme.
+pub fn weak_spots_of(g: &ProfileGame, review: &Review, side: Side) -> Vec<WeakSpot> {
     let Ok(mut pos) = Position::from_start(g.start_fen.as_deref()) else { return Vec::new() };
     let family = g.summary.opening.as_ref().map(|o| opening_family(&o.name)).filter(|f| !f.is_empty());
+    let initial_ms = match g.summary.time {
+        TimeControl::Clock { initial_ms, .. } => Some(initial_ms),
+        _ => None,
+    };
     let mut out = Vec::new();
     for p in &review.plies {
         let serious = matches!(p.judgement, Some(Judgement::Mistake | Judgement::Blunder));
         if serious && p.side == side {
+            let found = themes::detect(&Mistake {
+                before: &pos,
+                played: &p.uci,
+                best: &p.best_uci,
+                best_pv: &p.best_pv,
+                eval_before: p.eval_before,
+                eval_after: p.eval_after,
+                phase: p.phase,
+                clock_ms: p.clock_before_ms,
+                initial_ms,
+            });
             out.push(WeakSpot {
                 game: g.summary.id,
                 ply: p.ply,
@@ -544,6 +598,8 @@ fn weak_spots_of(g: &ProfileGame, review: &Review, side: Side) -> Vec<WeakSpot> 
                 opening: family.clone(),
                 phase: p.phase,
                 recurring: 0,
+                kind: found.kind,
+                detail: found.detail,
             });
         }
         if pos.play(&p.uci).is_err() {
@@ -553,15 +609,86 @@ fn weak_spots_of(g: &ProfileGame, review: &Review, side: Side) -> Vec<WeakSpot> 
     out
 }
 
-/// Recurring themes first: spots grouped by opening family and phase, the biggest groups first, each by swing.
-fn rank_weak_spots(mut spots: Vec<WeakSpot>) -> Vec<WeakSpot> {
+/// Examples a theme keeps, the costliest first.
+const THEME_EXAMPLES: usize = 3;
+/// Causes and opening lines a theme names, the most common first.
+const THEME_NAMED: usize = 3;
+
+/// The group a cause is counted in: every mate is "mate", whatever its length, and a clock reading is not a cause.
+fn cause_of(kind: ThemeKind, detail: &str) -> Option<String> {
+    match kind {
+        ThemeKind::TimeTrouble => None,
+        _ if detail.starts_with("mate in") => Some("mate".to_owned()),
+        _ => Some(detail.to_owned()),
+    }
+}
+
+/// Every weak spot grouped by theme: how often, what it cost and in how many games, with the costliest examples. The
+/// most costly theme first, `other` last. `reviewed` is the games the spots were found in, for the cost per game.
+fn theme_stats(spots: &[WeakSpot], reviewed: u32) -> Vec<ThemeStat> {
+    let total: f64 = spots.iter().map(|s| s.swing).sum();
+    let mut out: Vec<ThemeStat> = ThemeKind::ALL
+        .into_iter()
+        .filter_map(|kind| {
+            let mut mine: Vec<&WeakSpot> = spots.iter().filter(|s| s.kind == kind).collect();
+            if mine.is_empty() {
+                return None;
+            }
+            mine.sort_by(|a, b| b.swing.total_cmp(&a.swing).then(a.game.cmp(&b.game)).then(a.ply.cmp(&b.ply)));
+            let swing: f64 = mine.iter().map(|s| s.swing).sum();
+            let mut games: Vec<GameId> = mine.iter().map(|s| s.game).collect();
+            games.sort();
+            games.dedup();
+            let named = |key: &dyn Fn(&WeakSpot) -> Option<String>| -> Vec<ThemeCount> {
+                let mut counts: HashMap<String, (u32, f64)> = HashMap::new();
+                for s in &mine {
+                    if let Some(k) = key(s) {
+                        let e = counts.entry(k).or_default();
+                        e.0 += 1;
+                        e.1 += s.swing;
+                    }
+                }
+                let mut v: Vec<ThemeCount> = counts
+                    .into_iter()
+                    .map(|(name, (count, swing))| ThemeCount { name, count, swing: round1(swing) })
+                    .collect();
+                v.sort_by(|a, b| b.count.cmp(&a.count).then(b.swing.total_cmp(&a.swing)).then(a.name.cmp(&b.name)));
+                v.truncate(THEME_NAMED);
+                v
+            };
+            Some(ThemeStat {
+                kind,
+                count: mine.len() as u32,
+                games: games.len() as u32,
+                swing: round1(swing),
+                per_game: if reviewed == 0 { 0.0 } else { round1(swing / f64::from(reviewed)) },
+                share: if total > 0.0 { (1000.0 * swing / total).round() / 1000.0 } else { 0.0 },
+                causes: named(&|s| s.detail.as_deref().and_then(|d| cause_of(kind, d))),
+                openings: named(&|s| s.opening.clone()),
+                examples: mine.iter().take(THEME_EXAMPLES).map(|s| (*s).clone()).collect(),
+            })
+        })
+        .collect();
+    // The costliest theme first; "other" stays last however much it cost, since it names nothing to work on.
+    out.sort_by(|a, b| {
+        (a.kind == ThemeKind::Other).cmp(&(b.kind == ThemeKind::Other)).then(b.swing.total_cmp(&a.swing))
+    });
+    out
+}
+
+/// Sets each spot's `recurring`: how many spots share its opening family and phase.
+fn count_recurring(spots: &mut [WeakSpot]) {
     let mut groups: HashMap<(Option<String>, Phase), u32> = HashMap::new();
-    for s in &spots {
+    for s in spots.iter() {
         *groups.entry((s.opening.clone(), s.phase)).or_default() += 1;
     }
-    for s in &mut spots {
+    for s in spots.iter_mut() {
         s.recurring = groups[&(s.opening.clone(), s.phase)];
     }
+}
+
+/// Recurring themes first: spots grouped by opening family and phase, the biggest groups first, each by swing.
+fn rank_weak_spots(mut spots: Vec<WeakSpot>) -> Vec<WeakSpot> {
     spots.sort_by(|a, b| {
         b.recurring
             .cmp(&a.recurring)
@@ -832,7 +959,15 @@ mod tests {
         assert_eq!(spot.fen, "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
         assert_eq!((spot.swing, spot.recurring), (40.0, 1));
         assert_eq!(spot.opening.as_deref(), Some("King's Pawn Game"));
-        assert!(profile(you(), ProfileFilter::default(), &games(), false).weak_spots.is_empty());
+        // The one mistake is the one theme: all of the cost, 40 points over the two reviewed games.
+        assert_eq!(p.themes.len(), 1);
+        let theme = &p.themes[0];
+        assert_eq!((theme.kind, theme.count, theme.games, theme.swing), (spot.kind, 1, 1, 40.0));
+        assert_eq!((theme.share, theme.per_game), (1.0, 40.0 / f64::from(p.reviewed)));
+        assert_eq!(theme.examples, [spot.clone()]);
+        assert_eq!(theme.openings, [ThemeCount { name: "King's Pawn Game".into(), count: 1, swing: 40.0 }]);
+        let alone = profile(you(), ProfileFilter::default(), &games(), false);
+        assert!(alone.weak_spots.is_empty() && alone.themes.is_empty());
     }
 
     #[test]

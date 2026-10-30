@@ -3,12 +3,17 @@
 use std::sync::Arc;
 
 use axum::{extract::State, http::StatusCode};
-use dameless_analysis::{AnswerRequest, DrillAnswerResult, DrillsToday, MakeDrillsRequest, RepertoireRequest};
+use dameless_analysis::{
+    AnswerRequest, DrillAnswerResult, DrillsToday, MakeDrillsRequest, RepertoireRequest, SessionRequest,
+};
 use dameless_core::{
-    drills::{Drill, DrillId, HitRatePoint},
+    GameId,
+    drills::{Drill, DrillHint, DrillId, HitRatePoint},
     levels::PlannedMatch,
+    prep::{Prep, PrepRequest},
     progress::Progress,
     repertoire::Repertoire,
+    themes::ThemeKind,
     work::Work,
 };
 use dameless_play::{CalibrateRequest, LevelsOverview};
@@ -79,16 +84,50 @@ pub async fn make_drills(
 pub struct TodayQuery {
     /// New drills a day (default 10).
     pub new_per_day: Option<u32>,
-    /// At most this many in all (default 30).
+    /// At most this many in all (default 30; 10 for a theme or a line).
     pub limit: Option<usize>,
+    /// Only this theme: a session on it, with the day's cap on new drills set aside.
+    pub theme: Option<ThemeKind>,
+    /// Only drills from these games (comma-separated ids, at most 200): the games of an opening line.
+    pub games: Option<String>,
+    /// Only mistakes made by this ply (24 is the first twelve moves).
+    pub max_ply: Option<u32>,
 }
 
-/// Today's drills: due ones first, then new ones up to the day's cap. Show only `fen`, `side` and `theme` before
-/// the answer.
+/// Most game ids `games` takes.
+const MAX_GAMES: usize = 200;
+
+/// Today's drills: due ones first, then new ones up to the day's cap; or, with `theme` or `games`, a session on that
+/// theme or opening line. They come as questions: the `fen`, `side` and `theme`, without the answer, which
+/// `answer_drill` returns.
 #[utoipa::path(get, path = "/api/drills/today", operation_id = "drills_today", tag = "drills", params(TodayQuery),
-    responses((status = 200, body = DrillsToday)))]
+    responses((status = 200, body = DrillsToday), (status = 400, body = dameless_core::error::ErrorBody)))]
 pub async fn drills_today(State(app): State<Arc<App>>, Query(q): Query<TodayQuery>) -> ApiResult<Json<DrillsToday>> {
-    Ok(Json(app.drills.today(&dameless_store::now(), q.new_per_day, q.limit).await?))
+    let games = q
+        .games
+        .as_deref()
+        .map(|s| {
+            s.split(',')
+                .filter(|p| !p.trim().is_empty())
+                .map(|p| p.trim().parse::<i64>().map(GameId))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()
+        .map_err(|_| dameless_core::Error::bad_request("games are comma-separated game ids"))?
+        .unwrap_or_default();
+    if games.len() > MAX_GAMES {
+        return Err(dameless_core::Error::bad_request(format!("at most {MAX_GAMES} games")).into());
+    }
+    let req = SessionRequest { new_per_day: q.new_per_day, limit: q.limit, theme: q.theme, games, max_ply: q.max_ply };
+    Ok(Json(app.drills.today(&dameless_store::now(), &req).await?))
+}
+
+/// The next hint at a drill, without the move: first what kind of move it is, then which piece moves. A hint is
+/// remembered until the drill is answered, and a right answer after one counts half and comes back tomorrow.
+#[utoipa::path(post, path = "/api/drills/{id}/hint", operation_id = "hint_drill", tag = "drills", params(DrillPath),
+    responses((status = 200, body = DrillHint), (status = 404, body = dameless_core::error::ErrorBody)))]
+pub async fn hint_drill(State(app): State<Arc<App>>, Path(p): Path<DrillPath>) -> ApiResult<Json<DrillHint>> {
+    Ok(Json(app.drills.hint(DrillId(p.id)).await?))
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -144,6 +183,16 @@ pub async fn get_repertoire(
     Query(q): Query<RepertoireRequest>,
 ) -> ApiResult<Json<Repertoire>> {
     Ok(Json(app.profiles.repertoire(q).await?))
+}
+
+/// Your opening lines with one colour: the named openings you play, your score in each, and how often you go wrong
+/// in the first twelve moves, with the games to drill. Refused (409) while you play on Lichess, unless every game
+/// of yours is correspondence.
+#[utoipa::path(get, path = "/api/players/you/prep", operation_id = "get_prep", tag = "players",
+    params(PrepRequest),
+    responses((status = 200, body = Prep), (status = 409, body = dameless_core::error::ErrorBody)))]
+pub async fn get_prep(State(app): State<Arc<App>>, Query(q): Query<PrepRequest>) -> ApiResult<Json<Prep>> {
+    Ok(Json(app.profiles.prep(q).await?))
 }
 
 /// Both players' lines: your rating, accuracy and drill hit rate, and Dameless's Elo over its versions.

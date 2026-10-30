@@ -16,6 +16,7 @@ use crate::{
     profile::WeakSpot,
     review::{EvalLine, ReviewedMove, judge::Phase},
     score::Score,
+    themes::ThemeKind,
 };
 
 /// A drill's row id.
@@ -52,12 +53,23 @@ const PASS_QUALITY: f64 = 5.0;
 const FAIL_QUALITY: f64 = 2.0;
 const DAY_MS: i64 = 86_400_000;
 
-/// What a drill is about: the opening family of its game, and the phase it came from.
+/// What a drill is about: the opening family of its game, the phase it came from, and what the mistake was about
+/// (`core::themes`; `other` until a drill from before themes is classified).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub struct Theme {
     pub opening: Option<String>,
     pub phase: Phase,
+    pub kind: ThemeKind,
+    /// The cause the evidence names (`a knight`, `fork`), when it does.
+    pub detail: Option<String>,
 }
+
+/// Drills in a session on one theme or line, when the request names no cap.
+pub const SESSION_LIMIT: usize = 10;
+/// A hint can be asked for twice: what kind of move, then which piece.
+pub const HINT_LEVELS: u8 = 2;
+/// Half a pass: what a hinted pass counts for in a hit rate.
+pub const HINTED_CREDIT: f64 = 0.5;
 
 /// One drill and where its schedule stands.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -103,6 +115,19 @@ impl Drill {
 
     pub fn is_due(&self, now: &Timestamp) -> bool {
         self.due <= *now
+    }
+
+    /// The drill as it goes out before it is answered: the position and its theme, without the moves that answer it
+    /// or the move you played. [`DrillAnswerResult`] in the analysis crate carries them once it is tried.
+    pub fn question(&self) -> Self {
+        Self {
+            best_moves: Vec::new(),
+            best_san: Vec::new(),
+            line: Vec::new(),
+            played: String::new(),
+            played_san: String::new(),
+            ..self.clone()
+        }
     }
 }
 
@@ -202,7 +227,7 @@ pub fn new_drill(spot: &WeakSpot, lines: &[EvalLine]) -> Result<NewDrill, Error>
         played_san: pos.san(&played)?,
         played,
         swing: spot.swing,
-        theme: Theme { opening: spot.opening.clone(), phase: spot.phase },
+        theme: Theme { opening: spot.opening.clone(), phase: spot.phase, kind: spot.kind, detail: spot.detail.clone() },
     })
 }
 
@@ -238,16 +263,24 @@ pub fn check(drill: &Drill, answer: &str) -> DrillOutcome {
     if correct { DrillOutcome::Pass } else { DrillOutcome::Fail }
 }
 
+/// The quality SM-2 reads a pass found with a hint as: right, but not on your own.
+const HINTED_QUALITY: f64 = 3.0;
+
 /// The drill after an answer at `now`, by SM-2 with two answers: a pass is quality 5, a miss quality 2.
 ///
 /// - A miss: passes in a row back to 0, one more lapse, due again in 1 day.
 /// - A pass: one more in a row; the interval is 1 day after the first, 6 after the second, then the last interval
 ///   times the ease, rounded.
-/// - The ease moves by SM-2's `0.1 − (5 − q)(0.08 + (5 − q)·0.02)` on every answer (+0.10 a pass, −0.32 a miss) and
-///   never drops under [`MIN_EASE`]. The new interval uses the ease from before the answer, as SM-2 does.
-pub fn grade(drill: &Drill, outcome: DrillOutcome, now: &Timestamp) -> Drill {
+/// - A pass with a hint (`hinted`) is half a miss: quality 3, it neither counts as a pass in a row nor breaks the
+///   run, and it comes back in 1 day.
+/// - The ease moves by SM-2's `0.1 − (5 − q)(0.08 + (5 − q)·0.02)` on every answer (+0.10 a pass, −0.14 with a hint,
+///   −0.32 a miss) and never drops under [`MIN_EASE`]. The new interval uses the ease from before the answer, as SM-2
+///   does.
+pub fn grade(drill: &Drill, outcome: DrillOutcome, hinted: bool, now: &Timestamp) -> Drill {
     let mut d = drill.clone();
+    let hinted = hinted && outcome == DrillOutcome::Pass;
     let q = match outcome {
+        _ if hinted => HINTED_QUALITY,
         DrillOutcome::Pass => PASS_QUALITY,
         DrillOutcome::Fail => FAIL_QUALITY,
     };
@@ -257,6 +290,7 @@ pub fn grade(drill: &Drill, outcome: DrillOutcome, now: &Timestamp) -> Drill {
             d.lapses += 1;
             d.interval_days = 1;
         }
+        DrillOutcome::Pass if hinted => d.interval_days = 1,
         DrillOutcome::Pass => {
             d.reps += 1;
             d.interval_days = match d.reps {
@@ -299,6 +333,20 @@ pub struct DrillAnswer {
     /// The move given, UCI (or as typed, when it was not a legal move).
     pub answer: String,
     pub outcome: DrillOutcome,
+    /// A hint was asked for before the answer: a pass then counts for [`HINTED_CREDIT`].
+    #[serde(default)]
+    pub hinted: bool,
+}
+
+impl DrillAnswer {
+    /// What the answer counts for in a hit rate: 1 a clean pass, [`HINTED_CREDIT`] a pass with a hint, 0 a miss.
+    pub fn credit(&self) -> f64 {
+        match (self.outcome, self.hinted) {
+            (DrillOutcome::Pass, false) => 1.0,
+            (DrillOutcome::Pass, true) => HINTED_CREDIT,
+            (DrillOutcome::Fail, _) => 0.0,
+        }
+    }
 }
 
 /// One day of the hit-rate trend.
@@ -307,10 +355,14 @@ pub struct HitRatePoint {
     /// `2026-10-25` (UTC).
     pub date: String,
     pub answers: u32,
+    /// Passes found without a hint.
     pub passes: u32,
-    /// Passes per answer that day, 0 to 1.
+    /// Passes found with a hint, each worth half in the rates.
+    #[serde(default)]
+    pub hinted: u32,
+    /// Credit per answer that day, 0 to 1.
     pub rate: f64,
-    /// Passes per answer over the last `window` answers up to the end of that day: the line the UI draws.
+    /// Credit per answer over the last `window` answers up to the end of that day: the line the UI draws.
     pub rolling: f64,
 }
 
@@ -320,20 +372,134 @@ pub fn trend(answers: &[DrillAnswer], window: usize) -> Vec<HitRatePoint> {
     sorted.sort_by(|a, b| a.at.cmp(&b.at));
     let window = window.max(1);
     let mut out: Vec<HitRatePoint> = Vec::new();
+    let mut credit_today = 0.0;
     for (i, a) in sorted.iter().enumerate() {
         let date = a.at.date().to_owned();
-        let pass = a.outcome == DrillOutcome::Pass;
         if out.last().is_none_or(|p| p.date != date) {
-            out.push(HitRatePoint { date, answers: 0, passes: 0, rate: 0.0, rolling: 0.0 });
+            out.push(HitRatePoint { date, answers: 0, passes: 0, hinted: 0, rate: 0.0, rolling: 0.0 });
+            credit_today = 0.0;
         }
         let p = out.last_mut().expect("pushed above");
         p.answers += 1;
-        p.passes += u32::from(pass);
-        p.rate = f64::from(p.passes) / f64::from(p.answers);
+        credit_today += a.credit();
+        match (a.outcome, a.hinted) {
+            (DrillOutcome::Pass, false) => p.passes += 1,
+            (DrillOutcome::Pass, true) => p.hinted += 1,
+            (DrillOutcome::Fail, _) => {}
+        }
+        p.rate = credit_today / f64::from(p.answers);
         let recent = &sorted[(i + 1).saturating_sub(window)..=i];
-        p.rolling = recent.iter().filter(|a| a.outcome == DrillOutcome::Pass).count() as f64 / recent.len() as f64;
+        p.rolling = recent.iter().map(|a| a.credit()).sum::<f64>() / recent.len() as f64;
     }
     out
+}
+
+/// Which drills a session is made of, besides today's schedule: one theme, the games of one opening line, or both.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SessionFilter {
+    pub theme: Option<ThemeKind>,
+    /// Only drills from these games (empty for any).
+    pub games: Vec<GameId>,
+    /// Only mistakes made by this ply.
+    pub max_ply: Option<u32>,
+}
+
+impl SessionFilter {
+    pub fn is_empty(&self) -> bool {
+        self.theme.is_none() && self.games.is_empty() && self.max_ply.is_none()
+    }
+
+    pub fn matches(&self, d: &Drill) -> bool {
+        self.theme.is_none_or(|t| d.theme.kind == t)
+            && (self.games.is_empty() || self.games.contains(&d.game))
+            && self.max_ply.is_none_or(|p| d.ply <= p)
+    }
+}
+
+/// A session on a theme or a line: the drills that match, in the order to play them. Tried drills that are due first
+/// (most overdue first), then new ones (biggest swing first), then tried ones not due yet (soonest first), because
+/// asking for a theme means practising it today. At most `limit`; the day's cap on new drills does not apply.
+pub fn session(drills: &[Drill], filter: &SessionFilter, now: &Timestamp, limit: usize) -> Vec<DrillId> {
+    let mine: Vec<&Drill> = drills.iter().filter(|d| filter.matches(d)).collect();
+    let mut due: Vec<&Drill> = mine.iter().copied().filter(|d| !d.is_new() && d.is_due(now)).collect();
+    due.sort_by(|a, b| a.due.cmp(&b.due).then(a.id.cmp(&b.id)));
+    let mut fresh: Vec<&Drill> = mine.iter().copied().filter(|d| d.is_new()).collect();
+    fresh.sort_by(|a, b| b.swing.total_cmp(&a.swing).then(a.id.cmp(&b.id)));
+    let mut later: Vec<&Drill> = mine.iter().copied().filter(|d| !d.is_new() && !d.is_due(now)).collect();
+    later.sort_by(|a, b| a.due.cmp(&b.due).then(a.id.cmp(&b.id)));
+    due.into_iter().chain(fresh).chain(later).take(limit).map(|d| d.id).collect()
+}
+
+/// A hint at a drill: a nudge that names a property of the right move, never the move.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct DrillHint {
+    /// 1 says what kind of move it is, 2 which piece moves.
+    pub level: u8,
+    pub text: String,
+    /// At level 2: the square the piece stands on, when all the right moves start there.
+    pub from: Option<String>,
+}
+
+/// The hint at `level` (1 or 2; more is 2) for a drill: from the moves that count as right, what they have in common.
+///
+/// - Level 1: "A check" or "A capture" when every right move is one, "A forcing move" when each is a capture or a
+///   check, "A quiet move" when none is, else a nudge that names nothing.
+/// - Level 2: "Move the knight" when every right move is made by the same kind of piece, else the kinds ("a knight or
+///   a bishop"); with the square the piece stands on when it is the same for all of them.
+pub fn hint(drill: &Drill, level: u8) -> Result<DrillHint, Error> {
+    use shakmaty::{Position as _, Role};
+
+    let pos = Position::from_fen(&drill.fen)?;
+    let moves = drill.best_moves.iter().map(|m| pos.uci_move(m)).collect::<Result<Vec<_>, _>>()?;
+    if moves.is_empty() {
+        return Err(Error::bad_request("the drill has no answer to hint at"));
+    }
+    let level = level.clamp(1, HINT_LEVELS);
+    if level == 1 {
+        let checks: Vec<bool> = moves
+            .iter()
+            .map(|m| {
+                let mut next = pos.inner().clone();
+                next.play_unchecked(*m);
+                next.is_check()
+            })
+            .collect();
+        let all = |f: &dyn Fn(usize) -> bool| (0..moves.len()).all(f);
+        let text = if all(&|i| checks[i]) {
+            "A check"
+        } else if all(&|i| moves[i].is_capture()) {
+            "A capture"
+        } else if all(&|i| checks[i] || moves[i].is_capture()) {
+            "A forcing move"
+        } else if all(&|i| !checks[i] && !moves[i].is_capture()) {
+            "A quiet move"
+        } else {
+            "Look at what your opponent is threatening"
+        };
+        return Ok(DrillHint { level, text: text.to_owned(), from: None });
+    }
+    let mut roles: Vec<Role> = Vec::new();
+    for m in &moves {
+        if !roles.contains(&m.role()) {
+            roles.push(m.role());
+        }
+    }
+    roles.sort_by_key(|r| *r as u8);
+    let word = |r: &Role| match r {
+        Role::Pawn => "pawn",
+        Role::Knight => "knight",
+        Role::Bishop => "bishop",
+        Role::Rook => "rook",
+        Role::Queen => "queen",
+        Role::King => "king",
+    };
+    let text = match roles.as_slice() {
+        [one] => format!("Move the {}", word(one)),
+        many => format!("Move {}", many.iter().map(|r| format!("a {}", word(r))).collect::<Vec<_>>().join(" or ")),
+    };
+    let first = moves[0].from();
+    let from = first.filter(|f| moves.iter().all(|m| m.from() == Some(*f))).map(|f| f.to_string());
+    Ok(DrillHint { level, text, from })
 }
 
 /// A White score as the win percentage of `side`: a helper for callers showing a drill's lines.
@@ -359,6 +525,8 @@ mod tests {
             opening: Some("Italian Game".into()),
             phase: Phase::Opening,
             recurring: 2,
+            kind: ThemeKind::OpeningError,
+            detail: None,
         }
     }
 
@@ -382,7 +550,15 @@ mod tests {
         assert_eq!(d.line, ["e5d4"]);
         assert_eq!(d.side, Side::White);
         assert_eq!(d.key, "r1bqkbnr/pppp1ppp/8/4p3/2BnP3/5N2/PPPP1PPP/RNBQK2R w KQkq -");
-        assert_eq!(d.theme, Theme { opening: Some("Italian Game".into()), phase: Phase::Opening });
+        assert_eq!(
+            d.theme,
+            Theme {
+                opening: Some("Italian Game".into()),
+                phase: Phase::Opening,
+                kind: ThemeKind::OpeningError,
+                detail: None
+            }
+        );
         assert!(d.is_new() && d.is_due(&Timestamp::from_unix_ms(0)));
         assert_eq!((d.ease, d.reps, d.lapses, d.interval_days), (START_EASE, 0, 0, 0));
     }
@@ -460,23 +636,23 @@ mod tests {
     #[test]
     fn passes_grow_the_interval_and_a_miss_starts_over() {
         let d = drill();
-        let d1 = grade(&d, DrillOutcome::Pass, &day(0));
+        let d1 = grade(&d, DrillOutcome::Pass, false, &day(0));
         assert_eq!((d1.reps, d1.interval_days, d1.due.clone()), (1, 1, day(1)));
         assert!((d1.ease - 2.6).abs() < 1e-9);
-        let d2 = grade(&d1, DrillOutcome::Pass, &day(1));
+        let d2 = grade(&d1, DrillOutcome::Pass, false, &day(1));
         assert_eq!((d2.reps, d2.interval_days, d2.due.clone()), (2, 6, day(7)));
-        let d3 = grade(&d2, DrillOutcome::Pass, &day(7));
+        let d3 = grade(&d2, DrillOutcome::Pass, false, &day(7));
         // 6 days × the ease before this answer (2.7), rounded.
         assert_eq!((d3.reps, d3.interval_days), (3, 16));
         assert_eq!(d3.due, day(23));
-        let miss = grade(&d3, DrillOutcome::Fail, &day(23));
+        let miss = grade(&d3, DrillOutcome::Fail, false, &day(23));
         assert_eq!((miss.reps, miss.lapses, miss.interval_days, miss.due.clone()), (0, 1, 1, day(24)));
         assert!((miss.ease - (2.8 - 0.32)).abs() < 1e-9);
         assert_eq!(miss.answered_at, Some(day(23)));
         // The ease never drops under SM-2's floor.
         let mut d = drill();
         for i in 0..10 {
-            d = grade(&d, DrillOutcome::Fail, &day(i));
+            d = grade(&d, DrillOutcome::Fail, false, &day(i));
         }
         assert_eq!(d.ease, MIN_EASE);
         assert_eq!(d.lapses, 10);
@@ -515,6 +691,7 @@ mod tests {
             at: Timestamp::from_unix_ms(ms),
             answer: "e2e4".into(),
             outcome: if pass { DrillOutcome::Pass } else { DrillOutcome::Fail },
+            hinted: false,
         };
         let answers = [a(DAY_MS + 5, true), a(10, false), a(20, true), a(DAY_MS + 9, true), a(2 * DAY_MS, false)];
         let t = trend(&answers, 3);
@@ -526,5 +703,97 @@ mod tests {
         assert!((t[2].rolling - 2.0 / 3.0).abs() < 1e-9 && t[2].rate == 0.0);
         assert!(trend(&[], 10).is_empty());
         assert!((win_for(Score::Cp(-100), Side::Black) - 59.1).abs() < 0.01);
+    }
+
+    #[test]
+    fn a_hinted_pass_is_half_a_miss() {
+        let d = grade(&drill(), DrillOutcome::Pass, false, &day(0));
+        let h = grade(&d, DrillOutcome::Pass, true, &day(1));
+        // The run neither grows nor breaks, it is due tomorrow, and the ease takes SM-2's quality 3.
+        assert_eq!((h.reps, h.lapses, h.interval_days, h.due.clone()), (1, 0, 1, day(2)));
+        assert!((h.ease - (d.ease - 0.14)).abs() < 1e-9);
+        // A hint does not excuse a miss.
+        let miss = grade(&d, DrillOutcome::Fail, true, &day(1));
+        assert_eq!((miss.reps, miss.lapses), (0, 1));
+        assert!((miss.ease - (d.ease - 0.32)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hints_count_for_half_in_the_hit_rate() {
+        let a = |ms: i64, outcome, hinted| DrillAnswer {
+            drill: DrillId(1),
+            at: Timestamp::from_unix_ms(ms),
+            answer: "e2e4".into(),
+            outcome,
+            hinted,
+        };
+        let answers = [
+            a(10, DrillOutcome::Pass, false),
+            a(20, DrillOutcome::Pass, true),
+            a(30, DrillOutcome::Fail, true),
+            a(40, DrillOutcome::Pass, false),
+        ];
+        let t = trend(&answers, 10);
+        assert_eq!((t[0].answers, t[0].passes, t[0].hinted), (4, 2, 1));
+        assert!((t[0].rate - 0.625).abs() < 1e-9 && (t[0].rolling - 0.625).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_session_on_a_theme_takes_due_then_new_then_later() {
+        let base = drill();
+        let mk = |id: i64, kind: ThemeKind, due: i64, answered: bool, swing: f64, game: i64| Drill {
+            id: DrillId(id),
+            due: day(due),
+            swing,
+            game: GameId(game),
+            theme: Theme { kind, ..base.theme.clone() },
+            answered_at: answered.then(|| day(0)),
+            ..base.clone()
+        };
+        let drills = [
+            mk(1, ThemeKind::HangingPiece, 3, true, 5.0, 1),   // due
+            mk(2, ThemeKind::HangingPiece, 9, true, 5.0, 1),   // tried, not due
+            mk(3, ThemeKind::HangingPiece, 0, false, 10.0, 2), // new
+            mk(4, ThemeKind::HangingPiece, 0, false, 30.0, 2), // new, bigger swing
+            mk(5, ThemeKind::MissedTactic, 0, false, 99.0, 1), // another theme
+        ];
+        let now = day(5);
+        let theme = SessionFilter { theme: Some(ThemeKind::HangingPiece), ..SessionFilter::default() };
+        assert_eq!(session(&drills, &theme, &now, 10), [DrillId(1), DrillId(4), DrillId(3), DrillId(2)]);
+        assert_eq!(session(&drills, &theme, &now, 2), [DrillId(1), DrillId(4)]);
+        let line = SessionFilter { games: vec![GameId(2)], max_ply: Some(7), ..SessionFilter::default() };
+        assert_eq!(session(&drills, &line, &now, 10), [DrillId(4), DrillId(3)]);
+        let early = SessionFilter { max_ply: Some(6), ..SessionFilter::default() };
+        assert!(session(&drills, &early, &now, 10).is_empty());
+        assert!(SessionFilter::default().is_empty() && !early.is_empty());
+    }
+
+    #[test]
+    fn a_hint_names_a_property_never_the_move() {
+        let d = drill();
+        // Nxd4 and c3: a capture and a quiet move, by different pieces.
+        let one = hint(&d, 1).unwrap();
+        assert_eq!(one, DrillHint { level: 1, text: "Look at what your opponent is threatening".into(), from: None });
+        let two = hint(&d, 2).unwrap();
+        assert_eq!(two.text, "Move a pawn or a knight");
+        assert_eq!(two.from, None);
+        // One capture by a knight.
+        let only = Drill { best_moves: vec!["f3d4".into()], best_san: vec!["Nxd4".into()], ..d.clone() };
+        assert_eq!(hint(&only, 1).unwrap().text, "A capture");
+        let knight = hint(&only, 2).unwrap();
+        assert_eq!((knight.text.as_str(), knight.from.as_deref()), ("Move the knight", Some("f3")));
+        // Past the last level stays at it; a quiet move reads as one.
+        let quiet = Drill { best_moves: vec!["c2c3".into()], best_san: vec!["c3".into()], ..d.clone() };
+        assert_eq!(hint(&quiet, 5).unwrap().level, 2);
+        assert_eq!(hint(&quiet, 1).unwrap().text, "A quiet move");
+        assert!(hint(&Drill { best_moves: Vec::new(), ..d }, 1).is_err());
+    }
+
+    #[test]
+    fn a_question_carries_no_answer() {
+        let q = drill().question();
+        assert!(q.best_moves.is_empty() && q.best_san.is_empty() && q.line.is_empty() && q.played.is_empty());
+        assert_eq!((q.fen.as_str(), q.side), (FEN, Side::White));
+        assert_eq!(q.theme, drill().theme);
     }
 }

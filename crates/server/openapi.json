@@ -1091,7 +1091,7 @@
         "tags": [
           "drills"
         ],
-        "summary": "Today's drills: due ones first, then new ones up to the day's cap. Show only `fen`, `side` and `theme` before\nthe answer.",
+        "summary": "Today's drills: due ones first, then new ones up to the day's cap; or, with `theme` or `games`, a session on that\ntheme or opening line. They come as questions: the `fen`, `side` and `theme`, without the answer, which\n`answer_drill` returns.",
         "operationId": "drills_today",
         "parameters": [
           {
@@ -1108,10 +1108,39 @@
           {
             "name": "limit",
             "in": "query",
-            "description": "At most this many in all (default 30).",
+            "description": "At most this many in all (default 30; 10 for a theme or a line).",
             "required": false,
             "schema": {
               "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "theme",
+            "in": "query",
+            "description": "Only this theme: a session on it, with the day's cap on new drills set aside.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ThemeKind"
+            }
+          },
+          {
+            "name": "games",
+            "in": "query",
+            "description": "Only drills from these games (comma-separated ids, at most 200): the games of an opening line.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "max_ply",
+            "in": "query",
+            "description": "Only mistakes made by this ply (24 is the first twelve moves).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
               "minimum": 0
             }
           }
@@ -1122,6 +1151,15 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DrillsToday"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -1230,6 +1268,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DrillAnswerResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/drills/{id}/hint": {
+      "post": {
+        "tags": [
+          "drills"
+        ],
+        "summary": "The next hint at a drill, without the move: first what kind of move it is, then which piece moves. A hint is\nremembered until the drill is answered, and a right answer after one counts half and comes back tomorrow.",
+        "operationId": "hint_drill",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillHint"
                 }
               }
             }
@@ -2967,6 +3045,59 @@
             }
           },
           "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/players/you/prep": {
+      "get": {
+        "tags": [
+          "players"
+        ],
+        "summary": "Your opening lines with one colour: the named openings you play, your score in each, and how often you go wrong\nin the first twelve moves, with the games to drill. Refused (409) while you play on Lichess, unless every game\nof yours is correspondence.",
+        "operationId": "get_prep",
+        "parameters": [
+          {
+            "name": "side",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Side"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Your newest finished games read, at most (500).",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Prep"
+                }
+              }
+            }
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -5609,6 +5740,7 @@
         "description": "What an answer came to: the outcome, the drill rescheduled, and the answer itself.",
         "required": [
           "outcome",
+          "hinted",
           "drill",
           "best_moves",
           "best_san",
@@ -5630,6 +5762,10 @@
           },
           "drill": {
             "$ref": "#/components/schemas/Drill"
+          },
+          "hinted": {
+            "type": "boolean",
+            "description": "A hint was asked for first: a pass then counts half and the drill comes back tomorrow."
           },
           "line": {
             "type": "array",
@@ -5677,6 +5813,32 @@
           }
         }
       },
+      "DrillHint": {
+        "type": "object",
+        "description": "A hint at a drill: a nudge that names a property of the right move, never the move.",
+        "required": [
+          "level",
+          "text"
+        ],
+        "properties": {
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "At level 2: the square the piece stands on, when all the right moves start there."
+          },
+          "level": {
+            "type": "integer",
+            "format": "int32",
+            "description": "1 says what kind of move it is, 2 which piece moves.",
+            "minimum": 0
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
       "DrillId": {
         "type": "integer",
         "format": "int64",
@@ -5697,7 +5859,8 @@
           "drills",
           "due",
           "new",
-          "started_today"
+          "started_today",
+          "total"
         ],
         "properties": {
           "drills": {
@@ -5705,7 +5868,7 @@
             "items": {
               "$ref": "#/components/schemas/Drill"
             },
-            "description": "In the order to play them. The client shows `fen`, `side` and `theme` only until the drill is answered."
+            "description": "In the order to play them: questions, without their answers."
           },
           "due": {
             "type": "integer",
@@ -5722,6 +5885,12 @@
             "type": "integer",
             "format": "int32",
             "description": "New drills started today, counted against the day's cap.",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Every drill there is, to tell \"none yet\" from \"none today\".",
             "minimum": 0
           }
         }
@@ -7250,20 +7419,27 @@
             "type": "string",
             "description": "`2026-10-25` (UTC)."
           },
+          "hinted": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Passes found with a hint, each worth half in the rates.",
+            "minimum": 0
+          },
           "passes": {
             "type": "integer",
             "format": "int32",
+            "description": "Passes found without a hint.",
             "minimum": 0
           },
           "rate": {
             "type": "number",
             "format": "double",
-            "description": "Passes per answer that day, 0 to 1."
+            "description": "Credit per answer that day, 0 to 1."
           },
           "rolling": {
             "type": "number",
             "format": "double",
-            "description": "Passes per answer over the last `window` answers up to the end of that day: the line the UI draws."
+            "description": "Credit per answer over the last `window` answers up to the end of that day: the line the UI draws."
           }
         }
       },
@@ -8941,6 +9117,159 @@
           }
         }
       },
+      "Prep": {
+        "type": "object",
+        "description": "Your lines with one colour.",
+        "required": [
+          "side",
+          "games",
+          "lines"
+        ],
+        "properties": {
+          "games": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Finished standard games of yours with this colour that have a named opening.",
+            "minimum": 0
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrepLine"
+            },
+            "description": "Most played first, then the flagged ones."
+          },
+          "side": {
+            "$ref": "#/components/schemas/Side"
+          }
+        }
+      },
+      "PrepLine": {
+        "type": "object",
+        "description": "One opening line you play and how it goes.",
+        "required": [
+          "name",
+          "moves",
+          "pgn",
+          "fen",
+          "games",
+          "wins",
+          "draws",
+          "losses",
+          "reviewed",
+          "early_games",
+          "early_mistakes",
+          "early_swing",
+          "drill_games",
+          "scores_badly",
+          "goes_wrong_early",
+          "example"
+        ],
+        "properties": {
+          "draws": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "drill_games": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GameId"
+            },
+            "description": "The newest games with an early mistake, to drill (`GET /api/drills/today?games=…&max_ply=24`)."
+          },
+          "early_games": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "early_mistakes": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Your early mistakes and blunders in the line, and the win percentage they cost in all.",
+            "minimum": 0
+          },
+          "early_swing": {
+            "type": "number",
+            "format": "double"
+          },
+          "eco": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "example": {
+            "$ref": "#/components/schemas/GameId",
+            "description": "The newest game of the line."
+          },
+          "fen": {
+            "type": "string"
+          },
+          "games": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "goes_wrong_early": {
+            "type": "boolean",
+            "description": "At least a third of at least three reviewed games had an early mistake."
+          },
+          "losses": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "moves": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The line's moves (UCI) from the start, and as one PGN string (`1. e4 e5 2. Nf3 Nc6`); the position after it."
+          },
+          "name": {
+            "type": "string",
+            "description": "The opening's name: `Italian Game: Giuoco Piano`."
+          },
+          "pgn": {
+            "type": "string"
+          },
+          "reviewed": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Games of the line that are reviewed, and how many of them have a mistake of yours in the first twelve moves.",
+            "minimum": 0
+          },
+          "score": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Your points per decided game, 0 to 1."
+          },
+          "scores_badly": {
+            "type": "boolean",
+            "description": "Your score is under 45 % over at least four decided games."
+          },
+          "wins": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "worst": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WeakSpot",
+                "description": "The costliest early mistake, to open on the board."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "Preset": {
         "type": "string",
         "description": "Named game settings, as Reckless names its tests.",
@@ -8985,7 +9314,8 @@
           "trend",
           "longest_win_streak",
           "moments",
-          "weak_spots"
+          "weak_spots",
+          "themes"
         ],
         "properties": {
           "accuracy": {
@@ -9087,6 +9417,13 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          },
+          "themes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ThemeStat"
+            },
+            "description": "The same mistakes grouped by theme, the costliest first (every one, not just the listed weak spots); filled\nfor You only."
           },
           "time": {
             "$ref": "#/components/schemas/TimeStats"
@@ -10931,11 +11268,22 @@
       },
       "Theme": {
         "type": "object",
-        "description": "What a drill is about: the opening family of its game, and the phase it came from.",
+        "description": "What a drill is about: the opening family of its game, the phase it came from, and what the mistake was about\n(`core::themes`; `other` until a drill from before themes is classified).",
         "required": [
-          "phase"
+          "phase",
+          "kind"
         ],
         "properties": {
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The cause the evidence names (`a knight`, `fork`), when it does."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ThemeKind"
+          },
           "opening": {
             "type": [
               "string",
@@ -10944,6 +11292,109 @@
           },
           "phase": {
             "$ref": "#/components/schemas/Phase"
+          }
+        }
+      },
+      "ThemeCount": {
+        "type": "object",
+        "description": "A name counted: a cause of a theme's mistakes, or an opening they came in.",
+        "required": [
+          "name",
+          "count",
+          "swing"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "swing": {
+            "type": "number",
+            "format": "double",
+            "description": "Win percentage lost to them."
+          }
+        }
+      },
+      "ThemeKind": {
+        "type": "string",
+        "description": "What a mistake was about.",
+        "enum": [
+          "time_trouble",
+          "king_safety",
+          "hanging_piece",
+          "missed_tactic",
+          "opening_error",
+          "endgame_technique",
+          "other"
+        ]
+      },
+      "ThemeStat": {
+        "type": "object",
+        "description": "Your mistakes of one theme (`core::themes`) added up: how often, how much they cost, and the costliest examples.\nEvery mistake and blunder in the games considered has exactly one theme, so the themes add up to all of them.",
+        "required": [
+          "kind",
+          "count",
+          "games",
+          "swing",
+          "per_game",
+          "share",
+          "causes",
+          "openings",
+          "examples"
+        ],
+        "properties": {
+          "causes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ThemeCount"
+            },
+            "description": "The causes named most often (`a knight`, `fork`), at most 3; empty when the theme names none."
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Mistakes and blunders of this theme, and the games they were in.",
+            "minimum": 0
+          },
+          "examples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WeakSpot"
+            },
+            "description": "The costliest, at most 3, to open on the board."
+          },
+          "games": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ThemeKind"
+          },
+          "openings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ThemeCount"
+            },
+            "description": "The opening families they came in most often, at most 3."
+          },
+          "per_game": {
+            "type": "number",
+            "format": "double"
+          },
+          "share": {
+            "type": "number",
+            "format": "double",
+            "description": "Their share of everything lost to mistakes, 0 to 1."
+          },
+          "swing": {
+            "type": "number",
+            "format": "double",
+            "description": "Win percentage lost to them in all, and per reviewed game."
           }
         }
       },
@@ -12345,11 +12796,18 @@
           "best",
           "swing",
           "phase",
-          "recurring"
+          "recurring",
+          "kind"
         ],
         "properties": {
           "best": {
             "type": "string"
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "fen": {
             "type": "string",
@@ -12357,6 +12815,10 @@
           },
           "game": {
             "$ref": "#/components/schemas/GameId"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ThemeKind",
+            "description": "What the mistake was about (`core::themes`), and the cause when the evidence names one."
           },
           "opening": {
             "type": [

@@ -210,7 +210,8 @@ mod tests {
     #[test]
     fn your_lines_are_dated_and_smoothed() {
         let trend = [t(3, 3, Some(90.0), Some(1520)), t(1, 1, Some(70.0), Some(1500)), t(2, 2, None, None)];
-        let drills = [HitRatePoint { date: "1970-01-05".into(), answers: 4, passes: 3, rate: 0.75, rolling: 0.6 }];
+        let drills =
+            [HitRatePoint { date: "1970-01-05".into(), answers: 4, passes: 3, hinted: 0, rate: 0.75, rolling: 0.6 }];
         let s = your_series(&trend, &drills, 2);
         assert_eq!(
             s.iter().map(|s| s.metric).collect::<Vec<_>>(),

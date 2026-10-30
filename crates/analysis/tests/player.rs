@@ -4,13 +4,15 @@
 mod common;
 
 use common::{SCHOLARS_MATE, finished_game, harness, moves};
-use dameless_analysis::{Drills, Profiles, RepertoireRequest, ReviewRequest, Reviews};
+use dameless_analysis::{Drills, Profiles, RepertoireRequest, ReviewRequest, Reviews, SessionRequest};
 use dameless_core::{
     GameId, PlayerKey, Side, TimeControl, Timestamp,
     drills::DrillOutcome,
     events::{Event, EventKind},
     game::{Ending, GameStatus, Opening, Outcome, Seat, Source},
+    prep::PrepRequest,
     progress::Metric,
+    themes::ThemeKind,
     work::WorkKind,
 };
 use dameless_hub::{Executor, Next, Subscription, TopicFilter, WorkContext};
@@ -57,8 +59,14 @@ async fn drills_come_from_your_reviewed_mistakes_and_repeat_on_a_schedule() {
     // The review makes drills from your game, and only yours.
     let reviews = Reviews::new(h.eval.clone()).with_drills(drills.clone());
     review(&h, &reviews, vec![blunder, theirs]).await;
-    let all = drills.list().await.unwrap();
-    assert!(!all.is_empty(), "the queen blunder is a drill");
+    let questions = drills.list().await.unwrap();
+    assert!(!questions.is_empty(), "the queen blunder is a drill");
+    // The list gives questions: no answers go out before a drill is tried.
+    assert!(questions.iter().all(|d| d.best_moves.is_empty() && d.best_san.is_empty() && d.played.is_empty()));
+    let mut all = Vec::new();
+    for q in &questions {
+        all.push(drills.get(q.id).await.unwrap());
+    }
     assert!(all.iter().all(|d| d.game == blunder && d.side == Side::White));
     let queen = all.iter().find(|d| d.played_san == "Qxe5+").expect("a drill of the blunder");
     assert_eq!(queen.ply, 5);
@@ -73,7 +81,7 @@ async fn drills_come_from_your_reviewed_mistakes_and_repeat_on_a_schedule() {
 
     // Today: every drill is new and due.
     let now = Timestamp::from_unix_ms(1_800_000_000_000);
-    let today = drills.today(&now, None, None).await.unwrap();
+    let today = drills.today(&now, &SessionRequest::default()).await.unwrap();
     assert_eq!((today.new as usize, today.due, today.started_today), (all.len(), 0, 0));
 
     // A pass comes back tomorrow; a miss resets the run.
@@ -87,7 +95,7 @@ async fn drills_come_from_your_reviewed_mistakes_and_repeat_on_a_schedule() {
     let miss = drills.answer(queen.id, &queen.played_san, later.clone()).await.unwrap();
     assert_eq!(miss.outcome, DrillOutcome::Fail);
     assert_eq!((miss.drill.reps, miss.drill.lapses, miss.drill.interval_days), (0, 1, 1));
-    assert_eq!(drills.today(&now, None, None).await.unwrap().started_today, 1);
+    assert_eq!(drills.today(&now, &SessionRequest::default()).await.unwrap().started_today, 1);
     let answered = events(&mut sub);
     assert_eq!(answered.iter().filter(|e| e.kind == EventKind::DrillAnswered).count(), 2);
     assert_eq!(answered.iter().filter(|e| e.kind == EventKind::DrillUpserted).count(), 2);
@@ -101,7 +109,36 @@ async fn drills_come_from_your_reviewed_mistakes_and_repeat_on_a_schedule() {
     assert_eq!(drills.delete(queen.id).await.unwrap_err().status(), 404);
     assert!(events(&mut sub).iter().any(|e| e.kind == EventKind::DrillDeleted));
     // Deleted, it can be made again.
-    assert_eq!(drills.make_from_weak_spots(Some(5)).await.unwrap().len(), 1);
+    let again = drills.make_from_weak_spots(Some(5)).await.unwrap();
+    assert_eq!(again.len(), 1);
+
+    // Giving the queen away is a hanging piece, and a session on that theme finds it, whatever the day's cap says.
+    assert_eq!(again[0].theme.kind, ThemeKind::HangingPiece);
+    assert_eq!(again[0].theme.detail.as_deref(), Some("a queen"));
+    let session = SessionRequest { theme: Some(ThemeKind::HangingPiece), ..SessionRequest::default() };
+    let hanging = drills.today(&now, &SessionRequest { new_per_day: Some(0), ..session.clone() }).await.unwrap();
+    assert_eq!(hanging.drills.iter().map(|d| d.id).collect::<Vec<_>>(), [again[0].id]);
+    assert!(hanging.drills.iter().all(|d| d.best_moves.is_empty()));
+    let none = SessionRequest { theme: Some(ThemeKind::TimeTrouble), ..SessionRequest::default() };
+    assert!(drills.today(&now, &none).await.unwrap().drills.is_empty());
+
+    // A hint names no move, and a pass found with it is half a miss: not a pass in a row, back tomorrow.
+    let id = again[0].id;
+    let first = drills.hint(id).await.unwrap();
+    assert_eq!(first.level, 1);
+    let second = drills.hint(id).await.unwrap();
+    assert_eq!((second.level, drills.hint(id).await.unwrap().level), (2, 2));
+    let right = drills.get(id).await.unwrap().best_moves[0].clone();
+    assert!(!first.text.contains(&right) && !second.text.contains(&right));
+    let hinted = drills.answer(id, &right, now.clone()).await.unwrap();
+    assert!(hinted.hinted && hinted.outcome == DrillOutcome::Pass);
+    assert_eq!((hinted.drill.reps, hinted.drill.interval_days, hinted.drill.lapses), (0, 1, 0));
+    // The hint is spent with the answer.
+    let plain = drills.answer(id, &right, now.clone()).await.unwrap();
+    assert!(!plain.hinted);
+    let trend = drills.trend(None).await.unwrap();
+    assert_eq!(trend.iter().map(|p| p.hinted).sum::<u32>(), 1);
+    assert_eq!(drills.hint(dameless_core::drills::DrillId(999)).await.unwrap_err().status(), 404);
 }
 
 /// A finished Lichess-like game of yours with a named opening covering `book` plies.
@@ -146,7 +183,16 @@ async fn your_repertoire_is_built_from_your_games_and_off_while_you_play() {
     let black = profiles.repertoire(RepertoireRequest { side: Side::Black, ..req }).await.unwrap();
     assert_eq!(black.games, 1);
 
+    // Prep reads the same games into lines: the named opening, here two plies, with its moves from the newest game.
+    let prep_req = PrepRequest { side: Side::White, limit: None };
+    let prep = profiles.prep(prep_req).await.unwrap();
+    assert_eq!((prep.games, prep.lines.len()), (3, 1));
+    let line = &prep.lines[0];
+    assert_eq!((line.name.as_str(), line.games, line.pgn.as_str()), ("King's Pawn Game", 3, "1. e4 e5"));
+    assert_eq!((line.wins, line.draws, line.losses), (1, 1, 1));
+
     h.hub.policy.set_live_games(&[false]);
+    assert_eq!(profiles.prep(prep_req).await.unwrap_err().status(), 409);
     assert_eq!(profiles.repertoire(req).await.unwrap_err().status(), 409);
     h.hub.policy.set_live_games(&[true]);
     assert!(profiles.repertoire(req).await.is_ok(), "correspondence allows the explorer, and this");
