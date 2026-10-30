@@ -1,16 +1,12 @@
-//! Adapter: UCI processes, the engine pool, git and cargo builds, bench, fastchess.
+//! Adapter: UCI processes, the engine pool, and downloads of the built-in engines.
 //!
-//! This crate knows the outside world of the engine (UCI, git, cargo, `reckless bench`, fastchess) and keeps its own
-//! wire types for it: a UCI `info` line, a fastchess round's counts, a git branch. It depends on nothing else of ours;
-//! `play`, `analysis` and `work` map its types onto `core`'s.
+//! This crate knows the outside world of an engine (UCI, processes, release downloads) and keeps its own wire types for
+//! it: a UCI `info` line, a release asset. It depends on nothing else of ours; `play`, `analysis` and `work` map its
+//! types onto `core`'s.
 //!
-//! Everything that runs a program goes through [`proc`], so cancelling (dropping) a build, a bench or a fastchess round
-//! takes the whole process tree with it, on Windows (a Job Object) and on Unix (a process group) alike.
+//! Everything that runs a program goes through [`proc`], so cancelling (dropping) a search takes the whole process tree
+//! with it, on Windows (a Job Object) and on Unix (a process group) alike.
 
-pub mod bench;
-pub mod build;
-pub mod fastchess;
-pub mod git;
 pub mod pool;
 pub mod proc;
 pub mod tools;

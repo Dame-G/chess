@@ -1,16 +1,10 @@
 //! Lichess's business rules and the shapes the app shows of its connections. The HTTP client and its wire types are
 //! the `lichess` adapter's; `play` maps them to these and runs the rules.
 //!
-//! - [`bot`]: which challenges Dameless's BOT account takes, and its settings.
-//! - [`seek`]: how the bot looks for games by challenging other bots (time and randomness passed in).
-//! - [`quota`]: Lichess's daily limit of 100 games between bots.
 //! - [`board`]: what the Board API lets your own account play (rapid+ seeks, blitz+ challenges, never bullet).
 //! - [`ending`]: how a Lichess game status reads as a result.
 
 pub mod board;
-pub mod bot;
-pub mod quota;
-pub mod seek;
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -21,10 +15,6 @@ use crate::{
     ids::{Color, ConnectionKey, GameId, Side, Timestamp},
     time::{Speed, TimeControl},
 };
-
-pub use bot::{BotSettings, Decline, SeekClock};
-pub use quota::Quota;
-pub use seek::{SeekMode, SeekStatus};
 
 /// One Lichess rating.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -180,20 +170,7 @@ pub struct YouStatus {
     pub seek_note: Option<String>,
 }
 
-/// What only the bot's connection has.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct BotStatus {
-    /// Online across restarts until stopped.
-    pub online: bool,
-    pub settings: BotSettings,
-    pub seek: SeekStatus,
-    /// Games against bots started in the last 24 hours.
-    pub bot_games_today: u32,
-    /// While at the daily limit: when it lifts.
-    pub bot_limit_until: Option<Timestamp>,
-}
-
-/// A connection as the app shows it: the `connection.upserted` event and `GET /api/connections`.
+// A connection as the app shows it: the `connection.upserted` event and `GET /api/connections`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ConnectionStatus {
     pub key: ConnectionKey,
@@ -206,7 +183,6 @@ pub struct ConnectionStatus {
     pub playing: Vec<GameId>,
     pub challenges: Vec<Challenge>,
     pub you: Option<YouStatus>,
-    pub bot: Option<BotStatus>,
 }
 
 /// How a Lichess game status ends the record, or `None` while it is still being played. `winner` is Lichess's;

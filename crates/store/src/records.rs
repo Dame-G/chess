@@ -12,9 +12,9 @@ use crate::{Store, from_json, from_opt_json, now, to_json};
 pub enum ConnectionField {
     /// The Lichess account it is linked to.
     Account,
-    /// What it is set to do: the bot's rules, version and seek settings.
+    /// What it is set to do.
     Settings,
-    /// What it was doing, to come back to after a restart: online, seeking.
+    /// What it was doing, to come back to after a restart: your open seek.
     State,
 }
 
@@ -180,30 +180,29 @@ mod tests {
     #[tokio::test]
     async fn connections_keep_fields_apart() {
         let (store, _dir) = testing::store();
-        assert!(store.connection(ConnectionKey::Bot).await.unwrap().is_none());
+        assert!(store.connection(ConnectionKey::You).await.unwrap().is_none());
         let settings = serde_json::json!({ "hash": 64 });
-        store.put_connection_field(ConnectionKey::Bot, ConnectionField::Settings, Some(&settings)).await.unwrap();
+        store.put_connection_field(ConnectionKey::You, ConnectionField::Settings, Some(&settings)).await.unwrap();
         store
             .put_connection_field(
-                ConnectionKey::Bot,
+                ConnectionKey::You,
                 ConnectionField::State,
                 Some(&serde_json::json!({ "online": true })),
             )
             .await
             .unwrap();
         let got: Option<serde_json::Value> =
-            store.connection_field(ConnectionKey::Bot, ConnectionField::Settings).await.unwrap();
+            store.connection_field(ConnectionKey::You, ConnectionField::Settings).await.unwrap();
         assert_eq!(got, Some(settings.clone()));
-        let row = store.connection(ConnectionKey::Bot).await.unwrap().unwrap();
+        let row = store.connection(ConnectionKey::You).await.unwrap().unwrap();
         assert_eq!((row.account, row.settings), (None, Some(settings)));
         store
-            .put_connection_field::<serde_json::Value>(ConnectionKey::Bot, ConnectionField::State, None)
+            .put_connection_field::<serde_json::Value>(ConnectionKey::You, ConnectionField::State, None)
             .await
             .unwrap();
-        assert_eq!(store.connection(ConnectionKey::Bot).await.unwrap().unwrap().state, None);
+        assert_eq!(store.connection(ConnectionKey::You).await.unwrap().unwrap().state, None);
+        store.delete_connection(ConnectionKey::You).await.unwrap();
         assert!(store.connection(ConnectionKey::You).await.unwrap().is_none());
-        store.delete_connection(ConnectionKey::Bot).await.unwrap();
-        assert!(store.connection(ConnectionKey::Bot).await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -223,11 +222,11 @@ mod tests {
         store.upsert_player(bob.clone()).await.unwrap();
         assert_eq!(store.player(&key).await.unwrap(), Some(bob));
 
-        assert_eq!(store.meta::<u32>("bot_games_today").await.unwrap(), None);
-        store.put_meta("bot_games_today", &12u32).await.unwrap();
-        store.put_meta("bot_games_today", &13u32).await.unwrap();
-        assert_eq!(store.meta::<u32>("bot_games_today").await.unwrap(), Some(13));
-        store.delete_meta("bot_games_today").await.unwrap();
-        assert_eq!(store.meta::<u32>("bot_games_today").await.unwrap(), None);
+        assert_eq!(store.meta::<u32>("engines.analysis").await.unwrap(), None);
+        store.put_meta("engines.analysis", &12u32).await.unwrap();
+        store.put_meta("engines.analysis", &13u32).await.unwrap();
+        assert_eq!(store.meta::<u32>("engines.analysis").await.unwrap(), Some(13));
+        store.delete_meta("engines.analysis").await.unwrap();
+        assert_eq!(store.meta::<u32>("engines.analysis").await.unwrap(), None);
     }
 }

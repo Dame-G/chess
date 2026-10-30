@@ -1,36 +1,25 @@
-//! Work: anything running in the background — a build, a trial, a tune, a review, an import, a promotion.
+//! Work: anything running in the background — a review, an import, calibrating the levels, installing engines.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::ids::{GameId, IdeaId, PlayerKey, Timestamp, TrialId, VersionId, WorkId};
+use crate::ids::{GameId, PlayerKey, Timestamp, WorkId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkKind {
-    Build,
-    Trial,
-    Tune,
     Review,
     Import,
-    Promote,
-    /// Games between Dameless's levels, to fit their ratings.
+    /// Games between the levels of the ladder, to fit their ratings.
     Calibrate,
-    /// Self-play training data with Reckless's `datagen` branch.
-    Datagen,
-    /// A training run: bullet on the GPU, a few cores for its data loader.
-    Train,
-    /// Downloading a shard of training data (with your go-ahead) and converting it.
-    DatasetImport,
-    /// Taking upstream Reckless: fetch, merge into the fork's `main`, build and bench, crown the next champion.
-    Upstream,
+    /// Downloading the built-in engines (Stockfish, lc0 and Maia's weights) into the data directory's `tools/`.
+    Setup,
 }
 
 impl WorkKind {
-    /// Whether it needs cores from the ledger. Imports use the network only and run at once (a dataset import's
-    /// conversion is short and single-threaded).
+    /// Whether it needs cores from the ledger. Imports and setup use the network only and run at once.
     pub fn uses_cores(self) -> bool {
-        !matches!(self, Self::Import | Self::DatasetImport)
+        !matches!(self, Self::Import | Self::Setup)
     }
 }
 
@@ -39,7 +28,7 @@ impl WorkKind {
 pub enum WorkStatus {
     Queued,
     Running,
-    /// Waiting between rounds, iterations or positions: by request, or for the fair-play policy.
+    /// Waiting between positions or games: by request, or for the fair-play policy.
     Paused,
     Done,
     Failed,
@@ -54,17 +43,15 @@ impl WorkStatus {
 }
 
 /// Which work runs first when cores are short: the lower, the sooner. Live games and live evaluation reserve their
-/// cores outside the queue; these order the work items.
+/// cores outside the queue; these order the work items. The numbers are what the store keeps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Priority {
     Live = 0,
-    Interactive = 1,
-    /// Reviews asked for now: a game, or a few.
+    /// Reviews asked for now (a game, or a few), imports and setup.
     Review = 2,
-    Idea = 3,
     /// Long work that takes what nothing else wants: reviewing all of a player's games, calibrating the levels. It
-    /// yields its cores to trials and to everything above them between units.
+    /// yields its cores to everything above it between units.
     Background = 4,
 }
 
@@ -75,9 +62,7 @@ impl Priority {
     }
 
     pub fn from_rank(rank: u8) -> Option<Self> {
-        [Self::Live, Self::Interactive, Self::Review, Self::Idea, Self::Background]
-            .into_iter()
-            .find(|p| p.rank() == rank)
+        [Self::Live, Self::Review, Self::Background].into_iter().find(|p| p.rank() == rank)
     }
 }
 
@@ -85,11 +70,10 @@ impl Priority {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Subject {
-    Idea { id: IdeaId },
-    Trial { id: TrialId },
     Game { id: GameId },
     Player { key: PlayerKey },
-    Version { id: VersionId },
+    /// The engines list: installing the built-in engines.
+    Engines,
 }
 
 /// How far along a piece of work is.
@@ -97,10 +81,10 @@ pub enum Subject {
 pub struct Progress {
     pub done: u64,
     pub total: Option<u64>,
-    /// What is counted: `pairs`, `iterations`, `games`, `positions`.
+    /// What is counted: `games`, `positions`, `bytes`.
     pub unit: String,
     pub eta_seconds: Option<u64>,
-    /// One sentence for people: "412 pairs, LLR 1.2 of 2.94".
+    /// One sentence for people: "12 of 40 games".
     pub text: Option<String>,
 }
 
@@ -118,7 +102,7 @@ pub struct Work {
     pub kind: WorkKind,
     pub status: WorkStatus,
     pub priority: Priority,
-    /// "Trying deeper-lmr · short games".
+    /// "Reviewing 20 games".
     pub title: String,
     pub subject: Subject,
     /// Cores granted now.
@@ -138,12 +122,14 @@ mod tests {
 
     #[test]
     fn priorities_order_live_first() {
-        assert!(Priority::Live < Priority::Review && Priority::Review < Priority::Idea);
+        assert!(Priority::Live < Priority::Review && Priority::Review < Priority::Background);
         assert_eq!(Priority::from_rank(2), Some(Priority::Review));
-        assert_eq!(serde_json::to_value(Priority::Interactive).unwrap(), "interactive");
+        assert_eq!(Priority::from_rank(3), None);
+        assert_eq!(serde_json::to_value(Priority::Background).unwrap(), "background");
         let s = Subject::Player { key: PlayerKey::You };
         assert_eq!(serde_json::to_value(&s).unwrap(), serde_json::json!({ "type": "player", "key": "you" }));
+        assert_eq!(serde_json::to_value(Subject::Engines).unwrap(), serde_json::json!({ "type": "engines" }));
         assert_eq!(Progress::eta(10, 40, 60), Some(180));
-        assert!(!WorkKind::Import.uses_cores());
+        assert!(!WorkKind::Import.uses_cores() && !WorkKind::Setup.uses_cores());
     }
 }

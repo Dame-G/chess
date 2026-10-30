@@ -1,4 +1,4 @@
-//! The position cache: every search a review makes, by position (FEN without the move counters), the version's commit,
+//! The position cache: every search a review makes, by position (FEN without the move counters), the engine,
 //! the node budget and MultiPV, so a position shared by many games (openings, mostly) is searched once.
 
 use std::collections::HashMap;
@@ -11,8 +11,8 @@ use crate::{Store, from_json, to_json};
 /// What a cached search is keyed by besides its position.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SearchKey {
-    /// The full sha of the version searched with.
-    pub commit: String,
+    /// The engine searched with: its cache key (`core::engines::Engine::cache_key`), `stockfish|Stockfish 19`.
+    pub engine: String,
     pub nodes: u64,
     pub multipv: u32,
 }
@@ -24,8 +24,8 @@ impl Store {
         self.read(move |conn| {
             let text: Option<String> = conn
                 .query_row(
-                    "SELECT result FROM positions WHERE key = ?1 AND commit_sha = ?2 AND nodes = ?3 AND multipv = ?4",
-                    params![key, search.commit, search.nodes as i64, search.multipv],
+                    "SELECT result FROM positions WHERE key = ?1 AND engine = ?2 AND nodes = ?3 AND multipv = ?4",
+                    params![key, search.engine, search.nodes as i64, search.multipv],
                     |r| r.get(0),
                 )
                 .optional()?;
@@ -43,12 +43,12 @@ impl Store {
         let search = search.clone();
         self.read(move |conn| {
             let mut stmt = conn.prepare_cached(
-                "SELECT result FROM positions WHERE key = ?1 AND commit_sha = ?2 AND nodes = ?3 AND multipv = ?4",
+                "SELECT result FROM positions WHERE key = ?1 AND engine = ?2 AND nodes = ?3 AND multipv = ?4",
             )?;
             let mut out = HashMap::new();
             for key in keys {
                 let text: Option<String> = stmt
-                    .query_row(params![key, search.commit, search.nodes as i64, search.multipv], |r| r.get(0))
+                    .query_row(params![key, search.engine, search.nodes as i64, search.multipv], |r| r.get(0))
                     .optional()?;
                 if let Some(text) = text {
                     out.insert(key, from_json(&text)?);
@@ -64,10 +64,10 @@ impl Store {
         let search = search.clone();
         self.write(move |tx| {
             let mut stmt = tx.prepare_cached(
-                "INSERT OR REPLACE INTO positions (key, commit_sha, nodes, multipv, result) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT OR REPLACE INTO positions (key, engine, nodes, multipv, result) VALUES (?1, ?2, ?3, ?4, ?5)",
             )?;
             for (key, eval) in &evals {
-                stmt.execute(params![key, search.commit, search.nodes as i64, search.multipv, to_json(eval)?])?;
+                stmt.execute(params![key, search.engine, search.nodes as i64, search.multipv, to_json(eval)?])?;
             }
             Ok(())
         })
@@ -83,9 +83,9 @@ mod tests {
     use crate::testing;
 
     #[tokio::test]
-    async fn caches_by_position_commit_nodes_and_multipv() {
+    async fn caches_by_position_engine_nodes_and_multipv() {
         let (store, _dir) = testing::store();
-        let search = SearchKey { commit: "abc".into(), nodes: 200_000, multipv: 2 };
+        let search = SearchKey { engine: "stockfish|Stockfish 19".into(), nodes: 200_000, multipv: 2 };
         let eval = PositionEval {
             lines: vec![EvalLine { uci: "e2e4".into(), score: Score::Cp(30), pv: vec!["e2e4".into(), "e7e5".into()] }],
             depth: 14,

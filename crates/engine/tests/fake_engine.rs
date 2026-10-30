@@ -1,14 +1,12 @@
-//! `uci`, `pool`, `bench` and `build::spsa_raw` against the fake engine in `tests/support/fake_uci.rs`, so they run
-//! without Reckless.
+//! `uci` and `pool` against the fake engine in `tests/support/fake_uci.rs`, so they run without a real engine.
 
 use std::{path::Path, time::Duration};
 
 use dameless_engine::{
-    bench, build,
+
     pool::{EngineSpec, Pool, Reset},
     uci::{Bound, Engine, Limits, Position, Score, SearchEvent},
 };
-use tokio_util::sync::CancellationToken;
 
 fn fake() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_fake-uci"))
@@ -135,23 +133,3 @@ async fn warms_engines_ahead() {
     assert_eq!(pool.stats(&spec).idle, 2);
 }
 
-#[tokio::test]
-async fn measures_copies_of_bench() {
-    let m = bench::measure(fake(), 3, None, bench::BENCH_TIMEOUT, &CancellationToken::new()).await.unwrap();
-    assert_eq!(m.copies.len(), 3);
-    assert_eq!(m.nodes, 1_234_567);
-    assert!(m.deterministic());
-    assert!((500_000..501_000).contains(&m.mean_nps));
-
-    let m = bench::measure(fake(), 2, Some(999), bench::BENCH_TIMEOUT, &CancellationToken::new()).await.unwrap();
-    assert!(!m.deterministic());
-    assert!(m.copies.iter().all(|c| c.differs && c.nodes == 1_234_567));
-
-    assert_eq!(build::bench(fake()).await.unwrap().nodes, 1_234_567);
-}
-
-#[tokio::test]
-async fn reads_spsa_tunables_raw() {
-    let raw = build::spsa_raw(fake()).await.unwrap();
-    assert!(raw.lines().any(|l| l.starts_with("rfp_quad, int, 1100")), "{raw}");
-}

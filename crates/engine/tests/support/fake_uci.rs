@@ -1,12 +1,10 @@
 //! A fake UCI engine for the tests: it speaks enough UCI for the handshake, options, searches by depth, nodes,
-//! movetime, clock or `infinite` (stopped by `stop`), and answers `bench` and `spsa` on the command line as Reckless
-//! does. It plays no chess: its moves are fixed. A few `fake …` commands let tests look inside it.
+//! movetime, clock or `infinite` (stopped by `stop`). It plays no chess: its moves are fixed. A few `fake …` commands
+//! let tests look inside it.
 //!
 //! - `fake newgames`: prints `info string newgames <n>`, how many `ucinewgame` it has had.
 //! - `fake option <name>`: prints `info string option <name> <value>`.
 //! - `fake exit`: exits at once, as a crashing engine would.
-//!
-//! `FAKE_BENCH_NODES` changes the node count `bench` reports.
 
 use std::{
     collections::HashMap,
@@ -16,24 +14,6 @@ use std::{
 };
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match args.first().map(String::as_str) {
-        Some("bench") => {
-            let nodes = std::env::var("FAKE_BENCH_NODES").ok().and_then(|n| n.parse().ok()).unwrap_or(1_234_567u64);
-            // Some work, so copies run at once; the speed varies a little between runs, like a real bench.
-            std::thread::sleep(Duration::from_millis(50));
-            let nps = 500_000 + u64::from(std::process::id() % 1000);
-            println!("Bench: {nodes} nodes {nps} nps");
-            return;
-        }
-        Some("spsa") => {
-            println!("rfp_quad, int, 1100, 500, 2000, 50, 0.002");
-            println!("lmr_base, int, 768, 256, 1536, 32, 0.002");
-            return;
-        }
-        _ => {}
-    }
-
     let (tx, rx) = mpsc::channel::<String>();
     std::thread::spawn(move || {
         for line in std::io::stdin().lock().lines() {

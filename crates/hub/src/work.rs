@@ -1,12 +1,12 @@
-//! How background work runs: the contract between the scheduler (crate `work`) and whatever does the work (a build,
-//! a trial or tune in `work`, a review in `analysis`, an import in `play`).
+//! How background work runs: the contract between the scheduler (crate `work`) and whatever does the work (a review in
+//! `analysis`, an import or calibration in `play`, setup in `work`).
 //!
 //! An [`Executor`] knows how to run one [`WorkKind`]. The scheduler registers one per kind, picks the next queued item,
 //! and calls [`Executor::run`] with a [`WorkContext`]: the item's spec and last checkpoint, and the means to report
 //! progress, write the log, ask for cores, honour pausing and the fair-play policy, and notice being stopped. An
 //! executor never touches the `work` table itself; the context does, so status, progress and events stay consistent.
 //!
-//! Work is resumable: an executor saves a checkpoint after each unit (a trial's round, a tune's iteration, a review's
+//! Work is resumable: an executor saves a checkpoint after each unit (a calibration game, a review's
 //! game) and, when started again after a restart or a pause, carries on from [`WorkContext::checkpoint`].
 
 use std::{
@@ -27,7 +27,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
-use crate::{GpuGrant, Grant, Hub};
+use crate::{Grant, Hub};
 
 /// Runs one kind of work. Implemented by the crate that owns that kind.
 #[async_trait]
@@ -58,7 +58,7 @@ pub struct WorkContext {
     pub hub: Arc<Hub>,
     /// Fires when the item is stopped (by a person, or the server shutting down).
     pub cancel: CancellationToken,
-    /// The item's priority: where its requests for cores and the GPU stand in the ledger's line.
+    /// The item's priority: where its requests for cores stand in the ledger's line.
     pub priority: Priority,
     spec: serde_json::Value,
     checkpoint: Option<serde_json::Value>,
@@ -72,7 +72,7 @@ pub struct WorkContext {
 const PROGRESS_EVERY: Duration = Duration::from_millis(1000);
 
 impl WorkContext {
-    /// Made by the scheduler for each run of an item, at [`Priority::Interactive`] until
+    /// Made by the scheduler for each run of an item, at [`Priority::Review`] until
     /// [`WorkContext::with_priority`] says otherwise.
     pub fn new(
         hub: Arc<Hub>,
@@ -89,7 +89,7 @@ impl WorkContext {
             kind,
             hub,
             cancel,
-            priority: Priority::Interactive,
+            priority: Priority::Review,
             spec,
             checkpoint,
             control,
@@ -98,7 +98,7 @@ impl WorkContext {
         }
     }
 
-    /// The item's priority, which orders its requests for cores and the GPU against other work's.
+    /// The item's priority, which orders its requests for cores against other work's.
     pub fn with_priority(mut self, priority: Priority) -> Self {
         self.priority = priority;
         self
@@ -164,7 +164,7 @@ impl WorkContext {
 
     /// Asks for cores from the ledger, waiting until at least `min` are free and no work of higher priority (or of the
     /// same priority, asking earlier) waits ahead of this item. `None` when stopped while waiting. Hold the grant only
-    /// while using it (a trial's round), so the scheduler can rebalance between units and others get their turn.
+    /// while using it (a review's batch), so the scheduler can rebalance between units and others get their turn.
     pub async fn cores(&self, min: u32, max: u32) -> Option<Grant> {
         let ledger = self.hub.ledger.clone();
         let mut changed = ledger.changed();
@@ -174,31 +174,6 @@ impl WorkContext {
             if let Some(grant) = request.grant() {
                 let _ = self.update(WorkUpdate { cores: Some(grant.cores()), ..Default::default() }).await;
                 return Some(grant);
-            }
-            tokio::select! {
-                _ = self.cancel.cancelled() => return None,
-                r = changed.changed() => if r.is_err() { return None },
-            }
-        }
-    }
-
-    /// Asks for a GPU, waiting until one is free. `None` when stopped while waiting, or at once when the machine has
-    /// none (check `hub.ledger.gpus()` first to say so). Hold it for the whole run.
-    pub async fn gpu(&self) -> Option<GpuGrant> {
-        let ledger = self.hub.ledger.clone();
-        if ledger.gpus() == 0 {
-            return None;
-        }
-        let mut changed = ledger.changed();
-        let request = ledger.request_gpu(self.id, self.priority);
-        let mut said = false;
-        loop {
-            if let Some(grant) = request.grant() {
-                return Some(grant);
-            }
-            if !said {
-                said = true;
-                self.log("Waiting for the GPU.");
             }
             tokio::select! {
                 _ = self.cancel.cancelled() => return None,

@@ -1,10 +1,10 @@
-//! Dameless's levels: which entrant (`level:<id>` or `you`) sat at each seat of a game played at a level, and the last
+//! The levels of the ladder: which entrant (`level:<id>` or `you`) sat at each seat of a game played at a level, and the last
 //! calibration fit. The fit itself is `core::levels::fit`, over [`Store::level_games`].
 
 use dameless_core::{
     Error, GameId, Timestamp,
     levels::{Entrant, EntrantRating, LevelGame},
-    version::Estimate,
+    levels::Estimate,
 };
 use rusqlite::{OptionalExtension, params};
 
@@ -137,7 +137,7 @@ mod tests {
         let finished = |i: i64, outcome| {
             let store = store.clone();
             async move {
-                let id = store.insert_game(local(PlayerKey::Dameless, PlayerKey::Dameless, i)).await.unwrap();
+                let id = store.insert_game(local(PlayerKey::Engine("stockfish".into()), PlayerKey::Engine("stockfish".into()), i)).await.unwrap();
                 store
                     .finish_game(id, GameEnd::new(outcome, Ending::Checkmate), Timestamp::from_unix_ms(i))
                     .await
@@ -147,7 +147,7 @@ mod tests {
         };
         let g1 = finished(1, Outcome::WhiteWins).await;
         let g2 = finished(2, Outcome::Draw).await;
-        let live = store.insert_game(local(PlayerKey::You, PlayerKey::Dameless, 3)).await.unwrap();
+        let live = store.insert_game(local(PlayerKey::You, PlayerKey::Engine("stockfish".into()), 3)).await.unwrap();
         let unrelated = finished(4, Outcome::BlackWins).await;
 
         store.record_level_game(g1, Entrant::Level(2), Entrant::Level(1), true).await.unwrap();

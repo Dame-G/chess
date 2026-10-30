@@ -1,4 +1,5 @@
-//! Levels: Dameless at a strength you choose, from about 800 to full strength, and the maths that calibrates them.
+//! Levels: the ladder engine (the analysis engine, Stockfish by default) at a strength you choose, from about 800 to
+//! full strength, and the maths that calibrates them.
 //!
 //! A level keeps the engine's own play. Its strength comes from a node budget, and at the lowest levels from a softmax
 //! over the engine's MultiPV candidates ([`choose_move`]): the move is always one the engine itself put forward, never
@@ -19,15 +20,34 @@ use utoipa::{
 use crate::{
     game::Outcome,
     score::{Score, win_percent},
-    version::Estimate,
 };
 
-/// Dameless at one strength.
+/// An Elo with its 95 % interval.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct Estimate {
+    pub elo: f64,
+    pub low: f64,
+    pub high: f64,
+}
+
+impl Estimate {
+    /// From a value and its ± error.
+    pub fn plus_minus(elo: f64, error: f64) -> Self {
+        Self { elo, low: elo - error, high: elo + error }
+    }
+
+    /// Half the interval's width: the ± people read.
+    pub fn error(&self) -> f64 {
+        (self.high - self.low) / 2.0
+    }
+}
+
+/// The ladder engine at one strength.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct Level {
     /// 1 is the weakest; the last level of the ladder is full strength.
     pub id: u32,
-    /// `Level 5`; the UI writes "Dameless at 1600" from the calibrated rating.
+    /// `Level 5`; the UI writes "Stockfish 1600" from the calibrated rating.
     pub name: String,
     /// Nodes per move. `None` is full strength: the engine plays on the clock, as in any other game (calibration
     /// games give it [`FULL_CALIBRATION_NODES`]).

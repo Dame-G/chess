@@ -1,6 +1,6 @@
 [package]
 name = "dameless-engine"
-description = "Adapter: UCI processes, the engine pool, git and cargo builds, bench, fastchess."
+description = "Adapter: UCI processes, the engine pool, downloads of the built-in engines."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,16 +12,18 @@ futures.workspace = true
 process-wrap.workspace = true
 reqwest.workspace = true
 serde.workspace = true
-sha2.workspace = true
 tar.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 zip.workspace = true
 
-# A tiny UCI engine that speaks just enough of the protocol for the tests of `uci`, `pool` and `bench`, so they run
-# without Reckless. Integration tests find it through `CARGO_BIN_EXE_fake-uci`.
+# A tiny UCI engine that speaks just enough of the protocol for the tests of `uci` and `pool`, so they run
+# without a real engine. Integration tests find it through `CARGO_BIN_EXE_fake-uci`.
 [[bin]]
 name = "fake-uci"
 path = "tests/support/fake_uci.rs"
 test = false
 doc = false
+
+[dev-dependencies]
+serde_json.workspace = true

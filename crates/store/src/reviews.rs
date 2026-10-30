@@ -1,8 +1,8 @@
-//! Reviews: one row per game, version and node budget, the summary as JSON and the judged plies as a compressed blob.
+//! Reviews: one row per game, engine and node budget, the summary as JSON and the judged plies as a compressed blob.
 //! Each side's accuracy has its own column, so game lists show it without reading the summary.
 
 use dameless_core::{
-    Error, GameId, PlayerKey, ReviewId, Timestamp, VersionId,
+    Error, GameId, PlayerKey, ReviewId, Timestamp,
     game::GameStatus,
     profile::{ProfileFilter, ProfileGame},
     review::{Review, ReviewSummary, ReviewedMove},
@@ -11,18 +11,19 @@ use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter, typ
 
 use crate::{DbResult, Store, from_json, games, now, pack, to_json, unpack, word};
 
-const REVIEW: &str = "SELECT id, game, version, nodes, summary, created_at, plies FROM reviews";
+const REVIEW: &str = "SELECT id, game, nodes, summary, created_at, plies FROM reviews";
 
 /// A review row; its plies are read only when `plies` is set, else left empty.
 fn review_from_row(row: &Row<'_>, plies: bool) -> DbResult<Review> {
+    let summary: ReviewSummary = from_json(&row.get::<_, String>(3)?)?;
     Ok(Review {
         id: ReviewId(row.get(0)?),
         game: GameId(row.get(1)?),
-        version: VersionId(row.get(2)?),
-        nodes: row.get::<_, i64>(3)? as u64,
-        summary: from_json(&row.get::<_, String>(4)?)?,
-        created_at: Timestamp(row.get(5)?),
-        plies: if plies { unpack(&row.get::<_, Vec<u8>>(6)?)? } else { Vec::new() },
+        engine: summary.engine.clone(),
+        nodes: row.get::<_, i64>(2)? as u64,
+        summary,
+        created_at: Timestamp(row.get(4)?),
+        plies: if plies { unpack(&row.get::<_, Vec<u8>>(5)?)? } else { Vec::new() },
     })
 }
 
@@ -34,10 +35,12 @@ fn newest(conn: &Connection, game: GameId, plies: bool) -> DbResult<Option<Revie
 }
 
 impl Store {
-    /// Stores a review, replacing the one of the same game, version and budget. Returns it as stored.
+    /// Stores a review, replacing the one of the same game, engine and budget. `engine` is the engine's cache key
+    /// (`core::engines::Engine::cache_key`). Returns it as stored.
     pub async fn put_review(
         &self,
         game: GameId,
+        engine: String,
         summary: ReviewSummary,
         plies: Vec<ReviewedMove>,
     ) -> Result<Review, Error> {
@@ -45,14 +48,14 @@ impl Store {
             let accuracy = summary.accuracy();
             let created_at = now();
             tx.execute(
-                "INSERT INTO reviews (game, version, nodes, white_accuracy, black_accuracy, summary, plies, created_at) \
+                "INSERT INTO reviews (game, engine, nodes, white_accuracy, black_accuracy, summary, plies, created_at) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
-                 ON CONFLICT (game, version, nodes) DO UPDATE SET white_accuracy = excluded.white_accuracy, \
+                 ON CONFLICT (game, engine, nodes) DO UPDATE SET white_accuracy = excluded.white_accuracy, \
                  black_accuracy = excluded.black_accuracy, summary = excluded.summary, plies = excluded.plies, \
                  created_at = excluded.created_at",
                 params![
                     game.0,
-                    summary.version.0,
+                    engine,
                     summary.nodes as i64,
                     accuracy.white.map(f64::from),
                     accuracy.black.map(f64::from),
@@ -62,14 +65,14 @@ impl Store {
                 ],
             )?;
             let id: i64 = tx.query_row(
-                "SELECT id FROM reviews WHERE game = ?1 AND version = ?2 AND nodes = ?3",
-                params![game.0, summary.version.0, summary.nodes as i64],
+                "SELECT id FROM reviews WHERE game = ?1 AND engine = ?2 AND nodes = ?3",
+                params![game.0, engine, summary.nodes as i64],
                 |r| r.get(0),
             )?;
             Ok(Review {
                 id: ReviewId(id),
                 game,
-                version: summary.version,
+                engine: summary.engine.clone(),
                 nodes: summary.nodes,
                 summary,
                 plies,
@@ -79,35 +82,44 @@ impl Store {
         .await
     }
 
-    /// The newest review of a game, or the newest with this version and budget when they are given.
+    /// The newest review of a game, or the newest with this engine (its cache key) and budget when they are given.
     pub async fn review(
         &self,
         game: GameId,
-        version: Option<VersionId>,
+        engine: Option<String>,
         nodes: Option<u64>,
     ) -> Result<Option<Review>, Error> {
         self.read(move |conn| {
             let mut stmt = conn.prepare_cached(&format!(
-                "{REVIEW} WHERE game = ?1 AND (?2 IS NULL OR version = ?2) AND (?3 IS NULL OR nodes = ?3) \
+                "{REVIEW} WHERE game = ?1 AND (?2 IS NULL OR engine = ?2) AND (?3 IS NULL OR nodes = ?3) \
                  ORDER BY created_at DESC, id DESC LIMIT 1"
             ))?;
-            let mut rows = stmt.query(params![game.0, version.map(|v| v.0), nodes.map(|n| n as i64)])?;
+            let mut rows = stmt.query(params![game.0, engine, nodes.map(|n| n as i64)])?;
             rows.next()?.map(|r| review_from_row(r, true)).transpose()
         })
         .await
     }
 
-    /// Whether a game already has a review with this version and budget: a review skips it.
-    pub async fn has_review(&self, game: GameId, version: VersionId, nodes: u64) -> Result<bool, Error> {
+    /// Whether a game already has a review with this engine (its cache key) and budget: a review skips it.
+    pub async fn has_review(&self, game: GameId, engine: &str, nodes: u64) -> Result<bool, Error> {
+        let engine = engine.to_owned();
         self.read(move |conn| {
             Ok(conn
                 .query_row(
-                    "SELECT 1 FROM reviews WHERE game = ?1 AND version = ?2 AND nodes = ?3",
-                    params![game.0, version.0, nodes as i64],
+                    "SELECT 1 FROM reviews WHERE game = ?1 AND engine = ?2 AND nodes = ?3",
+                    params![game.0, engine, nodes as i64],
                     |_| Ok(()),
                 )
                 .optional()?
                 .is_some())
+        })
+        .await
+    }
+
+    /// Whether any engine has reviewed a game, at any budget: "Review all" leaves it alone.
+    pub async fn has_any_review(&self, game: GameId) -> Result<bool, Error> {
+        self.read(move |conn| {
+            Ok(conn.query_row("SELECT 1 FROM reviews WHERE game = ?1", [game.0], |_| Ok(())).optional()?.is_some())
         })
         .await
     }
@@ -175,13 +187,14 @@ mod tests {
         Side,
         game::{Ending, GameEnd, Outcome},
         review::{ClassCounts, SideReview, judge::Classification},
-        version::Line,
     };
 
     use super::*;
-    use crate::{GameFilter, NewVersion, games::tests::local, testing};
+    use crate::{GameFilter, games::tests::local, testing};
 
-    pub fn summary(version: VersionId, nodes: u64, white: f64, black: f64) -> ReviewSummary {
+    const SF: &str = "stockfish|Stockfish 19";
+
+    pub fn summary(nodes: u64, white: f64, black: f64) -> ReviewSummary {
         let side = |accuracy| SideReview {
             moves: 10,
             accuracy: Some(accuracy),
@@ -189,17 +202,13 @@ mod tests {
             ..Default::default()
         };
         ReviewSummary {
-            version,
+            engine: "Stockfish 19".into(),
             nodes,
             white: side(white),
             black: side(black),
             middlegame_ply: None,
             endgame_ply: None,
         }
-    }
-
-    async fn version(store: &Store) -> VersionId {
-        store.upsert_version(NewVersion::new("v1", "abc", Line::Champion { number: 1 })).await.unwrap().id
     }
 
     fn ply() -> ReviewedMove {
@@ -213,24 +222,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reviews_replace_by_version_and_budget_and_show_in_lists() {
+    async fn reviews_replace_by_engine_and_budget_and_show_in_lists() {
         let (store, _dir) = testing::store();
-        let v = version(&store).await;
-        let mut g = local(PlayerKey::You, PlayerKey::Dameless, 0);
+        let mut g = local(PlayerKey::You, PlayerKey::Engine("stockfish".into()), 0);
         g.status = dameless_core::game::GameStatus::Finished;
         let game = store.insert_game(g).await.unwrap();
         assert!(store.review(game, None, None).await.unwrap().is_none());
+        assert!(!store.has_any_review(game).await.unwrap());
 
-        let first = store.put_review(game, summary(v, 200_000, 80.0, 70.0), vec![ply()]).await.unwrap();
-        assert!(store.has_review(game, v, 200_000).await.unwrap());
-        assert!(!store.has_review(game, v, 100_000).await.unwrap());
-        let again = store.put_review(game, summary(v, 200_000, 81.0, 71.0), vec![ply()]).await.unwrap();
+        let first = store.put_review(game, SF.into(), summary(200_000, 80.0, 70.0), vec![ply()]).await.unwrap();
+        assert_eq!(first.engine, "Stockfish 19");
+        assert!(store.has_any_review(game).await.unwrap());
+        assert!(store.has_review(game, SF, 200_000).await.unwrap());
+        assert!(!store.has_review(game, SF, 100_000).await.unwrap());
+        assert!(!store.has_review(game, "stockfish|Stockfish 20", 200_000).await.unwrap());
+        let again = store.put_review(game, SF.into(), summary(200_000, 81.0, 71.0), vec![ply()]).await.unwrap();
         assert_eq!(again.id, first.id);
-        store.put_review(game, summary(v, 100_000, 60.0, 50.0), vec![]).await.unwrap();
+        store.put_review(game, SF.into(), summary(100_000, 60.0, 50.0), vec![]).await.unwrap();
 
         let newest = store.review(game, None, None).await.unwrap().unwrap();
         assert_eq!(newest.nodes, 100_000);
-        let asked = store.review(game, Some(v), Some(200_000)).await.unwrap().unwrap();
+        let asked = store.review(game, Some(SF.into()), Some(200_000)).await.unwrap().unwrap();
         assert_eq!(asked.plies[0].classification, Classification::Best);
         assert_eq!(asked.summary.white.accuracy, Some(81.0));
 
@@ -242,10 +254,9 @@ mod tests {
     #[tokio::test]
     async fn profiles_read_a_players_finished_games() {
         let (store, _dir) = testing::store();
-        let v = version(&store).await;
         let mut ids = Vec::new();
         for i in 0..5 {
-            let id = store.insert_game(local(PlayerKey::You, PlayerKey::Dameless, i * 1000)).await.unwrap();
+            let id = store.insert_game(local(PlayerKey::You, PlayerKey::Engine("stockfish".into()), i * 1000)).await.unwrap();
             if i < 4 {
                 store
                     .finish_game(id, GameEnd::new(Outcome::WhiteWins, Ending::Checkmate), Timestamp::from_unix_ms(i))
@@ -254,8 +265,11 @@ mod tests {
             }
             ids.push(id);
         }
-        store.put_review(ids[1], summary(v, 1, 90.0, 40.0), vec![ply()]).await.unwrap();
-        let other = store.insert_game(local(PlayerKey::Dameless, PlayerKey::Stockfish(2), 0)).await.unwrap();
+        store.put_review(ids[1], SF.into(), summary(1, 90.0, 40.0), vec![ply()]).await.unwrap();
+        let other = store
+            .insert_game(local(PlayerKey::Engine("stockfish".into()), PlayerKey::Engine("maia-1500".into()), 0))
+            .await
+            .unwrap();
 
         let filter = ProfileFilter { limit: 10, ..Default::default() };
         let games = store.profile_games(PlayerKey::You, filter.clone(), false).await.unwrap();

@@ -204,7 +204,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use dameless_core::{GameId, IdeaId};
+    use dameless_core::{GameId, PlayerKey};
 
     use super::*;
     use crate::testing;
@@ -222,17 +222,17 @@ mod tests {
     #[tokio::test]
     async fn work_queues_by_priority_then_age() {
         let (store, _dir) = testing::store();
-        let idea = store.insert_work(new(Priority::Idea, "idea")).await.unwrap();
+        let idea = store.insert_work(new(Priority::Background, "idea")).await.unwrap();
         let review = store.insert_work(new(Priority::Review, "review")).await.unwrap();
         let idea2 = store
-            .insert_work(NewWork { subject: Subject::Idea { id: IdeaId(2) }, ..new(Priority::Idea, "idea 2") })
+            .insert_work(NewWork { subject: Subject::Player { key: PlayerKey::You }, ..new(Priority::Background, "idea 2") })
             .await
             .unwrap();
         assert_eq!(idea.status, WorkStatus::Queued);
         let order: Vec<_> = store.queued_work().await.unwrap().into_iter().map(|w| w.id).collect();
         assert_eq!(order, [review.id, idea.id, idea2.id]);
         assert_eq!(store.work_spec(review.id).await.unwrap(), Some(serde_json::json!({ "games": [1] })));
-        assert_eq!(store.work(idea2.id).await.unwrap().unwrap().subject, Subject::Idea { id: IdeaId(2) });
+        assert_eq!(store.work(idea2.id).await.unwrap().unwrap().subject, Subject::Player { key: PlayerKey::You });
     }
 
     #[tokio::test]

@@ -75,11 +75,6 @@ pub(crate) fn parse_line<T: DeserializeOwned>(line: &str) -> Result<Option<T>, E
     })
 }
 
-/// Every document of a whole NDJSON body, such as the list of online bots. Lines that do not read are left out.
-pub(crate) fn parse_all<T: DeserializeOwned>(text: &str) -> Vec<T> {
-    text.lines().filter_map(|l| parse_line(l).ok().flatten()).collect()
-}
-
 /// How long to wait before reopening a stream that broke: a minute and a second after a 429 (Lichess asks for a
 /// minute), else doubling from `min` to `max`. Reset it once a stream is open again.
 #[derive(Clone, Debug)]
@@ -138,9 +133,6 @@ mod tests {
         assert_eq!(parse_line::<Value>("   ").unwrap(), None);
         assert_eq!(parse_line::<Value>("{\"a\":1}").unwrap().unwrap()["a"], 1);
         assert!(matches!(parse_line::<Value>("{nope"), Err(Error::Unexpected(_))));
-        let all: Vec<Value> = parse_all("{\"id\":\"a\"}\n\nnope\n{\"id\":\"b\"}\n");
-        assert_eq!(all.len(), 2);
-        assert_eq!(all[1]["id"], "b");
     }
 
     #[test]

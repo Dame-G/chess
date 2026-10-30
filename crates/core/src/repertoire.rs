@@ -460,7 +460,7 @@ mod tests {
         let game = Game {
             summary: GameSummary {
                 id: GameId(3),
-                white: seat(PlayerKey::Dameless),
+                white: seat(PlayerKey::Engine("stockfish".into())),
                 black: seat(PlayerKey::You),
                 source: Source::Local,
                 time: TimeControl::clock(180_000, 2_000),
@@ -483,7 +483,7 @@ mod tests {
         };
         let r = RepertoireGame::from_game(&game, &PlayerKey::You).unwrap();
         assert_eq!((r.side, r.moves.len()), (Side::Black, 2));
-        assert!(RepertoireGame::from_game(&game, &PlayerKey::Stockfish(3)).is_none());
+        assert!(RepertoireGame::from_game(&game, &PlayerKey::Engine("maia-1500".into())).is_none());
         let other = Game { start_fen: Some("8/8/8/8/8/k7/8/K7 w - - 0 1".into()), ..game.clone() };
         assert!(RepertoireGame::from_game(&other, &PlayerKey::You).is_none());
     }

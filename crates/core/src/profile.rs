@@ -299,8 +299,8 @@ pub struct Profile {
     pub games: u32,
     pub reviewed: u32,
     pub pending_review: u32,
-    /// All the player's games not yet reviewed at the default version and budget, whatever the filter: what
-    /// "Review all" does. Only a single profile fills it; `None` when unknown (no champion yet).
+    /// All the player's games not reviewed by any engine yet, whatever the filter: what "Review all" does. Only a
+    /// single profile fills it; `None` when unknown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unreviewed_total: Option<u32>,
     /// Whether your whole Lichess history has been imported, so later imports only look for new games. Only your own
@@ -767,7 +767,7 @@ mod tests {
     use super::*;
     use crate::{
         game::{Ending, GameStatus, Opening, Seat, Source},
-        ids::{ConnectionKey, VersionId},
+        ids::ConnectionKey,
         review::{ReviewSummary, ReviewedMove, SideReview},
         score::Score,
         time::TimeControl,
@@ -859,10 +859,10 @@ mod tests {
         Review {
             id: crate::ids::ReviewId(game),
             game: GameId(game),
-            version: VersionId(1),
+            engine: "Stockfish 19".into(),
             nodes: 1000,
             summary: ReviewSummary {
-                version: VersionId(1),
+                engine: "Stockfish 19".into(),
                 nodes: 1000,
                 white: side(white),
                 black: side(black),
