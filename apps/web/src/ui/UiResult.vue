@@ -4,7 +4,7 @@ import { formatResult, NONE, type Result } from "../format";
 import type { Side } from "../api/types";
 
 /**
- * A game's result. From your side when `you` is set (win green, loss red, draw muted); a stranger's game, or a trial's,
+ * A game's result. From your side when `you` is set (win green, loss red, draw muted); a stranger's game,
  * has no side to take and stays ink. Three characters wide and right-aligned, so a column of them lines up.
  * `score` writes `1-0`, `letter` writes W / L / D (and the score where there is no `you`), `dot` writes a coloured dot.
  */

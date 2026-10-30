@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { dispatch } from "../src/api/stream";
 import type { AppEvent, Engine, LevelsOverview } from "../src/api/types";
-import { canAnalyse, engineDetail, readOptions, setupLine } from "../src/sheets/engines";
-import { opponentChoices } from "../src/sheets/opponents";
+import { addErrorField, canAnalyse, engineDetail, readOptions, setupLine, sourceOf } from "../src/sheets/engines";
+import { opponentChoices, opponentFamilies } from "../src/sheets/opponents";
 import { useEngines } from "../src/stores/engines";
 
 const engine = (e: Partial<Engine> & Pick<Engine, "id" | "name">): Engine => ({
@@ -37,18 +37,24 @@ describe("the engines New game offers", () => {
   it("lists the analysis engine's levels, then the human-like engines by rating, then the rest", () => {
     const rows = opponentChoices([custom, maia1500, stockfish, maia1100], "stockfish", levels);
     expect(rows.map((r) => r.value)).toEqual(["stockfish@1", "stockfish", "maia-1100", "maia-1500", "berserk"]);
-    expect(rows.map((r) => r.group)).toEqual([
-      "Stockfish levels",
-      "Stockfish levels",
-      "Human-like",
-      "Human-like",
-      "Engines",
-    ]);
-    expect(rows[0]).toMatchObject({ name: "Level 1", label: "Stockfish level 1", near: true, disabled: false });
+    expect(rows.map((r) => r.family)).toEqual(["stockfish", "stockfish", "human-like", "human-like", "berserk"]);
+    expect(rows[0]).toMatchObject({ name: "Level 1", label: "Stockfish 1", near: true, disabled: false });
     expect(rows[1]).toMatchObject({ name: "Stockfish at full strength", label: "Stockfish" });
     expect(rows[2]).toMatchObject({ text: "Not installed", disabled: true });
-    expect(rows[3]).toMatchObject({ text: "≈ 1,500", disabled: false });
+    expect(rows[3]).toMatchObject({ name: "Maia 1500", label: "Maia 1500", text: "", disabled: false });
     expect(rows[4]).toMatchObject({ text: "Berserk 13", label: "Berserk" });
+  });
+
+  it("groups them into families for the first step: strengths for Stockfish and Maia, none for an engine alone", () => {
+    const rows = opponentChoices([custom, maia1500, stockfish, maia1100], "stockfish", levels);
+    const families = opponentFamilies(rows, "stockfish");
+    expect(families.map((f) => [f.key, f.name, f.choices.length, f.disabled])).toEqual([
+      ["stockfish", "Stockfish", 2, false],
+      ["human-like", "Maia", 2, false],
+      ["berserk", "Berserk", 1, false],
+    ]);
+    const none = opponentFamilies(opponentChoices([maia1100], "stockfish", null), "stockfish");
+    expect(none).toMatchObject([{ key: "human-like", disabled: true }]);
   });
 
   it("offers the analysis engine as it is while its levels are not known, and disabled when it is missing", () => {
@@ -69,8 +75,16 @@ describe("the engines in Settings", () => {
 
   it("says what an engine reports, and which can analyse", () => {
     expect(engineDetail(stockfish)).toBe("Stockfish 17.1");
-    expect(engineDetail(maia1500)).toBe("plays at about 1500");
-    expect(engineDetail(maia1100)).toBe("Not installed");
+    expect(engineDetail(maia1500)).toBe("");
+    expect(engineDetail({ ...maia1500, path: "tools\\lc0\\lc0.exe" })).toBe("tools\\lc0\\lc0.exe");
+    expect(engineDetail(maia1100)).toBe("Installed by setup, below");
+    expect(engineDetail({ ...custom, installed: false, path: "C:\\e\\berserk.exe" })).toBe("C:\\e\\berserk.exe");
+    expect(sourceOf("https://github.com/CSSLab/maia-chess/releases/download/v1.0/maia-1100.pb.gz")).toEqual({
+      host: "github.com",
+      file: "maia-1100.pb.gz",
+    });
+    expect(addErrorField("There is already an engine berserk.")).toBe("name");
+    expect(addErrorField("C:\\x.exe did not answer as a UCI engine.")).toBe("path");
     expect(canAnalyse(stockfish)).toBe(true);
     expect(canAnalyse(custom)).toBe(true);
     expect(canAnalyse(maia1500)).toBe(false);

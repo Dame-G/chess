@@ -34,13 +34,13 @@ const hash = ref(64);
 const rated = ref(true);
 const tab = ref("one");
 const note = ref("");
-const engine = ref("v14");
+const engine = ref("stockfish");
 
 const kvItems = [
   { label: "Cores", value: 15 },
-  { label: "Engine checkout", value: "C:\\dev\\reckless · main at 9e3a5e41", mono: true, copy: true },
+  { label: "Analysis engine", value: "C:\\tools\\stockfish\\stockfish.exe", mono: true, copy: true },
   { label: "Data", value: "C:\\Users\\dame\\AppData\\Local\\dameless", mono: true, copy: true },
-  { label: "Binaries", value: "23 binaries, 2.3 GB with the build cache" },
+  { label: "Engines", value: "2 engines, 182 MB" },
   { label: "Status", value: "Healthy", tone: "win" as const },
 ];
 
@@ -265,8 +265,8 @@ const doubled = [...levelRows, ...levelRows].map((r, id) => ({ ...r, id }));
           :invalid="invalid"
         />
       </UiField>
-      <UiField v-slot="{ id }" label="Branch" optional hint="Commit the change on a branch first.">
-        <ETextField :id="id" label="Branch" hide-label placeholder="idea/deeper-lmr" />
+      <UiField v-slot="{ id }" label="Program" optional hint="The engine's executable on this machine.">
+        <ETextField :id="id" label="Program" hide-label placeholder="C:\engines\berserk.exe" />
       </UiField>
       <UiField label="Time control" group hint="Minutes plus seconds a move.">
         <UiSeg
@@ -283,10 +283,10 @@ const doubled = [...levelRows, ...levelRows].map((r, id) => ({ ...r, id }));
       </UiField>
       <UiSelect
         v-model="engine"
-        label="Version"
+        label="Engine"
         :options="[
-          { value: 'v14', label: 'v14 champion' },
-          { value: 'v13', label: 'v13' },
+          { value: 'stockfish', label: 'Stockfish' },
+          { value: 'maia-1500', label: 'Maia 1500' },
         ]"
       />
       <UiField v-slot="{ id }" label="Hash" hint="In megabytes.">

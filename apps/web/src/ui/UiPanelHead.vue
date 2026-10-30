@@ -17,7 +17,7 @@ import UiResult from "./UiResult.vue";
 const props = defineProps<{ game: GameSummary | null | undefined; mode: Mode }>();
 defineSlots<{ status?(): unknown; actions?(): unknown }>();
 
-const SOURCE = { local: "local", lichess: "Lichess", import: "imported", trial: "trial" } as const;
+const SOURCE = { local: "local", lichess: "Lichess", import: "imported" } as const;
 
 const facts = computed<KvItem[]>(() => {
   const g = props.game;

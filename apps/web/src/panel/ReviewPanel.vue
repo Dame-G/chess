@@ -174,7 +174,14 @@ const fmt = (n: number | null | undefined) => (n == null ? null : n.toFixed(1));
           </ul>
         </div>
       </section>
-      <p class="by">Reviewed by {{ review.engine }} at {{ formatNumber(review.nodes) }} nodes a move</p>
+      <p class="by">
+        <span>
+          Reviewed by <strong>{{ review.engine }}</strong>
+        </span>
+        <span class="by-budget"
+          ><span class="num">{{ formatNumber(review.nodes) }}</span> nodes a move</span
+        >
+      </p>
 
       <section
         class="move"
@@ -269,11 +276,27 @@ const fmt = (n: number | null | undefined) => (n == null ? null : n.toFixed(1));
   gap: var(--sp-3);
 }
 
-/* What reviewed the game: the engine as it calls itself, and its budget. */
+/* What reviewed the game: the engine as it calls itself at the start, its budget at the end, under a hairline. */
 .by {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 var(--sp-3);
   margin: 0;
+  padding-block-start: var(--sp-2);
+  border-block-start: var(--e-stroke-hair) solid var(--c-line);
   color: var(--c-ink-2);
   font: var(--t-meta);
+}
+
+.by strong {
+  color: var(--c-ink);
+  font-weight: 600;
+}
+
+.by .num {
+  color: var(--c-ink);
+  font-family: var(--e-font-mono);
 }
 
 .col {

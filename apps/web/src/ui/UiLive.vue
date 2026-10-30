@@ -2,7 +2,7 @@
 import { ref, watch } from "vue";
 
 /**
- * The dot that means something is live: cognac while a game or trial runs, green when connected, red on error. It
+ * The dot that means something is live: cognac while a game or work runs, green when connected, red on error. It
  * pulses once each time `pulse` changes (a move was played), never continuously. Decorative unless it has a `label`.
  */
 const props = withDefaults(
