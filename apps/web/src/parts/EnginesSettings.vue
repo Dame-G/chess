@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useToast } from "@eos-ui/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ETextarea } from "@eos-ui/vue/components/ETextarea";
 import { ETextField } from "@eos-ui/vue/components/ETextField";
 import type { Engine } from "../api/types";
-import { bytes } from "../format";
-import { canAnalyse, engineDetail, readOptions, setupLine } from "../sheets/engines";
+import { bytes, formatNumber } from "../format";
+import { addErrorField, canAnalyse, engineDetail, readOptions, setupLine, sourceOf } from "../sheets/engines";
 import { useEngines } from "../stores/engines";
 import { useWork } from "../stores/work";
 import UiBadge from "../ui/UiBadge.vue";
@@ -72,22 +72,26 @@ const adding = ref(false);
 const name = ref("");
 const path = ref("");
 const optionsText = ref("");
-const addError = ref<string | undefined>(undefined);
+/** What the server said when it would not add the engine, shown at the field it is about until that field changes. */
+const nameError = ref<string | undefined>(undefined);
+const pathError = ref<string | undefined>(undefined);
 const saving = ref(false);
 const options = computed(() => readOptions(optionsText.value));
+watch(name, () => (nameError.value = undefined));
+watch(path, () => (pathError.value = undefined));
 
 function openAdd() {
   name.value = "";
   path.value = "";
   optionsText.value = "";
-  addError.value = undefined;
+  nameError.value = pathError.value = undefined;
   adding.value = true;
 }
 
 async function add() {
   if (options.value.error) return;
   saving.value = true;
-  addError.value = undefined;
+  nameError.value = pathError.value = undefined;
   try {
     const made = await engines.add({
       name: name.value.trim(),
@@ -97,7 +101,9 @@ async function add() {
     adding.value = false;
     toast.show({ title: `${made.name} is in the list`, tone: "success" });
   } catch (e) {
-    addError.value = e instanceof Error ? e.message : String(e);
+    const message = e instanceof Error ? e.message : String(e);
+    if (addErrorField(message) === "name") nameError.value = message;
+    else pathError.value = message;
   } finally {
     saving.value = false;
   }
@@ -136,13 +142,14 @@ async function download() {
       </UiEmpty>
       <span v-else-if="!engines.loaded" class="skel block" aria-label="Reading the engines" />
       <ul v-else class="list" aria-label="Engines">
-        <li v-for="e in engines.list" :key="e.id" class="row">
+        <li v-for="e in engines.list" :key="e.id" class="row" :class="{ 'is-off': !e.installed }">
           <span class="what">
             <span class="name">
               {{ e.name }}
               <UiBadge v-if="e.analysis" tone="act">Analysis</UiBadge>
-              <UiBadge v-if="!e.installed">Not installed</UiBadge>
+              <UiBadge v-if="e.rating != null">Plays at {{ formatNumber(e.rating) }}</UiBadge>
               <UiBadge v-if="e.kind === 'custom'" tone="info">Added</UiBadge>
+              <UiBadge v-if="!e.installed" tone="warn">Not installed</UiBadge>
             </span>
             <span class="detail">{{ engineDetail(e) }}</span>
           </span>
@@ -172,14 +179,19 @@ async function download() {
       </template>
       <span v-if="!plan && !failed" class="skel block" aria-label="Reading what setup would download" />
       <template v-else-if="plan">
-        <p class="detail">{{ settingUp ? `${settingUp.title} is running.` : setupLine(plan) }}</p>
+        <p v-if="settingUp" class="status" role="status">{{ settingUp.title }} is running.</p>
+        <p v-else-if="!plan.downloads.length" class="status">Everything setup installs is here.</p>
         <ul v-if="plan.downloads.length" class="list" aria-label="Downloads">
           <li v-for="d in plan.downloads" :key="d.url" class="row">
             <span class="what">
               <span class="name">{{ d.name }}</span>
-              <span class="detail">{{ d.url }}</span>
+              <span class="detail">{{ sourceOf(d.url).host }} · {{ sourceOf(d.url).file }}</span>
             </span>
             <span class="size num">{{ d.bytes ? bytes(d.bytes) : "" }}</span>
+          </li>
+          <li v-if="plan.downloads.length > 1 && plan.bytes" class="row total">
+            <span class="what"><span class="name">Total</span></span>
+            <span class="size num">{{ bytes(plan.bytes) }}</span>
           </li>
         </ul>
         <p v-for="n in plan.notes" :key="n" class="detail">{{ n }}</p>
@@ -195,13 +207,14 @@ async function download() {
       @confirm="add"
     >
       <div class="form">
-        <ETextField v-model="name" label="Name" autocomplete="off" required />
+        <ETextField v-model="name" label="Name" autocomplete="off" required :error="nameError" />
         <ETextField
           v-model="path"
           label="Program"
           hint="The engine's executable on this machine: any UCI engine."
           autocomplete="off"
           required
+          :error="pathError"
         />
         <ETextarea
           v-model="optionsText"
@@ -211,7 +224,6 @@ async function download() {
           :error="options.error"
         />
       </div>
-      <template #footer-start>{{ addError }}</template>
     </UiDialog>
   </div>
 </template>
@@ -225,9 +237,11 @@ async function download() {
 }
 
 .row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--sp-2);
+  gap: var(--sp-1) var(--sp-3);
+  min-block-size: var(--h-row-2);
   padding-block: var(--sp-2);
   border-block-end: var(--e-stroke-hair) solid var(--c-line);
 }
@@ -238,7 +252,6 @@ async function download() {
 
 .what {
   display: grid;
-  flex: 1 1 auto;
   gap: var(--sp-1);
   min-width: 0;
 }
@@ -247,8 +260,12 @@ async function download() {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--sp-2);
+  gap: var(--sp-1) var(--sp-2);
   font: var(--t-body-strong);
+}
+
+.is-off .name {
+  color: var(--c-ink-2);
 }
 
 .detail {
@@ -258,15 +275,32 @@ async function download() {
   overflow-wrap: anywhere;
 }
 
+.status {
+  margin: 0 0 var(--sp-2);
+  color: var(--c-ink-2);
+  font: var(--t-body);
+}
+
+/* The actions share the end edge of every row, so a column of rows reads as a table. */
 .actions {
   display: flex;
-  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--sp-1);
 }
 
 .size {
-  flex: none;
   font: var(--t-fig);
+  text-align: end;
+}
+
+.total {
+  border-block-start: var(--e-stroke-hair) solid var(--c-line-strong);
+}
+
+.total .name,
+.total .size {
+  font-weight: 700;
 }
 
 .form {
@@ -277,5 +311,16 @@ async function download() {
 .block {
   display: block;
   block-size: var(--h-row-2);
+}
+
+@media (width < 30rem) {
+  .row:has(.actions > *) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .actions {
+    justify-content: flex-start;
+    margin-inline-start: calc(-1 * var(--sp-2));
+  }
 }
 </style>

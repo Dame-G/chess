@@ -18,12 +18,24 @@ export function readOptions(text: string): { options: Record<string, string>; er
   return { options };
 }
 
-/** What an engine reports in the list: what it calls itself, a Maia's rating, or that it is not installed. */
-export function engineDetail(e: Pick<Engine, "installed" | "id_name" | "rating" | "path">): string {
-  if (!e.installed) return "Not installed";
-  const parts = [e.id_name ?? e.path ?? "", e.rating != null ? `plays at about ${e.rating}` : ""].filter(Boolean);
-  return parts.join(" · ");
+/** What an engine reports in the list: what it calls itself (else where it is), or that setup installs it. */
+export function engineDetail(e: Pick<Engine, "installed" | "id_name" | "path" | "kind">): string {
+  if (!e.installed) return e.kind === "custom" ? (e.path ?? "Not found") : "Installed by setup, below";
+  return e.id_name ?? e.path ?? "";
 }
+
+/** Where a download comes from, for the small print: its host and file name (`github.com`, `maia-1100.pb.gz`). */
+export function sourceOf(url: string): { host: string; file: string } {
+  try {
+    const u = new URL(url);
+    return { host: u.host, file: decodeURIComponent(u.pathname.split("/").filter(Boolean).at(-1) ?? "") };
+  } catch {
+    return { host: "", file: url };
+  }
+}
+
+/** Which field of the add-engine form an error from the server is about: a name already taken, else the program. */
+export const addErrorField = (message: string): "name" | "path" => (/already|name/i.test(message) ? "name" : "path");
 
 /**
  * Whether an engine can analyse: installed, and not one that plays like a person (a Maia, which has a rating and
