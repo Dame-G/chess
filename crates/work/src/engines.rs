@@ -237,7 +237,7 @@ impl EngineSource for Engines {
 
 fn not_installed(engine: &Engine) -> Error {
     match engine.kind {
-        EngineKind::Builtin => Error::conflict(format!("{} is not installed: run `chess setup`", engine.name)),
+        EngineKind::Builtin => Error::conflict(format!("{} isn't installed yet: download it in Settings › Engines (or run `chess setup`)", engine.name)),
         EngineKind::Custom => Error::conflict(format!(
             "{}'s binary is gone ({}): add it again",
             engine.name,
