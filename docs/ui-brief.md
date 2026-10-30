@@ -408,6 +408,8 @@ A sheet is a page that docks beside the board (`UiSheetPage`): a sticky header (
 
 The bottom tab bar (`--h-tabbar` plus the safe area) has Board, Games and You; Settings stays in the header with the work indicator. The Board tab's move list is one horizontal row under the transport with Moves opening the full list in a bottom sheet.
 
+**The first screen is the board, front and centre** (as in Lichess's mobile game screen). The stage is exactly the height between the header and the tab bar less the move row (`--h-movestrip`), so the move row sits directly above the tab bar. In it the graph and the transport hold the foot; the opponent strip, the board and your strip are one block with the free height shared above and below it. The board is `min(width, height − strips − graph − transport)`: edge to edge on every common phone (360×640 to 430×932), shrinking and centred only where the height is short (the graph also gives up height under 34rem), and never under 10rem, below which the page scrolls instead of overlapping. The panel (game card, Review and Explore, the rest) follows below the fold and the page scrolls to it. A drill has no move row, so its stage is the whole height, with the flip button beside your strip. Tablets and desktops are unchanged.
+
 ---
 
 ## 5. The screens

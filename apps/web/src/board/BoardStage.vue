@@ -359,26 +359,43 @@ watch(
   }
 }
 
-/* Below 48rem (a phone) the board runs edge to edge: the column is the window's width, with no eval bar and no
-   padding at either side, and the strips and the controls keep a gutter of their own. The page scrolls. */
+/* Below 48rem (a phone) the stage is the first screen, between the header and the tab bar: the seats and the board
+   (edge to edge, or smaller where the height is short) sit in the middle of it with the free height shared above and
+   below, and the graph and the transport hold its foot, with the panel's move row right under them, just above the tab
+   bar. The rest of the panel follows below the fold and the page scrolls to it. */
 @media (width < 48rem) {
   .stage {
     --col: 0px;
     --egap: 0px;
     --pad: 0px;
-    --side: 100cqw;
+    --foot: calc(var(--h-movestrip) + var(--e-stroke-hair));
+    --first: calc(
+      100dvh - var(--h-header) - var(--e-stroke-hair) - var(--h-tabbar) - env(safe-area-inset-bottom, 0px) - var(--foot)
+    );
 
-    display: block;
-    container-type: inline-size;
+    display: grid;
+    height: max(var(--first), calc(var(--chrome) + 10rem));
+    container-type: size;
+  }
+
+  /* A drill has no move row under the board, so its first screen is the whole of the height. */
+  .stage:has(.col--drill) {
+    --foot: 0px;
   }
 
   .col {
+    --chrome: calc(2 * var(--strip) + var(--graph) + var(--transport) + 6 * var(--gap));
+    --side: max(10rem, min(100cqw, 100cqh - var(--chrome)));
+
     grid-template:
+      ". " minmax(0, 1fr)
       "top" var(--strip)
       "board" var(--side)
       "bottom" var(--strip)
+      ". " minmax(0, 1fr)
       "graph" var(--graph)
       "transport" var(--transport) / minmax(0, 1fr);
+    min-height: 0;
   }
 
   .eval-slot {
@@ -400,10 +417,14 @@ watch(
   /* A drill has no graph: its flip button moves up beside the bottom strip, so the drill's controls, which sit under
      the board, are that much nearer the top of a short phone. */
   .col--drill {
+    --chrome: calc(2 * var(--strip) + 4 * var(--gap));
+
     grid-template:
+      ". ." minmax(0, 1fr)
       "top top" var(--strip)
       "board board" var(--side)
-      "bottom transport" var(--strip) / minmax(0, 1fr) auto;
+      "bottom transport" var(--strip)
+      ". ." minmax(0, 1fr) / minmax(0, 1fr) auto;
   }
 
   .col--drill .graph-slot {
@@ -412,6 +433,13 @@ watch(
 
   .col--drill .transport {
     margin-inline-start: 0;
+  }
+}
+
+/* A short phone gives the graph less of its height, so the board keeps its width. */
+@container (height < 34rem) {
+  .col {
+    --graph: 1.5rem;
   }
 }
 </style>
