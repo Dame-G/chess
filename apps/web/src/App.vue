@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, watch, watchEffect } from "vue";
-import { RouterView, useRoute } from "vue-router";
+import { RouterLink, RouterView, useRoute } from "vue-router";
 import { EAppShell } from "@eos-ui/vue/components/EAppShell";
 import { EToastProvider } from "@eos-ui/vue/components/EToastProvider";
 import { useBoardAddress } from "./board/address";
@@ -20,6 +20,7 @@ import TabBar from "./shell/TabBar.vue";
 import { useEventToasts, useLoginResult } from "./shell/toasts";
 import TopBar from "./shell/TopBar.vue";
 import { useUi } from "./shell/ui";
+import { useEngines } from "./stores/engines";
 
 /**
  * The app is the board plus a panel, with the Games rail beside them; profiles and settings are sheets in the
@@ -30,6 +31,9 @@ import { useUi } from "./shell/ui";
 const route = useRoute();
 const board = useBoard();
 const ui = useUi();
+const engines = useEngines();
+/** The analysis engine is missing (a first start, before the download): nothing that analyses can run until it is. */
+const noEngine = computed(() => engines.loaded && engines.analysis !== null && !engines.analysis.installed);
 const sheet = computed(() => route.meta["sheet"] === true);
 const phone = useMedia(down("md"));
 const wide = useMedia(up("lg"));
@@ -92,6 +96,10 @@ watchEffect(() => {
         <Panel class="ws-panel" />
         <RouterView v-if="sheet" />
         <p v-if="!reachable" class="offline" role="status">Can't reach the app. Reconnecting…</p>
+        <p v-else-if="noEngine" class="offline" role="status">
+          {{ engines.analysis?.name }} isn't installed yet, so analysis, reviews and engine games can't run.
+          <RouterLink to="/settings?tab=engines">Download engines</RouterLink>
+        </p>
       </div>
       <TabBar v-if="phone" />
     </EAppShell>
