@@ -20,7 +20,7 @@ pub enum Reach {
     Local,
     /// Reads from Lichess or another site; changes nothing there.
     ReadsOutside,
-    /// Acts on the user's real Lichess account (or the bot's): only when the user asked.
+    /// Acts on the user's real Lichess account: only when the user asked.
     RealAccount,
     /// Acts on the outside world in another way (a push, a download): only when the user asked.
     Outside,

@@ -1,5 +1,5 @@
-//! What a game stream sends, for the Bot API (`/api/bot/game/stream/{id}`) and the Board API
-//! (`/api/board/game/stream/{id}`) alike: the whole game first (`gameFull`), then a `gameState` after every move,
+//! What a game stream sends, for the Board API
+//! (`/api/board/game/stream/{id}`): the whole game first (`gameFull`), then a `gameState` after every move,
 //! offer and ending, chat lines, and word when the opponent leaves or comes back. Lichess closes the stream when the
 //! game is over.
 

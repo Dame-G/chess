@@ -173,7 +173,7 @@ pub struct NewGameRequest {
     /// Threads per engine. Default 1.
     #[serde(default)]
     pub threads: Option<u32>,
-    /// End decided games early, as the trials do (engines' scores only).
+    /// End decided games early (engines' scores only): resign at 3 moves of 300 cp, draw from move 30 at 6 quiet moves.
     #[serde(default)]
     pub adjudicate: bool,
     /// Seeds the choices of seats at a level, so a game can be replayed; random when none.

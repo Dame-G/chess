@@ -1752,7 +1752,7 @@
         "tags": [
           "games"
         ],
-        "summary": "Stops a live game: a game you sit in is resigned (aborted before each side has moved), an engine game aborted,\nthe bot's resigned on Lichess. Answers the game once it has ended, or as it stands after a few seconds.",
+        "summary": "Stops a live game: a game you sit in is resigned (aborted before each side has moved), an engine game aborted,\nyour Lichess game resigned there. Answers the game once it has ended, or as it stands after a few seconds.",
         "operationId": "stop_game",
         "parameters": [
           {
@@ -5719,7 +5719,7 @@
         "properties": {
           "adjudicate": {
             "type": "boolean",
-            "description": "End decided games early, as the trials do (engines' scores only)."
+            "description": "End decided games early (engines' scores only): resign at 3 moves of 300 cp, draw from move 30 at 6 quiet moves."
           },
           "black": {
             "$ref": "#/components/schemas/SeatRequest"

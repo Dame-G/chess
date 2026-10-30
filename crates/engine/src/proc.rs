@@ -1,5 +1,5 @@
 //! Child processes that take their own children with them: a Job Object on Windows, a process group elsewhere.
-//! Cancelling a build, a bench or a fastchess round must not leave a compiler, an engine or a game running.
+//! Cancelling a search or a probe must not leave an engine running.
 //!
 //! Dropping a [`Child`] kills its whole tree. On Windows the Job Object also dies with the server however it ends; a
 //! Unix process group does not, so the server must stop by returning (on Ctrl-C or SIGTERM), which drops every child.

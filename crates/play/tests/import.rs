@@ -117,7 +117,7 @@ async fn another_players_history_waits_while_you_play() {
     let stored = imported(&s).await;
     assert_eq!(stored.len(), 2);
     assert!(stored.iter().all(|g| g.you.is_none() && g.white.player == PlayerKey::Lichess("bob".into())));
-    // Anonymous: never the bot's token, and none of yours without a login.
+    // Anonymous: none of your token without a login.
     assert_eq!(mock.requests_to("/api/games/user/bob")[0].token, None);
 
     // Stopped: it says so and keeps where it was.

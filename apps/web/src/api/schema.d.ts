@@ -565,7 +565,7 @@ export interface paths {
         put?: never;
         /**
          * Stops a live game: a game you sit in is resigned (aborted before each side has moved), an engine game aborted,
-         *     the bot's resigned on Lichess. Answers the game once it has ended, or as it stands after a few seconds.
+         *     your Lichess game resigned there. Answers the game once it has ended, or as it stands after a few seconds.
          */
         post: operations["stop_game"];
         delete?: never;
@@ -1949,7 +1949,7 @@ export interface components {
         };
         /** @description `POST /api/games`: a local game. */
         NewGameRequest: {
-            /** @description End decided games early, as the trials do (engines' scores only). */
+            /** @description End decided games early (engines' scores only): resign at 3 moves of 300 cp, draw from move 30 at 6 quiet moves. */
             adjudicate?: boolean;
             black: components["schemas"]["SeatRequest"];
             from?: components["schemas"]["StartFrom"] | null;

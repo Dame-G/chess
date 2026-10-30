@@ -100,7 +100,7 @@ async fn a_players_newest_unreviewed_games_are_found() {
     let draw = finished_game(&h.hub, fake(), PlayerKey::You, &QUIET_DRAW, Outcome::Draw, 2).await;
     finished_game(&h.hub, fake(), PlayerKey::Engine("maia-1500".into()), &QUIET_DRAW, Outcome::Draw, 3).await;
 
-    // All of them in the background: below ideas, newest first, with no cap.
+    // All of them in the background: at the lowest priority, newest first, with no cap.
     let all = reviews.prepare(ReviewRequest { player: Some(PlayerKey::You), background: true, ..Default::default() });
     let all = all.await.unwrap();
     assert_eq!((all.priority, all.title.as_str()), (Priority::Background, "Reviewing all 2 of your games"));

@@ -154,7 +154,7 @@ fn actions_text() -> String {
 }
 
 /// Stops a live game: a game you sit in is resigned (aborted before each side has moved), an engine game aborted,
-/// the bot's resigned on Lichess. Answers the game once it has ended, or as it stands after a few seconds.
+/// your Lichess game resigned there. Answers the game once it has ended, or as it stands after a few seconds.
 #[utoipa::path(post, path = "/api/games/{id}/stop", operation_id = "stop_game", tag = "games", params(GamePath),
     responses((status = 200, body = Game), (status = 404, body = dameless_core::error::ErrorBody), (status = 409, body = dameless_core::error::ErrorBody)))]
 pub async fn stop_game(State(app): State<Arc<App>>, Path(p): Path<GamePath>) -> ApiResult<Json<Game>> {

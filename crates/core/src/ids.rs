@@ -1,6 +1,6 @@
 //! Identity: typed ids, the two sides of a board, who sits at it, which Lichess connection, and timestamps.
 //!
-//! Ids are plain database row ids wrapped in their own types, so a game id can never be passed where an idea id is
+//! Ids are plain database row ids wrapped in their own types, so a game id can never be passed where a work id is
 //! wanted. They serialize as bare numbers.
 
 use std::{borrow::Cow, fmt, str::FromStr};
