@@ -697,6 +697,12 @@ pub struct TestArgs {
     pub bounds: Option<Vec<f64>>,
     #[arg(long)]
     pub pairs: Option<u32>,
+    /// The SPRT's false-accept rate (default 0.05).
+    #[arg(long)]
+    pub alpha: Option<f64>,
+    /// The SPRT's false-reject rate (default 0.10, Reckless's; the idea funnels run at 0.20).
+    #[arg(long)]
+    pub beta: Option<f64>,
     #[arg(long)]
     pub title: Option<String>,
     #[arg(long)]
@@ -1589,8 +1595,13 @@ pub async fn run(c: Client, command: Command, json: bool) -> Result<()> {
             } else {
                 format!("online {}", v["connection"]["online"])
             };
+            let regression = match v["regressions"].as_array().and_then(|r| r.first()) {
+                Some(r) if r["passed"] == false => format!("\n!!! {}", str_of(&r["summary"])),
+                Some(r) => format!("\nlast regression check: {}", str_of(&r["summary"])),
+                None => String::new(),
+            };
             format!(
-                "champion {} ({})\n{} ideas running, {} queued\nbot: {bot}",
+                "champion {} ({})\n{} ideas running, {} queued\nbot: {bot}{regression}",
                 str_of(&v["champion"]["name"]),
                 short(&v["champion"]["commit"]),
                 ideas("running"),
@@ -1603,7 +1614,8 @@ pub async fn run(c: Client, command: Command, json: bool) -> Result<()> {
             if a.bounds.as_ref().is_some_and(|b| b.len() != 2) {
                 bail!("--bounds takes two numbers: 0,3");
             }
-            let custom = json!({ "preset": a.preset, "bounds": a.bounds, "pairs": a.pairs });
+            let custom =
+                json!({ "preset": a.preset, "bounds": a.bounds, "pairs": a.pairs, "alpha": a.alpha, "beta": a.beta });
             let title = a.title.unwrap_or_else(|| format!("{} vs {}", a.dev, a.base));
             let body = json!({ "title": title, "kind": "gain", "branch": a.dev, "base": a.base, "custom": custom });
             let v = c.post("/api/ideas", body).await?;

@@ -32,6 +32,11 @@ const scaleText = computed(() => {
   return `${written} at ${trialClock(t.played)} (×${t.scaling.scale.toFixed(2)})`;
 });
 const goal = computed(() => props.trial.bounds?.map((b) => String(b).replace("-", "−")).join(", "));
+/** The SPRT's error rates under its goal: the funnels run at α 0.05, β 0.20. */
+const rates = computed(() => {
+  const { alpha, beta } = props.trial;
+  return alpha != null && beta != null ? `α ${alpha.toFixed(2)} · β ${beta.toFixed(2)}` : undefined;
+});
 const wdl = computed(() => props.trial.wdl.map((n) => formatNumber(n)));
 </script>
 
@@ -53,7 +58,7 @@ const wdl = computed(() => props.trial.wdl.map((n) => formatNumber(n)));
         <UiStat label="Won" :value="wdl[0]" />
         <UiStat label="Drawn" :value="wdl[1]" />
         <UiStat label="Lost" :value="wdl[2]" />
-        <UiStat v-if="goal" label="Goal, nElo" hint="sprt" :value="`[${goal}]`" />
+        <UiStat v-if="goal" label="Goal, nElo" hint="sprt" :value="`[${goal}]`" :sub="rates" />
       </UiStats>
 
       <PentaBar :penta="trial.penta" />

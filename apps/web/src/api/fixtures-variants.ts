@@ -12,6 +12,7 @@
  * - `tune0`, `tune5000`: the running tune at iteration 0, and at iteration 5,000
  * - `nogpu`: a machine with no GPU
  * - `untrusted`: a harness that has not been checked on this machine
+ * - `regression`: the last regression check failed (the newest champion is measurably worse than the oldest)
  *
  * Everything here is invented, like the rest of the fixtures.
  */

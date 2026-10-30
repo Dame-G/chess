@@ -7,6 +7,7 @@ use dameless_core::{
     levels::{self, Entrant},
     profile::ProfileFilter,
     progress::{self, Progress},
+    regression::{self, RegressionCheck},
 };
 
 use crate::Profiles;
@@ -22,10 +23,18 @@ impl Profiles {
         let answers = store.drill_answers(None).await?;
         let hit = drills::trend(&answers, crate::drills::DEFAULT_TREND_WINDOW);
         let versions = store.versions(None).await?;
+        let checks = store.meta::<Vec<RegressionCheck>>(regression::META_KEY).await?.unwrap_or_default();
         let full = levels::ladder().into_iter().find(|l| l.is_full()).map(|l| l.id);
         let (ratings, _) = store.level_ratings().await?;
         let anchor =
             ratings.iter().find(|r| Some(r.entrant) == full.map(Entrant::Level) && r.games > 0).map(|r| r.estimate.elo);
-        Ok(progress::progress(&you.trend, &hit, &versions, anchor, window.unwrap_or(progress::ACCURACY_WINDOW).max(1)))
+        Ok(progress::progress(
+            &you.trend,
+            &hit,
+            &versions,
+            &checks,
+            anchor,
+            window.unwrap_or(progress::ACCURACY_WINDOW).max(1),
+        ))
     }
 }

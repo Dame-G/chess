@@ -3,7 +3,7 @@
 **Two players, one board.** You and your engine, Dameless (a fork of [Reckless](https://github.com/codedeliveryservice/Reckless)), both get stronger by playing games and learning from them.
 
 - **You** play Dameless at any strength, or on Lichess from the same board. Your games are reviewed move by move; your mistakes come back as drills; your openings, accuracy and rating add up into a profile.
-- **Dameless** gets stronger through ideas: a hypothesis and a change, tested in a funnel of trials copied from Reckless's OpenBench, then promoted to champion when kept. Tunes (SPSA) and trained networks are ideas too. It plays on Lichess as a BOT.
+- **Dameless** gets stronger through ideas: a hypothesis and a change, tested in a funnel of trials adapted from Reckless's OpenBench to one machine (with a regression check after every fifth promotion), then promoted to champion when kept. Tunes (SPSA) and trained networks are ideas too. It plays on Lichess as a BOT.
 - **Claude** drives the same app through its MCP endpoint or CLI: every action in the UI is a route and a command with the same name.
 
 Everything runs on your machine. The app serves its own UI; https://chess.dame.gg is the same UI, paired with your local app by its token.

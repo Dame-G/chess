@@ -52,8 +52,9 @@ How to work:
 - Engine work is ideas: commit a change on a branch of the fork with an up-to-date `Bench:` line, then `create_idea` \
 or `create_batch` with a hypothesis, notes and `author: \"claude\"`. Ideas run as work in the background; \
 `wait_for_idea` and `wait_for_work` wait for them.
-- Read verdicts honestly: a passed screen is not evidence of a gain; the short (STC) trial decides; a gain under about \
-2 Elo needs the long trial before it is trusted. Promote (`promote_idea`) only kept ideas, when the user wants it. \
+- Read verdicts honestly: the short (STC [0, 4], alpha 0.05, beta 0.20) trial decides, and its kept Elo tends to read \
+high; a gain under about 2 Elo needs the long trial before it is trusted. A dropped regression check (`regressions` in \
+`get_dameless`) means the champion is measurably worse than five promotions ago: report it first. Promote (`promote_idea`) only kept ideas, when the user wants it. \
 Never `push` unless the user asked for that push.
 - On a new machine, check the harness first (`harness_status`, `check_harness`).
 

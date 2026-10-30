@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import { PhLightbulb } from "@phosphor-icons/vue";
 import { EButton } from "@eos-ui/vue/components/EButton";
 import { ELink } from "@eos-ui/vue/components/ELink";
+import { ENotice } from "@eos-ui/vue/components/ENotice";
 import type { ChartSeries } from "../parts/chart";
 import BotCard from "../parts/BotCard.vue";
 import BrainCard from "../parts/BrainCard.vue";
@@ -12,6 +13,7 @@ import LevelsCard from "../parts/LevelsCard.vue";
 import LineChart from "../parts/LineChart.vue";
 import Logbook from "../parts/Logbook.vue";
 import NewIdea from "../parts/NewIdea.vue";
+import Term from "../parts/Term.vue";
 import { formatElo, seatName } from "../format";
 import { useConnections } from "../stores/connections";
 import { useDameless } from "../stores/dameless";
@@ -87,7 +89,7 @@ const readout = computed(() => {
   const p = strength.value[hover.value ?? strength.value.length - 1];
   if (!p) return "";
   const margin = p.high != null && p.low != null ? `, ±${((p.high - p.low) / 2).toFixed(1)}` : "";
-  return `${p.label ?? ""}: ${formatElo(p.value, 1)} Elo over v1${margin}`;
+  return `${p.label ?? ""}: ${formatElo(p.value, 1)} Elo over v1${margin}${p.measured ? ", measured" : ""}`;
 });
 /** The champion's Elo over v1 and its margin; nothing until a promoted version has been measured against v1. */
 const over = computed(() => {
@@ -110,6 +112,15 @@ const botState = computed(() => {
   if (!c.configured) return "Not linked";
   if (c.bot?.online) return playing.value ? "Playing" : "Online";
   return !c.bot?.settings.version ? "No version" : "Offline";
+});
+
+/**
+ * The last regression check when it failed: the champion is measurably worse than the one five promotions back. Said
+ * on Strength and on Ideas, until a later check passes; nothing was reverted, so what to do is the person's call.
+ */
+const regression = computed(() => {
+  const last = overview.value?.regressions[0];
+  return last && !last.passed ? last : null;
 });
 
 /** Champions taken from upstream Reckless, newest first, and the last sync (shown when it failed). */
@@ -173,6 +184,10 @@ watch(creating, (open) => {
 
     <template #tab-strength>
       <div>
+        <ENotice v-if="regression" tone="danger" title="Dameless got weaker" role="alert">
+          {{ regression.summary }}.
+          <ELink :link-component="RouterLink" :to="`/dameless/ideas/${regression.idea}`">Read the check</ELink>.
+        </ENotice>
         <UiSection title="Strength">
           <template #aside>
             <ELink :link-component="RouterLink" :to="{ path: '/compare', query: { players: 'you,dameless' } }">
@@ -192,6 +207,10 @@ watch(creating, (open) => {
             <span v-if="hover != null" class="mono">{{ readout }}</span>
           </LineChart>
           <UiEmpty v-else dense title="The line starts once a promoted version has been measured against v1." />
+          <p v-if="strength.some((p) => p.measured)" class="muted">
+            Some versions are placed by a <Term k="regression" text="regression check" />: games against the champion
+            five promotions earlier, rather than each promotion's trial added up.
+          </p>
         </UiSection>
 
         <UiSection v-if="fromUpstream.length || lastSync?.outcome === 'failed'" title="From upstream">
@@ -219,6 +238,10 @@ watch(creating, (open) => {
           <template #actions><EButton @click="creating = true">New idea</EButton></template>
         </UiEmpty>
         <template v-else>
+          <ENotice v-if="regression" tone="danger" title="Dameless got weaker" role="alert">
+            {{ regression.summary }}.
+            <ELink :link-component="RouterLink" :to="`/dameless/ideas/${regression.idea}`">Read the check</ELink>.
+          </ENotice>
           <UiSection title="In progress">
             <template #aside><EButton size="sm" @click="creating = true">New idea</EButton></template>
             <ul v-if="inProgress.length" class="rows">

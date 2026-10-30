@@ -254,6 +254,24 @@ mod tests {
     }
 
     #[test]
+    fn the_error_rates_set_the_llr_bounds() {
+        // alpha 0.05, beta 0.20: the single-machine funnels'.
+        let s = Sprt { elo0: 0.0, elo1: 4.0, alpha: 0.05, beta: 0.20 };
+        assert!((s.lower() - (0.2f64 / 0.95).ln()).abs() < 1e-12, "{}", s.lower());
+        assert!((s.upper() - (0.8f64 / 0.05).ln()).abs() < 1e-12, "{}", s.upper());
+        assert!((s.lower() - -1.558).abs() < 1e-3 && (s.upper() - 2.773).abs() < 1e-3);
+        // alpha 0.05, beta 0.10: Reckless's.
+        let r = Sprt { beta: 0.10, ..s };
+        assert!((r.lower() - (0.1f64 / 0.95).ln()).abs() < 1e-12 && (r.upper() - 18f64.ln()).abs() < 1e-12);
+        // A larger beta stops sooner on the way down; a smaller alpha asks more on the way up.
+        let strict = Sprt { alpha: 0.025, ..s };
+        assert!(strict.upper() > s.upper() && s.lower() > r.lower());
+        // The LLR itself does not depend on the rates, only where it stops.
+        let p = penta(10, 300, 900, 20, 320, 12);
+        assert_eq!(s.llr(&p), r.llr(&p));
+    }
+
+    #[test]
     fn bounds_and_verdicts() {
         let s = Sprt { elo0: 0.0, elo1: 3.0, alpha: 0.05, beta: 0.10 };
         assert!((s.lower() - -2.25).abs() < 0.01 && (s.upper() - 2.89).abs() < 0.01);

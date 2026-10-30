@@ -5012,6 +5012,22 @@
           "preset"
         ],
         "properties": {
+          "alpha": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The SPRT's false-accept rate (default 0.05)."
+          },
+          "beta": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The SPRT's false-reject rate (default 0.10, Reckless's; the funnels run at 0.20)."
+          },
           "bounds": {
             "type": [
               "array",
@@ -5044,7 +5060,8 @@
           "champion",
           "line",
           "ideas",
-          "strength"
+          "strength",
+          "regressions"
         ],
         "properties": {
           "champion": {
@@ -5071,12 +5088,19 @@
             },
             "description": "The champion line, newest first. A champion taken from upstream carries `upstream`: the commits it brought."
           },
+          "regressions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegressionCheck"
+            },
+            "description": "Finished regression checks (after every fifth promotion, the champion against the champion five promotions\nearlier), newest first. One that did not pass says the champion is measurably worse; nothing was reverted."
+          },
           "strength": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ProgressPoint"
             },
-            "description": "Each champion version and its cumulative Elo over `v1` (each promotion's deciding estimate added up, the\nerrors in quadrature), oldest first."
+            "description": "Each champion version and its cumulative Elo over `v1` (each promotion's deciding estimate added up, the\nerrors in quadrature), oldest first. A champion a regression check measured is placed by that check instead\n(`measured`), and those after it add on from there."
           },
           "upstream": {
             "oneOf": [
@@ -9232,6 +9256,10 @@
             "format": "double",
             "description": "A 95 % interval, where the value has one (Dameless's Elo)."
           },
+          "measured": {
+            "type": "boolean",
+            "description": "Dameless's point measured by a regression check (games between this champion and one five promotions back)\nrather than added up from promotions' estimates."
+          },
           "value": {
             "type": "number",
             "format": "double"
@@ -9396,6 +9424,69 @@
                 "type": "null"
               }
             ]
+          }
+        }
+      },
+      "RegressionCheck": {
+        "type": "object",
+        "description": "One finished check: `GET /api/dameless` lists them.",
+        "required": [
+          "idea",
+          "champion",
+          "champion_name",
+          "against",
+          "against_name",
+          "passed",
+          "pairs",
+          "summary",
+          "at"
+        ],
+        "properties": {
+          "against": {
+            "$ref": "#/components/schemas/VersionId",
+            "description": "The champion five promotions earlier."
+          },
+          "against_name": {
+            "type": "string"
+          },
+          "at": {
+            "$ref": "#/components/schemas/Timestamp"
+          },
+          "champion": {
+            "$ref": "#/components/schemas/VersionId",
+            "description": "The new champion, and its name (`v11`)."
+          },
+          "champion_name": {
+            "type": "string"
+          },
+          "elo": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Estimate",
+                "description": "The new champion's logistic Elo over `against`, ± 95 %."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "idea": {
+            "$ref": "#/components/schemas/IdeaId",
+            "description": "The idea that played it."
+          },
+          "pairs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Game pairs played.",
+            "minimum": 0
+          },
+          "passed": {
+            "type": "boolean",
+            "description": "Passed: not measurably worse than `against`."
+          },
+          "summary": {
+            "type": "string",
+            "description": "One sentence: \"v11 over v6: +12.4 ± 3.1 Elo over 10000 pairs\"."
           }
         }
       },
@@ -10591,7 +10682,8 @@
           "tune",
           "confirm",
           "custom",
-          "train"
+          "train",
+          "regression"
         ]
       },
       "StartFrom": {
@@ -11347,6 +11439,22 @@
           "wdl"
         ],
         "properties": {
+          "alpha": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The SPRT's false-accept rate (with `bounds`)."
+          },
+          "beta": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The SPRT's false-reject rate (with `bounds`)."
+          },
           "bounds": {
             "type": [
               "array",
@@ -11570,6 +11678,20 @@
           "pairs"
         ],
         "properties": {
+          "alpha": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "beta": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "bounds": {
             "type": [
               "array",

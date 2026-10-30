@@ -136,4 +136,5 @@ export const stageLabel: Record<Stage, string> = {
   confirm: "confirmation",
   custom: "single trial",
   train: "training",
+  regression: "regression check",
 };

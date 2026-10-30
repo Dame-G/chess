@@ -12,6 +12,8 @@
 //! scheduler.register(import_executor);              // from play
 //! let upstream = Upstream::new(versions.clone());
 //! upstream.register();                              // Upstream (taking upstream Reckless as the next champion)
+//! let regression = Regression::new(ideas.clone());
+//! regression.register();                            // a regression check after every fifth promotion
 //! let harness = Harness::new(ideas.clone());        // Check the harness (its probes: the real machine)
 //! let diagnostics = Diagnostics::new(harness.clone()); // GET /api/health
 //! let probes: Arc<dyn Probes> = Arc::new(SystemProbes::default());
@@ -34,6 +36,7 @@ pub mod harness;
 pub mod health;
 pub mod ideas;
 pub mod nets;
+pub mod regression;
 pub mod scheduler;
 pub mod toolchain;
 pub mod train;
@@ -48,6 +51,7 @@ pub use ideas::{
     BatchRequest, BenchLineStatus, BranchCheck, CustomTrial, FixBenchRequest, Ideas, NewIdeaRequest, TuneView,
 };
 pub use nets::Nets;
+pub use regression::Regression;
 pub use scheduler::{EndHook, NewWork, Scheduler};
 pub use toolchain::{Reckless, Toolchain};
 pub use train::{TrainView, Training};

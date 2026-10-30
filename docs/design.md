@@ -31,7 +31,7 @@ One vocabulary everywhere: code, routes, the CLI, the UI, docs.
 | **Version**    | One commit of Dameless that matters: the champion line, an idea's change, an upstream tip. Shown by name (`v14`, `deeper-lmr`). |
 | **Champion**   | The current best version: the tip of the fork's `main`. Versions on the champion line are numbered `v1`, `v2`, …                |
 | **Idea**       | A hypothesis and a change to try. Kinds: **gain**, **neutral**, **speed**, **tune**. Ends **kept** or **dropped**.              |
-| **Trial**      | One stage of an idea: fingerprint, screen, short, long, speed, tune, confirm. A set of games and a verdict.                     |
+| **Trial**      | One stage of an idea: fingerprint, short, long, speed, tune, confirm, train, regression. A set of games and a verdict.          |
 | **Game**       | Two seats, moves, clocks, a result. Wherever it was played.                                                                     |
 | **Player**     | Someone who sits at a board: You, Dameless (at some version), a person on Lichess, Stockfish level N.                           |
 | **Work**       | Anything running in the background: a build, a trial, a tune, a review, an import.                                              |
@@ -232,7 +232,8 @@ pub struct Idea {
     pub created_at: Timestamp, pub ended_at: Option<Timestamp>,
 }
 
-pub enum Stage { Fingerprint, Screen, Short, Long, Speed, Tune, Confirm, Custom }
+pub enum Stage { Fingerprint, Screen, Short, Long, Speed, Tune, Confirm, Custom, Train, Regression }
+                                      // Screen: no default funnel runs it any more (ideas queued before still show it)
 pub enum TrialStatus { Waiting, Running, Passed, Failed, Stopped, Skipped }
 
 pub struct Trial {
@@ -242,6 +243,8 @@ pub struct Trial {
     pub played: Option<TimeControl>,  // after scaling (11+0.11)
     pub scaling: Option<Scaling>,     // {copies, dev_nps, base_nps, measured_nps, reference_nps, scale}
     pub bounds: Option<[f64; 2]>,     // nElo, [lower, upper]
+    pub alpha: Option<f64>,           // the SPRT's error rates, with bounds (0.05 and 0.20 in the funnels;
+    pub beta: Option<f64>,            //   a trial stored before them reads as 0.05 and 0.10, what it ran at)
     pub pairs: Option<u32>,           // a fixed number of pairs instead of an SPRT (custom trials)
     pub penta: Pentanomial,           // [LL, LD, DD+WL, WD, WW] pairs (u64 counts, as stats uses)
     pub wdl: [u32; 3],
@@ -253,19 +256,19 @@ pub struct Trial {
 }
 ```
 
-The funnels copy Reckless's OpenBench (unchanged from the old harness, see `AGENTS.md`):
+The funnels are sized for one machine (`AGENTS.md` has the reasoning): no VSTC screen, and every SPRT at alpha 0.05, beta 0.20.
 
-| Kind    | Stages                                                                                                                    |
-| ------- | ------------------------------------------------------------------------------------------------------------------------- |
-| gain    | fingerprint (bench must change) → screen VSTC 4+0.04 [-5, 0] → short STC 8+0.08 [0, 3] → long LTC 40+0.4 [0, 3] (opt-in)  |
-| neutral | fingerprint (bench must change) → screen → short STC [-2.75, 0.25] → long (opt-in)                                        |
-| speed   | fingerprint (bench must be identical) → speed (paired nps comparison, no games)                                           |
-| tune    | tune (SPSA writes the change) → fingerprint → screen → confirm STC [0, 4] → long [0, 4] (opt-in)                          |
-| net     | train (a run makes the net; the version is the base's code with it) → fingerprint → screen → short [0, 3] → long (opt-in) |
+| Kind    | Stages                                                                                                           |
+| ------- | ---------------------------------------------------------------------------------------------------------------- |
+| gain    | fingerprint (bench must change) → short STC 8+0.08 [0, 4] → long LTC 40+0.4 [0, 4] (opt-in)                      |
+| neutral | fingerprint (bench must change) → short STC [-2.75, 0.25] → long [-2.75, 0.25] (opt-in)                          |
+| speed   | fingerprint (bench must be identical) → speed (paired nps comparison, no games)                                  |
+| tune    | tune (SPSA writes the change) → fingerprint → confirm STC [0, 4] → long [0, 4] (opt-in)                          |
+| net     | train (a run makes the net; the version is the base's code with it) → fingerprint → short [0, 4] → long (opt-in) |
 
-An idea can also be a single **custom** trial (any preset and bounds or a fixed number of pairs): what `chess test` was, including the false-accept check.
+An idea stores its funnel in its `spec` when queued (`StagePlan { stage, rule }`, a games rule with its `preset`, `bounds`, `pairs`, `alpha` and `beta`), so an idea queued or running when the funnels change keeps the rules it began with; a games rule stored without rates reads as 0.05 and 0.10. An idea can also be a single **custom** trial (any preset and bounds or a fixed number of pairs, alpha and beta 0.05 and 0.10 unless given): what `chess test` was, including the false-accept check.
 
-Statistics are the old harness's `stats.rs` ported as is: pentanomial GSPRT (alpha 0.05, beta 0.10), nElo, logistic Elo with a t-interval, checked against Fishtest/OpenBench reference runs. Clock scaling is the old `engine/scale.rs`: 660,000 nps reference, measured with as many bench copies as the trial's threads, `CHESS_SCALE_CLOCKS` becomes `DAMELESS_SCALE_CLOCKS`, `CHESS_REFERENCE_NPS` becomes `DAMELESS_REFERENCE_NPS`.
+Statistics are the old harness's `stats.rs` ported as is: pentanomial GSPRT (each stage's alpha and beta), nElo, logistic Elo with a t-interval, checked against Fishtest/OpenBench reference runs. Clock scaling is the old `engine/scale.rs`: 660,000 nps reference, measured with as many bench copies as the trial's threads, `CHESS_SCALE_CLOCKS` becomes `DAMELESS_SCALE_CLOCKS`, `CHESS_REFERENCE_NPS` becomes `DAMELESS_REFERENCE_NPS`.
 
 A tune (`kind: tune`) carries `TuneSpec { params: Vec<TunableOverride>, iterations, pairs, time | nodes, hash }` and stores its SPSA history (one row per update: values, result, penta). SPSA follows OpenBench exactly as the old `tune.rs` does (alpha 0.602, gamma 0.101, A = 0.1 × iterations, `r_end` 0.002, stochastic rounding, `c_k ≥ 0.5`, workers of two games). When SPSA ends, the tune writes the rounded values into `src/parameters.rs` on a new branch `tune/<idea id>`, commits with its `Bench:` line, records that as the idea's version, and the remaining stages run on it.
 
@@ -274,6 +277,8 @@ A tune (`kind: tune`) carries `TuneSpec { params: Vec<TunableOverride>, iteratio
 **Taking upstream** (`work::upstream`, `WorkKind::Upstream`, the promotions' lane): every six hours while `upstream.settings.auto` is on (the default), and on `POST /api/upstream/sync`, the fork's `upstream` remote is fetched; commits of `upstream/main` the champion lacks are merged into `main` the way a promotion merges, without trials (upstream tests them on its fleet) but built and benched. A fast-forward must bench its commit's `Bench:` line; a merge commit is built on no branch first and then written with its measured `Bench:` line (sharing the build). The result is champion `v<n+1>` with `Version.upstream` (the commits it brought). A conflict, a failed build or bench, a `main` that moved, or a dirty checkout changes nothing; every sync's end is `meta` `upstream.last` (`UpstreamSync { at, outcome: merged|up_to_date|failed, detail, work, version?, champion?, merge? }`) and the `upstream.synced` event. Never pushes.
 
 **Rounds.** A trial's round is about 12 pairs per game slot and is wound down early (fastchess stopped, the pairs whose two games finished kept from the PGN by their `[Round]` number) when the SPRT decides on the running counts, a pause is asked, work of higher priority waits for cores (`Ledger::waiting_ahead_of`), or the trial is stopped. **Adjudication** resigns at 3 moves of 300 cp (OpenBench: 400); draws as OpenBench.
+
+**The regression check** (`core::regression`, `work::regression`): when a promotion or an upstream sync ends and the champion is `v<n>` with n − 1 a multiple of 5 (n > 5), and it has no check yet, an idea is queued (kind `gain`, tag `regression`, base `v<n−5>`, version `v<n>`, one `regression` trial of 10,000 STC pairs, not an SPRT, at idea priority; its spec carries `RegressionRun { champion, champion_name, against, against_name, pairs }`). When the pairs are played the trial is judged on its Elo: it fails when the interval's upper end is below 0 (measurably worse than five promotions back), and its work log says so loudly. The idea ends kept or dropped with the check's sentence ("Regression: v11 is measurably worse than v6, …") and the result is appended to `meta` `regression.checks` (`RegressionCheck { idea, champion, champion_name, against, against_name, passed, elo, pairs, summary, at }`). Nothing is reverted, and it cannot be promoted. The strength line places a checked champion at the earlier champion's value plus the measured Elo (errors in quadrature, `ProgressPoint.measured`), and later champions add on from there.
 
 **The harness check** is two custom trials of fixed pairs: determinism (1,000 pairs at 25,000 nodes, one thread; every pair must be the same game twice and score exactly 1, else the openings are named and the second part is skipped), then symmetry (4,000 VSTC pairs; the Elo interval holds 0 and LL ≈ WW, LD ≈ WD within 3 standard errors).
 
@@ -318,7 +323,7 @@ Comparison is profiles side by side: `GET /api/compare?players=you,dameless,lich
 
 A **weak spot** is a position before one of your mistakes or blunders in a reviewed game (`{game, ply, fen, played, best, swing, opening, phase, recurring}`), recurring themes first (same opening family and phase). "Play this out" starts a local game from that FEN against Dameless.
 
-**Dameless's profile** adds the logbook: `GET /api/dameless` → `{ champion: Version, line: Vec<Version>, upstream: Option<UpstreamSync>, ideas: { running, queued, recent }, connection: Option<BotStatus>, strength: Vec<StrengthPoint> }`, where a strength point is a champion version and its cumulative Elo over `v1` (summing each promotion's deciding estimate).
+**Dameless's profile** adds the logbook: `GET /api/dameless` → `{ champion: Version, line: Vec<Version>, upstream: Option<UpstreamSync>, ideas: { running, queued, recent }, connection: Option<BotStatus>, strength: Vec<StrengthPoint>, regressions: Vec<RegressionCheck> }`, where a strength point is a champion version and its cumulative Elo over `v1` (summing each promotion's deciding estimate, or placed by a regression check), and `regressions` are the finished regression checks, newest first.
 
 ### Work
 
@@ -457,7 +462,7 @@ ideas       (id INTEGER PRIMARY KEY, title, hypothesis, kind, author, branch, ba
              notes, spec JSON, created_at, ended_at)
 trials      (id INTEGER PRIMARY KEY, idea, stage, ord, status, preset, time JSON, played JSON, scaling JSON, bounds JSON,
              pairs, penta JSON, wdl JSON, llr JSON, elo JSON, nelo JSON, detail, rounds INTEGER, pgn_path, started_at,
-             ended_at, UNIQUE (idea, ord))
+             ended_at, alpha REAL, beta REAL, UNIQUE (idea, ord))   -- alpha, beta: migration 0005
 tune_steps  (idea, iteration, theta JSON, result, penta JSON, PRIMARY KEY (idea, iteration))
              -- theta: the values after the step (`values` is an SQL keyword)
 work        (id INTEGER PRIMARY KEY, kind, status, priority, title, subject JSON, spec JSON, checkpoint JSON,
@@ -537,7 +542,8 @@ DELETE /api/drills/{id}                              204
 GET    /api/drills/trend?window=50                   HitRatePoint[]
 
 GET    /api/dameless                                 { champion, line, ideas: { running, queued, recent }, connection: BotStatus?,
-                                                       strength: ProgressPoint[] (cumulative Elo over v1, oldest first) }
+                                                       strength: ProgressPoint[] (cumulative Elo over v1, oldest first),
+                                                       regressions: RegressionCheck[] (newest first) }
 GET    /api/versions?line=                           Version[]
 POST   /api/versions                                 { ref } → 201 Version; its build is queued (see /api/work)
 GET    /api/versions/{id}/builds                     Build[] (diagnostics)
@@ -615,7 +621,7 @@ dameless eval [--fen --moves --version --depth|--nodes --multipv] (streams until
 dameless explorer [--db --fen --play …] | tablebase --fen <fen, _ for spaces>
 dameless dameless | versions [--line] | version make <ref> [--wait] | builds <version> | build delete <id> | build prune [--all --dry-run]
 dameless ideas | idea new [--kind net …]|list|show|trial|tune|stop|resume|promote|batch|check-branch|fix-bench …
-dameless test --dev x --base main --preset vstc --bounds 0,3 [--pairs N] [--wait]       (a custom idea)
+dameless test --dev x --base main --preset stc --bounds 0,4 [--pairs N] [--alpha 0.05 --beta 0.20] [--wait]   (a custom idea)
 dameless tune --branch spsa/tunables [--params a,b --iterations --pairs --tc 8+0.08 | --nodes] [--wait]
 dameless tunables <branch> | harness [check --determinism-pairs 1000 --symmetry-pairs 4000 --wait]
 dameless upstream [sync [--wait] | auto on|off]
@@ -656,7 +662,7 @@ dameless lichess bot [token | logout | settings --set key=value | online | offli
 - **New game** (a quiet outline button in the header, and `N`; the one filled button is the view's own, such as the empty Games rail's): opponent (Dameless at a version and a strength, full or a level such as "Dameless 1600"; Lichess: find a game, challenge someone; Stockfish N), a book start (off, saying why, until the book is installed), time control, colour, rated. One dialog, the choices that apply to the opponent.
 - **Games rail:** one list of `GameSummary`, filtered All · You · Dameless · Lichess · Trials, live games pinned on top with a pulse, then newest first under month headings, the filter and the paging done by the server (a rail with 3,708 games loads a page at a time). Trial games fold into one row per trial ("deeper-lmr vs v14 · short games · 412 pairs"), which opens into its games. Each row: players (you are "You"), result, accuracy if reviewed, time control, when; a screen reader hears it as one sentence. Calibration games are left out. Nothing yet is one sentence and one button (New game).
 - **You** (`/you`, a wide sheet): your Lichess ratings across the top (Log in with Lichess first when not linked), then tabs. **Overview**: the filters (speed, rated, how many games), the figures (games, score, accuracy, average loss, performance, win streak), the review notice with Review all and Import, Progress (your rating, accuracy and drill hit rate over time, beside Dameless's line), results, accuracy by phase and speed, moves per game by class, time per move, best moments and worst blunders as links onto the board. **Openings**: the openings you play, then the lines you play as White and as Black, where you leave theory, how you score. **Drills**: today's set and Start, the hit rate over time, Make drills from your mistakes, and the weak spots with Play this out. **Challenges** when there are any. Compare opens the comparison.
-- **Dameless** (`/dameless`, a wide sheet): the champion, its Elo over v1 and the bot's state across the top, then tabs. **Strength**: the line of champion versions and cumulative Elo (drawn once a promoted version has been measured; the readout appears on hover), what came from upstream, and **Levels** (the ladder with each level's calibrated rating ± or "about" its nominal one, the games behind it, the level near your rating, and Calibrate levels with what it costs). **Ideas**: ideas in progress, New idea (gain / neutral / speed / tune / network, or a custom trial), and the logbook (every idea newest first: title, author, verdict, Elo). **Brain**: the champion's net, the lineage of nets, the datasets and the room they may take, Generate data and Import data. **Bot**: the online switch, its rating, seeking and its note, the rules, recent challenges. An idea (`/dameless/ideas/<id>`) shows its stage and verdict across the top, then **Trials** (the funnel as a row of stages with the deciding numbers and the selected trial's evidence: LLR gauge, Elo ±, pentanomial, chart; a tune's trajectory), **Notes** (the hypothesis and the reasoning) and **Games** (onto the board), and Promote when kept.
+- **Dameless** (`/dameless`, a wide sheet): the champion, its Elo over v1 and the bot's state across the top, then tabs. **Strength**: a danger notice when the last regression check failed (on Ideas too, until a later one passes), the line of champion versions and cumulative Elo (drawn once a promoted version has been measured; a version a regression check placed reads "measured"; the readout appears on hover), what came from upstream, and **Levels** (the ladder with each level's calibrated rating ± or "about" its nominal one, the games behind it, the level near your rating, and Calibrate levels with what it costs). **Ideas**: ideas in progress, New idea (gain / neutral / speed / tune / network, or a custom trial), and the logbook (every idea newest first: title, author, verdict, Elo). **Brain**: the champion's net, the lineage of nets, the datasets and the room they may take, Generate data and Import data. **Bot**: the online switch, its rating, seeking and its note, the rules, recent challenges. An idea (`/dameless/ideas/<id>`) shows its stage and verdict across the top, then **Trials** (the funnel as a row of stages with the deciding numbers and the selected trial's evidence: LLR gauge, Elo ±, pentanomial, chart; a tune's trajectory), **Notes** (the hypothesis and the reasoning) and **Games** (onto the board), and Promote when kept.
 - **Settings** (`/settings`, a sheet with four tabs): **Accounts** (your login, the bot's token), **This machine** (cores, the engine checkout, the data directory, the engine binaries kept and Free disk space, and whether this machine's trials are trusted, with Check the harness), **Health** (fastchess, the book, the engine checkout, clang, PGO tools, CUDA, the GPU, disk, the database, each with what fixes it), and **Appearance** (theme, and the token for the hosted app). Each fact once: the binaries and the harness have their own rows and are not repeated under Health.
 - **Command bar** (`⌘K` / `Ctrl K`): places, games, players, ideas, versions, and verbs in the CLI's words (`play 5+3 dameless`, `review last 20`, `compare cutemouse83`, `new idea`, `drills`), and the common ones as entries (New game, Drills, Review your last 20 games, New idea, Flip the board, the theme). What fair play forbids is not offered.
 - **Work indicator** (in the header, where the status footer used to be): what background work is doing in one short sentence, with the dot alone below 75rem; click for the queue (a popover: running, queued, recent, with stop and pause), and "Analysis is off while you're playing on Lichess" when the policy says so. It is the only place background work appears.

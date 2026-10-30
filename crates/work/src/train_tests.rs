@@ -388,7 +388,7 @@ async fn a_net_idea_trains_then_tests_the_champions_code_with_the_net_and_promot
     let idea = lab.ideas.create(net_idea("Fine-tune on dfrc", small_run(2))).await.unwrap();
     assert_eq!(
         idea.trials.iter().map(|t| t.stage).collect::<Vec<_>>(),
-        [Stage::Train, Stage::Fingerprint, Stage::Screen, Stage::Short]
+        [Stage::Train, Stage::Fingerprint, Stage::Short]
     );
     assert_eq!((idea.branch.as_str(), idea.version), ("main", None));
     let idea = ended(&lab, idea.id).await;

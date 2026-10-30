@@ -3,7 +3,7 @@
 
 use dameless_core::{
     Error, IdeaId, Timestamp, TrialId, VersionId,
-    ideas::{Author, Idea, IdeaKind, IdeaStatus, Preset, Stage, Trial, TrialStatus},
+    ideas::{Author, ErrorRates, Idea, IdeaKind, IdeaStatus, Preset, Stage, Trial, TrialStatus},
     spsa::TuneStep,
     stats::Pentanomial,
     time::TimeControl,
@@ -55,6 +55,9 @@ pub struct NewTrial {
     pub preset: Option<Preset>,
     pub time: Option<TimeControl>,
     pub bounds: Option<[f64; 2]>,
+    /// The SPRT's error rates, with `bounds`.
+    pub alpha: Option<f64>,
+    pub beta: Option<f64>,
     pub pairs: Option<u32>,
 }
 
@@ -82,9 +85,12 @@ fn idea_from_row(row: &Row<'_>) -> DbResult<Idea> {
 }
 
 const TRIAL: &str = "SELECT id, idea, stage, status, preset, time, played, scaling, bounds, pairs, penta, wdl, llr, \
-                     elo, nelo, detail, started_at, ended_at FROM trials";
+                     elo, nelo, detail, started_at, ended_at, alpha, beta FROM trials";
 
 fn trial_from_row(row: &Row<'_>) -> DbResult<Trial> {
+    let bounds: Option<[f64; 2]> = from_opt_json(row.get(8)?)?;
+    // A trial with bounds from before the rates were stored ran at Reckless's.
+    let legacy = bounds.map(|_| ErrorRates::RECKLESS);
     Ok(Trial {
         id: TrialId(row.get(0)?),
         idea: IdeaId(row.get(1)?),
@@ -94,7 +100,9 @@ fn trial_from_row(row: &Row<'_>) -> DbResult<Trial> {
         time: from_opt_json(row.get(5)?)?,
         played: from_opt_json(row.get(6)?)?,
         scaling: from_opt_json(row.get(7)?)?,
-        bounds: from_opt_json(row.get(8)?)?,
+        bounds,
+        alpha: row.get::<_, Option<f64>>(18)?.or(legacy.map(|r| r.alpha)),
+        beta: row.get::<_, Option<f64>>(19)?.or(legacy.map(|r| r.beta)),
         pairs: row.get(9)?,
         penta: from_json(&row.get::<_, String>(10)?)?,
         wdl: from_json(&row.get::<_, String>(11)?)?,
@@ -239,8 +247,8 @@ impl Store {
             let ord: i64 =
                 tx.query_row("SELECT coalesce(max(ord), -1) + 1 FROM trials WHERE idea = ?1", [idea.0], |r| r.get(0))?;
             tx.execute(
-                "INSERT INTO trials (idea, stage, ord, status, preset, time, bounds, pairs, penta, wdl) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                "INSERT INTO trials (idea, stage, ord, status, preset, time, bounds, pairs, penta, wdl, alpha, beta) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     idea.0,
                     word(&t.stage),
@@ -252,6 +260,8 @@ impl Store {
                     t.pairs,
                     to_json(&Pentanomial::default())?,
                     to_json(&[0u32; 3])?,
+                    t.alpha,
+                    t.beta,
                 ],
             )?;
             trial_by_id(tx, TrialId(tx.last_insert_rowid()))?.ok_or_else(|| Error::internal("a trial vanished").into())
@@ -274,7 +284,7 @@ impl Store {
             let n = tx.execute(
                 "UPDATE trials SET status = ?2, preset = ?3, time = ?4, played = ?5, scaling = ?6, bounds = ?7, \
                  pairs = ?8, penta = ?9, wdl = ?10, llr = ?11, elo = ?12, nelo = ?13, detail = ?14, started_at = ?15, \
-                 ended_at = ?16 WHERE id = ?1",
+                 ended_at = ?16, alpha = ?17, beta = ?18 WHERE id = ?1",
                 params![
                     t.id.0,
                     word(&t.status),
@@ -292,6 +302,8 @@ impl Store {
                     t.detail,
                     t.started_at.as_ref().map(Timestamp::as_str),
                     t.ended_at.as_ref().map(Timestamp::as_str),
+                    t.alpha,
+                    t.beta,
                 ],
             )?;
             if n == 0 { Err(Error::not_found(format!("No trial {}", t.id)).into()) } else { Ok(()) }
@@ -394,7 +406,15 @@ mod tests {
         let fp = store
             .insert_trial(
                 i.id,
-                NewTrial { stage: Stage::Fingerprint, preset: None, time: None, bounds: None, pairs: None },
+                NewTrial {
+                    stage: Stage::Fingerprint,
+                    preset: None,
+                    time: None,
+                    bounds: None,
+                    alpha: None,
+                    beta: None,
+                    pairs: None,
+                },
             )
             .await
             .unwrap();
@@ -405,13 +425,16 @@ mod tests {
                     stage: Stage::Short,
                     preset: Some(Preset::Stc),
                     time: Some(Preset::Stc.settings().time),
-                    bounds: Some([0.0, 3.0]),
+                    bounds: Some([0.0, 4.0]),
+                    alpha: Some(0.05),
+                    beta: Some(0.20),
                     pairs: None,
                 },
             )
             .await
             .unwrap();
         assert_eq!(short.status, TrialStatus::Waiting);
+        assert_eq!((short.alpha, short.beta), (Some(0.05), Some(0.20)));
 
         short.status = TrialStatus::Running;
         short.penta = Pentanomial([1, 2, 3, 4, 5]);
@@ -449,6 +472,25 @@ mod tests {
         assert_eq!(store.count_trial_games(short.id).await.unwrap(), 2);
         let listed = store.games(GameFilter { trial: Some(short.id), ..Default::default() }).await.unwrap();
         assert_eq!(listed.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_trial_from_before_error_rates_reads_as_reckless() {
+        let (store, _dir) = testing::store();
+        let i = idea(&store, &[]).await;
+        let new = |bounds| NewTrial {
+            stage: Stage::Short,
+            preset: Some(Preset::Vstc),
+            time: None,
+            bounds,
+            alpha: None,
+            beta: None,
+            pairs: None,
+        };
+        let old = store.insert_trial(i.id, new(Some([-5.0, 0.0]))).await.unwrap();
+        assert_eq!((old.alpha, old.beta), (Some(0.05), Some(0.10)));
+        let fixed = store.insert_trial(i.id, new(None)).await.unwrap();
+        assert_eq!((fixed.alpha, fixed.beta), (None, None));
     }
 
     #[tokio::test]

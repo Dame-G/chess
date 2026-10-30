@@ -41,27 +41,30 @@ How to make the engine stronger with the app: ideas, their funnels, reading verd
 
 ## The funnels
 
-These copy Reckless's OpenBench. Bounds are normalized Elo; each game stage is a pentanomial GSPRT with alpha 0.05 and beta 0.10. The first stage that fails ends the idea as dropped, with its evidence.
+These are sized for this one machine, not OpenBench's fleet: no VSTC screen, and every game stage is a pentanomial GSPRT on normalized Elo bounds with alpha 0.05 and beta 0.20. The first stage that fails ends the idea as dropped, with its evidence.
 
-| Kind    | Stages                                                                                                                        |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| gain    | fingerprint (bench must change) → screen VSTC 4+0.04 [-5, 0] → short STC 8+0.08 [0, 3] → long LTC 40+0.4 [0, 3] (with `long`) |
-| neutral | fingerprint (bench must change) → screen VSTC [-5, 0] → short STC [-2.75, 0.25] → long LTC [-2.75, 0.25] (with `long`)        |
-| speed   | fingerprint (bench must be identical) → speed (5 paired bench runs; dropped when measurably slower)                           |
-| tune    | tune (SPSA writes the change) → fingerprint → screen → confirm STC [0, 4] → long LTC [0, 4] (with `long`)                     |
-| net     | train (a run makes the net) → fingerprint → screen → short STC [0, 3] → long LTC [0, 3] (with `long`)                         |
+| Kind    | Stages                                                                                              |
+| ------- | --------------------------------------------------------------------------------------------------- |
+| gain    | fingerprint (bench must change) → short STC 8+0.08 [0, 4] → long LTC 40+0.4 [0, 4] (with `long`)    |
+| neutral | fingerprint (bench must change) → short STC [-2.75, 0.25] → long LTC [-2.75, 0.25] (with `long`)    |
+| speed   | fingerprint (bench must be identical) → speed (5 paired bench runs; dropped when measurably slower) |
+| tune    | tune (SPSA writes the change) → fingerprint → confirm STC [0, 4] → long LTC [0, 4] (with `long`)    |
+| net     | train (a run makes the net) → fingerprint → short STC [0, 4] → long LTC [0, 4] (with `long`)        |
+
+The trade: an idea near 0 Elo costs about 20,000 games instead of about 76,000, so many more ideas are tested a day, but a real gain at the upper bound is dropped one time in five (not one in ten) and a few more small losses are kept. The **regression check** is the backstop: after every fifth new champion (promotions and upstream syncs alike) the app queues an idea tagged `regression` in which the champion plays the champion five promotions earlier, a fixed 10,000 STC pairs. It is dropped, with a verdict starting "Regression:", when the newer champion is measurably worse (its Elo upper bound under 0). Nothing is reverted: when you see one (`get_dameless` lists `regressions`, newest first), stop queueing ideas, tell the user, and look at the five promotions since the older champion. An idea keeps the funnel it was queued with, so an old idea may still show a `screen` stage.
 
 The fingerprint also fails when either build's bench differs from its commit's `Bench:` line: a stale line, or search that is not deterministic. Say which, rather than retrying.
 
-A **custom** idea is one trial at any preset with bounds or a fixed number of pairs: `create_idea` with `custom: { preset, bounds | pairs }`, or `dameless test --dev <branch> --preset stc --bounds 0,3`. Presets: `vstc` 4+0.04, `stc` 8+0.08, `ltc` 40+0.4 (64 MB), `stc_hash` (2 MB hash), `ltc_hash` (8 MB), `smp` (40+0.4, 6 threads, 512 MB) and `nodes` (25,000 nodes a move). Use `stc_hash` for transposition-table changes and `smp` for parallel search.
+A **custom** idea is one trial at any preset with bounds or a fixed number of pairs: `create_idea` with `custom: { preset, bounds | pairs, alpha?, beta? }`, or `dameless test --dev <branch> --preset stc --bounds 0,4 [--alpha 0.05 --beta 0.20]` (a custom trial runs at alpha 0.05, beta 0.10 unless told otherwise). Presets: `vstc` 4+0.04, `stc` 8+0.08, `ltc` 40+0.4 (64 MB), `stc_hash` (2 MB hash), `ltc_hash` (8 MB), `smp` (40+0.4, 6 threads, 512 MB) and `nodes` (25,000 nodes a move). Use `stc_hash` for transposition-table changes and `smp` for parallel search.
 
 **Clocks are scaled to this machine**, as OpenBench scales them: before each trial the app benches base and dev with as many copies as the trial's threads and multiplies the clock by 660,000 / base's nps. A trial's `played` and `scaling` record it ("8+0.08" may be played as 11+0.11). Node limits are never scaled.
 
 ## Reading a verdict
 
-- **A passed screen is not evidence of a gain.** At [-5, 0] a change that does nothing passes about 90 % of the time; the screen only throws out clear losses. The short (STC) trial decides.
-- **Kept at STC is evidence, not proof.** A gain under about 2 Elo needs the long (LTC) trial before anyone relies on it; queue the idea again with `long: true` or a custom LTC trial.
-- **Dropped at the screen** means the idea, as written, loses. Look at a few of its games (`list_games` with `trial`, then `get_game_pgn`) and the nElo estimate before trying a variant, and say what the variant changes.
+- **The short (STC) trial decides.** A change that does nothing is kept at most 5 % of the time.
+- **Kept at STC is evidence, not proof.** The SPRT stopped early, so its Elo tends to read high, and at beta 0.20 a small loss slips through a little more often than under OpenBench's settings. A gain under about 2 Elo needs the long (LTC) trial before anyone relies on it; queue the idea again with `long: true` or a custom LTC trial.
+- **Dropped at the short games** means the idea, as written, did not show 4 nElo. A real gain at the bound is dropped one time in five, so a promising idea can earn a second, different try: look at a few of its games (`list_games` with `trial`, then `get_game_pgn`) and the nElo estimate first, and say what the variant changes.
+- **A dropped regression check** outranks every other result: the champion is measurably worse than five promotions ago. Report it first.
 - **Report numbers as they are**: Elo ± its interval, LLR against its bounds, pairs played. A trial that ran out of pairs or was stopped decided nothing.
 - While `harness_status.trusted` is false, every verdict carries that warning: repeat it.
 

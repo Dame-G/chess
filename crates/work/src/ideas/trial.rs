@@ -30,7 +30,7 @@ use dameless_core::{
     game::{GameStatus, Seat, Source},
     ideas::{self as funnel, Bench, FingerprintRule, Idea, Preset, StageRule, StageVerdict, Trial, TrialStatus},
     scaling,
-    stats::{Pentanomial, Verdict},
+    stats::{Pentanomial, Sprt, Verdict},
     time::TimeControl,
     version::{Build, Version},
     work::{Progress, WorkKind},
@@ -115,11 +115,22 @@ impl Executor for TrialExecutor {
         let verdict = match plan.rule {
             StageRule::Fingerprint { rule } => fingerprint(rule, &sides),
             StageRule::Speed { runs } => self.speed(&cx, &sides, runs).await?,
-            StageRule::Games { preset, bounds, pairs } => {
-                self.games(&cx, &idea, &mut trial, &sides, preset, bounds, pairs).await?
+            StageRule::Games { preset, pairs, .. } => {
+                self.games(&cx, &idea, &mut trial, &sides, preset, plan.rule.sprt(), pairs).await?
             }
             StageRule::Tune => return Err(Error::internal("a tune stage runs as tune work")),
             StageRule::Train => return Err(Error::internal("a training stage runs as train work")),
+        };
+        let verdict = match &spec.regression {
+            // A regression check is judged on its Elo, not on having played its pairs, and says so loudly.
+            Some(run) if verdict.passed => {
+                let v = crate::regression::verdict(run, &trial);
+                if !v.passed {
+                    cx.log("!!! REGRESSION !!!");
+                }
+                v
+            }
+            _ => verdict,
         };
         cx.log(format!("{}: {}", if verdict.passed { "Passed" } else { "Failed" }, verdict.detail));
         trial.status = if verdict.passed { TrialStatus::Passed } else { TrialStatus::Failed };
@@ -179,7 +190,7 @@ impl TrialExecutor {
         trial: &mut Trial,
         sides: &Sides,
         preset: Preset,
-        bounds: Option<[f64; 2]>,
+        sprt: Option<Sprt>,
         pairs: Option<u32>,
     ) -> Result<StageVerdict, Error> {
         let ideas = &self.ideas;
@@ -259,11 +270,10 @@ impl TrialExecutor {
         let started = Instant::now();
         let played_before = trial.penta.pairs();
         loop {
-            if let Some(b) = bounds {
-                let s = funnel::sprt(b);
-                if s.verdict(s.llr(&trial.penta)) != Verdict::Continue {
-                    break;
-                }
+            if let Some(s) = sprt
+                && s.verdict(s.llr(&trial.penta)) != Verdict::Continue
+            {
+                break;
             }
             let remaining = pairs.map(|p| u64::from(p).saturating_sub(trial.penta.pairs()));
             if remaining == Some(0) {
@@ -303,15 +313,14 @@ impl TrialExecutor {
             let mut on_progress = |p: fastchess::Progress| {
                 let fastchess::Progress::Totals(t) = p else { return };
                 let penta = before.add(&penta_of(t.penta));
-                if let Some(b) = bounds {
-                    let s = funnel::sprt(b);
-                    if s.verdict(s.llr(&penta)) != Verdict::Continue {
-                        decided.store(true, Ordering::Relaxed);
-                    }
+                if let Some(s) = sprt
+                    && s.verdict(s.llr(&penta)) != Verdict::Continue
+                {
+                    decided.store(true, Ordering::Relaxed);
                 }
                 if last_sent.is_none_or(|s| s.elapsed() >= PROGRESS_EVERY) {
                     last_sent = Some(Instant::now());
-                    let (llr, elo, _) = Trial::statistics(&penta, bounds);
+                    let (llr, elo, _) = Trial::statistics(&penta, sprt);
                     let wdl = [wdl[0] + t.wins, wdl[1] + t.draws, wdl[2] + t.losses];
                     bus.emit(Payload::TrialProgress(TrialProgress { id, idea: idea_id, penta, wdl, llr, elo }));
                 }
@@ -340,7 +349,7 @@ impl TrialExecutor {
             let t = result.totals;
             trial.penta = trial.penta.add(&penta_of(t.penta));
             trial.wdl = [trial.wdl[0] + t.wins, trial.wdl[1] + t.draws, trial.wdl[2] + t.losses];
-            (trial.llr, trial.elo, trial.nelo) = Trial::statistics(&trial.penta, bounds);
+            (trial.llr, trial.elo, trial.nelo) = Trial::statistics(&trial.penta, sprt);
             rounds += 1;
             ideas.save_trial(trial).await?;
             store.set_trial_rounds(trial.id, rounds, Some(dir.display().to_string())).await?;
@@ -368,7 +377,7 @@ impl TrialExecutor {
                 return Err(cx.stopped());
             }
         }
-        Ok(funnel::games(&trial.penta, bounds, trial.scaling.map(|s| (played, s.scale))))
+        Ok(funnel::games(&trial.penta, sprt, trial.scaling.map(|s| (played, s.scale))))
     }
 
     /// Reads a round's PGN into games (`Source::Trial`, numbered on from `first`); returns how many were stored.

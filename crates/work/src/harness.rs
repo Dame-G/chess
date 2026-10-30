@@ -143,9 +143,15 @@ impl Harness {
         let environment = self.environment();
         let engine_commit = self.make_identical().await?;
 
-        let mut plan = funnel::custom(harness::DETERMINISM_PRESET, None, Some(determinism_pairs));
-        plan.extend(funnel::custom(harness::SYMMETRY_PRESET, None, Some(symmetry_pairs)));
-        let custom = CustomTrial { preset: harness::DETERMINISM_PRESET, bounds: None, pairs: Some(determinism_pairs) };
+        let mut plan = funnel::custom(harness::DETERMINISM_PRESET, None, Some(determinism_pairs), None);
+        plan.extend(funnel::custom(harness::SYMMETRY_PRESET, None, Some(symmetry_pairs), None));
+        let custom = CustomTrial {
+            preset: harness::DETERMINISM_PRESET,
+            bounds: None,
+            pairs: Some(determinism_pairs),
+            alpha: None,
+            beta: None,
+        };
         let request = NewIdeaRequest {
             title: "Check the harness".into(),
             hypothesis: format!(
@@ -172,6 +178,7 @@ impl Harness {
             tune: None,
             custom: Some(custom),
             harness: Some(HarnessRun { environment, engine_commit, determinism_pairs, symmetry_pairs }),
+            regression: None,
         };
         self.ideas.insert_spec(request, spec).await
     }

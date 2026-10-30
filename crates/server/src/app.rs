@@ -6,6 +6,7 @@
 //! versions    = Versions::new(hub, scheduler)        → registers Build
 //! ideas       = Ideas::new(versions)                  → registers Trial, Tune, Promote
 //! upstream    = Upstream::new(versions)               → registers Upstream (its six-hourly sync starts in `serve`)
+//! regression  = Regression::new(ideas)                → after every promotion and upstream sync, a check when due
 //! harness     = Harness::new(ideas); diagnostics = Diagnostics::new(harness)
 //! nets        = Nets::new(hub); datasets = Datasets::new(versions, trainer, probes) → registers Datagen, DatasetImport
 //! training    = Training::new(ideas, datasets, nets, probes) → registers Train
@@ -35,7 +36,8 @@ use dameless_core::ConnectionKey;
 use dameless_hub::{Config, Hub};
 use dameless_play::{Calibrate, Connections, Games, ImportExecutor, Timing, your_anchor};
 use dameless_work::{
-    Datasets, Diagnostics, Harness, Ideas, Nets, Scheduler, Toolchain, TrainerBuild, Training, Upstream, Versions,
+    Datasets, Diagnostics, Harness, Ideas, Nets, Regression, Scheduler, Toolchain, TrainerBuild, Training, Upstream,
+    Versions,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -59,6 +61,8 @@ pub struct App {
     /// Taking upstream Reckless as the next champion.
     pub upstream: Upstream,
     pub harness: Harness,
+    /// The regression check after every fifth promotion.
+    pub regression: Regression,
     pub diagnostics: Diagnostics,
     pub nets: Nets,
     pub datasets: Datasets,
@@ -89,6 +93,8 @@ impl App {
         ideas.register();
         let upstream = Upstream::new(versions.clone());
         upstream.register();
+        let regression = Regression::new(ideas.clone());
+        regression.register();
         let harness = Harness::new(ideas.clone());
         let diagnostics = Diagnostics::new(harness.clone());
         let probes = harness.probes().clone();
@@ -132,6 +138,7 @@ impl App {
             ideas,
             upstream,
             harness,
+            regression,
             diagnostics,
             nets,
             datasets,

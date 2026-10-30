@@ -2,9 +2,12 @@
 //! that fails drops the idea with its evidence, so most bad ideas cost seconds or minutes and only survivors reach the
 //! long games.
 //!
-//! The presets and funnels copy Reckless's own testing (its OpenBench instance): time controls, hash sizes, engine
-//! options and SPRT bounds in normalized Elo, unchanged from the old harness. Clocks here are as written; each trial
-//! scales its clock to the machine's speed before playing (see [`crate::scaling`]).
+//! The presets copy Reckless's own testing (its OpenBench instance): time controls, hash sizes and engine options.
+//! The funnels are sized for one machine rather than a fleet: no VSTC screen (it passed about 90 % of ideas that do
+//! nothing, at about the cost of the STC test it guarded), and SPRTs at alpha 0.05, beta 0.20 on [0, 4], so an idea
+//! near 0 Elo is settled in about 20,000 games instead of about 76,000. The price is a few more small false accepts,
+//! which the regression check after every fifth promotion is there to catch (see [`crate::regression`]). Clocks here
+//! are as written; each trial scales its clock to the machine's speed before playing (see [`crate::scaling`]).
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -96,7 +99,8 @@ pub struct Idea {
 pub enum Stage {
     /// Bench both builds: a functional change must change the node count, a speed change must not.
     Fingerprint,
-    /// A quick SPRT at VSTC that only throws out clear losses.
+    /// A quick SPRT at VSTC that only throws out clear losses. No default funnel runs it any more; ideas queued before
+    /// the single-machine funnels still have it.
     Screen,
     /// STC: the stage that decides.
     Short,
@@ -112,6 +116,8 @@ pub enum Stage {
     Custom,
     /// A training run that makes a net (a `net` idea's first stage).
     Train,
+    /// A regression check's games: the champion against the champion five promotions earlier, a fixed number of pairs.
+    Regression,
 }
 
 impl Stage {
@@ -127,6 +133,7 @@ impl Stage {
             Self::Confirm => "confirmation",
             Self::Custom => "custom trial",
             Self::Train => "training",
+            Self::Regression => "regression check",
         }
     }
 }
@@ -158,6 +165,10 @@ pub struct Trial {
     pub scaling: Option<Scaling>,
     /// SPRT bounds in normalized Elo, `[lower, upper]`.
     pub bounds: Option<[f64; 2]>,
+    /// The SPRT's false-accept rate (with `bounds`).
+    pub alpha: Option<f64>,
+    /// The SPRT's false-reject rate (with `bounds`).
+    pub beta: Option<f64>,
     /// A fixed number of game pairs instead of an SPRT (a custom trial).
     pub pairs: Option<u32>,
     /// Game pairs from the idea's side: `[LL, LD, DD+WL, WD, WW]`.
@@ -176,14 +187,8 @@ pub struct Trial {
 
 impl Trial {
     /// Its statistics from its pairs: the LLR (with an SPRT), logistic and normalized Elo.
-    pub fn statistics(
-        penta: &Pentanomial,
-        bounds: Option<[f64; 2]>,
-    ) -> (Option<Llr>, Option<Estimate>, Option<Estimate>) {
-        let llr = bounds.map(|b| {
-            let s = sprt(b);
-            Llr { value: s.llr(penta), lower: s.lower(), upper: s.upper() }
-        });
+    pub fn statistics(penta: &Pentanomial, sprt: Option<Sprt>) -> (Option<Llr>, Option<Estimate>, Option<Estimate>) {
+        let llr = sprt.map(|s| Llr { value: s.llr(penta), lower: s.lower(), upper: s.upper() });
         let est = stats::estimate(penta);
         (llr, est.map(|e| e.elo_interval()), est.map(|e| e.nelo_interval()))
     }
@@ -196,6 +201,8 @@ impl Trial {
             status: self.status,
             preset: self.preset,
             bounds: self.bounds,
+            alpha: self.alpha,
+            beta: self.beta,
             pairs: self.penta.pairs(),
             llr: self.llr,
             elo: self.elo,
@@ -212,6 +219,8 @@ pub struct TrialSummary {
     pub status: TrialStatus,
     pub preset: Option<Preset>,
     pub bounds: Option<[f64; 2]>,
+    pub alpha: Option<f64>,
+    pub beta: Option<f64>,
     /// Game pairs played.
     pub pairs: u64,
     pub llr: Option<Llr>,
@@ -227,7 +236,7 @@ pub struct TrialSummary {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Preset {
-    /// 4+0.04: a quick screen before STC.
+    /// 4+0.04: very short games, for a custom trial (the default funnels no longer screen with it).
     Vstc,
     /// 8+0.08, 16 MiB: the standard short test.
     Stc,
@@ -289,21 +298,60 @@ impl Preset {
     }
 }
 
-/// The SPRT for bounds, with Reckless's error rates: alpha 0.05, beta 0.10.
-pub fn sprt(bounds: [f64; 2]) -> Sprt {
-    Sprt { elo0: bounds[0], elo1: bounds[1], alpha: 0.05, beta: 0.10 }
+/// An SPRT's error rates: `alpha` is how often a change at the lower bound is accepted, `beta` how often one at the
+/// upper bound is rejected.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ErrorRates {
+    pub alpha: f64,
+    pub beta: f64,
+}
+
+impl ErrorRates {
+    /// Reckless's (OpenBench's) rates: what every SPRT here ran at before the single-machine funnels, so a stage stored
+    /// without rates reads as these, and a custom trial runs at them unless told otherwise.
+    pub const RECKLESS: Self = Self { alpha: 0.05, beta: 0.10 };
+    /// The funnels' rates: a real gain at the upper bound is rejected 20 % of the time instead of 10 %, and in return a
+    /// test is about half as long.
+    pub const FUNNEL: Self = Self { alpha: 0.05, beta: 0.20 };
+
+    /// What is wrong with these rates, if anything: each must lie strictly between 0 and 1, and together under 1.
+    pub fn problem(self) -> Option<&'static str> {
+        let open = |x: f64| x > 0.0 && x < 1.0;
+        if !open(self.alpha) || !open(self.beta) {
+            Some("SPRT error rates must lie strictly between 0 and 1")
+        } else if self.alpha + self.beta >= 1.0 {
+            Some("SPRT error rates must add up to less than 1")
+        } else {
+            None
+        }
+    }
+}
+
+fn reckless_alpha() -> f64 {
+    ErrorRates::RECKLESS.alpha
+}
+
+fn reckless_beta() -> f64 {
+    ErrorRates::RECKLESS.beta
+}
+
+/// The SPRT for bounds at these error rates.
+pub fn sprt(bounds: [f64; 2], rates: ErrorRates) -> Sprt {
+    Sprt { elo0: bounds[0], elo1: bounds[1], alpha: rates.alpha, beta: rates.beta }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Funnels
 // ---------------------------------------------------------------------------------------------------------------------
 
-/// The screen's bounds: a wide non-regression SPRT that rejects a clearly harmful change in a few hundred pairs and
-/// lets anything plausibly neutral or better through. A change that does nothing passes it about 90 % of the time,
-/// so a passed screen says only "not clearly worse"; the next stage decides.
+/// The old screen's bounds: a wide non-regression SPRT that rejects a clearly harmful change in a few hundred pairs.
+/// No default funnel runs it any more (a change that does nothing passed it about 90 % of the time, at about the cost
+/// of the STC test it guarded); a custom trial can still ask for it.
 pub const SCREEN_BOUNDS: [f64; 2] = [-5.0, 0.0];
-/// A gain's bounds at STC and LTC.
-pub const GAIN_BOUNDS: [f64; 2] = [0.0, 3.0];
+/// A gain's bounds at STC and LTC, and a net's.
+pub const GAIN_BOUNDS: [f64; 2] = [0.0, 4.0];
+/// A custom trial's bounds when it names neither bounds nor pairs: OpenBench's gain bounds.
+pub const CUSTOM_BOUNDS: [f64; 2] = [0.0, 3.0];
 /// A neutral change's bounds at STC and LTC.
 pub const NEUTRAL_BOUNDS: [f64; 2] = [-2.75, 0.25];
 /// A tune's confirmation bounds, as Reckless confirms its tunes.
@@ -328,11 +376,16 @@ pub enum StageRule {
     Fingerprint {
         rule: FingerprintRule,
     },
-    /// Games at a preset: until the SPRT at `bounds` decides, or `pairs` pairs (then it passes when played).
+    /// Games at a preset: until the SPRT at `bounds` (and `alpha`, `beta`) decides, or `pairs` pairs (then it passes
+    /// when played). A stage stored before the rates were part of it reads as Reckless's 0.05 and 0.10, what it ran at.
     Games {
         preset: Preset,
         bounds: Option<[f64; 2]>,
         pairs: Option<u32>,
+        #[serde(default = "reckless_alpha")]
+        alpha: f64,
+        #[serde(default = "reckless_beta")]
+        beta: f64,
     },
     /// Paired bench runs: dev fails when measurably slower.
     Speed {
@@ -352,9 +405,20 @@ pub struct StagePlan {
     pub rule: StageRule,
 }
 
+impl StageRule {
+    /// The SPRT a games stage runs, if it runs one.
+    pub fn sprt(&self) -> Option<Sprt> {
+        match *self {
+            Self::Games { bounds: Some(b), alpha, beta, .. } => Some(sprt(b, ErrorRates { alpha, beta })),
+            _ => None,
+        }
+    }
+}
+
 impl StagePlan {
     fn games(stage: Stage, preset: Preset, bounds: [f64; 2]) -> Self {
-        Self { stage, rule: StageRule::Games { preset, bounds: Some(bounds), pairs: None } }
+        let ErrorRates { alpha, beta } = ErrorRates::FUNNEL;
+        Self { stage, rule: StageRule::Games { preset, bounds: Some(bounds), pairs: None, alpha, beta } }
     }
 
     fn fingerprint(rule: FingerprintRule) -> Self {
@@ -363,21 +427,22 @@ impl StagePlan {
 }
 
 /// The funnel for a kind of idea, as the design's table has it; `long` adds the LTC stage to those that have one.
+/// Every SPRT runs at alpha 0.05, beta 0.20 ([`ErrorRates::FUNNEL`]).
 ///
-/// | kind    | stages                                                                                   |
-/// | ------- | ---------------------------------------------------------------------------------------- |
-/// | gain    | fingerprint (must change) → screen VSTC [-5, 0] → short STC [0, 3] → long LTC [0, 3]     |
-/// | neutral | fingerprint (must change) → screen → short STC [-2.75, 0.25] → long LTC [-2.75, 0.25]    |
-/// | speed   | fingerprint (must match) → speed (5 paired runs)                                         |
-/// | tune    | tune → fingerprint (must change) → screen → confirm STC [0, 4] → long LTC [0, 4]         |
-/// | net     | train → fingerprint (must change) → screen → short STC [0, 3] → long LTC [0, 3]          |
+/// | kind    | stages                                                                       |
+/// | ------- | ---------------------------------------------------------------------------- |
+/// | gain    | fingerprint (must change) → short STC [0, 4] → long LTC [0, 4]               |
+/// | neutral | fingerprint (must change) → short STC [-2.75, 0.25] → long LTC [-2.75, 0.25] |
+/// | speed   | fingerprint (must match) → speed (5 paired runs)                             |
+/// | tune    | tune → fingerprint (must change) → confirm STC [0, 4] → long LTC [0, 4]      |
+/// | net     | train → fingerprint (must change) → short STC [0, 4] → long LTC [0, 4]       |
+///
+/// An idea stores its funnel when it is queued, so one queued or running when these change keeps the rules it began
+/// with.
 pub fn funnel(kind: IdeaKind, long: bool) -> Vec<StagePlan> {
     let functional = |decide: Stage, bounds: [f64; 2]| {
-        let mut stages = vec![
-            StagePlan::fingerprint(FingerprintRule::MustChange),
-            StagePlan::games(Stage::Screen, Preset::Vstc, SCREEN_BOUNDS),
-            StagePlan::games(decide, Preset::Stc, bounds),
-        ];
+        let mut stages =
+            vec![StagePlan::fingerprint(FingerprintRule::MustChange), StagePlan::games(decide, Preset::Stc, bounds)];
         if long {
             stages.push(StagePlan::games(Stage::Long, Preset::Ltc, bounds));
         }
@@ -403,15 +468,22 @@ pub fn funnel(kind: IdeaKind, long: bool) -> Vec<StagePlan> {
     }
 }
 
-/// A custom idea: one trial at `preset`, with SPRT `bounds` or a fixed number of `pairs` (with neither, the gain's
-/// [0, 3]). What `chess test` was, including the false-accept check.
-pub fn custom(preset: Preset, bounds: Option<[f64; 2]>, pairs: Option<u32>) -> Vec<StagePlan> {
+/// A custom idea: one trial at `preset`, with SPRT `bounds` or a fixed number of `pairs` (with neither, OpenBench's
+/// [0, 3]), at `rates` (Reckless's 0.05 and 0.10 when left out). What `chess test` was, including the false-accept
+/// check.
+pub fn custom(
+    preset: Preset,
+    bounds: Option<[f64; 2]>,
+    pairs: Option<u32>,
+    rates: Option<ErrorRates>,
+) -> Vec<StagePlan> {
     let bounds = match (bounds, pairs) {
         (Some(b), _) => Some(b),
         (None, Some(_)) => None,
-        (None, None) => Some(GAIN_BOUNDS),
+        (None, None) => Some(CUSTOM_BOUNDS),
     };
-    vec![StagePlan { stage: Stage::Custom, rule: StageRule::Games { preset, bounds, pairs } }]
+    let ErrorRates { alpha, beta } = rates.unwrap_or(ErrorRates::RECKLESS);
+    vec![StagePlan { stage: Stage::Custom, rule: StageRule::Games { preset, bounds, pairs, alpha, beta } }]
 }
 
 /// What happens after a stage of a funnel ends.
@@ -506,18 +578,17 @@ fn mean_and_error(v: &[f64]) -> (f64, f64) {
 
 /// A games stage once its games are over: with an SPRT it passes when accepted, without one when its pairs were
 /// played. `scaled` is the clock it was played at and the factor, for the sentence.
-pub fn games(penta: &Pentanomial, bounds: Option<[f64; 2]>, scaled: Option<(TimeControl, f64)>) -> StageVerdict {
+pub fn games(penta: &Pentanomial, sprt: Option<Sprt>, scaled: Option<(TimeControl, f64)>) -> StageVerdict {
     let est = stats::estimate(penta)
         .map(|e| format!("{:+.1} ± {:.1} Elo ({:+.1} nElo)", e.elo, e.elo_error, e.nelo))
         .unwrap_or_default();
     let games = penta.pairs() * 2;
-    let bound = |b: [f64; 2]| format!("[{}, {}]", b[0], b[1]);
-    let (passed, mut detail) = match bounds {
-        Some(b) => {
-            let s = sprt(b);
+    let (passed, mut detail) = match sprt {
+        Some(s) => {
+            let b = format!("[{}, {}]", s.elo0, s.elo1);
             match s.verdict(s.llr(penta)) {
-                Verdict::Accepted => (true, format!("accepted {} after {games} games, {est}", bound(b))),
-                Verdict::Rejected => (false, format!("rejected {} after {games} games, {est}", bound(b))),
+                Verdict::Accepted => (true, format!("accepted {b} after {games} games, {est}")),
+                Verdict::Rejected => (false, format!("rejected {b} after {games} games, {est}")),
                 Verdict::Continue => (false, format!("undecided after {games} games, {est}")),
             }
         }
@@ -529,8 +600,8 @@ pub fn games(penta: &Pentanomial, bounds: Option<[f64; 2]>, scaled: Option<(Time
     StageVerdict { passed, detail }
 }
 
-/// The idea's one sentence once it ends: "Kept: +3.1 ± 2.0 Elo at short games", "Dropped at the quick screen: rejected
-/// [-5, 0] after 412 games, …".
+/// The idea's one sentence once it ends: "Kept: +3.1 ± 2.0 Elo at short games", "Dropped at the short games: rejected
+/// [0, 4] after 9,412 games, …".
 pub fn idea_verdict(status: IdeaStatus, deciding: Option<(Stage, Option<Estimate>)>, detail: Option<&str>) -> String {
     match (status, deciding) {
         (IdeaStatus::Kept, Some((stage, Some(elo)))) => format!("Kept: {} Elo at {}", elo.text(), stage.label()),
@@ -554,47 +625,90 @@ mod tests {
         f.iter().map(|s| s.stage).collect()
     }
 
+    /// A games stage at the funnels' rates.
+    fn fast(preset: Preset, bounds: [f64; 2]) -> StageRule {
+        StageRule::Games { preset, bounds: Some(bounds), pairs: None, alpha: 0.05, beta: 0.20 }
+    }
+
     #[test]
     fn funnels_start_cheap_as_the_design_has_them() {
-        assert_eq!(
-            stages(&funnel(IdeaKind::Gain, true)),
-            [Stage::Fingerprint, Stage::Screen, Stage::Short, Stage::Long]
-        );
-        assert_eq!(stages(&funnel(IdeaKind::Gain, false)).len(), 3);
+        assert_eq!(stages(&funnel(IdeaKind::Gain, true)), [Stage::Fingerprint, Stage::Short, Stage::Long]);
+        let gain = funnel(IdeaKind::Gain, false);
+        assert_eq!(stages(&gain), [Stage::Fingerprint, Stage::Short]);
+        assert_eq!(gain[1].rule, fast(Preset::Stc, [0.0, 4.0]));
+        assert_eq!(funnel(IdeaKind::Gain, true)[2].rule, fast(Preset::Ltc, [0.0, 4.0]));
         assert_eq!(stages(&funnel(IdeaKind::Speed, true)), [Stage::Fingerprint, Stage::Speed]);
         assert_eq!(
             stages(&funnel(IdeaKind::Tune, true)),
-            [Stage::Tune, Stage::Fingerprint, Stage::Screen, Stage::Confirm, Stage::Long]
+            [Stage::Tune, Stage::Fingerprint, Stage::Confirm, Stage::Long]
         );
-        let neutral = funnel(IdeaKind::Neutral, false);
+        let neutral = funnel(IdeaKind::Neutral, true);
         assert_eq!(neutral[0].rule, StageRule::Fingerprint { rule: FingerprintRule::MustChange });
-        assert_eq!(neutral[1].rule, StageRule::Games { preset: Preset::Vstc, bounds: Some([-5.0, 0.0]), pairs: None });
-        assert_eq!(neutral[2].rule, StageRule::Games { preset: Preset::Stc, bounds: Some([-2.75, 0.25]), pairs: None });
-        assert_eq!(
-            stages(&funnel(IdeaKind::Net, true)),
-            [Stage::Train, Stage::Fingerprint, Stage::Screen, Stage::Short, Stage::Long]
-        );
+        assert_eq!(neutral[1].rule, fast(Preset::Stc, [-2.75, 0.25]));
+        assert_eq!(neutral[2].rule, fast(Preset::Ltc, [-2.75, 0.25]));
+        assert_eq!(stages(&funnel(IdeaKind::Net, true)), [Stage::Train, Stage::Fingerprint, Stage::Short, Stage::Long]);
         let net = funnel(IdeaKind::Net, false);
-        assert_eq!(net[3].rule, StageRule::Games { preset: Preset::Stc, bounds: Some([0.0, 3.0]), pairs: None });
+        assert_eq!(net[2].rule, fast(Preset::Stc, [0.0, 4.0]));
         assert_eq!(next(&net, 0, true), Next::Run(1));
-        assert_eq!(next(&net, 3, true), Next::Kept);
+        assert_eq!(next(&net, 2, true), Next::Kept);
         let tune = funnel(IdeaKind::Tune, true);
-        assert_eq!(tune[4].rule, StageRule::Games { preset: Preset::Ltc, bounds: Some([0.0, 4.0]), pairs: None });
+        assert_eq!(tune[2].rule, fast(Preset::Stc, [0.0, 4.0]));
+        assert_eq!(tune[3].rule, fast(Preset::Ltc, [0.0, 4.0]));
         assert_eq!(funnel(IdeaKind::Speed, false)[0].rule, StageRule::Fingerprint { rule: FingerprintRule::MustMatch });
+        // No default funnel screens any more.
+        for kind in [IdeaKind::Gain, IdeaKind::Neutral, IdeaKind::Speed, IdeaKind::Tune, IdeaKind::Net] {
+            assert!(!stages(&funnel(kind, true)).contains(&Stage::Screen), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn a_stored_stage_without_rates_keeps_the_rates_it_ran_at() {
+        let old: StagePlan = serde_json::from_value(serde_json::json!({
+            "stage": "screen",
+            "rule": { "type": "games", "preset": "vstc", "bounds": [-5.0, 0.0], "pairs": null }
+        }))
+        .unwrap();
+        let sprt = old.rule.sprt().unwrap();
+        assert_eq!((sprt.alpha, sprt.beta), (0.05, 0.10));
+        let new = serde_json::to_value(funnel(IdeaKind::Gain, false)[1]).unwrap();
+        assert_eq!((new["rule"]["alpha"].as_f64(), new["rule"]["beta"].as_f64()), (Some(0.05), Some(0.20)));
+        assert_eq!(StageRule::Tune.sprt(), None);
+    }
+
+    #[test]
+    fn error_rates_are_checked() {
+        assert_eq!(ErrorRates::FUNNEL.problem(), None);
+        assert!(ErrorRates { alpha: 0.0, beta: 0.2 }.problem().is_some());
+        assert!(ErrorRates { alpha: 0.05, beta: 1.0 }.problem().is_some());
+        assert!(ErrorRates { alpha: 0.6, beta: 0.5 }.problem().is_some());
     }
 
     #[test]
     fn custom_ideas_are_one_trial() {
-        let c = custom(Preset::Vstc, None, None);
+        let c = custom(Preset::Vstc, None, None, None);
         assert_eq!(
             c,
             [StagePlan {
                 stage: Stage::Custom,
-                rule: StageRule::Games { preset: Preset::Vstc, bounds: Some([0.0, 3.0]), pairs: None }
+                rule: StageRule::Games {
+                    preset: Preset::Vstc,
+                    bounds: Some([0.0, 3.0]),
+                    pairs: None,
+                    alpha: 0.05,
+                    beta: 0.10
+                }
             }]
         );
-        let fixed = custom(Preset::Vstc, None, Some(2000));
-        assert_eq!(fixed[0].rule, StageRule::Games { preset: Preset::Vstc, bounds: None, pairs: Some(2000) });
+        let fixed = custom(Preset::Vstc, None, Some(2000), None);
+        assert_eq!(
+            fixed[0].rule,
+            StageRule::Games { preset: Preset::Vstc, bounds: None, pairs: Some(2000), alpha: 0.05, beta: 0.10 }
+        );
+        let rates = custom(Preset::Stc, Some([0.0, 4.0]), None, Some(ErrorRates { alpha: 0.025, beta: 0.2 }));
+        assert_eq!(
+            rates[0].rule,
+            StageRule::Games { preset: Preset::Stc, bounds: Some([0.0, 4.0]), pairs: None, alpha: 0.025, beta: 0.2 }
+        );
         assert_eq!(next(&c, 0, true), Next::Kept);
         assert_eq!(next(&c, 0, false), Next::Dropped);
     }
@@ -603,8 +717,8 @@ mod tests {
     fn the_next_stage_follows_a_pass_and_a_failure_drops() {
         let f = funnel(IdeaKind::Gain, true);
         assert_eq!(next(&f, 0, true), Next::Run(1));
-        assert_eq!(next(&f, 2, true), Next::Run(3));
-        assert_eq!(next(&f, 3, true), Next::Kept);
+        assert_eq!(next(&f, 1, true), Next::Run(2));
+        assert_eq!(next(&f, 2, true), Next::Kept);
         assert_eq!(next(&f, 1, false), Next::Dropped);
     }
 
@@ -622,7 +736,7 @@ mod tests {
         assert_eq!(Preset::Nodes.settings().time, TimeControl::Nodes { nodes: 25_000 });
         assert_eq!(Preset::parse("stc-hash"), Some(Preset::StcHash));
         assert_eq!(serde_json::to_value(Preset::LtcHash).unwrap(), "ltc_hash");
-        assert_eq!(sprt([0.0, 3.0]), Sprt { elo0: 0.0, elo1: 3.0, alpha: 0.05, beta: 0.10 });
+        assert_eq!(sprt([0.0, 4.0], ErrorRates::FUNNEL), Sprt { elo0: 0.0, elo1: 4.0, alpha: 0.05, beta: 0.20 });
     }
 
     #[test]
@@ -662,23 +776,29 @@ mod tests {
 
     #[test]
     fn games_pass_on_an_accept_or_when_their_pairs_are_played() {
+        let gain = Some(sprt(GAIN_BOUNDS, ErrorRates::FUNNEL));
         let won = Pentanomial([0, 0, 0, 0, 400]);
-        let v = games(&won, Some(GAIN_BOUNDS), Some((TimeControl::clock(11_000, 110), 1.375)));
-        assert!(v.passed && v.detail.starts_with("accepted [0, 3] after 800 games"), "{}", v.detail);
+        let v = games(&won, gain, Some((TimeControl::clock(11_000, 110), 1.375)));
+        assert!(v.passed && v.detail.starts_with("accepted [0, 4] after 800 games"), "{}", v.detail);
         assert!(v.detail.ends_with(", at 11+0.11 (×1.38)"), "{}", v.detail);
-        let lost = games(&Pentanomial([400, 0, 0, 0, 0]), Some(SCREEN_BOUNDS), None);
+        let lost = games(&Pentanomial([400, 0, 0, 0, 0]), Some(sprt(SCREEN_BOUNDS, ErrorRates::RECKLESS)), None);
         assert!(!lost.passed && lost.detail.starts_with("rejected [-5, 0]"), "{}", lost.detail);
-        let open = games(&Pentanomial([1, 2, 3, 2, 1]), Some(GAIN_BOUNDS), None);
+        let open = games(&Pentanomial([1, 2, 3, 2, 1]), gain, None);
         assert!(!open.passed && open.detail.starts_with("undecided after 18 games"));
         assert!(games(&Pentanomial([1, 2, 3, 2, 1]), None, None).passed);
     }
 
     #[test]
     fn trials_compute_their_statistics() {
-        let (llr, elo, nelo) = Trial::statistics(&Pentanomial([50, 300, 1000, 500, 150]), Some(GAIN_BOUNDS));
+        let penta = Pentanomial([50, 300, 1000, 500, 150]);
+        let (llr, elo, nelo) = Trial::statistics(&penta, Some(sprt(CUSTOM_BOUNDS, ErrorRates::RECKLESS)));
         let llr = llr.unwrap();
         assert!((llr.lower - -2.25).abs() < 0.01 && (llr.upper - 2.89).abs() < 0.01);
         assert!(elo.unwrap().elo > 0.0 && nelo.unwrap().elo > 0.0);
+        // At beta 0.20 the bounds are ln(0.2 / 0.95) and ln(0.8 / 0.05).
+        let (llr, _, _) = Trial::statistics(&penta, Some(sprt(GAIN_BOUNDS, ErrorRates::FUNNEL)));
+        let llr = llr.unwrap();
+        assert!((llr.lower - (0.2f64 / 0.95).ln()).abs() < 1e-12 && (llr.upper - 16f64.ln()).abs() < 1e-12);
         assert_eq!(Trial::statistics(&Pentanomial::default(), None), (None, None, None));
     }
 
@@ -690,8 +810,8 @@ mod tests {
             "Kept: +3.1 ± 2.0 Elo at short games"
         );
         assert_eq!(
-            idea_verdict(IdeaStatus::Dropped, Some((Stage::Screen, None)), Some("rejected [-5, 0] after 412 games")),
-            "Dropped at the quick screen: rejected [-5, 0] after 412 games"
+            idea_verdict(IdeaStatus::Dropped, Some((Stage::Short, None)), Some("rejected [0, 4] after 9412 games")),
+            "Dropped at the short games: rejected [0, 4] after 9412 games"
         );
     }
 }

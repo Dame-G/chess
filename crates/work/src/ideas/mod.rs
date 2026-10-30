@@ -15,8 +15,8 @@ use dameless_core::{
     Error, IdeaId, TrialId,
     events::Payload,
     ideas::{
-        self as funnel, Author, Idea, IdeaKind, IdeaStatus, Next, Preset, Stage, StagePlan, StageRule, Trial,
-        TrialStatus,
+        self as funnel, Author, ErrorRates, Idea, IdeaKind, IdeaStatus, Next, Preset, Stage, StagePlan, StageRule,
+        Trial, TrialStatus,
     },
     spsa::{TuneSpec, TuneStep},
     training::TrainSpec,
@@ -96,6 +96,25 @@ pub struct CustomTrial {
     /// A fixed number of game pairs instead of an SPRT.
     #[serde(default)]
     pub pairs: Option<u32>,
+    /// The SPRT's false-accept rate (default 0.05).
+    #[serde(default)]
+    pub alpha: Option<f64>,
+    /// The SPRT's false-reject rate (default 0.10, Reckless's; the funnels run at 0.20).
+    #[serde(default)]
+    pub beta: Option<f64>,
+}
+
+impl CustomTrial {
+    /// The error rates asked for, the rest Reckless's; none when neither was asked.
+    fn rates(&self) -> Option<ErrorRates> {
+        if self.alpha.is_none() && self.beta.is_none() {
+            return None;
+        }
+        Some(ErrorRates {
+            alpha: self.alpha.unwrap_or(ErrorRates::RECKLESS.alpha),
+            beta: self.beta.unwrap_or(ErrorRates::RECKLESS.beta),
+        })
+    }
 }
 
 /// `POST /api/ideas/batch`: several ideas under one tag.
@@ -121,6 +140,9 @@ pub struct IdeaSpec {
     /// Set on a harness check: what it is checking, and that every trial runs whatever the one before showed.
     #[serde(default)]
     pub harness: Option<crate::harness::HarnessRun>,
+    /// Set on a regression check: the two champions it plays.
+    #[serde(default)]
+    pub regression: Option<crate::regression::RegressionRun>,
 }
 
 /// What a `Trial` or `Tune` work item runs: one trial of an idea.
@@ -215,6 +237,9 @@ impl Ideas {
         {
             return Err(Error::bad_request("SPRT bounds need lower < upper"));
         }
+        if let Some(p) = req.custom.as_ref().and_then(CustomTrial::rates).and_then(ErrorRates::problem) {
+            return Err(Error::bad_request(p));
+        }
         if let Some(t) = &req.tune
             && (t.iterations == 0 || t.pairs == 0)
         {
@@ -277,11 +302,12 @@ impl Ideas {
     async fn insert(&self, req: NewIdeaRequest) -> Result<Idea, Error> {
         let tune = (req.kind == IdeaKind::Tune && req.custom.is_none()).then(|| req.tune.clone().unwrap_or_default());
         let plan = match req.custom {
-            Some(c) => funnel::custom(c.preset, c.bounds, c.pairs),
+            Some(c) => funnel::custom(c.preset, c.bounds, c.pairs, c.rates()),
             None => funnel::funnel(req.kind, req.long),
         };
         let train = (req.kind == IdeaKind::Net && req.custom.is_none()).then(|| req.train.clone().unwrap_or_default());
-        let spec = IdeaSpec { funnel: plan, long: req.long, tune, train, custom: req.custom, harness: None };
+        let spec =
+            IdeaSpec { funnel: plan, long: req.long, tune, train, custom: req.custom, harness: None, regression: None };
         self.insert_spec(req, spec).await
     }
 
@@ -311,19 +337,26 @@ impl Ideas {
             .await?;
         for stage in &plan {
             let (preset, bounds, pairs) = match stage.rule {
-                StageRule::Games { preset, bounds, pairs } => (Some(preset), bounds, pairs),
+                StageRule::Games { preset, bounds, pairs, .. } => (Some(preset), bounds, pairs),
                 _ => (None, None, None),
             };
-            store
-                .insert_trial(
-                    idea.id,
-                    NewTrial { stage: stage.stage, preset, time: preset.map(|p| p.settings().time), bounds, pairs },
-                )
-                .await?;
+            let sprt = stage.rule.sprt();
+            let trial = NewTrial {
+                stage: stage.stage,
+                preset,
+                time: preset.map(|p| p.settings().time),
+                bounds,
+                alpha: sprt.map(|s| s.alpha),
+                beta: sprt.map(|s| s.beta),
+                pairs,
+            };
+            store.insert_trial(idea.id, trial).await?;
         }
-        // A tune's version is the branch SPSA writes, a net idea's the base's code with the net it trains; every other
-        // idea's is its branch.
-        if spec.tune.is_none() && spec.train.is_none() {
+        // A tune's version is the branch SPSA writes, a net idea's the base's code with the net it trains, a regression
+        // check's the newer champion; every other idea's is its branch.
+        if let Some(run) = &spec.regression {
+            store.update_idea(idea.id, IdeaUpdate { version: Some(run.champion), ..Default::default() }).await?;
+        } else if spec.tune.is_none() && spec.train.is_none() {
             let version = self.versions().idea_version(&branch, idea.id, Some(base.id)).await?;
             store.update_idea(idea.id, IdeaUpdate { version: Some(version.id), ..Default::default() }).await?;
         }
@@ -450,8 +483,12 @@ impl Ideas {
         if idea.status != IdeaStatus::Kept {
             return Err(Error::conflict(format!("Only a kept idea can be promoted; idea {id} is {:?}", idea.status)));
         }
-        if self.spec(id).await?.harness.is_some() {
+        let spec = self.spec(id).await?;
+        if spec.harness.is_some() {
             return Err(Error::conflict("A harness check is not a change to promote"));
+        }
+        if spec.regression.is_some() {
+            return Err(Error::conflict("A regression check is not a change to promote"));
         }
         self.scheduler()
             .submit(NewWork {
@@ -505,6 +542,9 @@ impl Ideas {
                 return Ok(());
             }
             return crate::harness::finish(self, id, run).await;
+        }
+        if let Some(run) = &spec.regression {
+            return crate::regression::finish(self, id, run).await;
         }
         let trials = self.hub().store.trials(id).await?;
         let passed = trials.get(index).is_some_and(|t| t.status == TrialStatus::Passed);
