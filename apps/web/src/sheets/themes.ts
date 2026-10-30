@@ -1,5 +1,5 @@
 import type { ThemeCount, ThemeStat } from "../api/types";
-import { formatNumber, plural } from "../format";
+import { formatNumber, NONE, plural } from "../format";
 
 /** Win percentage lost, signed as a loss: `−2.4%`. Nothing lost reads `0%`. */
 export function lost(points: number): string {
@@ -24,11 +24,24 @@ export function oftenText(t: Pick<ThemeStat, "count" | "games">): string {
 }
 
 /** The whole of it: every theme's mistakes and their cost per reviewed game, for the table's last row. */
-export function totals(themes: readonly ThemeStat[]): { count: number; perGame: number } {
+export function totals(themes: readonly ThemeStat[]): { count: number; perGame: number; swing: number } {
   return {
     count: themes.reduce((n, t) => n + t.count, 0),
     perGame: themes.reduce((n, t) => n + t.per_game, 0),
+    swing: themes.reduce((n, t) => n + t.swing, 0),
   };
+}
+
+/** What one mistake of a theme costs on average, in win percentage points: `−17.6%`. A theme with none reads `–`. */
+export function eachText(t: Pick<ThemeStat, "count" | "swing">, signed = true): string {
+  if (t.count <= 0) return NONE;
+  const text = lost(t.swing / t.count);
+  return signed ? text : text.replace("−", "");
+}
+
+/** How many a game: `1.4`, over the reviewed games. */
+export function perGameText(count: number, games: number): string {
+  return games > 0 ? formatNumber(count / games, 1) : NONE;
 }
 
 /** The cause a theme names, or the opening it came in: the second is the point of an opening error. */

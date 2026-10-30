@@ -81,7 +81,7 @@ describe("themes", () => {
     expect(lost(0)).toBe("0%");
     expect(shareText(0.004)).toBe("<1%");
     expect(shareText(0.346)).toBe("35%");
-    expect(totals([stat({}), stat({ count: 1, per_game: 0.5 })])).toEqual({ count: 4, perGame: 2 });
+    expect(totals([stat({}), stat({ count: 1, per_game: 0.5 })])).toMatchObject({ count: 4, perGame: 2 });
   });
 
   it("names the opening for opening errors and the cause for the rest", () => {

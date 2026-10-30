@@ -230,6 +230,11 @@ function goTo(id: number) {
   .body {
     max-height: none;
   }
+
+  /* The page scrolls, not the drill: its controls stick to the page's foot, which a scroll box would take from them. */
+  .panel--drill .body {
+    overflow: visible;
+  }
 }
 
 .sheet {

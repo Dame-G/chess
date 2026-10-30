@@ -110,6 +110,7 @@ async function make() {
           <UiStat
             label="Hit rate"
             :value="hitRate"
+            :sub="hitRate ? undefined : 'After a few days'"
             hint="Your share of right answers over the last 50; a hint counts half"
             size="lg"
           />
@@ -136,7 +137,6 @@ async function make() {
             @point="hover = $event"
           />
         </div>
-        <UiEmpty v-else dense title="Your hit rate shows here after a few days of drills." />
       </template>
     </template>
     <div v-else class="skel load" aria-hidden="true"></div>

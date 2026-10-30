@@ -8,7 +8,7 @@ import { THEMES, trainable } from "../board/themes";
 import { plural } from "../format";
 import { useStartDrills } from "../shell/drillFlow";
 import { boardTo, spotKey, usePlayOut } from "../sheets/playOut";
-import { countedText, lost, namedBy, oftenText, shareText, totals } from "../sheets/themes";
+import { countedText, eachText, lost, namedBy, oftenText, perGameText, shareText, totals } from "../sheets/themes";
 import { useDrills } from "../stores/drills";
 import UiEmpty from "../ui/UiEmpty.vue";
 import UiSection from "../ui/UiSection.vue";
@@ -31,7 +31,8 @@ const sum = computed(() => totals(props.profile.themes));
 const columns = [
   { key: "name", label: "Theme" },
   { key: "count", label: "Mistakes", fig: true },
-  { key: "per_game", label: "Lost per game", fig: true },
+  { key: "per_game", label: "A game", fig: true, hide: "sm" as const },
+  { key: "each", label: "Costs each", fig: true },
   { key: "share", label: "Share", fig: true, hide: "sm" as const },
 ];
 
@@ -56,8 +57,8 @@ const moveNo = (ply: number, san: string) => `${Math.ceil(ply / 2)}${ply % 2 ? "
 <template>
   <UiSection id="y-themes" title="Where you go wrong">
     <template #note>
-      Your mistakes and blunders by what they were about. Lost per game is win percentage across
-      {{ plural(profile.reviewed, "reviewed game") }}.
+      Your mistakes and blunders in {{ plural(profile.reviewed, "reviewed game") }}, by what they were about. Costs each
+      is the win percentage one of them gives away; share is the part of everything lost.
     </template>
     <UiEmpty
       v-if="profile.reviewed === 0"
@@ -80,7 +81,8 @@ const moveNo = (ply: number, san: string) => `${Math.ceil(ply / 2)}${ply % 2 ? "
           {{ row.name }}
         </span>
       </template>
-      <template #cell-per_game="{ row }">{{ lost(row.per_game) }}</template>
+      <template #cell-per_game="{ row }">{{ perGameText(row.count, profile.reviewed) }}</template>
+      <template #cell-each="{ row }">{{ eachText(row) }}</template>
       <template #cell-share="{ row }">
         <span class="share">
           <span class="bar" aria-hidden="true"
@@ -121,7 +123,10 @@ const moveNo = (ply: number, san: string) => `${Math.ceil(ply / 2)}${ply % 2 ? "
         </div>
       </template>
       <template #foot>
-        <span class="foot"> All themes: {{ plural(sum.count, "mistake") }}, {{ lost(sum.perGame) }} per game </span>
+        <span class="foot">
+          All themes: {{ plural(sum.count, "mistake") }}, {{ perGameText(sum.count, profile.reviewed) }} a game, costing
+          {{ eachText({ count: sum.count, swing: sum.swing }, false) }} each
+        </span>
       </template>
     </UiTable>
   </UiSection>
@@ -159,7 +164,7 @@ const moveNo = (ply: number, san: string) => `${Math.ceil(ply / 2)}${ply % 2 ? "
 }
 
 .bar {
-  inline-size: var(--sp-6);
+  inline-size: calc(var(--sp-6) * 2);
   block-size: var(--sp-1);
   background: var(--c-sunk);
 }
