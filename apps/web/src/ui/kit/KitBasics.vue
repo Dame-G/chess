@@ -179,7 +179,7 @@ const manyOptions = ["a", "b", "c", "d", "e", "f", "g", "h"].map((v) => ({
           :options="[
             { value: 'all', label: 'All' },
             { value: 'you', label: 'You', count: 12 },
-            { value: 'trials', label: 'Trials', count: 308 },
+            { value: 'lichess', label: 'Lichess', count: 308 },
           ]"
         />
       </div>
@@ -192,7 +192,7 @@ const manyOptions = ["a", "b", "c", "d", "e", "f", "g", "h"].map((v) => ({
           { value: 'you', label: 'You' },
           { value: 'engine', label: 'Engine' },
           { value: 'lichess', label: 'Lichess' },
-          { value: 'trials', label: 'Trials' },
+          { value: 'import', label: 'Imported' },
         ]"
       />
       <UiSeg
@@ -200,7 +200,7 @@ const manyOptions = ["a", "b", "c", "d", "e", "f", "g", "h"].map((v) => ({
         label="With icons"
         :options="[
           { value: 'play', label: 'Play', icon: PhGameController },
-          { value: 'bot', label: 'Bot', icon: PhRobot },
+          { value: 'engine', label: 'Engine', icon: PhRobot },
           { value: 'history', label: 'History', icon: PhClockCounterClockwise },
         ]"
       />

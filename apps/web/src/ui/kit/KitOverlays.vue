@@ -47,13 +47,13 @@ async function resign() {
   });
   answered.value = yes ? "Resigned" : "Kept playing";
 }
-async function promote() {
+async function remove() {
   const yes = await confirm({
-    title: "Promote to v15?",
-    body: "The champion becomes v15. Nothing is pushed.",
-    confirmLabel: "Promote to v15",
+    title: "Delete this game?",
+    body: "It leaves your games. The review and its drills go with it.",
+    confirmLabel: "Delete",
   });
-  answered.value = yes ? "Promoted" : "Left as it was";
+  answered.value = yes ? "Deleted" : "Kept";
 }
 
 // Sheets
@@ -93,19 +93,19 @@ const tabs: SheetTab[] = [
       field. Under 40rem it is a bottom sheet.
     </template>
     <UiToolbar>
-      <EButton variant="outline" @click="basic = true">New idea (form)</EButton>
+      <EButton variant="outline" @click="basic = true">Add engine (form)</EButton>
       <EButton variant="outline" @click="wide = true">Large</EButton>
       <EButton variant="outline" @click="long = true">Long title</EButton>
       <EButton variant="outline" @click="danger = true">Danger</EButton>
       <EButton variant="outline" @click="resign">Resign (confirm)</EButton>
-      <EButton variant="outline" @click="promote">Promote (confirm)</EButton>
+      <EButton variant="outline" @click="remove">Delete (confirm)</EButton>
     </UiToolbar>
     <p class="muted kit-p" role="status">{{ saved || answered || "Nothing chosen yet." }}</p>
 
     <UiDialog
       v-model:open="basic"
-      title="New idea"
-      confirm-label="Queue idea"
+      title="Add an engine"
+      confirm-label="Add engine"
       :busy="busy"
       :confirm-disabled="!title"
       @confirm="save"
@@ -114,19 +114,19 @@ const tabs: SheetTab[] = [
         <UiField v-slot="{ id }" label="Title">
           <ETextField :id="id" v-model="title" label="Title" hide-label />
         </UiField>
-        <UiField v-slot="{ id }" label="Hypothesis" optional hint="What it should do, and why.">
-          <ETextField :id="id" label="Hypothesis" hide-label />
+        <UiField v-slot="{ id }" label="Program" optional hint="The engine's executable on this machine.">
+          <ETextField :id="id" label="Program" hide-label />
         </UiField>
       </div>
       <template #footer-start>{{ title ? "" : "Give it a title." }}</template>
     </UiDialog>
 
-    <UiDialog v-model:open="wide" size="lg" title="Bot rules" confirm-label="Save">
+    <UiDialog v-model:open="wide" size="lg" title="Engine details" confirm-label="Save">
       <UiKeyValue
         :items="[
           { label: 'Analysis', value: 'Stockfish 17.1' },
-          { label: 'Takes', value: 'Rated and casual' },
-          { label: 'Speeds', value: 'Bullet, blitz, rapid' },
+          { label: 'Kind', value: 'Plays like a person' },
+          { label: 'Rating', value: 'About 1,500' },
         ]"
       />
     </UiDialog>
@@ -202,20 +202,20 @@ const tabs: SheetTab[] = [
         </UiSheetPage>
       </div>
       <div class="kit-stage">
-        <UiSheetPage contained :sync="false" wide title="Compare" subtitle="You · Chess v14" @close="() => {}">
+        <UiSheetPage contained :sync="false" wide title="Compare" subtitle="You · Stockfish level 6" @close="() => {}">
           <UiSection title="One tab, so no tab row">
             <p class="kit-p">A single-tab sheet hides its tab row.</p>
           </UiSection>
         </UiSheetPage>
       </div>
       <div class="kit-stage">
-        <UiSheetPage contained :sync="false" title="Chess" loading :tabs="tabs" @close="() => {}" />
+        <UiSheetPage contained :sync="false" title="Profile" loading :tabs="tabs" @close="() => {}" />
       </div>
       <div class="kit-stage">
         <UiSheetPage
           contained
           :sync="false"
-          title="Chess"
+          title="Profile"
           error="The app did not answer."
           :tabs="tabs"
           @close="() => {}"

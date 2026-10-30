@@ -13,7 +13,7 @@ import { useEngines } from "../stores/engines";
 import { stored } from "../stored";
 import { levelSeat, suggestedStrength } from "../sheets/levels";
 import { opponentChoices } from "../sheets/opponents";
-import LevelPicker from "../parts/LevelPicker.vue";
+import OpponentPicker from "../parts/OpponentPicker.vue";
 import UiBadge from "../ui/UiBadge.vue";
 import UiDialog from "../ui/UiDialog.vue";
 import UiField from "../ui/UiField.vue";
@@ -24,7 +24,7 @@ import UiSelect from "../ui/UiSelect.vue";
 
 /**
  * New game: the opponent (an engine from the engines list, someone on Lichess, or Lichess's AI), the time control, the
- * colour, rated. One dialog, showing only the choices that apply to the opponent, and a Start button that says what it
+ * colour, rated. One dialog, showing only the choices that apply to the opponent, and a Play button that says what it
  * will start. From a position ("Play from here"), against an engine.
  */
 const ui = useUi();
@@ -69,8 +69,6 @@ const chosenSeat = computed({
   set: (v: string) => (seat.value = v),
 });
 const chosen = computed(() => engineOptions.value.find((c) => c.value === chosenSeat.value));
-/** Some engine in the list is not installed: Settings sets it up. */
-const missing = computed(() => engineOptions.value.some((c) => c.disabled));
 const lichessHow = ref<"seek" | "challenge">("seek");
 const username = ref("");
 const busy = ref(false);
@@ -146,23 +144,19 @@ const clockText = computed(() => {
   return clock.value;
 });
 
-/** What Start will start, in the button's own words. */
+/** What Play will start, in the button's own words. */
 const confirmLabel = computed(() => {
-  if (opponent.value === "ai") return `Start vs Lichess AI level ${level.value}`;
+  if (opponent.value === "ai") return `Play ${clockText.value ? `${clockText.value} · ` : ""}Lichess AI ${level.value}`;
   if (opponent.value === "lichess") {
     return lichessHow.value === "seek" ? "Find a game" : `Challenge ${username.value.trim() || "someone"}`;
   }
-  return `Start ${clockText.value ? `${clockText.value} ` : ""}vs ${chosen.value?.label ?? "the engine"}`;
+  return `Play ${clockText.value ? `${clockText.value} · ` : ""}${chosen.value?.label ?? "the engine"}`;
 });
 const blocked = computed(
   () =>
     !customOk.value ||
     (opponent.value === "engine" && !chosen.value) ||
     (opponent.value === "lichess" && lichessHow.value === "challenge" && !username.value.trim()),
-);
-/** What is worth knowing about the engine picked: that its rating may still move. */
-const strengthHint = computed(() =>
-  chosen.value && chosen.value.standing !== "found" ? "Still being calibrated: this rating may move." : undefined,
 );
 /** Takebacks are only for games with no clock: said where the clock is chosen. */
 const clockHint = computed(() => {
@@ -253,16 +247,17 @@ async function start() {
         </p>
       </UiField>
 
-      <template v-if="opponent === 'engine'">
-        <UiField label="Engine" group :hint="strengthHint">
-          <LevelPicker v-if="engineOptions.length" v-model="chosenSeat" label="Engine" :choices="engineOptions" />
-          <span v-else class="skel picker-skel" aria-label="Reading the engines" />
-          <p v-if="missing" class="login">
-            Engines not installed yet are set up in
-            <RouterLink to="/settings?tab=engines" @click="ui.newGame = false">Settings</RouterLink>.
-          </p>
-        </UiField>
-      </template>
+      <OpponentPicker
+        v-if="opponent === 'engine' && engineOptions.length"
+        v-model="chosenSeat"
+        :choices="engineOptions"
+        :analysis="engines.analysisId"
+        :suggested="suggestedSeat()"
+        @settings="ui.newGame = false"
+      />
+      <UiField v-else-if="opponent === 'engine'" label="Engine" group>
+        <span class="skel picker-skel" aria-label="Reading the engines" />
+      </UiField>
       <UiSelect
         v-else-if="opponent === 'ai'"
         v-model="level"

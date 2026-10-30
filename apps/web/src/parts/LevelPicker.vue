@@ -3,15 +3,14 @@ import { computed, nextTick, onMounted, useTemplateRef, watch } from "vue";
 import type { LevelChoice } from "../sheets/levels";
 import UiBadge from "../ui/UiBadge.vue";
 
-/** A row of the picker: a level, or any choice shaped like one, under an optional heading, perhaps not to be chosen. */
-type Choice = LevelChoice & { group?: string; disabled?: boolean };
+/** A row of the picker: a level, or any choice shaped like one, perhaps not to be chosen. */
+type Choice = LevelChoice & { disabled?: boolean };
 
 /**
- * Which strength to play against: the levels of the ladder from weakest to strongest (and, in New game, the other
- * engines), each with its rating. The level nearest your rating is marked, a rating still being calibrated is written
- * with a ≈ and its margin, and one that has not played yet is only the rating it was designed for. Rows can sit under
- * group headings, and a disabled row is shown but skipped. One radio group: the arrow keys move and choose; the list
- * scrolls to the chosen row.
+ * Which strength to play against: the levels of the ladder from weakest to strongest (or an engine's ratings), each
+ * with its rating. The level nearest your rating is marked, a rating still being calibrated is written with a ≈ and
+ * its margin, and one that has not played yet is only the rating it was designed for. A disabled row is shown but
+ * skipped. One radio group: the arrow keys move and choose; the list scrolls to the chosen row.
  */
 const props = defineProps<{ modelValue: string; choices: Choice[]; label: string }>();
 const emit = defineEmits<{ "update:modelValue": [value: string] }>();
@@ -57,7 +56,6 @@ watch(() => [props.modelValue, props.choices.length], reveal);
 <template>
   <div class="picker" role="radiogroup" :aria-label="label">
     <template v-for="(c, i) in choices" :key="c.value">
-      <span v-if="c.group && c.group !== choices[i - 1]?.group" class="group">{{ c.group }}</span>
       <button
         ref="rows"
         type="button"
@@ -122,16 +120,6 @@ watch(() => [props.modelValue, props.choices.length], reveal);
 .row:disabled {
   color: var(--c-ink-2);
   cursor: not-allowed;
-}
-
-/* A heading over a group of rows: quiet, in the meta size, on the raised ground. */
-.group {
-  padding: var(--sp-1) var(--sp-3);
-  border-block-end: var(--e-stroke-hair) solid var(--c-line);
-  background: var(--c-raise);
-  color: var(--c-ink-2);
-  font: var(--t-meta);
-  font-weight: 600;
 }
 
 .row:hover:not(.is-on, :disabled) {
