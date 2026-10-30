@@ -158,7 +158,8 @@ DROP TABLE ideas;
 DROP TABLE builds;
 DROP TABLE versions;
 
-DELETE FROM work WHERE kind NOT IN ('review', 'import', 'calibrate');
+-- Calibrations queued for Reckless's levels go too: the ladder is the analysis engine's now.
+DELETE FROM work WHERE kind NOT IN ('review', 'import');
 UPDATE work SET priority = 2 WHERE priority = 1;
 UPDATE work SET priority = 4 WHERE priority = 3;
 DELETE FROM connections WHERE key = 'bot';

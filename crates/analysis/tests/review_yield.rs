@@ -7,7 +7,7 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::{QUIET_DRAW, SCHOLARS_MATE, eventually, finished_game, harness};
+use common::{QUIET_DRAW, SCHOLARS_MATE, eventually, fake, finished_game, harness};
 use dameless_analysis::{ReviewRequest, ReviewResult, ReviewSpec, Reviews};
 use dameless_core::{
     PlayerKey, WorkId,
@@ -31,7 +31,7 @@ async fn a_background_review_takes_every_core_and_gives_way_within_one_search() 
     let reviews = Reviews::new(h.eval.clone());
     let mut games = Vec::new();
     for (day, san) in [&SCHOLARS_MATE[..], &QUIET_DRAW, &RUY_LOPEZ].into_iter().enumerate() {
-        games.push(finished_game(&h.hub, PlayerKey::You, PlayerKey::Dameless, san, Outcome::Draw, day as i64).await);
+        games.push(finished_game(&h.hub, PlayerKey::You, fake(), san, Outcome::Draw, day as i64).await);
     }
     let new = reviews.prepare(ReviewRequest { games, background: true, ..Default::default() }).await.unwrap();
     assert_eq!(new.priority, Priority::Background);
@@ -53,11 +53,11 @@ async fn a_background_review_takes_every_core_and_gives_way_within_one_search() 
     let all = holds(2);
     eventually(async || all()).await;
 
-    // A trial asks for cores: it has them within a search or two, long before the review would end.
+    // A review asked for now wants cores: it has them within a search or two, long before the review would end.
     let asked = Instant::now();
-    let trial = ledger.request_cores(WorkId(999), Priority::Idea, 2, 2);
+    let urgent = ledger.request_cores(WorkId(999), Priority::Review, 2, 2);
     let grant = loop {
-        if let Some(grant) = trial.grant() {
+        if let Some(grant) = urgent.grant() {
             break grant;
         }
         tokio::time::sleep(Duration::from_millis(5)).await;

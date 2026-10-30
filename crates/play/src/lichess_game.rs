@@ -1,8 +1,7 @@
 //! A game played on Lichess, from its `gameFull` to its end. Lichess is the referee: the game stream says what happens
 //! and is mirrored into the record move by move (clocks, offers, the opponent leaving, the end). The seats translate:
 //! the opponent's moves are the stream's ([`LichessOpponent`]); ours go to Lichess and count once the stream shows
-//! them, from the board through the Board API ([`LichessYou`]) or from the engine through the Bot API
-//! ([`LichessBot`]).
+//! them, from the board through the Board API ([`LichessYou`]).
 //!
 //! The stream is followed by its own task, which reconnects when it drops and writes what it reads into a [`Mirror`];
 //! the game's task and the seats watch the mirror.
@@ -25,7 +24,6 @@ use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    engine_seat::EngineSeat,
     error,
     games::{Command, Games, Handle},
     record::Record,
@@ -34,15 +32,8 @@ use crate::{
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
-// The two APIs
+// The Board API
 // ---------------------------------------------------------------------------------------------------------------------
-
-/// Which of Lichess's APIs a game is played through: the bot's or a person's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Api {
-    Bot,
-    Board,
-}
 
 pub(crate) fn side(s: dameless_lichess::Side) -> Side {
     match s {
@@ -51,33 +42,24 @@ pub(crate) fn side(s: dameless_lichess::Side) -> Side {
     }
 }
 
-async fn open_stream(client: &Lichess, api: Api, id: &str) -> Result<Ndjson<GameEvent>, LichessError> {
-    match api {
-        Api::Bot => client.bot().stream_game(id).await,
-        Api::Board => client.board().stream_game(id).await,
-    }
+async fn open_stream(client: &Lichess, id: &str) -> Result<Ndjson<GameEvent>, LichessError> {
+    client.board().stream_game(id).await
 }
 
 /// Sends a seat action to Lichess.
-async fn post(client: &Lichess, api: Api, id: &str, action: SeatAction) -> Result<(), Error> {
+async fn post(client: &Lichess, id: &str, action: SeatAction) -> Result<(), Error> {
     use SeatAction as A;
-    let r = match (api, action) {
-        (Api::Bot, A::Resign) => client.bot().resign(id).await,
-        (Api::Bot, A::Abort) => client.bot().abort(id).await,
-        (Api::Bot, A::ClaimVictory) => client.bot().claim_victory(id).await,
-        (Api::Bot, A::ClaimDraw) => client.bot().claim_draw(id).await,
-        (Api::Bot, A::OfferDraw | A::AcceptDraw) => client.bot().draw(id, true).await,
-        (Api::Bot, A::DeclineDraw) => client.bot().draw(id, false).await,
-        (Api::Board, A::Resign) => client.board().resign(id).await,
-        (Api::Board, A::Abort) => client.board().abort(id).await,
-        (Api::Board, A::ClaimVictory) => client.board().claim_victory(id).await,
-        (Api::Board, A::ClaimDraw) => client.board().claim_draw(id).await,
-        (Api::Board, A::OfferDraw | A::AcceptDraw) => client.board().draw(id, true).await,
-        (Api::Board, A::DeclineDraw) => client.board().draw(id, false).await,
-        (Api::Board, A::Takeback | A::AcceptTakeback) => client.board().takeback(id, true).await,
-        (Api::Board, A::DeclineTakeback) => client.board().takeback(id, false).await,
-        (_, A::Move) => return Err(Error::bad_request("a move is played with its UCI")),
-        (Api::Bot, _) => return Err(Error::bad_request("a bot cannot do that")),
+    let board = client.board();
+    let r = match action {
+        A::Resign => board.resign(id).await,
+        A::Abort => board.abort(id).await,
+        A::ClaimVictory => board.claim_victory(id).await,
+        A::ClaimDraw => board.claim_draw(id).await,
+        A::OfferDraw | A::AcceptDraw => board.draw(id, true).await,
+        A::DeclineDraw => board.draw(id, false).await,
+        A::Takeback | A::AcceptTakeback => board.takeback(id, true).await,
+        A::DeclineTakeback => board.takeback(id, false).await,
+        A::Move => return Err(Error::bad_request("a move is played with its UCI")),
     };
     r.map_err(error::lichess)
 }
@@ -86,14 +68,13 @@ async fn post(client: &Lichess, api: Api, id: &str, action: SeatAction) -> Resul
 /// stream yet.
 pub(crate) async fn prepare(
     client: &Lichess,
-    api: Api,
     id: &str,
     timing: &Timing,
 ) -> Result<(Ndjson<GameEvent>, GameFull), Error> {
     let mut backoff = timing.backoff();
     let mut tries = 0;
     let mut stream = loop {
-        match open_stream(client, api, id).await {
+        match open_stream(client, id).await {
             Ok(s) => break s,
             Err(e) => {
                 tries += 1;
@@ -162,7 +143,6 @@ impl Mirror {
 /// Which game's stream to follow, and how.
 struct Follow {
     client: Lichess,
-    api: Api,
     id: String,
     clocked: bool,
     timing: Timing,
@@ -170,7 +150,7 @@ struct Follow {
 
 /// Follows the stream until the game ends or `cancel` fires, reopening it when it drops.
 async fn follow(f: Follow, mut stream: Ndjson<GameEvent>, tx: watch::Sender<Mirror>, cancel: CancellationToken) {
-    let Follow { client, api, id, clocked, timing } = f;
+    let Follow { client, id, clocked, timing } = f;
     let mut backoff = timing.backoff();
     loop {
         let line = tokio::select! {
@@ -201,7 +181,7 @@ async fn follow(f: Follow, mut stream: Ndjson<GameEvent>, tx: watch::Sender<Mirr
                         _ = cancel.cancelled() => return,
                         _ = tokio::time::sleep(wait) => {}
                     }
-                    match open_stream(&client, api, &id).await {
+                    match open_stream(&client, &id).await {
                         Ok(s) => {
                             stream = s;
                             break;
@@ -294,7 +274,7 @@ impl SeatController for LichessYou {
     }
 
     async fn action(&mut self, action: SeatAction) -> Result<(), Error> {
-        post(&self.client, Api::Board, &self.id, action).await
+        post(&self.client, &self.id, action).await
     }
 
     fn kind(&self) -> SeatKind {
@@ -302,93 +282,6 @@ impl SeatController for LichessYou {
     }
 }
 
-/// Dameless, playing as the BOT account: the engine searches with Lichess's clocks and the move goes to the Bot API.
-pub(crate) struct LichessBot {
-    engine: EngineSeat,
-    client: Lichess,
-    id: String,
-    mirror: watch::Receiver<Mirror>,
-    /// The last move sent, with the engine's report, until the stream shows it.
-    posted: Option<(u32, SeatMove)>,
-}
-
-impl LichessBot {
-    pub(crate) fn new(engine: EngineSeat, client: Lichess, id: &str, mirror: watch::Receiver<Mirror>) -> Self {
-        Self { engine, client, id: id.to_owned(), mirror, posted: None }
-    }
-
-    /// Our move `mv` (answering `turn`) is on the board: the engine thinks on the opponent's time, when it ponders
-    /// (`EngineSeat::allow_ponder`), the game goes on and the opponent has not answered already. Our next search
-    /// picks the ponder up or stops it. A failure here only means no ponder: a dead engine fails that search.
-    async fn ponder(&mut self, turn: &Turn<'_>, mv: &SeatMove) {
-        let (answered, over, clocks) = {
-            let m = self.mirror.borrow();
-            (m.moves.len() > turn.ply as usize, m.status.is_over() || m.lost, m.clocks)
-        };
-        if answered || over {
-            return;
-        }
-        let clocks = clocks.map(|(w, b)| SidePair::new(w, b));
-        if let Err(e) = self.engine.ponder(turn, &mv.uci, clocks).await {
-            tracing::warn!("lichess game {}: could not ponder: {e}", self.id);
-        }
-    }
-}
-
-#[async_trait]
-impl SeatController for LichessBot {
-    async fn next_move(&mut self, turn: Turn<'_>) -> Result<SeatMove, Error> {
-        let known = self.mirror.borrow().moves.get(turn.ply as usize - 1).cloned();
-        let posted = self.posted.as_ref().filter(|(ply, _)| *ply == turn.ply).map(|(_, m)| m.clone());
-        match (known, posted) {
-            // Our move, on the board: with the engine's report.
-            (Some(uci), Some(mv)) if mv.uci == uci => {
-                self.ponder(&turn, &mv).await;
-                return Ok(mv);
-            }
-            // A move Lichess already has (a game come back to) is not searched again.
-            (Some(uci), _) => return Ok(SeatMove::bare(uci)),
-            // Sent, and not on the board yet.
-            (None, Some(mv)) => {
-                wait_ply(&mut self.mirror, turn.ply).await?;
-                self.ponder(&turn, &mv).await;
-                return Ok(mv);
-            }
-            (None, None) => {}
-        }
-        let mv = self.engine.search(&turn).await?;
-        let pos = Position::from_fen(turn.fen)?;
-        if pos.uci_move(&mv.uci).is_err() {
-            return Err(Error::internal(format!("the engine answered {}, which is not legal there", mv.uci)));
-        }
-        let mut tries = 0;
-        loop {
-            match self.client.bot().make_move(&self.id, &mv.uci, false).await {
-                Ok(()) => break,
-                // The game moved on meanwhile (it ended, or the opponent left and it was claimed): the stream says.
-                Err(e @ LichessError::Refused { .. }) => return Err(error::lichess(e)),
-                Err(e) if tries >= 2 => return Err(error::lichess(e)),
-                Err(e) => {
-                    tracing::warn!("lichess game {}: could not play {}: {e}", self.id, mv.uci);
-                    tries += 1;
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                }
-            }
-        }
-        self.posted = Some((turn.ply, mv.clone()));
-        wait_ply(&mut self.mirror, turn.ply).await?;
-        self.ponder(&turn, &mv).await;
-        Ok(mv)
-    }
-
-    async fn action(&mut self, action: SeatAction) -> Result<(), Error> {
-        post(&self.client, Api::Bot, &self.id, action).await
-    }
-
-    fn kind(&self) -> SeatKind {
-        SeatKind::LichessBot
-    }
-}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The game's task
@@ -397,7 +290,10 @@ impl SeatController for LichessBot {
 /// A seat of a Lichess game as the record shows it.
 pub(crate) fn seat_of(p: &GamePlayer) -> Seat {
     match p.ai_level {
-        Some(level) => Seat::new(PlayerKey::Stockfish(level.clamp(1, 8)), format!("Stockfish level {level}")),
+        Some(level) => Seat {
+            level: Some(u32::from(level.clamp(1, 8))),
+            ..Seat::new(PlayerKey::Engine("stockfish".into()), format!("Stockfish level {level}"))
+        },
         None => {
             let id = p.id.clone().unwrap_or_else(|| "anonymous".into());
             let name = p.name.clone().unwrap_or_else(|| id.clone());
@@ -425,7 +321,6 @@ pub(crate) struct LichessGame {
     pub games: Games,
     pub connection: ConnectionKey,
     pub client: Lichess,
-    pub api: Api,
     pub full: GameFull,
     pub stream: Ndjson<GameEvent>,
     pub mirror: watch::Sender<Mirror>,
@@ -468,7 +363,6 @@ pub(crate) async fn run(
         games,
         connection,
         client,
-        api,
         full,
         stream,
         mirror: tx,
@@ -537,7 +431,7 @@ pub(crate) async fn run(
     let mut rx = tx.subscribe();
     let mut theirs = LichessOpponent { mirror: tx.subscribe() };
     let follower = CancellationToken::new();
-    let f = Follow { client: client.clone(), api, id: id.clone(), clocked, timing: timing.clone() };
+    let f = Follow { client: client.clone(), id: id.clone(), clocked, timing: timing.clone() };
     tokio::spawn(follow(f, stream, tx, follower.clone()));
 
     let you = (connection == ConnectionKey::You).then_some(our);
@@ -626,7 +520,7 @@ pub(crate) async fn run(
             break Some(GameEnd { outcome: None, ending: dameless_core::game::Ending::Other });
         }
 
-        // The bot claims the game once the opponent has been gone long enough; you are offered the claim.
+        // You are offered the claim once the opponent has been gone long enough.
         match m.gone {
             Some((secs, at)) if claim_for != Some(at) => {
                 claim_for = Some(at);

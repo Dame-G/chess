@@ -8,7 +8,7 @@
 //! - [`Drills`]: drills from your mistakes, today's set, answers on a spaced schedule, the hit rate.
 //!
 //! Every score analysis stores or sends is White's: engine scores are flipped in [`search`] before they go anywhere.
-//! A version becomes a binary through [`Binaries`], which `work`'s versions implement.
+//! Engines come from the engines list through `work::EngineSource`; the analysis engine is the default.
 
 pub mod drills;
 pub mod eval;
@@ -18,11 +18,9 @@ pub mod repertoire;
 pub mod review;
 pub mod runs;
 pub mod search;
-pub mod versions;
 
 pub use drills::{AnswerRequest, DrillAnswerResult, Drills, DrillsToday, MakeDrillsRequest, SessionRequest};
 pub use eval::{Budget, Eval, EvalRequest, EvalSession, Evaluated, Job, ReviewEngines, SessionInfo};
 pub use profiles::Profiles;
 pub use repertoire::RepertoireRequest;
 pub use review::{ReviewCheckpoint, ReviewRequest, ReviewResult, ReviewSpec, Reviews};
-pub use versions::{Binaries, VersionRef};

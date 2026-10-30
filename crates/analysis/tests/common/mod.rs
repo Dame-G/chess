@@ -1,5 +1,5 @@
-//! What the integration tests share: a hub in a temporary directory, a champion version, a fake [`Binaries`] that
-//! hands out the fake UCI engine (and counts how often it is asked), and finished games to review.
+//! What the integration tests share: a hub in a temporary directory, a fake engines list that hands out the fake UCI
+//! engine as the analysis engine (and counts how often it is asked), and finished games to review.
 
 #![allow(dead_code)]
 
@@ -13,80 +13,55 @@ use std::{
 };
 
 use async_trait::async_trait;
-use dameless_analysis::{Binaries, Eval, VersionRef};
+use dameless_analysis::Eval;
 use dameless_core::{
-    BuildId, Error, GameId, PlayerKey, TimeControl, Timestamp,
+    Error, GameId, PlayerKey, TimeControl, Timestamp,
     chess::Position,
     game::{Ending, GameStatus, Move, Outcome, Seat, Source},
-    version::{Build, BuildStatus, Line, Version},
 };
 use dameless_hub::{Config, Hub};
-use dameless_store::{NewGame, NewVersion, Store};
+use dameless_store::NewGame;
+use dameless_work::{EngineBinary, EngineSource, FixedEngines};
 
-/// Hands out the fake engine for any version the store knows.
-pub struct FakeBinaries {
-    store: Store,
-    path: PathBuf,
-    /// How many binaries were asked for: a search that the cache answers asks for none.
+/// The fake engine as `fake` (the analysis engine), counting how often an engine is asked for.
+pub struct FakeEngines {
+    engines: FixedEngines,
     pub calls: AtomicUsize,
 }
 
-impl FakeBinaries {
+impl FakeEngines {
     pub fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
     }
 }
 
 #[async_trait]
-impl Binaries for FakeBinaries {
-    async fn resolve(&self, version: &VersionRef) -> Result<Version, Error> {
-        let found = match version {
-            VersionRef::Champion => self.store.champion().await?,
-            VersionRef::Id(id) => self.store.version(*id).await?,
-            VersionRef::Name(name) => self.store.version_by_name(name).await?,
-        };
-        found.ok_or_else(|| Error::not_found(format!("No version {version:?}")))
-    }
-
-    async fn binary(&self, version: &VersionRef, features: &[&str]) -> Result<(Build, PathBuf), Error> {
-        let v = self.resolve(version).await?;
+impl EngineSource for FakeEngines {
+    async fn ready(&self, id: Option<&str>) -> Result<EngineBinary, Error> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        let build = Build {
-            id: BuildId(1),
-            version: v.id,
-            features: features.iter().map(|f| (*f).to_owned()).collect(),
-            net: None,
-            bench: None,
-            nps: None,
-            path: self.path.display().to_string(),
-            status: BuildStatus::Ready,
-        };
-        Ok((build, self.path.clone()))
+        self.engines.ready(id).await
     }
 }
 
 pub struct Harness {
     pub hub: Arc<Hub>,
-    pub binaries: Arc<FakeBinaries>,
+    pub engines: Arc<FakeEngines>,
     pub eval: Eval,
-    pub champion: Version,
+    /// The analysis engine.
+    pub engine: EngineBinary,
     _dir: tempfile::TempDir,
 }
 
 pub async fn harness(cores: u32) -> Harness {
     let dir = tempfile::tempdir().unwrap();
-    let config =
-        Config::new(dir.path().join("data"), "127.0.0.1:0".parse().unwrap(), dir.path().join("reckless"), cores);
+    let config = Config::new(dir.path().join("data"), "127.0.0.1:0".parse().unwrap(), cores);
     let hub = Hub::open(config).unwrap();
-    let champion =
-        hub.store.upsert_version(NewVersion::new("v1", "c0ffee", Line::Champion { number: 1 })).await.unwrap();
-    let binaries = Arc::new(FakeBinaries {
-        store: hub.store.clone(),
-        path: PathBuf::from(env!("CARGO_BIN_EXE_fake-eval")),
-        calls: AtomicUsize::new(0),
-    });
-    let eval = Eval::new(hub.clone(), binaries.clone());
-    Harness { hub, binaries, eval, champion, _dir: dir }
+    let path = PathBuf::from(env!("CARGO_BIN_EXE_fake-eval"));
+    let fixed = FixedEngines::new().with("fake", &path, &[]).with_engine("maia-1500", &path, &[], Some(1), Some(1500));
+    let engines = Arc::new(FakeEngines { engines: fixed, calls: AtomicUsize::new(0) });
+    let engine = engines.engines.ready(None).await.unwrap();
+    let eval = Eval::new(hub.clone(), engines.clone());
+    Harness { hub, engines, eval, engine, _dir: dir }
 }
 
 /// Moves (SAN) as a game records them.
@@ -100,10 +75,15 @@ pub fn moves(san: &[&str]) -> Vec<Move> {
         .collect()
 }
 
-/// The scholar's mate: You (White) mate Dameless in four.
+/// The engine every test game is played against.
+pub fn fake() -> PlayerKey {
+    PlayerKey::Engine("fake".into())
+}
+
+/// The scholar's mate: You (White) mate the engine in four.
 pub const SCHOLARS_MATE: [&str; 7] = ["e4", "e5", "Bc4", "Nc6", "Qh5", "Nf6", "Qxf7#"];
 
-/// A quiet game Dameless (White) and You (Black) drew.
+/// A quiet game the engine (White) and You (Black) drew.
 pub const QUIET_DRAW: [&str; 8] = ["d4", "d5", "Nf3", "Nf6", "e3", "e6", "Bd3", "Bd6"];
 
 /// Stores a finished local game between these players.

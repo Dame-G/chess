@@ -52,7 +52,7 @@ async fn runs_go_in_order_on_one_engine_split_over_idle_ones_and_stop_when_told(
     // SAFETY: set before any engine starts, and this file's only test is the only thing running in the process.
     unsafe { std::env::set_var("FAKE_EVAL_LOG", &log) };
     let h = harness(2).await;
-    let spec = h.eval.review_engines(&h.champion, 1_000, 2).await.unwrap();
+    let spec = h.eval.review_engines(&h.engine, 1_000, 2);
     let (draw, mate) = (jobs(&QUIET_DRAW), jobs(&SCHOLARS_MATE[..4]));
     let fens = |jobs: &[Job]| jobs.iter().map(|j| j.fen.clone()).collect::<Vec<_>>();
 

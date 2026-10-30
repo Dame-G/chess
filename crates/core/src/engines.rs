@@ -161,7 +161,7 @@ impl SeatSpec {
             None => (text, None),
         };
         let id = id.strip_prefix("engine:").unwrap_or(id);
-        if !valid_engine_id(id) {
+        if !valid_engine_id(id) || id == "you" {
             return Err(format!("{text:?} is not a seat: use you, an engine's id (stockfish), or stockfish@5 for a level"));
         }
         Ok(Self::Engine { id: id.to_owned(), level })
@@ -194,6 +194,7 @@ mod tests {
         assert_eq!(SeatSpec::parse("engine:maia-1500"), Ok(SeatSpec::Engine { id: "maia-1500".into(), level: None }));
         assert!(SeatSpec::parse("stockfish@x").is_err());
         assert!(SeatSpec::parse("Big Engine").is_err());
+        assert!(SeatSpec::parse("you@3").is_err());
     }
 
     #[test]

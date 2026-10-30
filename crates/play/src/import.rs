@@ -371,7 +371,10 @@ fn progress(cp: &Checkpoint, max: Option<u32>) -> Progress {
 
 fn seat_of(p: &ExportPlayer) -> Seat {
     let seat = match (&p.ai_level, &p.user) {
-        (Some(level), _) => Seat::new(PlayerKey::Stockfish((*level).clamp(1, 8)), format!("Stockfish level {level}")),
+        (Some(level), _) => Seat {
+            level: Some(u32::from((*level).clamp(1, 8))),
+            ..Seat::new(PlayerKey::Engine("stockfish".into()), format!("Stockfish level {level}"))
+        },
         (None, Some(u)) => {
             let key = PlayerKey::lichess(&u.id).unwrap_or(PlayerKey::Lichess("anonymous".into()));
             let name = if u.name.is_empty() { u.id.clone() } else { u.name.clone() };

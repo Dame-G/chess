@@ -1,4 +1,4 @@
-//! Dameless's levels as a service: the ladder, the calibrated ratings (`GET /api/levels`), the plan of calibration
+//! The levels as a service (the ladder engine, the analysis engine, at a node budget): the ladder, the calibrated ratings (`GET /api/levels`), the plan of calibration
 //! matches, and the refit after games at a level. The maths is `core::levels`; the games are played by [`Games`]
 //! (yours) and the [`crate::Calibrate`] executor (levels against each other).
 //!
@@ -14,8 +14,8 @@ use dameless_core::{
     Error, PlayerKey, Timestamp,
     events::{LevelsUpdated, Payload},
     levels::{self, Entrant, EntrantRating, Level, PlannedMatch},
+    levels::Estimate,
     lichess::ConnectionStatus,
-    version::Estimate,
     work::{Priority, Subject, WorkKind},
 };
 use dameless_hub::Hub;
@@ -23,7 +23,7 @@ use dameless_store::{NewWork, now};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::binaries::Binaries;
+use dameless_work::EngineSource;
 
 /// Where your rating (and its deviation, when known) comes from: `None` without a Lichess account.
 pub type AnchorSource = Arc<dyn Fn() -> Option<(u32, Option<f64>)> + Send + Sync>;
@@ -64,17 +64,14 @@ pub struct CalibrateRequest {
     /// Games per match, overriding each match's own (`core::levels::CALIBRATION_GAMES`, 20).
     #[serde(default)]
     pub games_per_pair: Option<u32>,
-    /// The version every level plays; the champion when none.
-    #[serde(default)]
-    pub version: Option<String>,
 }
 
 /// A calibration as queued: the request resolved.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct CalibrateSpec {
     pub matches: Vec<PlannedMatch>,
-    /// The version's name, as resolved when queued.
-    pub version: String,
+    /// The engine every level plays: the analysis engine when the calibration was queued.
+    pub engine: String,
 }
 
 struct Inner {
@@ -173,10 +170,10 @@ impl Levels {
         fitted.map_or(level.nominal, |r| r.estimate.elo.round().max(0.0) as u32)
     }
 
-    /// "Dameless 1600", and the rating.
-    pub(crate) async fn seat_name(&self, level: &Level) -> (String, u32) {
+    /// "Stockfish 1600" (the engine's name and the level's rating), and the rating.
+    pub(crate) async fn seat_name(&self, level: &Level, engine: &str) -> (String, u32) {
         let rating = self.rating_of(level).await;
-        (format!("Dameless {rating}"), rating)
+        (format!("{engine} {rating}"), rating)
     }
 
     /// The `count` calibration matches to play next (`core::levels::plan` over the last fit).
@@ -206,9 +203,9 @@ impl Levels {
         }
     }
 
-    /// The calibration work for a request, resolved now: the matches (planned when not given) and the version. The
-    /// caller queues it with the scheduler (`Scheduler::submit`).
-    pub async fn prepare_calibration(&self, binaries: &dyn Binaries, req: CalibrateRequest) -> Result<NewWork, Error> {
+    /// The calibration work for a request, resolved now: the matches (planned when not given) and the engine (the
+    /// analysis engine). The caller queues it with the scheduler (`Scheduler::submit`).
+    pub async fn prepare_calibration(&self, engines: &dyn EngineSource, req: CalibrateRequest) -> Result<NewWork, Error> {
         let mut matches = match req.matches {
             Some(m) => m,
             None => self.plan(req.count.unwrap_or(DEFAULT_MATCHES).clamp(1, 64)).await?,
@@ -229,15 +226,15 @@ impl Levels {
                 return Err(Error::bad_request("a match plays 1 to 1000 games"));
             }
         }
-        let version = binaries.resolve(req.version.as_deref().unwrap_or("champion")).await?;
+        let engine = engines.ready(None).await?.engine;
         let games: u32 = matches.iter().map(|m| m.games).sum();
         let pairs = matches.iter().map(|m| format!("{}–{}", m.a, m.b)).collect::<Vec<_>>().join(", ");
-        let spec = CalibrateSpec { matches, version: version.name.clone() };
+        let spec = CalibrateSpec { matches, engine: engine.id.clone() };
         Ok(NewWork {
             kind: WorkKind::Calibrate,
             priority: Priority::Background,
-            title: format!("Calibrating levels {pairs} · {games} games"),
-            subject: Subject::Player { key: PlayerKey::Dameless },
+            title: format!("Calibrating {}'s levels {pairs} · {games} games", engine.name),
+            subject: Subject::Player { key: PlayerKey::Engine(engine.id.clone()) },
             spec: serde_json::to_value(&spec).map_err(|e| Error::internal(e.to_string()))?,
         })
     }

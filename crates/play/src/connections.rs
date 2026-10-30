@@ -1,5 +1,4 @@
-//! The two Lichess connections: **you** (your account, played through the Board API) and **bot** (Dameless's BOT
-//! account). One client per token, shared by everything that talks to Lichess for that account (your games, imports,
+//! Your Lichess connection (your account, played through the Board API). One client for your token, shared by everything that talks to Lichess for that account (your games, imports,
 //! the explorer), and an anonymous one for public reads. Tokens are files (`hub.secrets`), never rows; what else a
 //! connection is (its account, settings, state) is its row of `connections` and the `connection.upserted` event.
 //!
@@ -24,7 +23,6 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
-    bot::Bot,
     clients::{Clients, account_of},
     error,
     games::Games,
@@ -66,7 +64,6 @@ struct Inner {
     hub: Arc<Hub>,
     clients: Arc<Clients>,
     you: You,
-    bot: Bot,
     logins: Logins,
 }
 
@@ -80,14 +77,13 @@ impl Connections {
     /// The connections of the Lichess `config` points at (a mock in tests), playing their games through `games`.
     pub fn new(hub: Arc<Hub>, games: Games, config: dameless_lichess::Config) -> Self {
         let clients = Arc::new(Clients::new(config));
-        let you = You::new(hub.clone(), clients.clone(), games.clone());
-        let bot = Bot::new(hub.clone(), clients.clone(), games);
-        Self { inner: Arc::new(Inner { hub, clients, you, bot, logins: Logins::new(LOGIN_FOR) }) }
+        let you = You::new(hub.clone(), clients.clone(), games);
+        Self { inner: Arc::new(Inner { hub, clients, you, logins: Logins::new(LOGIN_FOR) }) }
     }
 
-    /// Picks up the stored tokens: your account is followed again, and the bot comes back online if it was.
+    /// Picks up the stored token: your account is followed again.
     pub async fn start(&self) -> Result<(), Error> {
-        for key in [ConnectionKey::You, ConnectionKey::Bot] {
+        for key in [ConnectionKey::You] {
             let token = self
                 .inner
                 .hub
@@ -101,16 +97,11 @@ impl Connections {
             }
         }
         self.inner.you.resume().await;
-        self.inner.bot.resume().await;
         Ok(())
     }
 
     pub fn you(&self) -> &You {
         &self.inner.you
-    }
-
-    pub fn bot(&self) -> &Bot {
-        &self.inner.bot
     }
 
     /// The account's client, while a token is stored.
@@ -123,7 +114,7 @@ impl Connections {
         self.inner.clients.anonymous()
     }
 
-    /// Your client when you are logged in, else the anonymous one; never the bot's.
+    /// Your client when you are logged in, else the anonymous one.
     pub fn yours_or_anonymous(&self) -> Lichess {
         self.client(ConnectionKey::You).unwrap_or_else(|| self.anonymous())
     }
@@ -136,12 +127,11 @@ impl Connections {
     pub fn status(&self, key: ConnectionKey) -> ConnectionStatus {
         match key {
             ConnectionKey::You => self.inner.you.status(),
-            ConnectionKey::Bot => self.inner.bot.status(),
         }
     }
 
-    /// Checks a token with Lichess and stores it as the account's. Yours must be a person's account (not a BOT, not
-    /// the bot's) allowed to play (`board:play`); the bot's must be a BOT account (and not yours).
+    /// Checks a token with Lichess and stores it as the account's: a person's account (not a BOT) allowed to play
+    /// (`board:play`).
     pub async fn set_token(&self, key: ConnectionKey, token: &str) -> Result<ConnectionStatus, Error> {
         let token = token.trim();
         if token.is_empty() {
@@ -151,12 +141,7 @@ impl Connections {
         let account = match probe.account().await {
             Ok(u) => account_of(&u),
             Err(e) if e.is_unauthorized() => {
-                return Err(Error::bad_request(match key {
-                    ConnectionKey::You => "Lichess rejected that token",
-                    ConnectionKey::Bot => {
-                        "Lichess rejected that token: make one with the bot:play scope on lichess.org"
-                    }
-                }));
+                return Err(Error::bad_request("Lichess rejected that token"));
             }
             Err(e) => return Err(error::lichess(e)),
         };
@@ -168,29 +153,15 @@ impl Connections {
             ConnectionKey::You => {
                 if account.is_bot() {
                     return Err(Error::bad_request(format!(
-                        "{} is a BOT account: connect it as the bot, not as yours",
+                        "{} is a BOT account: connect your own account",
                         account.username
                     )));
-                }
-                if self.inner.bot.account().is_some_and(|b| b.id == account.id) {
-                    return Err(Error::bad_request("that is the bot's account: your own account must be another one"));
                 }
                 if !scopes.is_empty() && !scopes.iter().any(|s| s == "board:play") {
                     return Err(Error::bad_request(
                         "that token cannot play (no board:play scope): log in again, or make a token with board:play, \
                          challenge:read and challenge:write",
                     ));
-                }
-            }
-            ConnectionKey::Bot => {
-                if !account.is_bot() {
-                    return Err(Error::bad_request(format!(
-                        "{} is not a BOT account: upgrade it on Lichess first (it must not have played)",
-                        account.username
-                    )));
-                }
-                if self.inner.you.account().is_some_and(|y| y.id == account.id) {
-                    return Err(Error::bad_request("that is your own account: the bot's must be another one"));
                 }
             }
         }
@@ -215,7 +186,6 @@ impl Connections {
         }
         match key {
             ConnectionKey::You => self.inner.you.connected(account, scopes, expires_at).await,
-            ConnectionKey::Bot => self.inner.bot.connected(account).await,
         }
         Ok(self.status(key))
     }
@@ -237,7 +207,6 @@ impl Connections {
             .map_err(|e| Error::internal(format!("forget the {key} token: {e}")))?;
         match key {
             ConnectionKey::You => self.inner.you.disconnected().await,
-            ConnectionKey::Bot => self.inner.bot.disconnected().await,
         }
         Ok(self.status(key))
     }
@@ -321,14 +290,10 @@ impl Connections {
         self.yours_or_anonymous().leaderboard(nb, perf).await.map_err(error::lichess)
     }
 
-    /// A challenge from a connection: yours (a player, Stockfish or your bot) or the bot's (a player).
+    /// A challenge from your account: a player, or Lichess's AI.
     pub async fn challenge(&self, key: ConnectionKey, body: ChallengeBody) -> Result<ChallengeSent, Error> {
         match key {
-            ConnectionKey::You => {
-                let bot = self.inner.bot.account().map(|a| a.username);
-                self.inner.you.challenge(body, bot).await
-            }
-            ConnectionKey::Bot => self.inner.bot.challenge(body).await,
+            ConnectionKey::You => self.inner.you.challenge(body).await,
         }
     }
 }

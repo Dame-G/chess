@@ -24,7 +24,7 @@ async fn work(s: &Setup, spec: &ImportSpec) -> (WorkContext, tokio_util::sync::C
         .store
         .insert_work(NewWork {
             kind: WorkKind::Import,
-            priority: Priority::Interactive,
+            priority: Priority::Review,
             title: "Importing".into(),
             subject: Subject::Player { key: PlayerKey::You },
             spec: spec.clone(),
@@ -48,7 +48,7 @@ async fn imported(s: &Setup) -> Vec<dameless_core::game::GameSummary> {
 
 #[tokio::test]
 async fn your_history_is_imported_once_through_a_broken_export() {
-    let s = setup(binaries());
+    let s = setup(engines());
     let mock = MockLichess::start().await;
     mock.add_account("you-tok", MockAccount::user("Dame"));
     let games =
@@ -94,7 +94,7 @@ async fn your_history_is_imported_once_through_a_broken_export() {
 
 #[tokio::test]
 async fn another_players_history_waits_while_you_play() {
-    let s = setup(binaries());
+    let s = setup(engines());
     let mock = MockLichess::start().await;
     let games = (0..3).map(|i| exported_game(&format!("b{i}"), 1_700_000_000_000 + i, "bob", "carol")).collect();
     mock.set_games_export("bob", games);
@@ -158,7 +158,7 @@ async fn complete(s: &Setup) -> bool {
 
 #[tokio::test]
 async fn the_first_import_brings_in_everything_and_the_next_only_whats_new() {
-    let s = setup(binaries());
+    let s = setup(engines());
     let (mock, executor) = yours(&s, history("h", 0, 250)).await;
 
     let (cx, _) = work(&s, &spec(PlayerKey::You)).await;
@@ -189,7 +189,7 @@ async fn the_first_import_brings_in_everything_and_the_next_only_whats_new() {
 
 #[tokio::test]
 async fn a_history_cut_short_is_filled_in() {
-    let s = setup(binaries());
+    let s = setup(engines());
     let (mock, executor) = yours(&s, history("h", 0, 10)).await;
 
     // The newest three, as the sheet's old button asked for.
@@ -218,7 +218,7 @@ async fn a_history_cut_short_is_filled_in() {
 
 #[tokio::test]
 async fn an_import_cut_off_resumes_after_a_restart() {
-    let s = setup(binaries());
+    let s = setup(engines());
     let mock = MockLichess::start().await;
     mock.add_account("you-tok", MockAccount::user("Dame"));
     mock.set_games_export("dame", history("h", 0, 250));

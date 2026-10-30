@@ -3,7 +3,7 @@
 //!
 //! - [`crate::EngineSeat`]: a UCI engine searches (local games).
 //! - [`LocalSeat`]: you, at the board: the move comes from the API.
-//! - The Lichess seats (`LichessYou`, `LichessBot`, `LichessOpponent`, in the Lichess game runtime): Lichess is the
+//! - The Lichess seats (`LichessYou`, `LichessOpponent`, in the Lichess game runtime): Lichess is the
 //!   referee there, and a seat's move counts once Lichess's game stream shows it.
 
 use async_trait::async_trait;
@@ -23,7 +23,6 @@ pub enum SeatKind {
     Engine,
     Local,
     LichessYou,
-    LichessBot,
     LichessOpponent,
 }
 
@@ -31,7 +30,7 @@ pub enum SeatKind {
 #[async_trait]
 pub trait SeatController: Send {
     /// Asks for this seat's next move in `turn`. Engine seats search; the local seat waits for the board; Lichess
-    /// seats wait for the stream (the opponent) or forward ours (you, the bot) and answer once Lichess has it.
+    /// seats wait for the stream (the opponent) or forward yours and answer once Lichess has it.
     ///
     /// The runtime may drop the future (an action ended the game or took moves back) and ask again; a seat must cope.
     async fn next_move(&mut self, turn: Turn<'_>) -> Result<SeatMove, Error>;

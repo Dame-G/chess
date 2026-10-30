@@ -146,7 +146,7 @@ impl Engines {
                 "{id:?} is not an engine id: lower-case letters, digits and -, as in my-engine"
             )));
         }
-        if builtin(&id).is_some() || self.hub.store.engine(&id).await?.is_some() {
+        if id == "you" || builtin(&id).is_some() || self.hub.store.engine(&id).await?.is_some() {
             return Err(Error::conflict(format!("There is already an engine {id}")));
         }
         let path = PathBuf::from(req.path.trim());

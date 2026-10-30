@@ -13,12 +13,14 @@ use std::{
 use dameless_core::{
     Error, GameId, PlayerKey, Side, SidePair, TimeControl,
     chess::Position,
+    engines::SeatSpec,
     game::{Ending, Game, GameEnd, GameSummary, Seat, SeatAction, Source},
     levels::{Entrant, Level},
     referee::{Referee, Setup, Sitter},
 };
 use dameless_hub::Hub;
 use dameless_store::{GameFilter, NewGame, SourceKind, now};
+use dameless_work::EngineSource;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -28,7 +30,6 @@ use utoipa::{
 };
 
 use crate::{
-    binaries::Binaries,
     engine_seat::{EngineOptions, EngineSeat},
     levels::Levels,
     local::{self, LocalGame},
@@ -41,40 +42,40 @@ use crate::{
 // Requests
 // ---------------------------------------------------------------------------------------------------------------------
 
-/// Who sits at a side of a local game: you, or Dameless at a version, at full strength or at a level. Written as a
-/// string: `you`, `dameless` (the champion), `dameless:<version>` (a name such as `v14` or a branch, or an id), and
-/// either Dameless form with `@<level>` (`dameless@5`, `dameless:v14@5`) to play at a level of the ladder. The object
-/// form `{ "player": "dameless", "version": "v14", "level": 5 }` reads too.
+/// Who sits at a side of a local game: you, or an engine of the engines list, at full strength (or its fixed budget)
+/// or at a level of the ladder. Written as a string: `you`, `<engine id>` (`stockfish`, `maia-1500`), and
+/// `<engine id>@<level>` (`stockfish@5`) for a level. The object form `{ "player": "stockfish", "level": 5 }` reads
+/// too.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SeatRequest {
     You,
-    Dameless { version: Option<String>, level: Option<u32> },
+    Engine { id: String, level: Option<u32> },
 }
 
 impl SeatRequest {
-    /// The champion at full strength.
-    pub fn dameless() -> Self {
-        Self::Dameless { version: None, level: None }
+    /// An engine at full strength.
+    pub fn engine(id: &str) -> Self {
+        Self::Engine { id: id.to_owned(), level: None }
     }
 
-    /// The champion at a level.
-    pub fn at_level(level: u32) -> Self {
-        Self::Dameless { version: None, level: Some(level) }
+    /// An engine at a level.
+    pub fn at_level(id: &str, level: u32) -> Self {
+        Self::Engine { id: id.to_owned(), level: Some(level) }
     }
 
-    /// The version a Dameless seat plays: the champion unless one is named.
-    pub fn version(&self) -> Option<&str> {
+    /// The engine an engine seat plays.
+    pub fn engine_id(&self) -> Option<&str> {
         match self {
             Self::You => None,
-            Self::Dameless { version, .. } => Some(version.as_deref().unwrap_or("champion")),
+            Self::Engine { id, .. } => Some(id),
         }
     }
 
-    /// The level a Dameless seat plays at, when it plays at one.
+    /// The level an engine seat plays at, when it plays at one.
     pub fn level(&self) -> Option<u32> {
         match self {
             Self::You => None,
-            Self::Dameless { level, .. } => *level,
+            Self::Engine { level, .. } => *level,
         }
     }
 }
@@ -83,16 +84,8 @@ impl fmt::Display for SeatRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::You => f.write_str("you"),
-            Self::Dameless { version, level } => {
-                f.write_str("dameless")?;
-                if let Some(v) = version {
-                    write!(f, ":{v}")?;
-                }
-                if let Some(l) = level {
-                    write!(f, "@{l}")?;
-                }
-                Ok(())
-            }
+            Self::Engine { id, level: None } => f.write_str(id),
+            Self::Engine { id, level: Some(l) } => write!(f, "{id}@{l}"),
         }
     }
 }
@@ -101,25 +94,10 @@ impl FromStr for SeatRequest {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let bad = || format!("{:?} is not a seat: use you, dameless, dameless:<version> or dameless@<level>", s.trim());
-        let text = s.trim();
-        if text == "you" {
-            return Ok(Self::You);
-        }
-        // A trailing `@<digits>` is the level; anything else after an `@` belongs to the version's name.
-        let (rest, level) = match text.rsplit_once('@') {
-            Some((rest, l)) if !l.is_empty() && l.bytes().all(|b| b.is_ascii_digit()) => {
-                (rest, Some(l.parse::<u32>().map_err(|_| bad())?))
-            }
-            _ => (text, None),
-        };
-        match rest {
-            "dameless" => Ok(Self::Dameless { version: None, level }),
-            other => match other.strip_prefix("dameless:").map(str::trim) {
-                Some(v) if !v.is_empty() => Ok(Self::Dameless { version: Some(v.to_owned()), level }),
-                _ => Err(bad()),
-            },
-        }
+        Ok(match SeatSpec::parse(s)? {
+            SeatSpec::You => Self::You,
+            SeatSpec::Engine { id, level } => Self::Engine { id, level },
+        })
     }
 }
 
@@ -137,8 +115,6 @@ enum SeatWire {
     Object {
         player: String,
         #[serde(default)]
-        version: Option<String>,
-        #[serde(default)]
         level: Option<u32>,
     },
 }
@@ -147,10 +123,10 @@ impl<'de> Deserialize<'de> for SeatRequest {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         match SeatWire::deserialize(d)? {
             SeatWire::Text(text) => text.parse().map_err(serde::de::Error::custom),
-            SeatWire::Object { player, version, level } => match player.trim() {
-                "you" if version.is_none() && level.is_none() => Ok(Self::You),
-                "dameless" => Ok(Self::Dameless { version: version.filter(|v| !v.trim().is_empty()), level }),
-                other => Err(serde::de::Error::custom(format!("{other:?} is not a seat: use you or dameless"))),
+            SeatWire::Object { player, level } => match player.trim().parse::<Self>() {
+                Ok(Self::You) if level.is_none() => Ok(Self::You),
+                Ok(Self::Engine { id, level: None }) => Ok(Self::Engine { id, level }),
+                _ => Err(serde::de::Error::custom(format!("{player:?} is not a seat: use you or an engine's id"))),
             },
         }
     }
@@ -161,10 +137,10 @@ impl PartialSchema for SeatRequest {
         ObjectBuilder::new()
             .schema_type(Type::String)
             .description(Some(
-                "`you`, `dameless` (the champion), `dameless:<version>`, and `@<level>` after either Dameless form \
-                 to play at a level (`dameless@5`). The object `{ player, version?, level? }` reads too.",
+                "`you`, an engine's id (`stockfish`, `maia-1500`), or `<engine id>@<level>` for a level of the \
+                 analysis engine's ladder (`stockfish@5`). The object `{ player, level? }` reads too.",
             ))
-            .examples(["you", "dameless", "dameless:v14", "dameless@5"])
+            .examples(["you", "stockfish", "stockfish@5", "maia-1500"])
             .into()
     }
 }
@@ -181,8 +157,6 @@ pub enum StartFrom {
         #[serde(default)]
         moves: Vec<String>,
     },
-    /// A random line of the opening book the trials use.
-    Book,
 }
 
 /// `POST /api/games`: a local game.
@@ -228,7 +202,7 @@ pub(crate) struct Handle {
 
 struct Inner {
     hub: Arc<Hub>,
-    binaries: Arc<dyn Binaries>,
+    engines: Arc<dyn EngineSource>,
     timing: Timing,
     live: Mutex<HashMap<GameId, Handle>>,
     /// Your Lichess username, shown on your seat when linked.
@@ -243,17 +217,17 @@ pub struct Games {
 }
 
 impl Games {
-    pub fn new(hub: Arc<Hub>, binaries: Arc<dyn Binaries>, timing: Timing) -> Self {
+    pub fn new(hub: Arc<Hub>, engines: Arc<dyn EngineSource>, timing: Timing) -> Self {
         let levels = Levels::new(hub.clone());
-        Self::with_levels(hub, binaries, timing, levels)
+        Self::with_levels(hub, engines, timing, levels)
     }
 
     /// With these levels (another ladder, for tests).
-    pub fn with_levels(hub: Arc<Hub>, binaries: Arc<dyn Binaries>, timing: Timing, levels: Levels) -> Self {
+    pub fn with_levels(hub: Arc<Hub>, engines: Arc<dyn EngineSource>, timing: Timing, levels: Levels) -> Self {
         Self {
             inner: Arc::new(Inner {
                 hub,
-                binaries,
+                engines,
                 timing,
                 live: Mutex::new(HashMap::new()),
                 your_name: Mutex::new(None),
@@ -262,7 +236,7 @@ impl Games {
         }
     }
 
-    /// Dameless's levels: their ratings, the refit, calibration.
+    /// The levels: their ratings, the refit, calibration.
     pub fn levels(&self) -> &Levels {
         &self.inner.levels
     }
@@ -271,8 +245,8 @@ impl Games {
         &self.inner.hub
     }
 
-    pub(crate) fn binaries(&self) -> &Arc<dyn Binaries> {
-        &self.inner.binaries
+    pub(crate) fn engines(&self) -> &Arc<dyn EngineSource> {
+        &self.inner.engines
     }
 
     pub(crate) fn timing(&self) -> &Timing {
@@ -441,12 +415,12 @@ impl Games {
         Ok(live.view())
     }
 
-    /// Starts a local game: its engines are started (and their versions built when needed) before it is stored, so a
-    /// broken engine is an error here and not a dead game. Answers the game as it starts.
+    /// Starts a local game: its engines are started before it is stored, so a broken engine is an error here and not
+    /// a dead game. Answers the game as it starts.
     pub async fn start(&self, req: NewGameRequest) -> Result<Game, Error> {
         let seats = [&req.white, &req.black];
         if seats.iter().all(|s| **s == SeatRequest::You) {
-            return Err(Error::bad_request("one side at least must be Dameless"));
+            return Err(Error::bad_request("one side at least must be an engine"));
         }
         match req.time {
             TimeControl::Clock { initial_ms: 0, .. } => {
@@ -477,40 +451,38 @@ impl Games {
 
         let mut players: Vec<(Seat, Box<dyn SeatController>, Sitter)> = Vec::new();
         let mut moves: Option<MoveSender> = None;
-        let against_you = seats.iter().any(|s| **s == SeatRequest::You);
         for (index, request) in seats.into_iter().enumerate() {
-            match request.version() {
+            match request.engine_id() {
                 None => {
                     let (seat, tx) = LocalSeat::new();
                     moves = Some(tx);
                     players.push((self.your_seat(), Box::new(seat), Sitter::Person));
                 }
-                Some(version) => {
-                    // Against you at full strength Dameless plays its fastest build. A level plays a node budget, and
-                    // two engines compared with each other play the same kind of build.
-                    let full_strength = levels[index].as_ref().is_none_or(|l| l.nodes.is_none());
-                    let binary = if against_you && full_strength {
-                        self.inner.binaries.playing_binary(version).await?
-                    } else {
-                        self.inner.binaries.binary(version).await?
-                    };
+                Some(id) => {
+                    let binary = self.inner.engines.ready(Some(id)).await?;
+                    if levels[index].is_some() && !binary.engine.levels {
+                        return Err(Error::bad_request(format!(
+                            "{} has no levels: the ladder is the analysis engine's (as in stockfish@5)",
+                            binary.engine.name
+                        )));
+                    }
                     let engine = EngineSeat::start(
                         &binary,
                         options,
                         &self.inner.hub.ledger,
                         self.inner.hub.bus.clone(),
-                        &format!("Local game: {}", binary.version.name),
+                        &format!("Local game: {}", binary.engine.name),
                     )
                     .await?
                     .pace(self.inner.timing.info_every, self.inner.timing.unclocked_movetime_ms);
                     let mut seat = Seat {
-                        version: Some(binary.version.id),
-                        build: Some(binary.build),
-                        ..Seat::dameless(&binary.version.name)
+                        engine: Some(binary.engine.label().to_owned()),
+                        rating: binary.engine.rating,
+                        ..Seat::new(binary.engine.player(), binary.engine.name.clone())
                     };
                     let engine = match &levels[index] {
                         Some(level) => {
-                            let (name, rating) = self.inner.levels.seat_name(level).await;
+                            let (name, rating) = self.inner.levels.seat_name(level, &binary.engine.name).await;
                             seat.name = name;
                             seat.level = Some(level.id);
                             seat.rating = Some(rating);
@@ -543,7 +515,7 @@ impl Games {
             .iter()
             .map(|r| match r {
                 SeatRequest::You => Some(Entrant::You),
-                SeatRequest::Dameless { level, .. } => level.map(Entrant::Level),
+                SeatRequest::Engine { level, .. } => level.map(Entrant::Level),
             })
             .collect();
         let at_level = levels.iter().any(Option::is_some);
@@ -592,21 +564,6 @@ impl Games {
                 // A game from here starts afresh: its history is the position itself.
                 Ok(Position::from_fen(&pos.fen())?)
             }
-            Some(StartFrom::Book) => {
-                let tools = self.inner.hub.config.tools_dir();
-                let book = dameless_engine::tools::installed(&tools)
-                    .book
-                    .ok_or_else(|| Error::conflict("the opening book is not installed: run `dameless setup`"))?;
-                let text = tokio::fs::read_to_string(&book)
-                    .await
-                    .map_err(|e| Error::internal(format!("read the opening book: {e}")))?;
-                let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-                if lines.is_empty() {
-                    return Err(Error::internal("the opening book is empty"));
-                }
-                let line = lines[random_below(lines.len())];
-                Ok(Position::from_fen(line)?)
-            }
         }
     }
 
@@ -625,11 +582,6 @@ impl Games {
         }
         self.game(id).await
     }
-}
-
-/// A random number below `n` (at least 1).
-pub(crate) fn random_below(n: usize) -> usize {
-    (random_u64() % n.max(1) as u64) as usize
 }
 
 /// A random 64-bit number.
@@ -651,15 +603,18 @@ mod tests {
     #[test]
     fn seats_read_as_strings() {
         assert_eq!("you".parse::<SeatRequest>().unwrap(), SeatRequest::You);
-        assert_eq!("dameless".parse::<SeatRequest>().unwrap().version(), Some("champion"));
-        assert_eq!("dameless:v14".parse::<SeatRequest>().unwrap().version(), Some("v14"));
-        assert!("bob".parse::<SeatRequest>().is_err());
+        assert_eq!("stockfish".parse::<SeatRequest>().unwrap(), SeatRequest::engine("stockfish"));
+        assert_eq!("stockfish@5".parse::<SeatRequest>().unwrap(), SeatRequest::at_level("stockfish", 5));
+        assert_eq!(SeatRequest::at_level("stockfish", 5).to_string(), "stockfish@5");
+        assert!("Bob Smith".parse::<SeatRequest>().is_err());
+        let object: SeatRequest = serde_json::from_value(serde_json::json!({ "player": "stockfish", "level": 3 })).unwrap();
+        assert_eq!(object, SeatRequest::at_level("stockfish", 3));
         let req: NewGameRequest = serde_json::from_value(serde_json::json!({
-            "white": "you", "black": "dameless:v3", "time": { "type": "clock", "initial_ms": 300000, "increment_ms": 3000 },
+            "white": "you", "black": "maia-1500", "time": { "type": "clock", "initial_ms": 300000, "increment_ms": 3000 },
             "from": { "type": "position", "fen": "startpos", "moves": ["e4"] }
         }))
         .unwrap();
-        assert_eq!(req.black.to_string(), "dameless:v3");
+        assert_eq!(req.black.to_string(), "maia-1500");
         assert!(!req.adjudicate);
     }
 }

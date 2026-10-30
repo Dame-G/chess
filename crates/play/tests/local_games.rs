@@ -28,13 +28,13 @@ fn request(white: &str, black: &str, time: TimeControl) -> NewGameRequest {
 
 #[tokio::test]
 async fn two_engines_play_a_game_to_its_end() {
-    let s = setup(binaries());
+    let s = setup(engines());
     let mut events = subscribe(&s.hub);
-    let game = s.games.start(request("dameless", "dameless", TimeControl::Nodes { nodes: 1000 })).await.unwrap();
+    let game = s.games.start(request("fake", "fake", TimeControl::Nodes { nodes: 1000 })).await.unwrap();
     let id = game.summary.id;
     assert_eq!(game.summary.status, GameStatus::Live);
-    assert_eq!(game.summary.white.player, PlayerKey::Dameless);
-    assert_eq!(game.summary.white.name, "Dameless v1");
+    assert_eq!(game.summary.white.player, PlayerKey::Engine("fake".into()));
+    assert_eq!(game.summary.white.name, "Fake");
     assert_eq!(game.summary.you, None);
     assert!(game.actions.is_empty(), "you do not play in it");
     // Each engine holds a core while it plays.
@@ -63,9 +63,9 @@ async fn two_engines_play_a_game_to_its_end() {
 
 #[tokio::test]
 async fn you_play_an_engine_with_moves_takebacks_offers_and_resigning() {
-    let s = setup(binaries());
+    let s = setup(engines());
     let mut events = subscribe(&s.hub);
-    let game = s.games.start(request("you", "dameless", TimeControl::Movetime { ms: 50 })).await.unwrap();
+    let game = s.games.start(request("you", "fake", TimeControl::Movetime { ms: 50 })).await.unwrap();
     let id = game.summary.id;
     assert_eq!(game.summary.you, Some(Side::White));
     assert_eq!(game.summary.white.player, PlayerKey::You);
@@ -115,8 +115,8 @@ async fn you_play_an_engine_with_moves_takebacks_offers_and_resigning() {
 
 #[tokio::test]
 async fn your_clock_runs_out() {
-    let s = setup(binaries());
-    let game = s.games.start(request("you", "dameless", TimeControl::clock(400, 0))).await.unwrap();
+    let s = setup(engines());
+    let game = s.games.start(request("you", "fake", TimeControl::clock(400, 0))).await.unwrap();
     let id = game.summary.id;
     assert_eq!(game.clocks.unwrap().white, 400);
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -128,20 +128,20 @@ async fn your_clock_runs_out() {
 
 #[tokio::test]
 async fn an_engine_that_dies_or_cheats_loses() {
-    let s = setup(binaries());
-    let game = s.games.start(request("dameless:dying", "dameless", TimeControl::Nodes { nodes: 10 })).await.unwrap();
+    let s = setup(engines());
+    let game = s.games.start(request("dying", "fake", TimeControl::Nodes { nodes: 10 })).await.unwrap();
     let g = s.games.wait_finished(game.summary.id, Duration::from_secs(10)).await.unwrap();
     assert_eq!((g.summary.outcome, g.summary.ending), (Some(Outcome::BlackWins), Some(Ending::EngineFailure)));
 
-    let game = s.games.start(request("dameless", "dameless:illegal", TimeControl::Nodes { nodes: 10 })).await.unwrap();
+    let game = s.games.start(request("fake", "illegal", TimeControl::Nodes { nodes: 10 })).await.unwrap();
     let g = s.games.wait_finished(game.summary.id, Duration::from_secs(10)).await.unwrap();
     assert_eq!((g.summary.outcome, g.summary.ending), (Some(Outcome::WhiteWins), Some(Ending::IllegalMove)));
 }
 
 #[tokio::test]
 async fn stopping_aborts_an_engine_game_and_games_start_from_a_position() {
-    let s = setup(binaries());
-    let mut req = request("dameless:slow", "dameless:slow", TimeControl::Movetime { ms: 1000 });
+    let s = setup(engines());
+    let mut req = request("slow", "slow", TimeControl::Movetime { ms: 1000 });
     // Mate in one for White: the game ends with its first move.
     req.from = Some(StartFrom::Position { fen: "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1".into(), moves: vec![] });
     let game = s.games.start(req).await.unwrap();
@@ -151,33 +151,32 @@ async fn stopping_aborts_an_engine_game_and_games_start_from_a_position() {
     assert_eq!(g.moves[0].san, "Ra8#");
 
     let game =
-        s.games.start(request("dameless:slow", "dameless:slow", TimeControl::Movetime { ms: 1000 })).await.unwrap();
+        s.games.start(request("slow", "slow", TimeControl::Movetime { ms: 1000 })).await.unwrap();
     let g = s.games.stop(game.summary.id).await.unwrap();
     assert_eq!((g.summary.status, g.summary.ending), (GameStatus::Aborted, Some(Ending::Aborted)));
 }
 
 #[tokio::test]
 async fn games_are_checked_before_they_start() {
-    let s = setup(binaries());
+    let s = setup(engines());
     let both = s.games.start(request("you", "you", TimeControl::Movetime { ms: 10 })).await.unwrap_err();
     assert_eq!(both.status(), 400);
-    let corr = s.games.start(request("you", "dameless", TimeControl::Correspondence { days: 1 })).await.unwrap_err();
+    let corr = s.games.start(request("you", "fake", TimeControl::Correspondence { days: 1 })).await.unwrap_err();
     assert_eq!(corr.status(), 400);
-    let none = s.games.start(request("you", "dameless:nope", TimeControl::Movetime { ms: 10 })).await.unwrap_err();
+    let none = s.games.start(request("you", "nope", TimeControl::Movetime { ms: 10 })).await.unwrap_err();
     assert_eq!(none.status(), 404);
-    let mut book = request("you", "dameless", TimeControl::Movetime { ms: 10 });
-    book.from = Some(StartFrom::Book);
-    assert_eq!(s.games.start(book).await.unwrap_err().status(), 409, "no book is installed");
+    let maia = s.games.start(request("you", "maia-1500@3", TimeControl::Movetime { ms: 10 })).await.unwrap_err();
+    assert_eq!(maia.status(), 400, "levels are the analysis engine's");
     assert!(s.games.live().is_empty());
-    assert_eq!("dameless:v3".parse::<SeatRequest>().unwrap().version(), Some("v3"));
+    assert_eq!("maia-1500".parse::<SeatRequest>().unwrap().engine_id(), Some("maia-1500"));
 }
 
 #[tokio::test]
 async fn local_games_left_live_by_a_stopped_app_are_aborted() {
-    let s = setup(binaries());
+    let s = setup(engines());
     let mut new = NewGame::starting(
         dameless_core::game::Seat::new(PlayerKey::You, "You"),
-        dameless_core::game::Seat::new(PlayerKey::Dameless, "v1"),
+        dameless_core::game::Seat::new(PlayerKey::Engine("fake".into()), "v1"),
         Source::Local,
         TimeControl::clock(60_000, 0),
         dameless_store::now(),
